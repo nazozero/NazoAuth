@@ -201,7 +201,7 @@ fn deferred_response_status_survives_real_encryption_and_stored_replay() {
             &body,
             status,
             Some("next-nonce".to_owned()),
-            Timestamp::now() + Duration::minutes(5),
+            Timestamp::now() + jiff::SignedDuration::from_mins(5),
         );
         assert_eq!(stored.status, 202);
         let replay = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required).unwrap();

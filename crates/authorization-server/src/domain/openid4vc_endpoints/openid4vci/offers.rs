@@ -142,7 +142,9 @@ impl ServerCredentialIssuerOperations {
                     scopes: &[],
                     authorization_details: &authorization_details,
                     userinfo_claim_requests: &[],
-                    ttl_seconds: (authorization.expires_at - Timestamp::now())
+                    ttl_seconds: authorization
+                        .expires_at
+                        .duration_since(Timestamp::now())
                         .as_secs()
                         .max(1),
                     sender_constraint,
@@ -166,7 +168,7 @@ impl ServerCredentialIssuerOperations {
                     "Credential access token identifier is invalid.",
                 )
             })?;
-            let expires_at = jiff::Timestamp::new(issued.expires_at, 0).ok_or_else(|| {
+            let expires_at = jiff::Timestamp::new(issued.expires_at, 0).map_err(|_| {
                 vci_error(
                     503,
                     "server_error",
@@ -360,7 +362,8 @@ impl ServerCredentialIssuerOperations {
                 subject_id: Some(request.subject_id),
                 credential_configuration_ids: request.credential_configuration_ids,
                 grants,
-                expires_at: Timestamp::now() + Duration::seconds(request.expires_in as i64),
+                expires_at: Timestamp::now()
+                    + jiff::SignedDuration::from_secs(request.expires_in as i64),
             };
             let tx_code_hash = match request.tx_code {
                 Some(code) => Some(

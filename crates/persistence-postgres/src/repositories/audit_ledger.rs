@@ -185,7 +185,10 @@ impl AuditLedgerRepository {
             .map(|event| event.event_category.as_str())
             .collect();
         let payloads: Vec<&serde_json::Value> = events.iter().map(|event| &event.payload).collect();
-        let occurred_ats: Vec<Timestamp> = events.iter().map(|event| event.occurred_at).collect();
+        let occurred_ats: Vec<_> = events
+            .iter()
+            .map(|event| event.occurred_at.to_diesel())
+            .collect();
         let mut guard = DiscardOnDrop::new(self.connection().await?);
         // The single statement already commits or rolls back every function
         // call together. Separate BEGIN/COMMIT round trips add no atomicity.
@@ -201,9 +204,7 @@ impl AuditLedgerRepository {
         .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_types)
         .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_categories)
         .bind::<diesel::sql_types::Array<diesel::sql_types::Jsonb>, _>(payloads)
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(
-            (occurred_ats).to_diesel(),
-        )
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(occurred_ats)
         .load::<AuditMutationRow>(guard.connection())
         .await
         .and_then(|rows| {

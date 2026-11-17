@@ -579,7 +579,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         &resolvable.jti,
         Some(user_id),
         DEFAULT_TENANT_ID,
-        Timestamp::now() + Duration::seconds(300),
+        Timestamp::now() + jiff::SignedDuration::from_secs(300),
     )
     .await;
     let (status, body) =
@@ -672,7 +672,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         &inactive_subject.jti,
         Some(inactive_user),
         DEFAULT_TENANT_ID,
-        Timestamp::now() + Duration::seconds(300),
+        Timestamp::now() + jiff::SignedDuration::from_secs(300),
     )
     .await;
     let (status, body) =
@@ -805,7 +805,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         .bind::<SqlUuid, _>(foreign_user)
         .bind::<Text, _>(&foreign.jti)
         .bind::<diesel::sql_types::Timestamptz, _>(
-            (Timestamp::now() + Duration::seconds(300)).to_diesel(),
+            (Timestamp::now() + jiff::SignedDuration::from_secs(300)).to_diesel(),
         )
         .execute(&mut conn)
         .await
@@ -825,7 +825,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         &expired.jti,
         Some(user_id),
         DEFAULT_TENANT_ID,
-        Timestamp::now() - Duration::seconds(120),
+        Timestamp::now() - jiff::SignedDuration::from_secs(120),
     )
     .await;
     let (status, body) =

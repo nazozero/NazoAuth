@@ -77,10 +77,10 @@ impl ServerCredentialIssuerOperations {
                 })?)
             };
             let now = jiff::Timestamp::now();
-            let intent_expires_at = now + Duration::days(365);
+            let intent_expires_at = now + jiff::SignedDuration::from_hours((365) * 24);
             let disposition = if self.deferred_configurations.contains(&configuration_id) {
                 IssuanceDisposition::Deferred {
-                    ready_at: now + Duration::seconds(1),
+                    ready_at: now + jiff::SignedDuration::from_secs(1),
                 }
             } else {
                 IssuanceDisposition::Immediate
@@ -224,9 +224,10 @@ impl ServerCredentialIssuerOperations {
                 nazo_openid4vci::DeferredClaimOutcome::Claimed(credential) => *credential,
                 nazo_openid4vci::DeferredClaimOutcome::Pending { retry_at }
                 | nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at } => {
-                    let interval = u64::try_from((retry_at - jiff::Timestamp::now()).num_seconds())
-                        .unwrap_or(0)
-                        .saturating_add(1);
+                    let interval =
+                        u64::try_from(retry_at.duration_since(jiff::Timestamp::now()).as_secs())
+                            .unwrap_or(0)
+                            .saturating_add(1);
                     let body = finish_response(
                         CredentialResponse {
                             credentials: None,

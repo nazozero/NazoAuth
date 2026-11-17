@@ -170,7 +170,12 @@ pub(super) async fn compare_and_set_desired(
                         ));
                     }
                     let actor_id = parse_optional_uuid(change.next.actor_id.as_deref(), "actor")?;
-                    let updated_at = Timestamp::from(change.next.updated_at);
+                    let updated_at =
+                        Timestamp::try_from(change.next.updated_at).map_err(|error| {
+                            RuntimeTransactionError::Repository(RepositoryError::Consistency(
+                                format!("runtime update timestamp is out of range: {error}"),
+                            ))
+                        })?;
                     diesel::update(
                         runtime_module_desired_states::table
                             .find((repository.tenant_id(), module_id(change.next.module_id))),

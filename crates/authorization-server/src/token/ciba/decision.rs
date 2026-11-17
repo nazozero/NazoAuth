@@ -297,8 +297,20 @@ async fn ciba_authorization_request_view(
         audiences: payload.audiences,
         binding_message: payload.binding_message,
         interval_seconds: payload.interval_seconds,
-        issued_at: Timestamp::new(payload.issued_at, 0).unwrap_or_else(Timestamp::now),
-        expires_at: Timestamp::new(payload.expires_at, 0).unwrap_or_else(Timestamp::now),
+        issued_at: Timestamp::from_second(payload.issued_at).map_err(|_| {
+            OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA request state is invalid.",
+            )
+        })?,
+        expires_at: Timestamp::from_second(payload.expires_at).map_err(|_| {
+            OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA request state is invalid.",
+            )
+        })?,
     }))
 }
 

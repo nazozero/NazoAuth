@@ -461,7 +461,7 @@ impl PromptNoneFixture {
             dpop_jkt: None,
             mtls_x5t_s256: None,
             issued_at: now,
-            expires_at: now + Duration::seconds(60),
+            expires_at: now + jiff::SignedDuration::from_secs(60),
         };
         self.dependencies
             .fixture

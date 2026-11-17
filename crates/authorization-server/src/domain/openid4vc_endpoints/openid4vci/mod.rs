@@ -527,9 +527,8 @@ impl ServerCredentialIssuerOperations {
             configuration_ids,
             credential_identifiers,
             dpop_jkt,
-            expires_at: jiff::Timestamp::new(claims.exp, 0).ok_or_else(|| {
-                vci_error(401, "invalid_token", "Access token expiry is invalid.")
-            })?,
+            expires_at: jiff::Timestamp::new(claims.exp, 0)
+                .map_err(|_| vci_error(401, "invalid_token", "Access token expiry is invalid."))?,
         };
         // The live retained projection already proves an identical grant exists.
         // Only a missing or changed projection needs the persistence transition.

@@ -779,7 +779,7 @@ mod tenant_resources;
 fn recovery_deadline_covers_historical_maximum_including_acceptance_skew_boundary() {
     let restored_at = jiff::Timestamp::new(2_000_000_000, 0).unwrap();
     let deadline = execution::recovery_not_before(restored_at);
-    assert_eq!((deadline - restored_at).as_secs(), 3661);
+    assert_eq!(deadline.duration_since(restored_at).as_secs(), 3661);
     for historical_ttl in [
         1,
         60,

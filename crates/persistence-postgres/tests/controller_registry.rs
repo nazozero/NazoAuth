@@ -194,7 +194,7 @@ async fn expiry_is_exactly_thirty_days_and_admission_fails_at_the_boundary() {
 
     // Fixed TTL is exact server-side math; no natural months, no drift.
     assert_eq!(
-        (slot.expires_at - slot.issued_at).as_secs(),
+        slot.expires_at.duration_since(slot.issued_at).as_secs(),
         CONTROLLER_KEY_TTL_SECONDS
     );
     assert_eq!(slot.status, ControllerSlotStatus::Active);
@@ -408,7 +408,10 @@ async fn rotate_keeps_count_and_identity_while_replacing_material() {
     assert_eq!(rotated.kid, kid_of(&[9u8; 32]));
     assert_eq!(rotated.issued_at, at(100));
     assert_eq!(
-        (rotated.expires_at - rotated.issued_at).as_secs(),
+        rotated
+            .expires_at
+            .duration_since(rotated.issued_at)
+            .as_secs(),
         CONTROLLER_KEY_TTL_SECONDS
     );
     assert_eq!(rotated.slot_index, first.slot_index);

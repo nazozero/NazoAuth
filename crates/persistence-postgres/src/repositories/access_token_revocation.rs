@@ -15,8 +15,8 @@ pub(super) struct NewAccessTokenRevocation {
     pub access_token_jti_blake3: String,
     pub client_id: Uuid,
     pub tenant_id: Uuid,
-    pub revoked_at: Timestamp,
-    pub expires_at: Timestamp,
+    pub revoked_at: jiff_diesel::Timestamp,
+    pub expires_at: jiff_diesel::Timestamp,
 }
 
 /// Converts a verified access-token `exp` into the revocation-fact retention
@@ -28,7 +28,7 @@ pub(super) fn access_token_revocation_deadline(
         .checked_add(jiff::SignedDuration::from_secs(
             MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
         ))
-        .ok_or_else(|| {
+        .map_err(|_| {
             RepositoryError::Consistency(
                 "access-token revocation deadline is not representable".to_owned(),
             )
@@ -54,17 +54,13 @@ pub(super) async fn upsert_access_token_revocations(
             access_token_revocations::access_token_jti_blake3,
         ))
         .do_update()
-        .set(
-            access_token_revocations::expires_at.eq((diesel::dsl::sql::<
-                diesel::sql_types::Timestamptz,
-            >(
-                "GREATEST(access_token_revocations.expires_at, EXCLUDED.expires_at)",
-            ))
-            .to_diesel()),
-        )
+        .set(access_token_revocations::expires_at.eq(diesel::dsl::sql::<
+            diesel::sql_types::Timestamptz,
+        >(
+            "GREATEST(access_token_revocations.expires_at, EXCLUDED.expires_at)",
+        )))
         .filter(
-            access_token_revocations::expires_at
-                .lt((excluded(access_token_revocations::expires_at)).to_diesel()),
+            access_token_revocations::expires_at.lt(excluded(access_token_revocations::expires_at)),
         )
         .execute(connection)
         .await
@@ -73,5 +69,3 @@ pub(super) async fn upsert_access_token_revocations(
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/access_token_revocation.rs"]
 mod tests;
-
-use jiff_diesel::ToDiesel as _;

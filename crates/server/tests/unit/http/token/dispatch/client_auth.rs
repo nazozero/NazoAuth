@@ -42,7 +42,7 @@ fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
         dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
         mtls_x5t_s256: None,
 
-        expires_at: jiff::Timestamp::now() + Duration::minutes(5),
+        expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     }
 }
 

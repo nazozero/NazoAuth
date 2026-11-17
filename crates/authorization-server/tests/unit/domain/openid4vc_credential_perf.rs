@@ -6,9 +6,9 @@ use std::{hint::black_box, path::PathBuf, time::Instant};
 
 fn settings() -> KeySettings {
     KeySettings {
-        rotation_interval: Duration::days(1),
-        prepublish_window: Duration::hours(1),
-        verification_grace: Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(1),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     }
 }
 
@@ -66,7 +66,7 @@ async fn create_fixture() -> Value {
         "tenant_id": tenant_id,
         "kid": kid,
         "issued_at": issued_at,
-        "expires_at": issued_at + Duration::minutes(50),
+        "expires_at": issued_at + jiff::SignedDuration::from_mins(50),
         "record": {
             "revision": record.revision,
             "public_metadata": record.public_metadata,

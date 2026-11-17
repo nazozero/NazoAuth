@@ -58,7 +58,7 @@ pub async fn revoke_issued_authorization_code_tokens(
             client.tenant_id,
             client.id,
             access_token_jti,
-            Timestamp::new(access_token_expires_at, 0),
+            Timestamp::from_second(access_token_expires_at).ok(),
             refresh_token_family_id,
         )
         .await

@@ -66,8 +66,8 @@ async fn put(
         subject_id: f.subject,
         credential_configuration_id: &f.configuration,
         claims,
-        valid_from: Some(jiff::Timestamp::now() - Duration::hours(1)),
-        valid_until: Some(jiff::Timestamp::now() + Duration::hours(1)),
+        valid_from: Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1)),
+        valid_until: Some(jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1)),
     })
     .await
 }

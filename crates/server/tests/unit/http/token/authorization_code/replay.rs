@@ -244,7 +244,7 @@ async fn token_authorization_code_reports_busy_failed_and_missing_states() {
 
     let expired_code = format!("code-{}", Uuid::now_v7());
     let mut expired_payload = payload_for_client(&client);
-    expired_payload.expires_at = Timestamp::now() - Duration::seconds(1);
+    expired_payload.expires_at = Timestamp::now() - jiff::SignedDuration::from_secs(1);
     fixture
         .store_code_state(
             &expired_code,
@@ -418,7 +418,7 @@ async fn committed_code_cleanup_success_failure_and_lost_ack_preserve_replay_rev
         let mut payload = payload_for_client(&client);
         payload.user_id = user.id;
         payload.scopes = vec!["accounts".to_owned()];
-        payload.expires_at = Timestamp::now() + Duration::minutes(5);
+        payload.expires_at = Timestamp::now() + jiff::SignedDuration::from_mins(5);
         fixture
             .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
             .await;

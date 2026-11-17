@@ -473,7 +473,7 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<Timestamp, Repos
             "Native SSO source fence does not match destination issuance".to_owned(),
         ));
     }
-    Timestamp::new(input.access_token_expires_at, 0).ok_or_else(|| {
+    Timestamp::new(input.access_token_expires_at, 0).map_err(|_| {
         RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
     })
 }

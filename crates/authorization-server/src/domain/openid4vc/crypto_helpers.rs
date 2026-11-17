@@ -31,7 +31,7 @@ pub(super) fn decoding_key_trust(
 }
 
 pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<jiff::Timestamp> {
-    jiff::Timestamp::new(value.get(name)?.as_i64()?, 0)
+    jiff::Timestamp::from_second(value.get(name)?.as_i64()?).ok()
 }
 
 pub(crate) fn jwk_to_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> {

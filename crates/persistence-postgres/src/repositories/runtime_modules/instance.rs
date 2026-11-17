@@ -128,8 +128,22 @@ pub(super) async fn compare_and_set_instance(
                         .map(revision)
                         .transpose()
                         .map_err(RuntimeTransactionError::Repository)?;
-                    let updated_at = Timestamp::from(change.next.updated_at);
-                    let drain_deadline = change.next.drain_deadline.map(Timestamp::from);
+                    let updated_at =
+                        Timestamp::try_from(change.next.updated_at).map_err(|error| {
+                            RuntimeTransactionError::Repository(RepositoryError::Consistency(
+                                format!("runtime update timestamp is out of range: {error}"),
+                            ))
+                        })?;
+                    let drain_deadline = change
+                        .next
+                        .drain_deadline
+                        .map(Timestamp::try_from)
+                        .transpose()
+                        .map_err(|error| {
+                            RuntimeTransactionError::Repository(RepositoryError::Consistency(
+                                format!("runtime drain deadline is out of range: {error}"),
+                            ))
+                        })?;
                     if change.expected_revision.is_some() {
                         diesel::update(runtime_module_instance_states::table.find((
                             repository.tenant_id(),

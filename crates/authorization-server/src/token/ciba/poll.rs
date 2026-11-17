@@ -208,7 +208,7 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
-    let Some(grant_expires_at) = jiff::Timestamp::new(ciba.expires_at, 0) else {
+    let Ok(grant_expires_at) = jiff::Timestamp::from_second(ciba.expires_at) else {
         tracing::error!("approved CIBA state has an unrepresentable expiry");
         return Err(OAuthEndpointError::token(
             ProtocolStatusCode::SERVICE_UNAVAILABLE,

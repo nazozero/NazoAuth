@@ -33,7 +33,7 @@ impl AnchorCheckpoint {
 }
 
 pub(super) fn age_seconds(now: Timestamp, value: Timestamp) -> anyhow::Result<i64> {
-    let age = (now - value).as_secs();
+    let age = now.duration_since(value).as_secs();
     if age < 0 {
         anyhow::bail!("audit anchor timestamp is in the future");
     }

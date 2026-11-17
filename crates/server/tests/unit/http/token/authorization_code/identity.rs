@@ -304,7 +304,9 @@ async fn authorization_code_legacy_payload_and_cache_only_marker_cannot_issue_or
                         None,
                     )),
                     access_token_jti: jti.clone(),
-                    access_token_expires_at: (Timestamp::now() + Duration::minutes(5)).as_second(),
+                    access_token_expires_at: (Timestamp::now()
+                        + jiff::SignedDuration::from_mins(5))
+                    .as_second(),
                     refresh_token_family_id: None,
                 },
             },

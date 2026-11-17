@@ -829,7 +829,11 @@ async fn accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_
     assert_eq!(commit.slot.kid, kid_of(&controller_key_for_slot(9)));
     assert_eq!(commit.slot.issued_at, at(12));
     assert_eq!(
-        (commit.slot.expires_at - commit.slot.issued_at).as_secs(),
+        commit
+            .slot
+            .expires_at
+            .duration_since(commit.slot.issued_at)
+            .as_secs(),
         CONTROLLER_KEY_TTL_SECONDS,
         "the recovered slot obeys the fixed 30-day expiry"
     );

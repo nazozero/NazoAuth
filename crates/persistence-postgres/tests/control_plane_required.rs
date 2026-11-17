@@ -250,7 +250,10 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
             assert_eq!(stored.expires_at, expected_expiry);
             assert_eq!(approval.expires_at, stored.expires_at);
             assert_eq!(
-                (stored.expires_at - stored.created_at).as_secs(),
+                stored
+                    .expires_at
+                    .duration_since(stored.created_at)
+                    .as_secs(),
                 IDENTITY_APPROVAL_TTL_SECONDS
             );
             let evidence = snapshot(&f).await;

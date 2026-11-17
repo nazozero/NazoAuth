@@ -530,7 +530,7 @@ pub(crate) async fn authorize_request_with_context(
     // the later code redemption window. A retained PAR still caps its lifetime.
     let consent_expires_at = (now + SignedDuration::from_mins(10))
         .min(pending_pushed_request_expires_at.unwrap_or(now + SignedDuration::from_mins(10)));
-    let consent_ttl_seconds = (consent_expires_at - now).as_secs();
+    let consent_ttl_seconds = consent_expires_at.duration_since(now).as_secs();
     if consent_ttl_seconds <= 0 {
         return authorization_oauth_error_redirect(
             context,

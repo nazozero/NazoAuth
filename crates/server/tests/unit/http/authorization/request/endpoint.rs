@@ -347,7 +347,7 @@ impl LiveAuthorizationFixture {
             dpop_jkt: None,
             mtls_x5t_s256: None,
             issued_at: jiff::Timestamp::now(),
-            expires_at: jiff::Timestamp::now() + Duration::seconds(60),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60),
         };
         valkey_set_ex(
             &self.state.valkey,
@@ -373,7 +373,7 @@ impl LiveAuthorizationFixture {
             dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
             mtls_x5t_s256: mtls_x5t_s256.map(ToOwned::to_owned),
             issued_at: jiff::Timestamp::now(),
-            expires_at: jiff::Timestamp::now() + Duration::seconds(60),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60),
         };
         valkey_set_ex(
             &self.state.valkey,

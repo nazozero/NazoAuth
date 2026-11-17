@@ -1,755 +1,448 @@
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs:80:43
-   |
-80 |             let intent_expires_at = now + Duration::days(365);
-   |                                           ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs:83:37
-   |
-83 |                     ready_at: now + Duration::seconds(1),
-   |                                     ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs:363:48
+error[E0599]: no associated function or constant named `try_seconds` found for struct `jiff::SignedDuration` in the current scope
+   --> crates/nazoauth/src/endpoints/admin/access_requests.rs:220:35
     |
-363 |                 expires_at: Timestamp::now() + Duration::seconds(request.expires_in as i64),
-    |                                                ^^^^^^^^ use of undeclared type `Duration`
-    |
-help: consider importing this struct
-    |
-  1 + use std::time::Duration;
-    |
-
-
-error[E0599]: no method named `as_secs` found for struct `jiff::Span` in the current scope
-   --> crates/authorization-server/src/authorization/request/flow.rs:533:58
-    |
-533 |     let consent_ttl_seconds = (consent_expires_at - now).as_secs();
-    |                                                          ^^^^^^^ method not found in `jiff::Span`
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs:530:61
-    |
-530 |             expires_at: jiff::Timestamp::new(claims.exp, 0).ok_or_else(|| {
-    |                                                             ^^^^^^^^^^
-    |
-help: there is a method `or_else` with a similar name
-    |
-530 -             expires_at: jiff::Timestamp::new(claims.exp, 0).ok_or_else(|| {
-530 +             expires_at: jiff::Timestamp::new(claims.exp, 0).or_else(|| {
-    |
+220 |         .and_then(SignedDuration::try_seconds)
+    |                                   ^^^^^^^^^^^ associated function or constant not found in `jiff::SignedDuration`
 
 
 error[E0308]: mismatched types
-   --> crates/authorization-server/src/token/ciba/poll.rs:211:9
+   --> crates/nazoauth/src/endpoints/admin/access_requests.rs:221:25
     |
-211 |     let Some(grant_expires_at) = jiff::Timestamp::new(ciba.expires_at, 0) else {
-    |         ^^^^^^^^^^^^^^^^^^^^^^   ---------------------------------------- this expression has type `Result<jiff::Timestamp, jiff::Error>`
-    |         |
-    |         expected `Result<Timestamp, Error>`, found `Option<_>`
+221 |         .and_then(|ttl| Timestamp::now().checked_add(ttl))
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<_>`, found `Result<Timestamp, Error>`
     |
-    = note: expected enum `Result<jiff::Timestamp, jiff::Error>`
-               found enum `std::option::Option<_>`
-
-
-error[E0593]: function is expected to take 1 argument, but it takes 0 arguments
-   --> crates/authorization-server/src/token/ciba/decision.rs:300:72
-    |
-300 |         issued_at: Timestamp::new(payload.issued_at, 0).unwrap_or_else(Timestamp::now),
-    |                                                         -------------- ^^^^^^^^^^^^^^ expected function that takes 1 argument
-    |                                                         |
-    |                                                         required by a bound introduced by this call
-    |
-note: required by a bound in `Result::<T, E>::unwrap_or_else`
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1613:4
-
-
-error[E0593]: function is expected to take 1 argument, but it takes 0 arguments
-   --> crates/authorization-server/src/token/ciba/decision.rs:301:74
-    |
-301 |         expires_at: Timestamp::new(payload.expires_at, 0).unwrap_or_else(Timestamp::now),
-    |                                                           -------------- ^^^^^^^^^^^^^^ expected function that takes 1 argument
-    |                                                           |
-    |                                                           required by a bound introduced by this call
-    |
-note: required by a bound in `Result::<T, E>::unwrap_or_else`
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1613:4
-
-
-error[E0308]: mismatched types
-   --> crates/authorization-server/src/token/issue/authorization_code_state.rs:61:13
-    |
- 57 |         .revoke_issued_tokens(
-    |          -------------------- arguments to this method are incorrect
-...
- 61 |             Timestamp::new(access_token_expires_at, 0),
-    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Timestamp>`, found `Result<Timestamp, Error>`
-    |
-    = note: expected enum `std::option::Option<jiff::Timestamp>`
+    = note: expected enum `std::option::Option<_>`
                found enum `Result<jiff::Timestamp, jiff::Error>`
-note: method defined here
-   --> crates/authorization-server-core/src/token_service.rs:876:18
+help: try wrapping the expression in `Some`
     |
-876 |     pub async fn revoke_issued_tokens(
-    |                  ^^^^^^^^^^^^^^^^^^^^
+221 |         .and_then(|ttl| Some(Timestamp::now().checked_add(ttl)))
+    |                         +++++                                 +
 
 
-error[E0277]: the trait bound `jiff::Timestamp: AsExpression<diesel::sql_types::Timestamptz>` is not satisfied
-  --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:19:9
-   |
-12 | #[derive(diesel::Insertable)]
-   |          ------------------ in this derive macro expansion
+error[E0369]: binary operation `<=` cannot be applied to type `jiff::Span`
+   --> crates/nazoauth/src/control/controller_registry.rs:40:18
+    |
+ 40 |     if remaining <= SignedDuration::ZERO {
+    |        --------- ^^ -------------------- jiff::SignedDuration
+    |        |
+    |        jiff::Span
+    |
+note: `jiff::Span` does not implement `PartialOrd<jiff::SignedDuration>`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:708:1
+    |
+708 | pub struct Span {
+    | ^^^^^^^^^^^^^^^ `jiff::Span` is defined in another crate
+
+
+error[E0369]: binary operation `<=` cannot be applied to type `jiff::Span`
+   --> crates/nazoauth/src/control/controller_registry.rs:42:25
+    |
+ 42 |     } else if remaining <= SignedDuration::from_hours(EXPIRY_URGENT_HOURS) {
+    |               --------- ^^ ----------------------------------------------- jiff::SignedDuration
+    |               |
+    |               jiff::Span
+    |
+note: `jiff::Span` does not implement `PartialOrd<jiff::SignedDuration>`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:708:1
+    |
+708 | pub struct Span {
+    | ^^^^^^^^^^^^^^^ `jiff::Span` is defined in another crate
+
+
+error[E0369]: binary operation `<=` cannot be applied to type `jiff::Span`
+   --> crates/nazoauth/src/control/controller_registry.rs:44:25
+    |
+ 44 |     } else if remaining <= SignedDuration::from_hours((EXPIRY_WARNING_DAYS) * 24) {
+    |               --------- ^^ ------------------------------------------------------ jiff::SignedDuration
+    |               |
+    |               jiff::Span
+    |
+note: `jiff::Span` does not implement `PartialOrd<jiff::SignedDuration>`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:708:1
+    |
+708 | pub struct Span {
+    | ^^^^^^^^^^^^^^^ `jiff::Span` is defined in another crate
+
+
+error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
+    --> crates/nazoauth/src/http/runtime_modules.rs:468:5
+     |
+ 468 |     Timestamp::from(value).to_string()
+     |     ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
+     |
+help: `jiff::Timestamp` implements trait `From<T>`
+    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
+     |
+2571 | impl From<Zoned> for Timestamp {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
 ...
-19 |     pub expires_at: Timestamp,
-   |         ^^^^^^^^^^ the trait `AsExpression<diesel::sql_types::Timestamptz>` is not implemented for `jiff::Timestamp`
-   |
-   = help: the following other types implement trait `AsExpression<T>`:
-             &'__expr PgTimestamp
-             &'__expr jiff_diesel::Timestamp
-             PgTimestamp
-             jiff_diesel::Timestamp
-             now
-   = note: this error originates in the derive macro `diesel::Insertable` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-
-error[E0593]: function is expected to take 1 argument, but it takes 0 arguments
-   --> crates/authorization-server/src/domain/mfa_profile.rs:310:81
-    |
-310 |                 let now = Timestamp::new(command.context.now, 0).unwrap_or_else(Timestamp::now);
-    |                                                                  -------------- ^^^^^^^^^^^^^^ expected function that takes 1 argument
-    |                                                                  |
-    |                                                                  required by a bound introduced by this call
-    |
-note: required by a bound in `Result::<T, E>::unwrap_or_else`
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1613:4
+2578 | impl<'a> From<&'a Zoned> for Timestamp {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
 
 
 error[E0308]: mismatched types
-  --> crates/authorization-server/src/domain/openid4vc/crypto_helpers.rs:34:5
-   |
-33 | pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<jiff::Timestamp> {
-   |                                                             ----------------------- expected `std::option::Option<jiff::Timestamp>` because of return type
-34 |     jiff::Timestamp::new(value.get(name)?.as_i64()?, 0)
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Timestamp>`, found `Result<Timestamp, Error>`
-   |
-   = note: expected enum `std::option::Option<jiff::Timestamp>`
-              found enum `Result<jiff::Timestamp, jiff::Error>`
-
-
-error[E0599]: no method named `num_seconds` found for struct `jiff::Span` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs:227:86
+   --> crates/persistence-postgres/src/repositories/authorization.rs:44:25
     |
-227 |                     let interval = u64::try_from((retry_at - jiff::Timestamp::now()).num_seconds())
-    |                                                                                      ^^^^^^^^^^^
+ 44 |             revoked_at: Timestamp::now(),
+    |                         ^^^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
     |
-help: there is a method `seconds` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:829:5
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
     |
-829 |     pub fn seconds<I: Into<i64>>(self, seconds: I) -> Span {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `as_secs` found for struct `jiff::Span` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs:146:26
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
     |
-145 |                     ttl_seconds: (authorization.expires_at - Timestamp::now())
-146 |                         .as_secs()
-    |                          ^^^^^^^ method not found in `jiff::Span`
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs:169:73
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
     |
-169 |             let expires_at = jiff::Timestamp::new(issued.expires_at, 0).ok_or_else(|| {
-    |                                                                         ^^^^^^^^^^
-    |
-help: there is a method `or_else` with a similar name
-    |
-169 -             let expires_at = jiff::Timestamp::new(issued.expires_at, 0).ok_or_else(|| {
-169 +             let expires_at = jiff::Timestamp::new(issued.expires_at, 0).or_else(|| {
-    |
-
-
-error[E0433]: cannot find type `Duration` in this scope
- --> crates/authorization-server/src/domain/openid4vc/../../../tests/unit/domain/openid4vc_credential_perf.rs:9:28
-  |
-9 |         rotation_interval: Duration::days(1),
-  |                            ^^^^^^^^ use of undeclared type `Duration`
-  |
-help: consider importing this struct
-  |
-3 + use std::time::Duration;
-  |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc/../../../tests/unit/domain/openid4vc_credential_perf.rs:10:28
-   |
-10 |         prepublish_window: Duration::hours(1),
-   |                            ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 3 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc/../../../tests/unit/domain/openid4vc_credential_perf.rs:11:29
-   |
-11 |         verification_grace: Duration::hours(1),
-   |                             ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 3 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc/../../../tests/unit/domain/openid4vc_credential_perf.rs:69:35
-   |
-69 |         "expires_at": issued_at + Duration::minutes(50),
-   |                                   ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 3 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs:80:43
-   |
-80 |             let intent_expires_at = now + Duration::days(365);
-   |                                           ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs:83:37
-   |
-83 |                     ready_at: now + Duration::seconds(1),
-   |                                     ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs:363:48
-    |
-363 |                 expires_at: Timestamp::now() + Duration::seconds(request.expires_in as i64),
-    |                                                ^^^^^^^^ use of undeclared type `Duration`
-    |
-help: consider importing this struct
-    |
-  1 + use std::time::Duration;
-    |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/../../../../tests/unit/domain/openid4vci_response.rs:204:32
-    |
-204 |             Timestamp::now() + Duration::minutes(5),
-    |                                ^^^^^^^^ use of undeclared type `Duration`
-    |
-help: consider importing this struct
-    |
-  1 + use std::time::Duration;
-    |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-   --> crates/authorization-server/src/token/../../tests/unit/token/device_application.rs:315:31
-    |
-315 |             expires_at: now + Duration::minutes(10),
-    |                               ^^^^^^^^ use of undeclared type `Duration`
-    |
-help: consider importing this struct
-    |
-  1 + use std::time::Duration;
-    |
-
-
-error[E0433]: cannot find type `Duration` in this scope
- --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:6:37
-  |
-6 |         next_retry_at(0, now, now + Duration::seconds(60)),
-  |                                     ^^^^^^^^ use of undeclared type `Duration`
-  |
-help: consider importing this struct
-  |
-1 + use std::time::Duration;
-  |
-
-
-error[E0433]: cannot find type `Duration` in this scope
- --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:7:20
-  |
-7 |         Some(now + Duration::seconds(5))
-  |                    ^^^^^^^^ use of undeclared type `Duration`
-  |
-help: consider importing this struct
-  |
-1 + use std::time::Duration;
-  |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:10:37
-   |
-10 |         next_retry_at(1, now, now + Duration::seconds(60)),
-   |                                     ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:11:20
-   |
-11 |         Some(now + Duration::seconds(15))
-   |                    ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:14:37
-   |
-14 |         next_retry_at(2, now, now + Duration::seconds(60)),
-   |                                     ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:15:20
-   |
-15 |         Some(now + Duration::seconds(45))
-   |                    ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:17:44
-   |
-17 |     assert_eq!(next_retry_at(3, now, now + Duration::seconds(60)), None);
-   |                                            ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:18:44
-   |
-18 |     assert_eq!(next_retry_at(2, now, now + Duration::seconds(45)), None);
-   |                                            ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:58:28
-   |
-58 |     let expires_at = now + Duration::seconds(60);
-   |                            ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:70:44
-   |
-70 |     assert_eq!(next_attempt_at, Some(now + Duration::seconds(15)));
-   |                                            ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/authorization-server/src/workers/../../tests/unit/workers/backchannel_logout.rs:79:44
-   |
-79 |     assert_eq!(next_attempt_at, Some(now + Duration::seconds(5)));
-   |                                            ^^^^^^^^ use of undeclared type `Duration`
-   |
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/desired.rs:173:38
-     |
- 173 |                     let updated_at = Timestamp::from(change.next.updated_at);
-     |                                      ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0433]: cannot find type `Duration` in this scope
-  --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:35:37
-   |
-35 |             expires_at: issued_at + Duration::hours(1),
-   |                                     ^^^^^^^^ use of undeclared type `Duration`
-   |
-   = note: struct `crate::pool::tests::Duration` exists but is inaccessible
-help: consider importing this struct
-   |
- 1 + use std::time::Duration;
-   |
-
-
-error[E0433]: cannot find type `Duration` in this scope
-   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:167:35
-    |
-167 |         current_expires_at: now + Duration::hours(1),
-    |                                   ^^^^^^^^ use of undeclared type `Duration`
-    |
-    = note: struct `crate::pool::tests::Duration` exists but is inaccessible
-help: consider importing this struct
-    |
-  1 + use std::time::Duration;
-    |
-
-
-error[E0599]: no method named `as_secs` found for struct `jiff::Span` in the current scope
-   --> crates/authorization-server/src/authorization/request/flow.rs:533:58
-    |
-533 |     let consent_ttl_seconds = (consent_expires_at - now).as_secs();
-    |                                                          ^^^^^^^ method not found in `jiff::Span`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/instance.rs:131:38
-     |
- 131 |                     let updated_at = Timestamp::from(change.next.updated_at);
-     |                                      ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/instance.rs:132:42
-     |
- 132 |                     let drain_deadline = change.next.drain_deadline.map(Timestamp::from);
-     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/instance.rs:132:73
-     |
- 132 |                     let drain_deadline = change.next.drain_deadline.map(Timestamp::from);
-     |                                                                         ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/audit.rs:455:22
-     |
- 455 |                 .eq((Timestamp::from(event.occurred_at)).to_diesel()),
-     |                      ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs:530:61
-    |
-530 |             expires_at: jiff::Timestamp::new(claims.exp, 0).ok_or_else(|| {
-    |                                                             ^^^^^^^^^^
-    |
-help: there is a method `or_else` with a similar name
-    |
-530 -             expires_at: jiff::Timestamp::new(claims.exp, 0).ok_or_else(|| {
-530 +             expires_at: jiff::Timestamp::new(claims.exp, 0).or_else(|| {
-    |
+ 44 |             revoked_at: Timestamp::now().into(),
+    |                                         +++++++
 
 
 error[E0308]: mismatched types
-   --> crates/authorization-server/src/token/ciba/poll.rs:211:9
+   --> crates/persistence-postgres/src/repositories/authorization.rs:45:25
     |
-211 |     let Some(grant_expires_at) = jiff::Timestamp::new(ciba.expires_at, 0) else {
-    |         ^^^^^^^^^^^^^^^^^^^^^^   ---------------------------------------- this expression has type `Result<jiff::Timestamp, jiff::Error>`
-    |         |
-    |         expected `Result<Timestamp, Error>`, found `Option<_>`
+ 45 |             expires_at: deadline,
+    |                         ^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
     |
-    = note: expected enum `Result<jiff::Timestamp, jiff::Error>`
-               found enum `std::option::Option<_>`
-
-
-error[E0593]: function is expected to take 1 argument, but it takes 0 arguments
-   --> crates/authorization-server/src/token/ciba/decision.rs:300:72
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
     |
-300 |         issued_at: Timestamp::new(payload.issued_at, 0).unwrap_or_else(Timestamp::now),
-    |                                                         -------------- ^^^^^^^^^^^^^^ expected function that takes 1 argument
-    |                                                         |
-    |                                                         required by a bound introduced by this call
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
     |
-note: required by a bound in `Result::<T, E>::unwrap_or_else`
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1613:4
-
-
-error[E0593]: function is expected to take 1 argument, but it takes 0 arguments
-   --> crates/authorization-server/src/token/ciba/decision.rs:301:74
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
     |
-301 |         expires_at: Timestamp::new(payload.expires_at, 0).unwrap_or_else(Timestamp::now),
-    |                                                           -------------- ^^^^^^^^^^^^^^ expected function that takes 1 argument
-    |                                                           |
-    |                                                           required by a bound introduced by this call
-    |
-note: required by a bound in `Result::<T, E>::unwrap_or_else`
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1613:4
-
-
-error[E0277]: the trait bound `jiff::Timestamp: AsExpression<diesel::sql_types::Timestamptz>` is not satisfied
-  --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:19:9
-   |
-12 | #[derive(diesel::Insertable)]
-   |          ------------------ in this derive macro expansion
-...
-19 |     pub expires_at: Timestamp,
-   |         ^^^^^^^^^^ the trait `AsExpression<diesel::sql_types::Timestamptz>` is not implemented for `jiff::Timestamp`
-   |
-   = help: the following other types implement trait `AsExpression<T>`:
-             &'__expr PgTimestamp
-             &'__expr jiff_diesel::Timestamp
-             PgTimestamp
-             jiff_diesel::Timestamp
-             now
-   = note: this error originates in the derive macro `diesel::Insertable` (in Nightly builds, run with -Z macro-backtrace for more info)
+ 45 |             expires_at: deadline.into(),
+    |                                 +++++++
 
 
 error[E0308]: mismatched types
-   --> crates/authorization-server/src/token/issue/authorization_code_state.rs:61:13
+   --> crates/persistence-postgres/src/repositories/authorization.rs:44:25
     |
- 57 |         .revoke_issued_tokens(
-    |          -------------------- arguments to this method are incorrect
-...
- 61 |             Timestamp::new(access_token_expires_at, 0),
-    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Timestamp>`, found `Result<Timestamp, Error>`
+ 44 |             revoked_at: Timestamp::now(),
+    |                         ^^^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
     |
-    = note: expected enum `std::option::Option<jiff::Timestamp>`
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+ 44 |             revoked_at: Timestamp::now().into(),
+    |                                         +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/authorization.rs:45:25
+    |
+ 45 |             expires_at: deadline,
+    |                         ^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+ 45 |             expires_at: deadline.into(),
+    |                                 +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:102:37
+    |
+102 |                         revoked_at: now,
+    |                                     ^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+102 |                         revoked_at: now.into(),
+    |                                        +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:103:37
+    |
+103 |                         expires_at: row.expires_at,
+    |                                     ^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+103 |                         expires_at: row.expires_at.into(),
+    |                                                   +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:116:41
+    |
+116 |                     if row.expires_at > existing.expires_at {
+    |                        --------------   ^^^^^^^^^^^^^^^^^^^ expected `jiff::Timestamp`, found `jiff_diesel::Timestamp`
+    |                        |
+    |                        expected because this is `jiff::Timestamp`
+    |
+    = note: `jiff_diesel::Timestamp` and `jiff::Timestamp` have similar names, but are actually distinct types
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff_diesel::Timestamp` into `jiff::Timestamp`
+    |
+116 |                     if row.expires_at > existing.expires_at.into() {
+    |                                                            +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:117:47
+    |
+117 |                         existing.expires_at = row.expires_at;
+    |                         -------------------   ^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |                         |
+    |                         expected due to the type of this binding
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+117 |                         existing.expires_at = row.expires_at.into();
+    |                                                             +++++++
+
+
+error[E0599]: no associated function or constant named `try_seconds` found for struct `jiff::SignedDuration` in the current scope
+   --> crates/nazoauth/src/endpoints/admin/access_requests.rs:220:35
+    |
+220 |         .and_then(SignedDuration::try_seconds)
+    |                                   ^^^^^^^^^^^ associated function or constant not found in `jiff::SignedDuration`
+
+
+error[E0308]: mismatched types
+   --> crates/nazoauth/src/endpoints/admin/access_requests.rs:221:25
+    |
+221 |         .and_then(|ttl| Timestamp::now().checked_add(ttl))
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<_>`, found `Result<Timestamp, Error>`
+    |
+    = note: expected enum `std::option::Option<_>`
                found enum `Result<jiff::Timestamp, jiff::Error>`
-note: method defined here
-   --> crates/authorization-server-core/src/token_service.rs:876:18
+help: try wrapping the expression in `Some`
     |
-876 |     pub async fn revoke_issued_tokens(
-    |                  ^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0593]: function is expected to take 1 argument, but it takes 0 arguments
-   --> crates/authorization-server/src/domain/mfa_profile.rs:310:81
-    |
-310 |                 let now = Timestamp::new(command.context.now, 0).unwrap_or_else(Timestamp::now);
-    |                                                                  -------------- ^^^^^^^^^^^^^^ expected function that takes 1 argument
-    |                                                                  |
-    |                                                                  required by a bound introduced by this call
-    |
-note: required by a bound in `Result::<T, E>::unwrap_or_else`
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1613:4
+221 |         .and_then(|ttl| Some(Timestamp::now().checked_add(ttl)))
+    |                         +++++                                 +
 
 
 error[E0308]: mismatched types
-  --> crates/authorization-server/src/domain/openid4vc/crypto_helpers.rs:34:5
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:102:37
+    |
+102 |                         revoked_at: now,
+    |                                     ^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+102 |                         revoked_at: now.into(),
+    |                                        +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:103:37
+    |
+103 |                         expires_at: row.expires_at,
+    |                                     ^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+103 |                         expires_at: row.expires_at.into(),
+    |                                                   +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:116:41
+    |
+116 |                     if row.expires_at > existing.expires_at {
+    |                        --------------   ^^^^^^^^^^^^^^^^^^^ expected `jiff::Timestamp`, found `jiff_diesel::Timestamp`
+    |                        |
+    |                        expected because this is `jiff::Timestamp`
+    |
+    = note: `jiff_diesel::Timestamp` and `jiff::Timestamp` have similar names, but are actually distinct types
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff_diesel::Timestamp` into `jiff::Timestamp`
+    |
+116 |                     if row.expires_at > existing.expires_at.into() {
+    |                                                            +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/token_issuance.rs:117:47
+    |
+117 |                         existing.expires_at = row.expires_at;
+    |                         -------------------   ^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |                         |
+    |                         expected due to the type of this binding
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+117 |                         existing.expires_at = row.expires_at.into();
+    |                                                             +++++++
+
+
+error[E0369]: binary operation `<=` cannot be applied to type `jiff::Span`
+   --> crates/nazoauth/src/control/controller_registry.rs:40:18
+    |
+ 40 |     if remaining <= SignedDuration::ZERO {
+    |        --------- ^^ -------------------- jiff::SignedDuration
+    |        |
+    |        jiff::Span
+    |
+note: `jiff::Span` does not implement `PartialOrd<jiff::SignedDuration>`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:708:1
+    |
+708 | pub struct Span {
+    | ^^^^^^^^^^^^^^^ `jiff::Span` is defined in another crate
+
+
+error[E0369]: binary operation `<=` cannot be applied to type `jiff::Span`
+   --> crates/nazoauth/src/control/controller_registry.rs:42:25
+    |
+ 42 |     } else if remaining <= SignedDuration::from_hours(EXPIRY_URGENT_HOURS) {
+    |               --------- ^^ ----------------------------------------------- jiff::SignedDuration
+    |               |
+    |               jiff::Span
+    |
+note: `jiff::Span` does not implement `PartialOrd<jiff::SignedDuration>`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:708:1
+    |
+708 | pub struct Span {
+    | ^^^^^^^^^^^^^^^ `jiff::Span` is defined in another crate
+
+
+error[E0369]: binary operation `<=` cannot be applied to type `jiff::Span`
+   --> crates/nazoauth/src/control/controller_registry.rs:44:25
+    |
+ 44 |     } else if remaining <= SignedDuration::from_hours((EXPIRY_WARNING_DAYS) * 24) {
+    |               --------- ^^ ------------------------------------------------------ jiff::SignedDuration
+    |               |
+    |               jiff::Span
+    |
+note: `jiff::Span` does not implement `PartialOrd<jiff::SignedDuration>`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:708:1
+    |
+708 | pub struct Span {
+    | ^^^^^^^^^^^^^^^ `jiff::Span` is defined in another crate
+
+
+error[E0599]: no method named `single` found for enum `Result<T, E>` in the current scope
+  --> crates/nazoauth/src/control/../../tests/unit/control/controller_registry.rs:27:10
    |
-33 | pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<jiff::Timestamp> {
-   |                                                             ----------------------- expected `std::option::Option<jiff::Timestamp>` because of return type
-34 |     jiff::Timestamp::new(value.get(name)?.as_i64()?, 0)
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Timestamp>`, found `Result<Timestamp, Error>`
-   |
-   = note: expected enum `std::option::Option<jiff::Timestamp>`
-              found enum `Result<jiff::Timestamp, jiff::Error>`
+26 |     Timestamp::new(1_800_000_000 + seconds, 0)
+27 |         .single()
+   |          ^^^^^^ method not found in `Result<jiff::Timestamp, jiff::Error>`
 
 
-error[E0599]: no method named `num_seconds` found for struct `jiff::Span` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs:227:86
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/mfa/remembered_devices.rs:73:86
     |
-227 |                     let interval = u64::try_from((retry_at - jiff::Timestamp::now()).num_seconds())
-    |                                                                                      ^^^^^^^^^^^
-    |
-help: there is a method `seconds` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/span.rs:829:5
-    |
-829 |     pub fn seconds<I: Into<i64>>(self, seconds: I) -> Span {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/desired.rs:173:38
-     |
- 173 |                     let updated_at = Timestamp::from(change.next.updated_at);
-     |                                      ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0599]: no method named `as_secs` found for struct `jiff::Span` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs:146:26
-    |
-145 |                     ttl_seconds: (authorization.expires_at - Timestamp::now())
-146 |                         .as_secs()
-    |                          ^^^^^^^ method not found in `jiff::Span`
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-   --> crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs:169:73
-    |
-169 |             let expires_at = jiff::Timestamp::new(issued.expires_at, 0).ok_or_else(|| {
-    |                                                                         ^^^^^^^^^^
-    |
-help: there is a method `or_else` with a similar name
-    |
-169 -             let expires_at = jiff::Timestamp::new(issued.expires_at, 0).ok_or_else(|| {
-169 +             let expires_at = jiff::Timestamp::new(issued.expires_at, 0).or_else(|| {
-    |
-
-
-error[E0277]: the trait bound `&jiff::Timestamp: AsExpression<diesel::sql_types::Timestamptz>` is not satisfied
-  --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:51:10
-   |
-51 |         .values(revocations)
-   |          ^^^^^^ the trait `AsExpression<diesel::sql_types::Timestamptz>` is not implemented for `&jiff::Timestamp`
-   |
-   = help: the following other types implement trait `AsExpression<T>`:
-             &'__expr PgTimestamp
-             &'__expr jiff_diesel::Timestamp
-             PgTimestamp
-             jiff_diesel::Timestamp
-             now
-
-
-error[E0599]: no method named `to_diesel` found for struct `SqlLiteral<ST, T>` in the current scope
-   --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:63:14
-    |
- 58 |             access_token_revocations::expires_at.eq((diesel::dsl::sql::<
- 59 |                 diesel::sql_types::Timestamptz,
- 60 |             >(
- 61 |                 "GREATEST(access_token_revocations.expires_at, EXCLUDED.expires_at)",
- 62 |             ))
- 63 |             .to_diesel()),
-    |              ^^^^^^^^^
+ 73 | ...                   .filter(user_mfa_remembered_devices::expires_at.le((now).to_diesel())),
+    |                                                                                ^^^^^^^^^
     |
 help: there is a method `to_sql` with a similar name, but with different arguments
    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
@@ -758,19 +451,14 @@ help: there is a method `to_sql` with a similar name, but with different argumen
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/instance.rs:131:38
+error[E0277]: the trait bound `jiff::Timestamp: From<web_time::SystemTime>` is not satisfied
+    --> crates/nazoauth/src/http/runtime_modules.rs:468:5
      |
- 131 |                     let updated_at = Timestamp::from(change.next.updated_at);
-     |                                      ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
+ 468 |     Timestamp::from(value).to_string()
+     |     ^^^^^^^^^ the trait `From<web_time::SystemTime>` is not implemented for `jiff::Timestamp`
      |
 help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
+    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
      |
 2571 | impl From<Zoned> for Timestamp {
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
@@ -779,426 +467,11 @@ help: `jiff::Timestamp` implements trait `From<T>`
      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
 
 
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/instance.rs:132:42
-     |
- 132 |                     let drain_deadline = change.next.drain_deadline.map(Timestamp::from);
-     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/runtime_modules/instance.rs:132:73
-     |
- 132 |                     let drain_deadline = change.next.drain_deadline.map(Timestamp::from);
-     |                                                                         ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0599]: no method named `to_diesel` found for struct `query_builder::upsert::on_conflict_actions::Excluded<T>` in the current scope
-   --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:67:70
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/mfa/totp.rs:225:66
     |
- 67 |                 .lt((excluded(access_token_revocations::expires_at)).to_diesel()),
-    |                                                                      ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-13152876307529603232.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/audit.rs:455:22
-     |
- 455 |                 .eq((Timestamp::from(event.occurred_at)).to_diesel()),
-     |                      ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0599]: no method named `to_diesel` found for reference `&Vec<jiff::Timestamp>` in the current scope
-   --> crates/persistence-postgres/src/repositories/audit.rs:124:27
-    |
-124 |             (&expires_at).to_diesel(),
-    |                           ^^^^^^^^^ method not found in `&Vec<jiff::Timestamp>`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:192:18
-    |
-192 |         .execute(&mut connection)
-    |          ------- ^^^^^^^^^^^^^^^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
-    |          |
-    |          required by a bound introduced by this call
-    |
-help: the following other types implement trait `diesel::serialize::ToSql<A, DB>`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/pg/types/date_and_time/mod.rs:122:1
-    |
-122 | impl ToSql<sql_types::Timestamptz, Pg> for PgTimestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PgTimestamp`
-    |
-   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/postgres.rs:27:1
-    |
- 27 | impl ToSql<sql_types::Timestamptz, Pg> for Timestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jiff_diesel::Timestamp`
-    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::serialize::ToSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, Pg>`
-    = note: required for `Bound<Nullable<Timestamptz>, Option<Timestamp>>` to implement `QueryFragment<Pg>`
-    = note: 3 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-6435710162924015639.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: AsExpression<diesel::sql_types::Timestamptz>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:215:68
-    |
-215 |                     backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at),
-    |                                                                    ^^ the trait `AsExpression<diesel::sql_types::Timestamptz>` is not implemented for `jiff::Timestamp`
-    |
-    = help: the following other types implement trait `AsExpression<T>`:
-              &'__expr PgTimestamp
-              &'__expr jiff_diesel::Timestamp
-              PgTimestamp
-              jiff_diesel::Timestamp
-              now
-
-
-error[E0277]: the trait bound `jiff::Timestamp: AppearsOnTable<backchannel_logout_deliveries::table>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:214:18
-    |
-214 |                 .set((
-    |                  ^^^ the trait `AppearsOnTable<backchannel_logout_deliveries::table>` is not implemented for `jiff::Timestamp`
-    |
-help: the trait `AppearsOnTable<backchannel_logout_deliveries::table>` is implemented for `backchannel_logout_deliveries::columns::star`
-   --> crates/persistence-postgres/src/schema.rs:337:1
-    |
-337 | / diesel::table! {
-338 | |     backchannel_logout_deliveries (id) {
-339 | |         id -> Uuid, tenant_id -> Uuid, client_id -> Uuid, client_public_id -> Varchar,
-340 | |         logout_uri -> Text, logout_token -> Text, operation_key -> Nullable<Varchar>, attempts -> Int4, next_attempt_at -> Timest...
-...   |
-345 | | }
-    | |_^
-    = note: required for `Eq<next_attempt_at, Timestamp>` to implement `AsChangeset`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-9878477977029459866.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-    = note: this error originates in the macro `diesel::table` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-
-error[E0277]: `jiff::Timestamp` is no valid SQL fragment for the `Pg` backend
-   --> crates/persistence-postgres/src/repositories/audit.rs:220:26
-    |
-220 |                 .execute(&mut connection)
-    |                  ------- ^^^^^^^^^^^^^^^ the trait `QueryFragment<Pg>` is not implemented for `jiff::Timestamp`
-    |                  |
-    |                  required by a bound introduced by this call
-    |
-    = note: this usually means that the `Pg` database system does not support 
-            this SQL syntax
-    = help: the following other types implement trait `QueryFragment<DB, SP>`:
-              BoxedLimitOffsetClause<'_, Pg>
-              DistinctOnClause<T>
-              LimitOffsetClause<L, O>
-              Only<S>
-              ParenthesisWrapper<T>
-              Tablesample<S, TSM>
-              diesel::pg::TransactionBuilder<'_, C>
-              diesel::pg::expression::array::ArrayLiteral<T, ST>
-            and 129 others
-    = note: required for `Assign<ColumnWrapperForUpdate<next_attempt_at>, Timestamp>` to implement `QueryFragment<Pg>`
-    = note: 2 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-5942882429515209305.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:220:26
-    |
-220 |                 .execute(&mut connection)
-    |                  ------- ^^^^^^^^^^^^^^^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
-    |                  |
-    |                  required by a bound introduced by this call
-    |
-help: the following other types implement trait `diesel::serialize::ToSql<A, DB>`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/pg/types/date_and_time/mod.rs:122:1
-    |
-122 | impl ToSql<sql_types::Timestamptz, Pg> for PgTimestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PgTimestamp`
-    |
-   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/postgres.rs:27:1
-    |
- 27 | impl ToSql<sql_types::Timestamptz, Pg> for Timestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jiff_diesel::Timestamp`
-    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::serialize::ToSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, Pg>`
-    = note: required for `Bound<Nullable<Timestamptz>, Option<Timestamp>>` to implement `QueryFragment<Pg>`
-    = note: 3 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-6435710162924015639.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:231:26
-    |
-231 |                 .execute(&mut connection)
-    |                  ------- ^^^^^^^^^^^^^^^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
-    |                  |
-    |                  required by a bound introduced by this call
-    |
-help: the following other types implement trait `diesel::serialize::ToSql<A, DB>`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/pg/types/date_and_time/mod.rs:122:1
-    |
-122 | impl ToSql<sql_types::Timestamptz, Pg> for PgTimestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PgTimestamp`
-    |
-   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/postgres.rs:27:1
-    |
- 27 | impl ToSql<sql_types::Timestamptz, Pg> for Timestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jiff_diesel::Timestamp`
-    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::serialize::ToSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, Pg>`
-    = note: required for `Bound<Nullable<Timestamptz>, Option<Timestamp>>` to implement `QueryFragment<Pg>`
-    = note: 3 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-6435710162924015639.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/audit.rs:346:49
-     |
- 346 |     .bind::<diesel::sql_types::Timestamptz, _>((Timestamp::from(event.occurred_at)).to_diesel())
-     |                                                 ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0599]: no method named `to_diesel` found for struct `Vec<jiff::Timestamp>` in the current scope
-   --> crates/persistence-postgres/src/repositories/audit_ledger.rs:205:28
-    |
-205 |             (occurred_ats).to_diesel(),
-    |                            ^^^^^^^^^ method not found in `Vec<jiff::Timestamp>`
-
-
-error[E0277]: the trait bound `(Text, Text, Jsonb, Timestamptz, Integer): CompatibleType<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:14
-    |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ^^^^ unsatisfied trait bound
-    |
-    = help: the trait `CompatibleType<(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32), _>` is not implemented for `(Text, Text, Jsonb, Timestamptz, Integer)`
-    = note: this is a mismatch between what your query returns and what your type expects the query to return
-    = note: the fields in your struct need to match the fields returned by your query in count, order and type
-    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-            on your struct `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)` and in your query `.select((std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)::as_select())` to get a better error message
-    = help: the following other types implement trait `CompatibleType<U, DB>`:
-              `Untyped` implements `CompatibleType<U, DB>`
-              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-            and 58 others
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-8845601729090370518.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(String, String, Value, Timestamp, i32): FromSqlRow<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:14
-    |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)`
-    |
-    = note: double check your type mappings via the documentation of `_`
-    = note: `diesel::sql_query` requires the loading target to column names for loading values.
-            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-17006236955931034630.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(Text, Text, Jsonb, Timestamptz, Integer): CompatibleType<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:62
-    |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ----                                            ^^^^^^^^^^^^^^^ unsatisfied trait bound
-    |              |
-    |              required by a bound introduced by this call
-    |
-    = help: the trait `CompatibleType<(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32), _>` is not implemented for `(Text, Text, Jsonb, Timestamptz, Integer)`
-    = note: this is a mismatch between what your query returns and what your type expects the query to return
-    = note: the fields in your struct need to match the fields returned by your query in count, order and type
-    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-            on your struct `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)` and in your query `.select((std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)::as_select())` to get a better error message
-    = help: the following other types implement trait `CompatibleType<U, DB>`:
-              `Untyped` implements `CompatibleType<U, DB>`
-              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-            and 58 others
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-note: required by a bound in `diesel_async::RunQueryDsl::load`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:314:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-307 |     fn load<'query, 'conn, U>(
-...
-314 |         Self: methods::LoadQuery<'query, Conn, U> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::load`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-8845601729090370518.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(String, String, Value, Timestamp, i32): FromSqlRow<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:62
-    |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ----                                            ^^^^^^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)`
-    |              |
-    |              required by a bound introduced by this call
-    |
-    = note: double check your type mappings via the documentation of `_`
-    = note: `diesel::sql_query` requires the loading target to column names for loading values.
-            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-note: required by a bound in `diesel_async::RunQueryDsl::load`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:314:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-307 |     fn load<'query, 'conn, U>(
-...
-314 |         Self: methods::LoadQuery<'query, Conn, U> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::load`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-10505601621836041662.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `&jiff::Timestamp: AsExpression<diesel::sql_types::Timestamptz>` is not satisfied
-  --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:51:10
-   |
-51 |         .values(revocations)
-   |          ^^^^^^ the trait `AsExpression<diesel::sql_types::Timestamptz>` is not implemented for `&jiff::Timestamp`
-   |
-   = help: the following other types implement trait `AsExpression<T>`:
-             &'__expr PgTimestamp
-             &'__expr jiff_diesel::Timestamp
-             PgTimestamp
-             jiff_diesel::Timestamp
-             now
-
-
-error[E0599]: no method named `to_diesel` found for struct `SqlLiteral<ST, T>` in the current scope
-   --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:63:14
-    |
- 58 |             access_token_revocations::expires_at.eq((diesel::dsl::sql::<
- 59 |                 diesel::sql_types::Timestamptz,
- 60 |             >(
- 61 |                 "GREATEST(access_token_revocations.expires_at, EXCLUDED.expires_at)",
- 62 |             ))
- 63 |             .to_diesel()),
-    |              ^^^^^^^^^
+225 |                     user_totp_credentials::confirmed_at.eq((now).to_diesel()),
+    |                                                                  ^^^^^^^^^
     |
 help: there is a method `to_sql` with a similar name, but with different arguments
    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
@@ -1207,235 +480,30 @@ help: there is a method `to_sql` with a similar name, but with different argumen
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0599]: no method named `to_diesel` found for struct `query_builder::upsert::on_conflict_actions::Excluded<T>` in the current scope
-   --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:67:70
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/mfa/totp.rs:261:48
     |
- 67 |                 .lt((excluded(access_token_revocations::expires_at)).to_diesel()),
-    |                                                                      ^^^^^^^^^
+261 |                     users::updated_at.eq((now).to_diesel()),
+    |                                                ^^^^^^^^^
     |
 help: there is a method `to_sql` with a similar name, but with different arguments
    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
     |
 239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-8359616156316350605.txt'
-    = note: consider using `--verbose` to print the full type name to the console
 
 
-error[E0599]: no method named `to_diesel` found for reference `&Vec<jiff::Timestamp>` in the current scope
-   --> crates/persistence-postgres/src/repositories/audit.rs:124:27
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/mfa/mod.rs:114:48
     |
-124 |             (&expires_at).to_diesel(),
-    |                           ^^^^^^^^^ method not found in `&Vec<jiff::Timestamp>`
-
-
-error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:192:18
+114 |                     users::updated_at.eq((now).to_diesel()),
+    |                                                ^^^^^^^^^
     |
-192 |         .execute(&mut connection)
-    |          ------- ^^^^^^^^^^^^^^^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
-    |          |
-    |          required by a bound introduced by this call
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
     |
-help: the following other types implement trait `diesel::serialize::ToSql<A, DB>`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/pg/types/date_and_time/mod.rs:122:1
-    |
-122 | impl ToSql<sql_types::Timestamptz, Pg> for PgTimestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PgTimestamp`
-    |
-   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/postgres.rs:27:1
-    |
- 27 | impl ToSql<sql_types::Timestamptz, Pg> for Timestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jiff_diesel::Timestamp`
-    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::serialize::ToSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, Pg>`
-    = note: required for `Bound<Nullable<Timestamptz>, Option<Timestamp>>` to implement `QueryFragment<Pg>`
-    = note: 3 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-8011515307960885837.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: AsExpression<diesel::sql_types::Timestamptz>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:215:68
-    |
-215 |                     backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at),
-    |                                                                    ^^ the trait `AsExpression<diesel::sql_types::Timestamptz>` is not implemented for `jiff::Timestamp`
-    |
-    = help: the following other types implement trait `AsExpression<T>`:
-              &'__expr PgTimestamp
-              &'__expr jiff_diesel::Timestamp
-              PgTimestamp
-              jiff_diesel::Timestamp
-              now
-
-
-error[E0277]: the trait bound `jiff::Timestamp: AppearsOnTable<backchannel_logout_deliveries::table>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:214:18
-    |
-214 |                 .set((
-    |                  ^^^ the trait `AppearsOnTable<backchannel_logout_deliveries::table>` is not implemented for `jiff::Timestamp`
-    |
-help: the trait `AppearsOnTable<backchannel_logout_deliveries::table>` is implemented for `backchannel_logout_deliveries::columns::star`
-   --> crates/persistence-postgres/src/schema.rs:337:1
-    |
-337 | / diesel::table! {
-338 | |     backchannel_logout_deliveries (id) {
-339 | |         id -> Uuid, tenant_id -> Uuid, client_id -> Uuid, client_public_id -> Varchar,
-340 | |         logout_uri -> Text, logout_token -> Text, operation_key -> Nullable<Varchar>, attempts -> Int4, next_attempt_at -> Timest...
-...   |
-345 | | }
-    | |_^
-    = note: required for `Eq<next_attempt_at, Timestamp>` to implement `AsChangeset`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-5307111256584447275.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-    = note: this error originates in the macro `diesel::table` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-
-error[E0277]: `jiff::Timestamp` is no valid SQL fragment for the `Pg` backend
-   --> crates/persistence-postgres/src/repositories/audit.rs:220:26
-    |
-220 |                 .execute(&mut connection)
-    |                  ------- ^^^^^^^^^^^^^^^ the trait `QueryFragment<Pg>` is not implemented for `jiff::Timestamp`
-    |                  |
-    |                  required by a bound introduced by this call
-    |
-    = note: this usually means that the `Pg` database system does not support 
-            this SQL syntax
-    = help: the following other types implement trait `QueryFragment<DB, SP>`:
-              BoxedLimitOffsetClause<'_, Pg>
-              DistinctOnClause<T>
-              LimitOffsetClause<L, O>
-              ParenthesisWrapper<T>
-              Tablesample<S, TSM>
-              diesel::pg::TransactionBuilder<'_, C>
-              diesel::pg::expression::array::ArrayLiteral<T, ST>
-              diesel::pg::expression::array::ArraySubselect<T, ST>
-            and 129 others
-    = note: required for `Assign<ColumnWrapperForUpdate<next_attempt_at>, Timestamp>` to implement `QueryFragment<Pg>`
-    = note: 2 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-2147579103376452779.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:220:26
-    |
-220 |                 .execute(&mut connection)
-    |                  ------- ^^^^^^^^^^^^^^^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
-    |                  |
-    |                  required by a bound introduced by this call
-    |
-help: the following other types implement trait `diesel::serialize::ToSql<A, DB>`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/pg/types/date_and_time/mod.rs:122:1
-    |
-122 | impl ToSql<sql_types::Timestamptz, Pg> for PgTimestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PgTimestamp`
-    |
-   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/postgres.rs:27:1
-    |
- 27 | impl ToSql<sql_types::Timestamptz, Pg> for Timestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jiff_diesel::Timestamp`
-    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::serialize::ToSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, Pg>`
-    = note: required for `Bound<Nullable<Timestamptz>, Option<Timestamp>>` to implement `QueryFragment<Pg>`
-    = note: 3 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-8011515307960885837.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit.rs:231:26
-    |
-231 |                 .execute(&mut connection)
-    |                  ------- ^^^^^^^^^^^^^^^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
-    |                  |
-    |                  required by a bound introduced by this call
-    |
-help: the following other types implement trait `diesel::serialize::ToSql<A, DB>`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/pg/types/date_and_time/mod.rs:122:1
-    |
-122 | impl ToSql<sql_types::Timestamptz, Pg> for PgTimestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PgTimestamp`
-    |
-   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/postgres.rs:27:1
-    |
- 27 | impl ToSql<sql_types::Timestamptz, Pg> for Timestamp {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `jiff_diesel::Timestamp`
-    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::serialize::ToSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, Pg>`
-    = note: required for `Bound<Nullable<Timestamptz>, Option<Timestamp>>` to implement `QueryFragment<Pg>`
-    = note: 3 redundant requirements hidden
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `QueryFragment<Pg>`
-    = note: required for `UpdateStatement<table, WhereClause<Grouped<And<Grouped<_>, _>>>, _>` to implement `diesel_async::methods::ExecuteDsl<_, Pg>`
-note: required by a bound in `diesel_async::RunQueryDsl::execute`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:198:15
-    |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-195 |     fn execute<'conn, 'query>(self, conn: &'conn mut Conn) -> Conn::ExecuteFuture<'conn, 'query>
-...
-198 |         Self: methods::ExecuteDsl<Conn> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::execute`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-8011515307960885837.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `jiff::Timestamp: From<SystemTime>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/audit.rs:346:49
-     |
- 346 |     .bind::<diesel::sql_types::Timestamptz, _>((Timestamp::from(event.occurred_at)).to_diesel())
-     |                                                 ^^^^^^^^^ the trait `From<SystemTime>` is not implemented for `jiff::Timestamp`
-     |
-help: `jiff::Timestamp` implements trait `From<T>`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:75:1
-     |
-  75 | impl From<Timestamp> for jiff::Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<jiff_diesel::Timestamp>`
-     |
-    ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:2571:1
-     |
-2571 | impl From<Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Zoned>`
-...
-2578 | impl<'a> From<&'a Zoned> for Timestamp {
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<&Zoned>`
-
-
-error[E0599]: no method named `to_diesel` found for struct `Vec<jiff::Timestamp>` in the current scope
-   --> crates/persistence-postgres/src/repositories/audit_ledger.rs:205:28
-    |
-205 |             (occurred_ats).to_diesel(),
-    |                            ^^^^^^^^^ method not found in `Vec<jiff::Timestamp>`
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
@@ -1490,106 +558,56 @@ help: there is a method `to_sql` with a similar name, but with different argumen
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0277]: the trait bound `(Text, Text, Jsonb, Timestamptz, Integer): CompatibleType<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:14
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/passkeys.rs:195:61
     |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ^^^^ unsatisfied trait bound
+195 |             user_passkey_credentials::last_used_at.eq((now).to_diesel()),
+    |                                                             ^^^^^^^^^
     |
-    = help: the trait `CompatibleType<(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32), _>` is not implemented for `(Text, Text, Jsonb, Timestamptz, Integer)`
-    = note: this is a mismatch between what your query returns and what your type expects the query to return
-    = note: the fields in your struct need to match the fields returned by your query in count, order and type
-    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-            on your struct `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)` and in your query `.select((std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)::as_select())` to get a better error message
-    = help: the following other types implement trait `CompatibleType<U, DB>`:
-              `Untyped` implements `CompatibleType<U, DB>`
-              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-            and 58 others
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-8960213111580614706.txt'
-    = note: consider using `--verbose` to print the full type name to the console
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
+    |
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0277]: the trait bound `(String, String, Value, Timestamp, i32): FromSqlRow<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:14
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/passkeys.rs:196:59
     |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)`
+196 |             user_passkey_credentials::updated_at.eq((now).to_diesel()),
+    |                                                           ^^^^^^^^^
     |
-    = note: double check your type mappings via the documentation of `_`
-    = note: `diesel::sql_query` requires the loading target to column names for loading values.
-            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-12463077436821861766.txt'
-    = note: consider using `--verbose` to print the full type name to the console
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
+    |
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0277]: the trait bound `(Text, Text, Jsonb, Timestamptz, Integer): CompatibleType<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:62
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/scim.rs:236:52
     |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ----                                            ^^^^^^^^^^^^^^^ unsatisfied trait bound
-    |              |
-    |              required by a bound introduced by this call
+236 |                         users::updated_at.eq((now).to_diesel()),
+    |                                                    ^^^^^^^^^
     |
-    = help: the trait `CompatibleType<(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32), _>` is not implemented for `(Text, Text, Jsonb, Timestamptz, Integer)`
-    = note: this is a mismatch between what your query returns and what your type expects the query to return
-    = note: the fields in your struct need to match the fields returned by your query in count, order and type
-    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-            on your struct `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)` and in your query `.select((std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)::as_select())` to get a better error message
-    = help: the following other types implement trait `CompatibleType<U, DB>`:
-              `Untyped` implements `CompatibleType<U, DB>`
-              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-            and 58 others
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-note: required by a bound in `diesel_async::RunQueryDsl::load`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:314:15
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
     |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-307 |     fn load<'query, 'conn, U>(
-...
-314 |         Self: methods::LoadQuery<'query, Conn, U> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::load`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-8960213111580614706.txt'
-    = note: consider using `--verbose` to print the full type name to the console
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0277]: the trait bound `(String, String, Value, Timestamp, i32): FromSqlRow<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/clients/query.rs:234:62
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/scim.rs:333:52
     |
-234 |             .load::<(String, String, Value, Timestamp, i32)>(&mut connection)
-    |              ----                                            ^^^^^^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, std::string::String, serde_json::Value, jiff::Timestamp, i32)`
-    |              |
-    |              required by a bound introduced by this call
+333 |                         users::updated_at.eq((now).to_diesel()),
+    |                                                    ^^^^^^^^^
     |
-    = note: double check your type mappings via the documentation of `_`
-    = note: `diesel::sql_query` requires the loading target to column names for loading values.
-            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-    = note: required for `SelectStatement<FromClause<JoinOn<_, _>>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, String, Value, Timestamp, i32)>`
-note: required by a bound in `diesel_async::RunQueryDsl::load`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:314:15
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
     |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-307 |     fn load<'query, 'conn, U>(
-...
-314 |         Self: methods::LoadQuery<'query, Conn, U> + 'query,
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::load`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-7394086902666074026.txt'
-    = note: consider using `--verbose` to print the full type name to the console
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
@@ -1616,6 +634,82 @@ help: there is a method `to_sql` with a similar name, but with different argumen
     |
 239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/scim.rs:401:52
+    |
+401 |                         users::deleted_at.eq((now).to_diesel()),
+    |                                                    ^^^^^^^^^
+    |
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
+    |
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/scim.rs:402:52
+    |
+402 |                         users::updated_at.eq((now).to_diesel()),
+    |                                                    ^^^^^^^^^
+    |
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
+    |
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
+   --> crates/persistence-postgres/src/repositories/scim.rs:520:54
+    |
+520 |     .set(oauth_refresh_families::revoked_at.eq((now).to_diesel()))
+    |                                                      ^^^^^^^^^
+    |
+help: there is a method `to_sql` with a similar name, but with different arguments
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
+    |
+239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+error[E0599]: no method named `to_diesel` found for tuple `(std::option::Option<jiff::Timestamp>,)` in the current scope
+   --> crates/persistence-postgres/src/repositories/security_state.rs:464:56
+    |
+464 |                     (after.map(|row| row.created_at),).to_diesel(),
+    |                                                        ^^^^^^^^^ method not found in `(std::option::Option<jiff::Timestamp>,)`
+    |
+help: one of the expressions' fields has a method of the same name
+    |
+464 |                     (after.map(|row| row.created_at),).0.to_diesel(),
+    |                                                        ++
+
+
+error[E0599]: no method named `len` found for type `!` in the current scope
+   --> crates/persistence-postgres/src/repositories/security_state.rs:472:38
+    |
+472 |                 let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;
+    |                                      ^^^
+    |
+help: there is a method `le` with a similar name, but with different arguments
+   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/cmp.rs:1520:4
+
+
+error[E0599]: no method named `iter` found for type `!` in the current scope
+   --> crates/persistence-postgres/src/repositories/security_state.rs:477:22
+    |
+476 |                 let (tenant_ids, digests): (Vec<_>, Vec<_>) = page
+477 |                     .iter()
+    |                      ^^^^ method not found in `!`
+
+
+error[E0599]: no method named `pop` found for type `!` in the current scope
+   --> crates/persistence-postgres/src/repositories/security_state.rs:503:26
+    |
+503 |                     page.pop().map(|row| ContractSweepCursor {
+    |                          ^^^ method not found in `!`
 
 
 error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
@@ -1720,58 +814,6 @@ error[E0599]: no method named `pop` found for type `!` in the current scope
     |                          ^^^ method not found in `!`
 
 
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/mfa/remembered_devices.rs:73:86
-    |
- 73 | ...                   .filter(user_mfa_remembered_devices::expires_at.le((now).to_diesel())),
-    |                                                                                ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/mfa/totp.rs:225:66
-    |
-225 |                     user_totp_credentials::confirmed_at.eq((now).to_diesel()),
-    |                                                                  ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/mfa/totp.rs:261:48
-    |
-261 |                     users::updated_at.eq((now).to_diesel()),
-    |                                                ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/mfa/mod.rs:114:48
-    |
-114 |                     users::updated_at.eq((now).to_diesel()),
-    |                                                ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
 error[E0277]: the trait bound `(Text, Uuid, Uuid, Timestamptz, BigInt, _): CompatibleType<_, _>` is not satisfied
    --> crates/persistence-postgres/src/repositories/tokens.rs:127:22
     |
@@ -1794,7 +836,7 @@ error[E0277]: the trait bound `(Text, Uuid, Uuid, Timestamptz, BigInt, _): Compa
               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
             and 58 others
     = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-16005792879528173186.txt'
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-8157737415631526073.txt'
     = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1808,7 +850,7 @@ error[E0277]: the trait bound `(std::string::String, uuid::Uuid, uuid::Uuid, jif
     = note: `diesel::sql_query` requires the loading target to column names for loading values.
             You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
     = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-15212027334068416911.txt'
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-16793041780777543084.txt'
     = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1843,7 +885,7 @@ note: required by a bound in `diesel_async::RunQueryDsl::first`
 ...
 586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-16005792879528173186.txt'
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-8157737415631526073.txt'
     = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1866,8 +908,54 @@ note: required by a bound in `diesel_async::RunQueryDsl::first`
 ...
 586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-15212027334068416911.txt'
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-16793041780777543084.txt'
     = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/tokens.rs:380:33
+    |
+380 |                     revoked_at: Timestamp::now(),
+    |                                 ^^^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+380 |                     revoked_at: Timestamp::now().into(),
+    |                                                 +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/tokens.rs:381:33
+    |
+381 |                     expires_at: deadline,
+    |                                 ^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+381 |                     expires_at: deadline.into(),
+    |                                         +++++++
 
 
 error[E0277]: the trait bound `(Uuid, Timestamptz): CompatibleType<(Uuid, Timestamp), _>` is not satisfied
@@ -1892,7 +980,7 @@ error[E0277]: the trait bound `(Uuid, Timestamptz): CompatibleType<(Uuid, Timest
                `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
              and 58 others
      = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-14510033834190354518.txt'
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-15053745001790462358.txt'
      = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1906,7 +994,7 @@ error[E0277]: the trait bound `(uuid::Uuid, jiff::Timestamp): FromSqlRow<_, _>` 
      = note: `diesel::sql_query` requires the loading target to column names for loading values.
              You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
      = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-9687545490544175116.txt'
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-12923408035461031954.txt'
      = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1943,7 +1031,7 @@ note: required by a bound in `diesel_async::RunQueryDsl::first`
 ...
  586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
      |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-13333185558189347519.txt'
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-6299989987809735252.txt'
      = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1968,7 +1056,7 @@ note: required by a bound in `diesel_async::RunQueryDsl::first`
 ...
  586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
      |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-9687545490544175116.txt'
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-12923408035461031954.txt'
      = note: consider using `--verbose` to print the full type name to the console
 
 
@@ -1990,140 +1078,274 @@ help: there is a method `to_sql` with a similar name, but with different argumen
      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/passkeys.rs:195:61
+error[E0277]: the trait bound `(Text, Uuid, Uuid, Timestamptz, BigInt, _): CompatibleType<_, _>` is not satisfied
+   --> crates/persistence-postgres/src/repositories/tokens.rs:127:22
     |
-195 |             user_passkey_credentials::last_used_at.eq((now).to_diesel()),
-    |                                                             ^^^^^^^^^
+127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
+    |                      ^^^^^ unsatisfied trait bound
     |
+    = help: the trait `CompatibleType<(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16), _>` is not implemented for `(Text, Uuid, Uuid, Timestamptz, BigInt, SmallInt)`
+    = note: this is a mismatch between what your query returns and what your type expects the query to return
+    = note: the fields in your struct need to match the fields returned by your query in count, order and type
+    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
+            on your struct `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)` and in your query `.select((std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)::as_select())` to get a better error message
+    = help: the following other types implement trait `CompatibleType<U, DB>`:
+              `Untyped` implements `CompatibleType<U, DB>`
+              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
+              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+            and 58 others
+    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-13635001511164805639.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0277]: the trait bound `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16): FromSqlRow<_, _>` is not satisfied
+   --> crates/persistence-postgres/src/repositories/tokens.rs:127:22
+    |
+127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
+    |                      ^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)`
+    |
+    = note: double check your type mappings via the documentation of `_`
+    = note: `diesel::sql_query` requires the loading target to column names for loading values.
+            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
+    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-17390004340223847640.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0277]: the trait bound `(Text, Uuid, Uuid, Timestamptz, BigInt, _): CompatibleType<_, _>` is not satisfied
+   --> crates/persistence-postgres/src/repositories/tokens.rs:127:73
+    |
+127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
+    |                      ----- required by a bound introduced by this call  ^^^^^^^^^^ unsatisfied trait bound
+    |
+    = help: the trait `CompatibleType<(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16), _>` is not implemented for `(Text, Uuid, Uuid, Timestamptz, BigInt, SmallInt)`
+    = note: this is a mismatch between what your query returns and what your type expects the query to return
+    = note: the fields in your struct need to match the fields returned by your query in count, order and type
+    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
+            on your struct `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)` and in your query `.select((std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)::as_select())` to get a better error message
+    = help: the following other types implement trait `CompatibleType<U, DB>`:
+              `Untyped` implements `CompatibleType<U, DB>`
+              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
+              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+            and 58 others
+    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
+note: required by a bound in `diesel_async::RunQueryDsl::first`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
+    |
+153 | pub trait RunQueryDsl<Conn>: Sized {
+...
+578 |     fn first<'query, 'conn, U>(
+...
+586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-13635001511164805639.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0277]: the trait bound `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16): FromSqlRow<_, _>` is not satisfied
+   --> crates/persistence-postgres/src/repositories/tokens.rs:127:73
+    |
+127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
+    |                      ----- required by a bound introduced by this call  ^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)`
+    |
+    = note: double check your type mappings via the documentation of `_`
+    = note: `diesel::sql_query` requires the loading target to column names for loading values.
+            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
+    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
+note: required by a bound in `diesel_async::RunQueryDsl::first`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
+    |
+153 | pub trait RunQueryDsl<Conn>: Sized {
+...
+578 |     fn first<'query, 'conn, U>(
+...
+586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
+    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-17390004340223847640.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/tokens.rs:380:33
+    |
+380 |                     revoked_at: Timestamp::now(),
+    |                                 ^^^^^^^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+380 |                     revoked_at: Timestamp::now().into(),
+    |                                                 +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/tokens.rs:381:33
+    |
+381 |                     expires_at: deadline,
+    |                                 ^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
+    |
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
+    |
+381 |                     expires_at: deadline.into(),
+    |                                         +++++++
+
+
+error[E0277]: the trait bound `(Uuid, Timestamptz): CompatibleType<(Uuid, Timestamp), _>` is not satisfied
+    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:18
+     |
+1135 |                 .first::<(Uuid, Timestamp)>(connection)
+     |                  ^^^^^ unsatisfied trait bound
+     |
+     = help: the trait `CompatibleType<(uuid::Uuid, jiff::Timestamp), _>` is not implemented for `(diesel::sql_types::Uuid, diesel::sql_types::Timestamptz)`
+     = note: this is a mismatch between what your query returns and what your type expects the query to return
+     = note: the fields in your struct need to match the fields returned by your query in count, order and type
+     = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
+             on your struct `(uuid::Uuid, jiff::Timestamp)` and in your query `.select((uuid::Uuid, jiff::Timestamp)::as_select())` to get a better error message
+     = help: the following other types implement trait `CompatibleType<U, DB>`:
+               `Untyped` implements `CompatibleType<U, DB>`
+               `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
+               `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+             and 58 others
+     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-100378854700914246.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0277]: the trait bound `(uuid::Uuid, jiff::Timestamp): FromSqlRow<_, _>` is not satisfied
+    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:18
+     |
+1135 |                 .first::<(Uuid, Timestamp)>(connection)
+     |                  ^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(uuid::Uuid, jiff::Timestamp)`
+     |
+     = note: double check your type mappings via the documentation of `_`
+     = note: `diesel::sql_query` requires the loading target to column names for loading values.
+             You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
+     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-4062721395563399318.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0277]: the trait bound `(Uuid, Timestamptz): CompatibleType<(Uuid, Timestamp), _>` is not satisfied
+    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:45
+     |
+1135 |                 .first::<(Uuid, Timestamp)>(connection)
+     |                  -----                      ^^^^^^^^^^ unsatisfied trait bound
+     |                  |
+     |                  required by a bound introduced by this call
+     |
+     = help: the trait `CompatibleType<(uuid::Uuid, jiff::Timestamp), _>` is not implemented for `(diesel::sql_types::Uuid, diesel::sql_types::Timestamptz)`
+     = note: this is a mismatch between what your query returns and what your type expects the query to return
+     = note: the fields in your struct need to match the fields returned by your query in count, order and type
+     = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
+             on your struct `(uuid::Uuid, jiff::Timestamp)` and in your query `.select((uuid::Uuid, jiff::Timestamp)::as_select())` to get a better error message
+     = help: the following other types implement trait `CompatibleType<U, DB>`:
+               `Untyped` implements `CompatibleType<U, DB>`
+               `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
+               `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
+             and 58 others
+     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
+note: required by a bound in `diesel_async::RunQueryDsl::first`
+    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
+     |
+ 153 | pub trait RunQueryDsl<Conn>: Sized {
+...
+ 578 |     fn first<'query, 'conn, U>(
+...
+ 586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-6006700559409754150.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0277]: the trait bound `(uuid::Uuid, jiff::Timestamp): FromSqlRow<_, _>` is not satisfied
+    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:45
+     |
+1135 |                 .first::<(Uuid, Timestamp)>(connection)
+     |                  -----                      ^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(uuid::Uuid, jiff::Timestamp)`
+     |                  |
+     |                  required by a bound introduced by this call
+     |
+     = note: double check your type mappings via the documentation of `_`
+     = note: `diesel::sql_query` requires the loading target to column names for loading values.
+             You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
+     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
+note: required by a bound in `diesel_async::RunQueryDsl::first`
+    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
+     |
+ 153 | pub trait RunQueryDsl<Conn>: Sized {
+...
+ 578 |     fn first<'query, 'conn, U>(
+...
+ 586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
+     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
+     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-4062721395563399318.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+
+error[E0599]: no method named `to_diesel` found for struct `SqlLiteral<ST, T>` in the current scope
+    --> crates/persistence-postgres/src/repositories/tokens.rs:1353:10
+     |
+1348 |         oauth_refresh_families::revoked_at.eq((diesel::dsl::sql::<
+1349 |             diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>,
+1350 |         >(
+1351 |             "COALESCE(revoked_at, CURRENT_TIMESTAMP)"
+1352 |         ))
+1353 |         .to_diesel()),
+     |          ^^^^^^^^^
+     |
 help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/passkeys.rs:196:59
-    |
-196 |             user_passkey_credentials::updated_at.eq((now).to_diesel()),
-    |                                                           ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/scim.rs:236:52
-    |
-236 |                         users::updated_at.eq((now).to_diesel()),
-    |                                                    ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/scim.rs:333:52
-    |
-333 |                         users::updated_at.eq((now).to_diesel()),
-    |                                                    ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/scim.rs:401:52
-    |
-401 |                         users::deleted_at.eq((now).to_diesel()),
-    |                                                    ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/scim.rs:402:52
-    |
-402 |                         users::updated_at.eq((now).to_diesel()),
-    |                                                    ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for struct `now` in the current scope
-   --> crates/persistence-postgres/src/repositories/scim.rs:520:54
-    |
-520 |     .set(oauth_refresh_families::revoked_at.eq((now).to_diesel()))
-    |                                                      ^^^^^^^^^
-    |
-help: there is a method `to_sql` with a similar name, but with different arguments
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-    |
-239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `to_diesel` found for tuple `(std::option::Option<jiff::Timestamp>,)` in the current scope
-   --> crates/persistence-postgres/src/repositories/security_state.rs:464:56
-    |
-464 |                     (after.map(|row| row.created_at),).to_diesel(),
-    |                                                        ^^^^^^^^^ method not found in `(std::option::Option<jiff::Timestamp>,)`
-    |
-help: one of the expressions' fields has a method of the same name
-    |
-464 |                     (after.map(|row| row.created_at),).0.to_diesel(),
-    |                                                        ++
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-  --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:31:10
-   |
-27 |     expires_at
-28 |         .checked_add(jiff::SignedDuration::from_secs(
-29 |             MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
-30 |         ))
-31 |         .ok_or_else(|| {
-   |          ^^^^^^^^^^
-   |
-help: there is a method `or_else` with a similar name
-   |
-31 -         .ok_or_else(|| {
-31 +         .or_else(|| {
-   |
-
-
-error[E0599]: no method named `len` found for type `!` in the current scope
-   --> crates/persistence-postgres/src/repositories/security_state.rs:472:38
-    |
-472 |                 let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;
-    |                                      ^^^
-    |
-help: there is a method `le` with a similar name, but with different arguments
-   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/cmp.rs:1520:4
+    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
+     |
+ 239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit_ledger.rs:927:63
+   --> crates/persistence-postgres/src/repositories/audit_ledger.rs:928:63
     |
-927 |         out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
+928 |         out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
     |             ---------------                                   ^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
     |             |
     |             required by a bound introduced by this call
@@ -2147,21 +1369,6 @@ note: required by a bound in `AstPass::<'a, 'b, DB>::push_bind_param`
 ...
 221 |         U: ToSql<T, DB> + ?Sized,
     |            ^^^^^^^^^^^^ required by this bound in `AstPass::<'a, 'b, DB>::push_bind_param`
-
-
-error[E0599]: no method named `iter` found for type `!` in the current scope
-   --> crates/persistence-postgres/src/repositories/security_state.rs:477:22
-    |
-476 |                 let (tenant_ids, digests): (Vec<_>, Vec<_>) = page
-477 |                     .iter()
-    |                      ^^^^ method not found in `!`
-
-
-error[E0599]: no method named `pop` found for type `!` in the current scope
-   --> crates/persistence-postgres/src/repositories/security_state.rs:503:26
-    |
-503 |                     page.pop().map(|row| ContractSweepCursor {
-    |                          ^^^ method not found in `!`
 
 
 error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
@@ -2249,19 +1456,6 @@ note: required by a bound in `AstPass::<'a, 'b, DB>::push_bind_param`
 ...
 221 |         U: ToSql<T, DB> + ?Sized,
     |            ^^^^^^^^^^^^ required by this bound in `AstPass::<'a, 'b, DB>::push_bind_param`
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-   --> crates/persistence-postgres/src/repositories/token_issuance.rs:476:54
-    |
-476 |     Timestamp::new(input.access_token_expires_at, 0).ok_or_else(|| {
-    |                                                      ^^^^^^^^^^
-    |
-help: there is a method `or_else` with a similar name
-    |
-476 -     Timestamp::new(input.access_token_expires_at, 0).ok_or_else(|| {
-476 +     Timestamp::new(input.access_token_expires_at, 0).or_else(|| {
-    |
 
 
 error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope
@@ -2346,245 +1540,79 @@ note: required by a bound in `AstPass::<'a, 'b, DB>::push_bind_param`
     |            ^^^^^^^^^^^^ required by this bound in `AstPass::<'a, 'b, DB>::push_bind_param`
 
 
-error[E0277]: the trait bound `(Text, Uuid, Uuid, Timestamptz, BigInt, _): CompatibleType<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/tokens.rs:127:22
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/access_token_revocation.rs:112:9
     |
-127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
-    |                      ^^^^^ unsatisfied trait bound
+112 |         revoked_at,
+    |         ^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
     |
-    = help: the trait `CompatibleType<(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16), _>` is not implemented for `(Text, Uuid, Uuid, Timestamptz, BigInt, SmallInt)`
-    = note: this is a mismatch between what your query returns and what your type expects the query to return
-    = note: the fields in your struct need to match the fields returned by your query in count, order and type
-    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-            on your struct `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)` and in your query `.select((std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)::as_select())` to get a better error message
-    = help: the following other types implement trait `CompatibleType<U, DB>`:
-              `Untyped` implements `CompatibleType<U, DB>`
-              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-            and 58 others
-    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-2647678542878386904.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16): FromSqlRow<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/tokens.rs:127:22
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
     |
-127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
-    |                      ^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)`
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
     |
-    = note: double check your type mappings via the documentation of `_`
-    = note: `diesel::sql_query` requires the loading target to column names for loading values.
-            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-14071424103538746167.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(Text, Uuid, Uuid, Timestamptz, BigInt, _): CompatibleType<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/tokens.rs:127:73
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
     |
-127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
-    |                      ----- required by a bound introduced by this call  ^^^^^^^^^^ unsatisfied trait bound
+112 |         revoked_at: revoked_at.into(),
+    |         +++++++++++           +++++++
+
+
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/access_token_revocation.rs:113:9
     |
-    = help: the trait `CompatibleType<(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16), _>` is not implemented for `(Text, Uuid, Uuid, Timestamptz, BigInt, SmallInt)`
-    = note: this is a mismatch between what your query returns and what your type expects the query to return
-    = note: the fields in your struct need to match the fields returned by your query in count, order and type
-    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-            on your struct `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)` and in your query `.select((std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)::as_select())` to get a better error message
-    = help: the following other types implement trait `CompatibleType<U, DB>`:
-              `Untyped` implements `CompatibleType<U, DB>`
-              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-            and 58 others
-    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
-note: required by a bound in `diesel_async::RunQueryDsl::first`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
+113 |         expires_at,
+    |         ^^^^^^^^^^ expected `jiff_diesel::Timestamp`, found `jiff::Timestamp`
     |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-578 |     fn first<'query, 'conn, U>(
-...
-586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
-    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-2647678542878386904.txt'
-    = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16): FromSqlRow<_, _>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/tokens.rs:127:73
+    = note: `jiff::Timestamp` and `jiff_diesel::Timestamp` have similar names, but are actually distinct types
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
     |
-127 |                     .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
-    |                      ----- required by a bound introduced by this call  ^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(std::string::String, uuid::Uuid, uuid::Uuid, jiff::Timestamp, i64, i16)`
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
     |
-    = note: double check your type mappings via the documentation of `_`
-    = note: `diesel::sql_query` requires the loading target to column names for loading values.
-            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Uuid, Uuid, Timestamp, i64, i16)>`
-note: required by a bound in `diesel_async::RunQueryDsl::first`
-   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff::Timestamp` into `jiff_diesel::Timestamp`
     |
-153 | pub trait RunQueryDsl<Conn>: Sized {
-...
-578 |     fn first<'query, 'conn, U>(
-...
-586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
-    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-14071424103538746167.txt'
-    = note: consider using `--verbose` to print the full type name to the console
+113 |         expires_at: expires_at.into(),
+    |         +++++++++++           +++++++
 
 
-error[E0277]: the trait bound `(Uuid, Timestamptz): CompatibleType<(Uuid, Timestamp), _>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:18
-     |
-1135 |                 .first::<(Uuid, Timestamp)>(connection)
-     |                  ^^^^^ unsatisfied trait bound
-     |
-     = help: the trait `CompatibleType<(uuid::Uuid, jiff::Timestamp), _>` is not implemented for `(diesel::sql_types::Uuid, diesel::sql_types::Timestamptz)`
-     = note: this is a mismatch between what your query returns and what your type expects the query to return
-     = note: the fields in your struct need to match the fields returned by your query in count, order and type
-     = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-             on your struct `(uuid::Uuid, jiff::Timestamp)` and in your query `.select((uuid::Uuid, jiff::Timestamp)::as_select())` to get a better error message
-     = help: the following other types implement trait `CompatibleType<U, DB>`:
-               `Untyped` implements `CompatibleType<U, DB>`
-               `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-               `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-             and 58 others
-     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-176319949300245444.txt'
-     = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(uuid::Uuid, jiff::Timestamp): FromSqlRow<_, _>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:18
-     |
-1135 |                 .first::<(Uuid, Timestamp)>(connection)
-     |                  ^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(uuid::Uuid, jiff::Timestamp)`
-     |
-     = note: double check your type mappings via the documentation of `_`
-     = note: `diesel::sql_query` requires the loading target to column names for loading values.
-             You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-1077862950579626468.txt'
-     = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(Uuid, Timestamptz): CompatibleType<(Uuid, Timestamp), _>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:45
-     |
-1135 |                 .first::<(Uuid, Timestamp)>(connection)
-     |                  -----                      ^^^^^^^^^^ unsatisfied trait bound
-     |                  |
-     |                  required by a bound introduced by this call
-     |
-     = help: the trait `CompatibleType<(uuid::Uuid, jiff::Timestamp), _>` is not implemented for `(diesel::sql_types::Uuid, diesel::sql_types::Timestamptz)`
-     = note: this is a mismatch between what your query returns and what your type expects the query to return
-     = note: the fields in your struct need to match the fields returned by your query in count, order and type
-     = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` 
-             on your struct `(uuid::Uuid, jiff::Timestamp)` and in your query `.select((uuid::Uuid, jiff::Timestamp)::as_select())` to get a better error message
-     = help: the following other types implement trait `CompatibleType<U, DB>`:
-               `Untyped` implements `CompatibleType<U, DB>`
-               `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`
-               `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-               `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`
-             and 58 others
-     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
-note: required by a bound in `diesel_async::RunQueryDsl::first`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
-     |
- 153 | pub trait RunQueryDsl<Conn>: Sized {
-...
- 578 |     fn first<'query, 'conn, U>(
-...
- 586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
-     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-2396123813734839219.txt'
-     = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0277]: the trait bound `(uuid::Uuid, jiff::Timestamp): FromSqlRow<_, _>` is not satisfied
-    --> crates/persistence-postgres/src/repositories/tokens.rs:1135:45
-     |
-1135 |                 .first::<(Uuid, Timestamp)>(connection)
-     |                  -----                      ^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(uuid::Uuid, jiff::Timestamp)`
-     |                  |
-     |                  required by a bound introduced by this call
-     |
-     = note: double check your type mappings via the documentation of `_`
-     = note: `diesel::sql_query` requires the loading target to column names for loading values.
-             You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`
-     = note: required for `SelectStatement<FromClause<table>, SelectClause<(_, _)>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, (uuid::Uuid, jiff::Timestamp)>`
-note: required by a bound in `diesel_async::RunQueryDsl::first`
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35
-     |
- 153 | pub trait RunQueryDsl<Conn>: Sized {
-...
- 578 |     fn first<'query, 'conn, U>(
-...
- 586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,
-     |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`
-     = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/eeeaccf491b7cf41/out/nazo_postgres-eeeaccf491b7cf41.long-type-1077862950579626468.txt'
-     = note: consider using `--verbose` to print the full type name to the console
-
-
-error[E0599]: no method named `to_diesel` found for struct `SqlLiteral<ST, T>` in the current scope
-    --> crates/persistence-postgres/src/repositories/tokens.rs:1353:10
-     |
-1348 |         oauth_refresh_families::revoked_at.eq((diesel::dsl::sql::<
-1349 |             diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>,
-1350 |         >(
-1351 |             "COALESCE(revoked_at, CURRENT_TIMESTAMP)"
-1352 |         ))
-1353 |         .to_diesel()),
-     |          ^^^^^^^^^
-     |
-help: there is a method `to_sql` with a similar name, but with different arguments
-    --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-2.3.14/src/query_builder/mod.rs:239:5
-     |
- 239 |     fn to_sql(&self, out: &mut DB::QueryBuilder, backend: &DB) -> QueryResult<()> {
-     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-  --> crates/persistence-postgres/src/repositories/access_token_revocation.rs:31:10
-   |
-27 |     expires_at
-28 |         .checked_add(jiff::SignedDuration::from_secs(
-29 |             MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
-30 |         ))
-31 |         .ok_or_else(|| {
-   |          ^^^^^^^^^^
-   |
-help: there is a method `or_else` with a similar name
-   |
-31 -         .ok_or_else(|| {
-31 +         .or_else(|| {
-   |
+error[E0308]: mismatched types
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/access_token_revocation.rs:463:29
+    |
+463 |         foreign.expires_at, foreign_expires_at,
+    |                             ^^^^^^^^^^^^^^^^^^ expected `jiff::Timestamp`, found `jiff_diesel::Timestamp`
+    |
+    = note: `jiff_diesel::Timestamp` and `jiff::Timestamp` have similar names, but are actually distinct types
+note: `jiff_diesel::Timestamp` is defined in crate `jiff_diesel`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-diesel-0.1.4/src/wrappers.rs:52:1
+    |
+ 52 | pub struct Timestamp(jiff::Timestamp);
+    | ^^^^^^^^^^^^^^^^^^^^
+note: `jiff::Timestamp` is defined in crate `jiff`
+   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/timestamp.rs:314:1
+    |
+314 | pub struct Timestamp {
+    | ^^^^^^^^^^^^^^^^^^^^
+help: call `Into::into` on this expression to convert `jiff_diesel::Timestamp` into `jiff::Timestamp`
+    |
+463 |         foreign.expires_at, foreign_expires_at.into(),
+    |                                               +++++++
 
 
 error[E0277]: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-   --> crates/persistence-postgres/src/repositories/audit_ledger.rs:927:63
+   --> crates/persistence-postgres/src/repositories/audit_ledger.rs:928:63
     |
-927 |         out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
+928 |         out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
     |             ---------------                                   ^ the trait `diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not implemented for `jiff::Timestamp`
     |             |
     |             required by a bound introduced by this call
@@ -2695,19 +1723,6 @@ note: required by a bound in `AstPass::<'a, 'b, DB>::push_bind_param`
 ...
 221 |         U: ToSql<T, DB> + ?Sized,
     |            ^^^^^^^^^^^^ required by this bound in `AstPass::<'a, 'b, DB>::push_bind_param`
-
-
-error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope
-   --> crates/persistence-postgres/src/repositories/token_issuance.rs:476:54
-    |
-476 |     Timestamp::new(input.access_token_expires_at, 0).ok_or_else(|| {
-    |                                                      ^^^^^^^^^^
-    |
-help: there is a method `or_else` with a similar name
-    |
-476 -     Timestamp::new(input.access_token_expires_at, 0).ok_or_else(|| {
-476 +     Timestamp::new(input.access_token_expires_at, 0).or_else(|| {
-    |
 
 
 error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope

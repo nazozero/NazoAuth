@@ -312,7 +312,7 @@ fn pending(ports: &Ports) {
             authorization_details: json!([]),
             interval_seconds: 5,
             issued_at: now,
-            expires_at: now + Duration::minutes(10),
+            expires_at: now + jiff::SignedDuration::from_mins(10),
         },
         last_poll_at: None,
         slow_down_count: 0,

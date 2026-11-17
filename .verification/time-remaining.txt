@@ -4,25 +4,8 @@ crates/authorization-server-object-store/src/s3.rs:248: .time(SystemTime::now())
 crates/authorization-server-object-store/src/s3.rs:314: .time(SystemTime::now())
 crates/authorization-server/src/domain/openid4vc/credential_crypto/mdoc.rs:76: MdocTimestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
 crates/authorization-server/src/domain/openid4vc/credential_crypto/mdoc.rs:78: let not_after = MdocTimestamp::from_unix_seconds(certificate.validity().not_after.timestamp())
-crates/authorization-server/src/domain/passkey.rs:100: .current(&SessionId::new(id), command.now.timestamp())
-crates/authorization-server/tests/unit/domain/openid4vc/credential_proofs.rs:72: "nonce":"expected-nonce", "iat":now.timestamp()});
-crates/authorization-server/tests/unit/domain/openid4vc/credential_proofs.rs:76: let mut claims = json!({"iat":now.timestamp(), "exp":now.timestamp()+300,
-crates/authorization-server/tests/unit/domain/openid4vc/credential_proofs.rs:120: "iat":now.timestamp(), "exp":now.timestamp()+300,
-crates/authorization-server/tests/unit/domain/openid4vc/credential_proofs.rs:382: "iat":now.timestamp(),"exp":now.timestamp()+300,"nonce":"expected-nonce","attested_keys":[jwk.clone()],
-crates/authorization-server/tests/unit/domain/openid4vc/credential_proofs.rs:385: json!({"aud":"https://issuer.example","iat":now.timestamp(),"nonce":"expected-nonce"});
 crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs:778: jiff::Timestamp::new(certificate.validity().not_before.timestamp(), 0).unwrap();
 crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs:780: jiff::Timestamp::new(certificate.validity().not_after.timestamp(), 0).unwrap();
-crates/authorization-server/tests/unit/token/device_application.rs:679: .prepare_decision("ABCD", Utc::now)
-crates/authorization-server/tests/unit/token/device_application.rs:691: Utc::now
-crates/authorization-server/tests/unit/token/device_application.rs:706: .prepare_decision("ABCD", Utc::now)
-crates/authorization-server/tests/unit/token/device_application.rs:736: .prepare_decision("ABCD", Utc::now)
-crates/authorization-server/tests/unit/token/device_application.rs:758: Utc::now,
-crates/authorization-server/tests/unit/token/device_application.rs:762: service.deny(&prepared, Utc::now).await
-crates/authorization-server/tests/unit/token/device_application.rs:799: .prepare_decision("ABCD", Utc::now)
-crates/authorization-server/tests/unit/token/device_application.rs:816: Utc::now
-crates/authorization-server/tests/unit/token/device_application.rs:854: .prepare_decision("ABCD", Utc::now)
-crates/authorization-server/tests/unit/token/device_application.rs:870: Utc::now
-crates/authorization-server/tests/unit/token/device_application.rs:891: .prepare_decision("ABCD", Utc::now)
 crates/crypto/tests/contract.rs:1253: ca.validity().not_after.timestamp() - ca.validity().not_before.timestamp(),
 crates/crypto/tests/contract.rs:1304: leaf.validity().not_after.timestamp() - leaf.validity().not_before.timestamp(),
 crates/crypto/tests/contract.rs:1329: assert_eq!(parsed_crl.last_update().timestamp(), NOW);
@@ -35,7 +18,6 @@ crates/identity/src/ports/avatar.rs:186: /// must not depend on asynchronous Dro
 crates/key-management/src/mtls_trust.rs:89: let not_before = Timestamp::new(certificate.validity().not_before.timestamp(), 0)
 crates/key-management/src/mtls_trust.rs:91: let not_after = Timestamp::new(certificate.validity().not_after.timestamp(), 0)
 crates/nazoauth/src/endpoints/admin/access_requests.rs:220: .and_then(SignedDuration::try_seconds)
-crates/nazoauth/src/endpoints/profile/avatar.rs:86: expires_at: start.expires_at.to_rfc3339(),
 crates/nazoauth/src/http/runtime_modules.rs:4: use web_time::{SystemTime, UNIX_EPOCH};
 crates/nazoauth/src/http/runtime_modules.rs:31: now: fn() -> SystemTime,
 crates/nazoauth/src/http/runtime_modules.rs:41: Self::with_clock(sessions, cookies, administration, SystemTime::now)
@@ -43,10 +25,7 @@ crates/nazoauth/src/http/runtime_modules.rs:49: now: fn() -> SystemTime,
 crates/nazoauth/src/http/runtime_modules.rs:463: fn timestamp(value: SystemTime) -> String {
 crates/nazoauth/src/http/runtime_modules.rs:471: fn unix_timestamp(value: SystemTime) -> i64 {
 crates/nazoauth/tests/unit/http/runtime_modules.rs:37: fn fixed_now() -> SystemTime {
-crates/nazoauth/tests/unit/http/runtime_modules.rs:155: created_at: DateTime::<Utc>::from(UNIX_EPOCH),
-crates/nazoauth/tests/unit/http/runtime_modules.rs:156: updated_at: DateTime::<Utc>::from(UNIX_EPOCH),
 crates/openid4vci/src/service.rs:385: // Proof validation is asynchronous; use a fresh clock value for
-crates/persistence-postgres/src/convert/identity.rs:179: updated_at: row.updated_at.timestamp(),
 crates/persistence-postgres/src/pool.rs:301: // diesel-async bridges Diesel's synchronous migration harness with
 crates/persistence-postgres/src/pool.rs:448: // The harness owns the connection while it runs its synchronous Diesel
 crates/persistence-postgres/src/repositories/mfa/mod.rs:163: occurred_at: std::time::SystemTime::now(),
@@ -64,8 +43,6 @@ crates/persistence-postgres/tests/runtime_modules.rs:55: updated_at: SystemTime:
 crates/persistence-postgres/tests/unit/repositories/audit.rs:38: occurred_at: std::time::SystemTime::now(),
 crates/persistence-postgres/tests/unit/repositories/audit.rs:93: occurred_at: std::time::SystemTime::now(),
 crates/persistence-postgres/tests/unit/repositories/runtime_modules.rs:71: updated_at: std::time::SystemTime::now(),
-crates/persistence-postgres/tests/unit/repositories/tokens.rs:46: authentication_context: valid_context(issued_at.timestamp()),
-crates/persistence-postgres/tests/unit/repositories/tokens.rs:78: let future_time = token_mut(&mut future_authentication).issued_at.timestamp() + 1;
 crates/runtime-capabilities/src/management.rs:2: use web_time::SystemTime;
 crates/runtime-capabilities/src/management.rs:23: pub drain_deadline: Option<SystemTime>,
 crates/runtime-capabilities/src/management.rs:25: pub updated_at: SystemTime,

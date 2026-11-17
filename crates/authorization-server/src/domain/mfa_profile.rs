@@ -307,15 +307,15 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 }
             };
             let remembered_device_token = if command.remember_device {
-                let now = Timestamp::new(command.context.now, 0).unwrap_or_else(Timestamp::now);
-                let ttl = i64::try_from(self.remembered_mfa_ttl_seconds).unwrap_or(i64::MAX);
+                let expires_at = Timestamp::from_second(command.context.now)
+                    .and_then(|now| {
+                        now.checked_add(std::time::Duration::from_secs(
+                            self.remembered_mfa_ttl_seconds,
+                        ))
+                    })
+                    .map_err(|_| MfaProfileError::new(MfaProfileErrorKind::RememberDeviceFailed))?;
                 self.mfa
-                    .remember_device(
-                        &account,
-                        &method,
-                        command.user_agent_hash,
-                        now + SignedDuration::from_secs(ttl),
-                    )
+                    .remember_device(&account, &method, command.user_agent_hash, expires_at)
                     .await
                     .map_err(|error| {
                         tracing::warn!(?error, "failed to remember MFA device");
