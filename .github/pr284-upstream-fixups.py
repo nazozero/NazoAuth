@@ -14,6 +14,9 @@ replace('crates/server/src/bootstrap/startup/services/factory.rs',
 replace('crates/server/tests/unit/bootstrap/startup/services/factory.rs',
         'assert_eq!(response.headers().get(name), Some(value));',
         'assert_eq!(response.headers().get(name.as_str()).map(|value| value.as_bytes()), Some(value.as_bytes()));')
+replace('crates/server/tests/unit/bootstrap.rs',
+        'assert_eq!(headers.get(name), Some(value));',
+        'assert_eq!(headers.get(name.as_str()).map(|value| value.as_bytes()), Some(value.as_bytes()));')
 
 # A pure conversion test covers every version independently of listener features.
 p = Path('crates/http-actix/tests/unit/transport.rs')
