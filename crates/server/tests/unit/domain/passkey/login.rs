@@ -1104,7 +1104,13 @@ async fn passkey_ceremony_cannot_finish_through_a_different_tenant_service() {
         &fixture.state.settings.identity.passkey.origin,
         Some(&passkey_user_handle(&user)),
     );
-    let replay_assertion = serde_json::to_value(&assertion).unwrap();
+    let replay_assertion = serde_json::json!({
+        "id": &assertion.id,
+        "authenticatorData": &assertion.authenticator_data,
+        "signature": &assertion.signature,
+        "clientDataJSON": &assertion.client_data_json,
+        "userHandle": &assertion.user_handle,
+    });
     let rejected = passkey_login_finish(
         Data::new(other_state),
         actix_web::test::TestRequest::default().to_http_request(),
