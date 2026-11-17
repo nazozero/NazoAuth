@@ -15,7 +15,7 @@ permissions:
 jobs:
   compile:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     permissions:
       contents: write
     env:
@@ -63,7 +63,7 @@ jobs:
           done
           cd nazo
           cargo fmt --all
-      - name: Compile all workspace targets and retain diagnostics
+      - name: Compile and enforce warnings-denied Clippy
         id: compile
         working-directory: nazo
         shell: bash
@@ -71,15 +71,34 @@ jobs:
           set +e
           mkdir -p ../evidence
           rustc -Vv > ../evidence/compiler.txt
-          cargo check --workspace --all-targets --all-features --keep-going --message-format=json > ../evidence/check.jsonl 2> ../evidence/check.stderr
+          cargo check --locked --workspace --all-targets --all-features --keep-going --message-format=json > ../evidence/check.jsonl 2> ../evidence/check.stderr
           result=$?
+          echo "$result" > ../evidence/compile.exit
+          printf '%s\n' 'cargo check --locked --workspace --all-targets --all-features --keep-going --message-format=json' > ../evidence/final-command.txt
+          cp ../evidence/check.jsonl ../evidence/final.jsonl
+          cp ../evidence/check.stderr ../evidence/final.stderr
+          if test "$result" = 0; then
+            # Apply compiler/linter machine-applicable cleanup only after type
+            # checking, then validate the resulting source afresh with -D warnings.
+            cargo clippy --fix --locked --workspace --all-targets --all-features --allow-dirty --allow-staged --keep-going > ../evidence/clippy-fix.log 2>&1
+            echo $? > ../evidence/clippy-fix.exit
+            cargo fmt --all > ../evidence/format.log 2>&1
+            format_result=$?
+            echo "$format_result" > ../evidence/format.exit
+            cargo clippy --locked --workspace --all-targets --all-features --keep-going --message-format=json -- -D warnings > ../evidence/final.jsonl 2> ../evidence/final.stderr
+            result=$?
+            echo "$result" > ../evidence/clippy.exit
+            printf '%s\n' 'cargo clippy --locked --workspace --all-targets --all-features --keep-going --message-format=json -- -D warnings' > ../evidence/final-command.txt
+            if test "$format_result" != 0; then result="$format_result"; fi
+          fi
           echo "$result" > ../evidence/check.exit
           echo "exit=$result" >> "$GITHUB_OUTPUT"
           python3 - <<'PY'
           import json
           from pathlib import Path
           errors, warnings = [], []
-          for line in Path('../evidence/check.jsonl').read_text().splitlines():
+          seen = set()
+          for line in Path('../evidence/final.jsonl').read_text().splitlines():
               try:
                   item = json.loads(line)
               except json.JSONDecodeError:
@@ -96,17 +115,28 @@ jobs:
                       for s in message.get('spans', []) if s['is_primary']
                   ],
               }
+              key = (summary['message'], tuple((s['file'], s['line']) for s in summary['sites']))
+              if key in seen:
+                  continue
+              seen.add(key)
               (errors if message['level'] == 'error' else warnings).append(summary)
           Path('../evidence/errors.json').write_text(json.dumps(errors, indent=2) + '\n')
           Path('../evidence/warnings.json').write_text(json.dumps(warnings, indent=2) + '\n')
-          rendered = '\n'.join(e.get('rendered') or e['message'] for e in errors)
-          Path('../evidence/errors.txt').write_text(rendered)
-          print(f'COMPILER DIAGNOSTICS: {len(errors)} errors; {len(warnings)} other messages')
-          print(rendered[:30000])
-          if not errors:
-              print('\n'.join(Path('../evidence/check.stderr').read_text().splitlines()[-35:]))
+          Path('../evidence/errors-full.txt').write_text('\n'.join(e.get('rendered') or e['message'] for e in errors))
+          compact = []
+          for error in errors:
+              compact.append(f"{error['code']}: {error['message']}")
+              for site in error['sites']:
+                  compact.append(f"  {site['file']}:{site['line']}: {site['label'] or ''}")
+                  for line in site['text']:
+                      compact.append('    ' + line['text'])
+              compact.append('')
+          Path('../evidence/errors.txt').write_text('\n'.join(compact))
+          print(f'UNIQUE DIAGNOSTICS: {len(errors)} errors; {len(warnings)} other messages')
+          print('\n'.join(compact)[:50000])
+          print('\n'.join(Path('../evidence/final.stderr').read_text().splitlines()[-20:]))
           PY
-      - name: Preserve candidate source and exact compilation status
+      - name: Preserve candidate source and exact validation status
         if: always() && steps.compile.outcome != 'skipped'
         working-directory: nazo
         shell: bash
@@ -121,12 +151,13 @@ jobs:
           from pathlib import Path
           result = {
               'status': 'PASS' if Path('../evidence/check.exit').read_text().strip() == '0' else 'FAIL',
-              'command': 'cargo check --workspace --all-targets --all-features --keep-going --message-format=json',
+              'command': Path('../evidence/final-command.txt').read_text().strip(),
+              'phase_exits': {p.stem: int(p.read_text()) for p in Path('../evidence').glob('*.exit')},
               'parent': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'source_tree_before_evidence': os.environ['SOURCE_TREE'],
               'workflow_run': os.environ['GITHUB_RUN_ID'],
               'errors': json.loads(Path('../evidence/errors.json').read_text()),
-              'stderr_tail': '\n'.join(Path('../evidence/check.stderr').read_text().splitlines()[-50:]),
+              'stderr_tail': '\n'.join(Path('../evidence/final.stderr').read_text().splitlines()[-30:]),
           }
           Path('.verification/jiff-check.json').write_text(json.dumps(result, indent=2) + '\n')
           shutil.copyfile('../evidence/errors.txt', '.verification/jiff-check.txt')
@@ -136,7 +167,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m 'refactor(time): stage native Jiff conversion with explicit verification status'
+            git commit -m 'refactor(time): validate native Jiff conversion with explicit compile and lint status'
             git push origin HEAD:refs/heads/validation/jiff-continuation-20261118
           fi
           git rev-parse HEAD HEAD^{tree} > ../evidence/candidate-identity.txt
@@ -148,6 +179,6 @@ jobs:
           path: evidence/
           retention-days: 7
           if-no-files-found: warn
-      - name: Enforce the compilation result
+      - name: Enforce the validation result
         if: always() && steps.compile.outcome != 'skipped'
         run: exit "$(cat evidence/check.exit)"
