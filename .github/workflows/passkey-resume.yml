@@ -1,0 +1,52 @@
+name: Passkey continuation audit
+
+on:
+  push:
+    branches: [audit/passkey-resume-20261118]
+    paths: [.github/workflows/passkey-resume.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 652507a91af36284a52b024db5bb0a573ed90967
+          path: nazo-passkey
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 294baefd71b60b96d91fd0ae4574b51221f2a06e
+          path: nazo-joint
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nazozero/passkey-auth-rs
+          ref: 46bbafa6dbd2b0aa01e184b0928cec9210b04e6e
+          path: passkey
+          persist-credentials: false
+      - name: Archive pinned sources and time-API inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          for source in nazo-passkey nazo-joint passkey; do
+            git -C "$source" rev-parse HEAD HEAD^{tree} > "evidence/$source.identity.txt"
+            git -C "$source" archive --format=tar HEAD | gzip -n > "evidence/$source.source.tar.gz"
+          done
+          {
+            echo 'Chrono/Jiff call sites in the frozen joint tree'
+            git -C nazo-joint grep -n -E 'chrono|jiff' -- '*.rs' '*Cargo.toml' || true
+          } > evidence/time-api-inventory.txt
+          sha256sum evidence/*.tar.gz > evidence/SHA256SUMS
+          cat evidence/*.identity.txt evidence/SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: passkey-continuation-sources
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: error
