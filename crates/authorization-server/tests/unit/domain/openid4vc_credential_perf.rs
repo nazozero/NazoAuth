@@ -12,11 +12,22 @@ fn settings() -> KeySettings {
     }
 }
 
-fn wrapping_keys() -> SigningKeyWrappingKeyRing {
-    SigningKeyWrappingKeyRing::new("synthetic-benchmark-only", [0x5a; 32], None).unwrap()
+fn wrapping_keys(key: [u8; 32]) -> SigningKeyWrappingKeyRing {
+    SigningKeyWrappingKeyRing::new("synthetic-benchmark-only", key, None).unwrap()
+}
+
+fn random_key() -> [u8; 32] {
+    use rand::TryRng as _;
+    let mut bytes = [0; 32];
+    rand::rngs::SysRng.try_fill_bytes(&mut bytes).unwrap();
+    bytes
 }
 
 async fn create_fixture() -> Value {
+    use p256::elliptic_curve::Generate as _;
+    let wrapping_key = random_key();
+    let holder_secret = p256::SecretKey::generate();
+    let holder = SigningKey::from_slice(&holder_secret.to_bytes()).unwrap();
     let tenant_id = uuid::Uuid::now_v7();
     let repository =
         Arc::new(nazo_key_management::test_support::MemorySigningKeyRepository::default());
@@ -25,7 +36,7 @@ async fn create_fixture() -> Value {
         None,
         tenant_id,
         repository.clone(),
-        wrapping_keys(),
+        wrapping_keys(wrapping_key),
     )
     .await
     .unwrap();
@@ -45,10 +56,14 @@ async fn create_fixture() -> Value {
         KeyPair::from_pem(&keyset.database_local_private_key_pem(&kid).unwrap()).unwrap();
     let certs = certificate_fixture_with_key("issuer.example", leaf_key);
     let issued_at = Utc::now();
-    let (encoded, transcript) = valid_mdoc_presentation(&certs, issued_at, None);
+    let (encoded, transcript) =
+        valid_mdoc_presentation_with_holder(&certs, issued_at, None, &holder);
     let record = repository.snapshot().unwrap();
     json!({
-        "version": 1,
+        "version": 2,
+        "wrapping_key": wrapping_key,
+        "holder_private_key": holder_secret.to_bytes().as_slice(),
+        "data_encryption_key": random_key(),
         "tenant_id": tenant_id,
         "kid": kid,
         "issued_at": issued_at,
@@ -69,7 +84,7 @@ async fn create_fixture() -> Value {
 }
 
 async fn load_fixture(fixture: &Value) -> Openid4vcCredentialCrypto {
-    assert_eq!(fixture["version"], 1);
+    assert_eq!(fixture["version"], 2);
     let repository =
         Arc::new(nazo_key_management::test_support::MemorySigningKeyRepository::default());
     let record = &fixture["record"];
@@ -87,7 +102,7 @@ async fn load_fixture(fixture: &Value) -> Openid4vcCredentialCrypto {
         None,
         serde_json::from_value(fixture["tenant_id"].clone()).unwrap(),
         repository,
-        wrapping_keys(),
+        wrapping_keys(serde_json::from_value(fixture["wrapping_key"].clone()).unwrap()),
     )
     .await
     .unwrap();
@@ -146,7 +161,10 @@ fn mdoc_embedded_api_latency() {
             fixture
         };
         let crypto = load_fixture(&fixture).await;
-        let holder = SigningKey::from_slice(&[83; 32]).unwrap();
+        let holder = SigningKey::from_slice(
+            &serde_json::from_value::<Vec<u8>>(fixture["holder_private_key"].clone()).unwrap(),
+        )
+        .unwrap();
         let point = holder.verifying_key().to_sec1_point(false);
         let mut input = mdoc_input(
             Some(HolderBinding::Jwk {

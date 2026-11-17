@@ -32,7 +32,8 @@ cargo test --release --locked -p nazo-oauth-server --lib \
 ```
 
 Create the output directory first. The first run creates a fixture containing only newly
-generated test material. Reuse that fixture for both revisions in isolated
+generated test material, including OS-generated wrapping, persistence and holder keys.
+Reuse that fixture for both revisions in isolated
 checkouts and build directories. A fixture expires after 50 minutes; if it has
 expired, regenerate it and repeat both revisions. The output includes the
 fixture digest, 100 warmup operations, nearest-rank P50/P95/P99, mean latency,
@@ -45,3 +46,50 @@ credential-status server, and do not replace complete HTTP latency evidence.
 The `code-quality` pull-request workflow runs the full test archive against
 PostgreSQL and Valkey; those correctness results are separate from performance
 measurements.
+
+## mdoc OID4VP HTTP response
+
+The ignored `mdoc_http_performance::mdoc_oid4vp_http_latency` test starts a real
+TCP listener and measures `POST /openid4vp/response/{id}` through the production
+Actix adapter and single-tenant NazoAuth facade. It uses PostgreSQL for retained
+requests and atomic encrypted-result persistence, and connects the production
+Valkey adapter. Each request has its own transaction, nonce, state and holder
+signature. An untimed HTTP GET verifies the persisted authenticated credential;
+the runner also checks that a completed transaction rejects replay.
+
+Build both revisions before creating the shared fixture described above. Use
+separate empty PostgreSQL databases and the same synthetic fixture, toolchain,
+build flags and machine for each revision. The runner applies the normal
+database migrations, provisions only its synthetic tenant, and seeds requests
+outside the timed interval. Reusing a fixture permits another run in its same
+database; a new fixture needs a new empty database because the synthetic issuer
+host is already bound to the previous tenant.
+
+```sh
+NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
+NAZO_MDOC_HTTP_OUTPUT="$PWD/perf/results/mdoc-http-candidate.json" \
+NAZO_MDOC_HTTP_VARIANT=candidate \
+NAZO_MDOC_HTTP_REVISION="$(git rev-parse HEAD)" \
+NAZO_TEST_DATABASE_URL=postgresql://localhost/nazo_mdoc_candidate \
+NAZO_TEST_VALKEY_URL=redis://localhost:6379/0 \
+cargo test --release --locked -p nazo-server --lib \
+  mdoc_http_performance::mdoc_oid4vp_http_latency \
+  -- --ignored --exact --nocapture --test-threads=1
+```
+
+The default is 100 warmup requests followed by 1,000 measured requests at client
+concurrency one, with one Actix worker and an HTTP/1.1 keep-alive connection.
+`NAZO_MDOC_HTTP_WARMUP` and `NAZO_MDOC_HTTP_SAMPLES` can increase those counts.
+Results include the shared fixture and deterministic request-corpus hashes,
+individual elapsed times, successful P50/P95/P99, failure details and replay
+outcome. A failed response or a mismatched persisted result never counts as a
+successful latency sample. Compare results only when both runs report
+`valid_performance_comparison: true` and matching corpus hashes.
+
+This workload exercises `direct_post`, issuer and holder ES256 verification,
+the Final SessionTranscript, X.509 path validation, DCQL and required certificate
+revocation checks against an explicit synthetic operator snapshot. It has no
+MSO status reference. It excludes wallet signing, request creation, TLS, JWE,
+HAIP policy, the native host's tenant router and remote status retrieval. The
+key repository is in memory and uses the same sealed test keyset in both runs;
+the measured verifier response does not sign a credential.

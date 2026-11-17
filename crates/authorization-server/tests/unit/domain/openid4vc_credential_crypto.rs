@@ -235,11 +235,22 @@ pub(super) fn valid_mdoc_presentation(
     signed_at: chrono::DateTime<Utc>,
     status: Option<ciborium::Value>,
 ) -> (String, Vec<u8>) {
+    use p256::elliptic_curve::Generate as _;
+    let secret = p256::SecretKey::generate();
+    let holder = SigningKey::from_slice(&secret.to_bytes()).expect("device signing key");
+    valid_mdoc_presentation_with_holder(certs, signed_at, status, &holder)
+}
+
+fn valid_mdoc_presentation_with_holder(
+    certs: &CertificateFixture,
+    signed_at: chrono::DateTime<Utc>,
+    status: Option<ciborium::Value>,
+    device_signing_key: &SigningKey,
+) -> (String, Vec<u8>) {
     let issuer_secret =
         p256::SecretKey::from_pkcs8_der(&certs.leaf_key.serialize_der()).expect("leaf private key");
     let issuer_signing_key =
         SigningKey::from_slice(&issuer_secret.to_bytes()).expect("leaf signing key");
-    let device_signing_key = SigningKey::from_slice(&[83; 32]).expect("device signing key");
     let device_point = device_signing_key.verifying_key().to_sec1_point(false);
     let device_key = CoseKeyBuilder::new_ec2_pub_key(
         iana::EllipticCurve::P_256,

@@ -34,6 +34,10 @@ pub(crate) mod test_support;
 mod facade_conformance;
 
 #[cfg(test)]
+#[path = "../tests/unit/mdoc_http_performance.rs"]
+mod mdoc_http_performance;
+
+#[cfg(test)]
 #[path = "../tests/support/endpoint_tests/mod.rs"]
 mod http;
 
