@@ -101,10 +101,17 @@ encrypted JWT credential responses with their durable retries through both
 transports. See the [adapter guide](../integration/rust-embedding.md).
 
 ```sh
+python3 scripts/check_native_transport.py
 cargo test -p nazo-http-actix --lib
 cargo test -p nazoauth --lib
 cargo test -p nazo-server --lib facade_conformance
 ```
+
+The dependency check verifies official Actix sources and rejects feature
+unification that re-enables inbound HTTP/2 or an affected h2 version. The direct
+TLS/mTLS test verifies HTTP/1.1 negotiation and rejection of an h2-only client.
+Metadata conversion tests preserve raw URI/header semantics; only body and replay
+bytes require pointer identity across the HTTP 0.2/1.x boundary.
 
 The last command uses the ordinary test PostgreSQL and Valkey configuration.
 The separate `test-support` feature is permitted only in the native host's dev

@@ -208,7 +208,10 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
     let app = actix_test::init_service(App::new().service(ui_static_files(root.clone()))).await;
     let assert_ui_security = |headers: &header::HeaderMap| {
         for (name, value) in nazoauth::integration::security_headers("/ui/") {
-            assert_eq!(headers.get(name), Some(value));
+            assert_eq!(
+                headers.get(name.as_str()).map(|value| value.as_bytes()),
+                Some(value.as_bytes())
+            );
         }
         assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
     };
@@ -1215,7 +1218,6 @@ async fn direct_tls_serves_real_https_and_mtls_without_trusting_forged_headers()
     let public_client = reqwest::Client::builder()
         .no_proxy()
         .https_only(true)
-        .http2_prior_knowledge()
         .tls_backend_rustls()
         .tls_certs_only([root_certificate.clone()])
         .build()
@@ -1241,7 +1243,7 @@ async fn direct_tls_serves_real_https_and_mtls_without_trusting_forged_headers()
         .await
         .unwrap();
     assert_eq!(sni, "localhost");
-    assert_eq!(public_response.version(), reqwest::Version::HTTP_2);
+    assert_eq!(public_response.version(), reqwest::Version::HTTP_11);
     assert_eq!(public_response.text().await.unwrap(), "none");
 
     let anonymous_mtls = public_client
@@ -1253,6 +1255,28 @@ async fn direct_tls_serves_real_https_and_mtls_without_trusting_forged_headers()
         "none",
         "missing client certificates must reach OAuth as absent credentials"
     );
+
+    // A default client can offer h2, but these native listeners only serve HTTP/1.1.
+    // A client requiring h2 must fail rather than reach the vulnerable legacy backend.
+    let h2_only = reqwest::Client::builder()
+        .no_proxy()
+        .https_only(true)
+        .http2_prior_knowledge()
+        .timeout(std::time::Duration::from_secs(2))
+        .tls_backend_rustls()
+        .tls_certs_only([root_certificate.clone()])
+        .build()
+        .unwrap();
+    for address in [public_address, mtls_address] {
+        assert!(
+            h2_only
+                .get(format!("https://localhost:{}/probe", address.port()))
+                .send()
+                .await
+                .is_err(),
+            "native listener accepted HTTP/2"
+        );
+    }
 
     let identity = reqwest::Identity::from_pem(material.client_identity_pem.as_bytes())
         .expect("test client identity");

@@ -32,7 +32,13 @@ async fn tenant_rejections_keep_security_headers_and_the_session_iframe_exceptio
                 tenant_rejection(test::TestRequest::get().uri(path).to_srv_request(), status);
             assert_eq!(response.status(), status);
             for (name, value) in nazoauth::integration::security_headers(path) {
-                assert_eq!(response.headers().get(name), Some(value));
+                assert_eq!(
+                    response
+                        .headers()
+                        .get(name.as_str())
+                        .map(|value| value.as_bytes()),
+                    Some(value.as_bytes())
+                );
             }
             assert_eq!(
                 response

@@ -12,9 +12,49 @@ Cargo does not inherit `[patch]` entries from dependencies. Copy the applicable
 `[patch.crates-io]` overrides from the [workspace manifest](../../Cargo.toml)
 for the NazoAuth revision being consumed into your own workspace-root
 `Cargo.toml`. The neutral facade requires the `mdoc-rs` and `passkey-auth`
-overrides. `nazo-http-actix` also requires both `actix-http` and `actix-router`
-overrides to share HTTP 1.x metadata types with the facade. The `rustls` override
-applies to the native host's shared-certificate TLS integration.
+overrides. Actix uses official registry releases and requires no Git override.
+The `rustls` override applies only to the native host's shared-certificate TLS
+integration; it is not a dependency of the neutral facade.
+
+### Native HTTP protocol support
+
+The shipped native host serves HTTP/1.1 on plaintext, TLS and mTLS listeners.
+Inbound HTTP/2 is disabled at build time while upstream Actix uses the affected
+`h2` 0.3 backend (RUSTSEC-2026-0258). There is no runtime switch to enable it.
+TLS 1.3, mTLS, keep-alive, streaming bodies and protocol authentication remain
+available. Clients requiring HTTP/2 must use a maintained HTTP/2-terminating
+proxy with an HTTP/1.1 upstream, or a separate safe host adapter. Proxy deployments
+must retain the documented connection-fact and certificate trust boundaries.
+Outbound clients may still use patched HTTP/2 dependencies.
+
+An Actix embedder should use `default-features = false` and explicitly enable its
+needed TLS, macros, compression and cookie features without `http2`. Cargo
+features are additive; another dependency can re-enable Actix HTTP/2. Run
+`python3 scripts/check_native_transport.py` to check the actual workspace graph,
+and verify negotiated ALPN in the deployment. Removing `.auto_h2c(false)` alone
+is not a protocol policy; that method only applies to cleartext connections.
+
+### Remaining override exit conditions
+
+The overrides are selected only in the workspace root; the facade does not
+select a fork or expose an alternative backend abstraction. Switching sources
+requires regenerating the lockfile, checking advisories and running the affected
+contracts; it is not guaranteed to be a drop-in operation.
+
+- `rustls`: the native connection-facts adapter uses `peer_certificates_shared`.
+  A stable release with this ownership API can replace the pin directly. With
+  the existing upstream borrowed `peer_certificates` API, own the chain once per
+  connection in this adapter and retain the same neutral certificate facts.
+  Re-run direct TLS/mTLS, certificate rotation and connection-boundary tests.
+- `mdoc-rs`: replace the pin only with a maintained, advisory-clean release that
+  supports the current `coset` and borrowed-transcript contracts. Re-run mdoc
+  issuance, presentation, signature and transcript tests, including WASM.
+- `passkey-auth`: require an advisory-clean cryptographic dependency graph and
+  equivalent registration, authentication and attestation behavior. Re-run
+  passkey and attestation tests before replacing the pin.
+
+No mutable upstream branch is used as a release dependency. Prefer official
+stable registry releases, with the resulting versions recorded in `Cargo.lock`.
 
 ## Build one tenant
 
@@ -108,11 +148,12 @@ Multipart avatar uploads remain incremental. Unrelated fields are skipped, and
 the avatar service enforces the uploaded file's bound. The adapter must not
 collect the entire multipart body or invent a total upload limit.
 
-The Actix adapter and facade use the same HTTP 1.x metadata types. URI components,
-header names and header values share their byte storage; owned response headers
-and bodies move into Actix. Header maps still allocate entry storage, and shared
-values retain their reference counts. No per-value ownership wrapper or URI text
-conversion is needed.
+The official Actix adapter uses HTTP 0.2 metadata while the facade uses HTTP 1.x.
+The adapter converts the head once, preserving original URI spelling, repeated
+header values, opaque bytes and sensitivity flags. URI/header metadata may be
+copied across these versions; this is not a fully zero-allocation boundary.
+Body chunks, completed response bodies and stored replay bytes retain their
+`Bytes` storage. No protocol re-parsing or per-value ownership wrapper is added.
 
 The four public discovery/authorization-server/protected-resource/JWKS metadata
 endpoints consume only `Origin`, `Access-Control-Request-Method` and

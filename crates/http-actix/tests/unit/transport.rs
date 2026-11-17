@@ -4,10 +4,13 @@ use futures_util::StreamExt as _;
 use nazoauth::integration::{BodyMode, conformance};
 
 fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
-    let mut builder =
-        awtest::TestRequest::with_uri(&request.uri().to_string()).method(request.method().clone());
+    let mut builder = awtest::TestRequest::with_uri(&request.uri().to_string())
+        .method(actix_web::http::Method::from_bytes(request.method().as_str().as_bytes()).unwrap());
     for (name, value) in request.headers() {
-        builder = builder.append_header((name.clone(), value.clone()));
+        let mut converted =
+            actix_web::http::header::HeaderValue::from_bytes(value.as_bytes()).unwrap();
+        converted.set_sensitive(value.is_sensitive());
+        builder = builder.append_header((name.as_str(), converted));
     }
     if let Some(peer) = request
         .extensions()
@@ -41,23 +44,26 @@ fn raw_request_targets_duplicate_values_and_body_storage_are_preserved() {
         expected
             .headers_mut()
             .append("x-context", http::HeaderValue::from_static("public"));
+        let mut binary = http::HeaderValue::from_bytes(&[b'x', 0x80, 0xff]).unwrap();
+        binary.set_sensitive(true);
+        expected.headers_mut().append("x-context", binary);
         let request = framework_request(&expected).to_http_request();
         let actual = forward_request(&request, expected.body().clone());
         conformance::assert_request(&expected, &actual);
         assert_eq!(actual.body().as_ptr(), expected.body().as_ptr());
         if let Some(path) = request.uri().path_and_query() {
             assert_eq!(
-                actual.uri().path_and_query().unwrap().as_str().as_ptr(),
-                path.as_str().as_ptr(),
+                actual.uri().path_and_query().unwrap().as_str(),
+                path.as_str(),
             );
         }
         for name in request.headers().keys() {
             for (source, target) in request
                 .headers()
-                .get_all(name)
+                .get_all(name.as_str())
                 .zip(actual.headers().get_all(name.as_str()).iter())
             {
-                assert_eq!(source.as_bytes().as_ptr(), target.as_bytes().as_ptr());
+                assert_eq!(source.as_bytes(), target.as_bytes());
                 assert_eq!(source.is_sensitive(), target.is_sensitive());
             }
         }
@@ -168,16 +174,16 @@ async fn registered_request_conversion_obeys_resource_head_requirements() {
         conformance::assert_request(&expected, &actual);
         assert_eq!(actual.body().as_ptr(), expected.body().as_ptr());
         assert_eq!(
-            actual.uri().path_and_query().unwrap().as_str().as_ptr(),
-            original.uri().path_and_query().unwrap().as_str().as_ptr(),
+            actual.uri().path_and_query().unwrap().as_str(),
+            original.uri().path_and_query().unwrap().as_str(),
         );
         for name in actual.headers().keys() {
             for (source, target) in original
                 .headers()
-                .get_all(name)
+                .get_all(name.as_str())
                 .zip(actual.headers().get_all(name.as_str()).iter())
             {
-                assert_eq!(source.as_bytes().as_ptr(), target.as_bytes().as_ptr());
+                assert_eq!(source.as_bytes(), target.as_bytes());
                 assert_eq!(source.is_sensitive(), target.is_sensitive());
             }
         }
@@ -193,6 +199,9 @@ async fn production_response_presenters_survive_conversion_without_body_copy() {
         expected
             .headers_mut()
             .append("x-context", http::HeaderValue::from_static("public"));
+        let mut binary = http::HeaderValue::from_bytes(&[b'x', 0x80, 0xff]).unwrap();
+        binary.set_sensitive(true);
+        expected.headers_mut().append("x-context", binary);
         let pointer = expected.body().as_ptr();
         let forwarded = forward_response(expected.clone());
         for name in expected.headers().keys() {
@@ -202,7 +211,7 @@ async fn production_response_presenters_survive_conversion_without_body_copy() {
                 .iter()
                 .zip(forwarded.headers().get_all(name.as_str()))
             {
-                assert_eq!(source.as_bytes().as_ptr(), target.as_bytes().as_ptr());
+                assert_eq!(source.as_bytes(), target.as_bytes());
                 assert_eq!(source.is_sensitive(), target.is_sensitive());
             }
         }
@@ -233,7 +242,10 @@ async fn every_manifest_binding_reaches_the_production_forwarder() {
     .await;
     for (route, request) in conformance::registration_requests() {
         let response = awtest::call_service(&app, framework_request(&request).to_request()).await;
-        assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
         assert!(response.request().match_pattern().is_none());
         let matched = nazoauth::integration::route_for_path(response.request().uri().path())
             .expect("canonical path retains its transport metadata");
@@ -244,7 +256,9 @@ async fn every_manifest_binding_reaches_the_production_forwarder() {
             matched.path
         );
         assert_eq!(
-            matched.body(response.request().method()),
+            matched.body(
+                &http::Method::from_bytes(response.request().method().as_str().as_bytes()).unwrap()
+            ),
             route.body(request.method())
         );
     }
@@ -253,7 +267,7 @@ async fn every_manifest_binding_reaches_the_production_forwarder() {
         awtest::TestRequest::get().uri("/ui/ping").to_request(),
     )
     .await;
-    assert_eq!(native.status(), http::StatusCode::ACCEPTED);
+    assert_eq!(native.status(), actix_web::http::StatusCode::ACCEPTED);
     assert_eq!(
         native.request().match_pattern().as_deref(),
         Some("/ui/ping")
@@ -284,7 +298,7 @@ async fn every_manifest_binding_reaches_the_production_forwarder() {
         // forwarder; the facade owns their final status and CORS policy.
         assert_eq!(
             response.status(),
-            http::StatusCode::INTERNAL_SERVER_ERROR,
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
             "{path}"
         );
         assert!(response.request().match_pattern().is_none(), "{path}");
@@ -467,4 +481,21 @@ async fn connection_facts_come_from_the_connection_and_ignore_proxy_claims() {
     handle.stop(true).await;
     running.await.unwrap().unwrap();
     assert!(response.starts_with(b"HTTP/1.1 200 OK\r\n"));
+}
+
+#[test]
+fn metadata_version_conversion_preserves_all_supported_versions() {
+    use actix_web::http::Version;
+    for (native, standard) in [
+        (Version::HTTP_09, http::Version::HTTP_09),
+        (Version::HTTP_10, http::Version::HTTP_10),
+        (Version::HTTP_11, http::Version::HTTP_11),
+        (Version::HTTP_2, http::Version::HTTP_2),
+        (Version::HTTP_3, http::Version::HTTP_3),
+    ] {
+        let request = awtest::TestRequest::default()
+            .version(native)
+            .to_http_request();
+        assert_eq!(forward_request(&request, Bytes::new()).version(), standard);
+    }
 }

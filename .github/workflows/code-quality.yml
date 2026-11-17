@@ -167,6 +167,9 @@ jobs:
           -v ON_ERROR_STOP=1
           -c 'CREATE DATABASE nazo_audit_test'
 
+      - name: Check native transport dependencies
+        run: python3 scripts/check_native_transport.py
+
       - name: Format
         run: cargo fmt --check
 
@@ -250,6 +253,9 @@ jobs:
         run: python3 scripts/ci_build_jobs.py >> "$GITHUB_ENV"
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Check native transport dependencies
+        run: python3 scripts/check_native_transport.py
+
       - name: Format
         run: cargo fmt --check
       - name: Clippy all targets

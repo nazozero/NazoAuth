@@ -4,7 +4,7 @@ use actix_web::dev::{Extensions, ServiceRequest, ServiceResponse};
 use actix_web::error::ErrorRequestTimeout;
 use actix_web::http::StatusCode;
 use actix_web::middleware::{Next, from_fn};
-use actix_web::{App, Error, HttpResponse, HttpServer, web};
+use actix_web::{App, Error, HttpServer, web};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -66,11 +66,13 @@ fn direct_tls_host_matches(server_name: Option<&str>, host: &str) -> bool {
 }
 
 fn tenant_rejection(request: ServiceRequest, status: StatusCode) -> ServiceResponse {
-    let mut response = HttpResponse::new(status);
+    let mut response = http::Response::new(bytes::Bytes::new());
+    *response.status_mut() =
+        http::StatusCode::from_u16(status.as_u16()).expect("validated Actix status");
     for (name, value) in nazoauth::integration::security_headers(request.path()) {
         response.headers_mut().insert(name.clone(), value.clone());
     }
-    request.into_response(response)
+    request.into_response(nazo_http_actix::forward_response(response))
 }
 
 async fn bind_tenant_app_data<B>(
@@ -185,6 +187,9 @@ pub(super) async fn run(
     let client_verifier = process.client_verifier.clone();
     let ui_static_dir = crate::bootstrap::ui_release::resolve(config).await?;
     tracing::info!("nazo-oauth-server(actix-web) listening on {addr}");
+    tracing::info!(
+        "inbound HTTP/1.1 only; HTTP/2 is disabled in this build; TLS and mTLS remain supported"
+    );
 
     let server = HttpServer::new(move || {
         let cache = Rc::new(RefCell::new(WorkerTenantDataCache::default()));
@@ -203,9 +208,7 @@ pub(super) async fn run(
             .wrap(from_fn(observe_request))
             .service(tenant_scope)
     })
-    // Keep the existing plaintext listener HTTP/1-only; Actix 4.19 otherwise
-    // enables cleartext HTTP/2 detection by default.
-    .auto_h2c(false)
+    // Inbound HTTP/2 is not enabled in the native dependency graph.
     .client_request_timeout(HTTP_CLIENT_REQUEST_TIMEOUT)
     .max_connections(HTTP_MAX_CONNECTIONS_PER_WORKER)
     .on_connect(move |io, extensions| {

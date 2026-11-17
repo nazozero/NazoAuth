@@ -48,7 +48,9 @@ serde_urlencoded = "0.7.1"
 nazoauth = { version = "0.3.9", path = "crates/nazoauth" }
 hex = "0.4.3"
 actix-files = "0.7.4"
-actix-web = "4.19.0"
+# Keep the native listener on HTTP/1.1 while upstream HTTP/2 uses affected h2 0.3.
+# Explicit features preserve the other framework capabilities without enabling http2.
+actix-web = { version = "4.19.0", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "compress-zstd", "cookies", "unicode", "compat", "ws"] }
 actix-tls = "3.6.1"
 anyhow = "1.0.104"
 aes-gcm = "0.11.1"
@@ -150,11 +152,7 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
-# Keep Actix, h2 and the facade on shared HTTP 1.x metadata. Retire these coupled
-# overrides when stable upstream packages provide the same type graph.
 [patch.crates-io]
-actix-http = { git = "https://github.com/nazozero/actix-web", rev = "cd9d8e580065d8e285f5835fc5bd75d88dc35482" }
-actix-router = { git = "https://github.com/nazozero/actix-web", rev = "cd9d8e580065d8e285f5835fc5bd75d88dc35482" }
 # TODO: replace this fork when a maintained release uses patched crypto-bigint
 # and preserves the coset 0.4 and borrowed-transcript contracts.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }

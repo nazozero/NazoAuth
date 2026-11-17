@@ -603,3 +603,14 @@ provenance. A Request Object without `kid` selects the current advertised key;
 clients retaining an older recipient must send its `kid`. Existing recipient
 records without creation metadata start their schedule at the durable upgrade
 boundary. External signing keys remain operator-owned.
+
+## Inbound HTTP versions
+
+The native server uses official Actix releases with inbound HTTP/2 disabled in
+the build. Plaintext, direct TLS and direct mTLS listeners serve HTTP/1.1; startup
+logs state this explicitly. TLS 1.3 and client-certificate authentication are
+unchanged. There is no environment option to activate the affected legacy h2
+backend. HTTP/2-only clients must use a safe terminating proxy with HTTP/1.1
+upstream and the documented trusted-proxy certificate configuration. Outbound
+HTTP clients are independent and may negotiate HTTP/2 using patched dependencies.
+See [embedding and dependency contracts](../integration/rust-embedding.md).
