@@ -1,4 +1,14 @@
-crates/persistence-postgres/src/repositories/token_issuance.rs:795: the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied
-crates/persistence-postgres/src/repositories/token_issuance.rs:795: the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied
-crates/persistence-postgres/src/repositories/token_issuance.rs:796: the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied
-crates/persistence-postgres/src/repositories/token_issuance.rs:796: the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied
+crates/persistence-postgres/tests/controller_recovery.rs:657: no method named `as_secs` found for struct `Span` in the current scope
+crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:76: the name `Timestamp` is defined multiple times
+crates/server/src/operator_task/execution.rs:471: no method named `timestamp` found for struct `jiff::Timestamp` in the current scope
+crates/server/src/adapters/audit_anchor/worker.rs:277: no method named `to_std` found for struct `jiff::Span` in the current scope
+crates/server/src/adapters/audit_anchor/worker.rs:316: no method named `as_secs` found for struct `jiff::Span` in the current scope
+crates/server/src/settings/config_loader.rs:542: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope
+crates/server/src/settings/config_loader.rs:543: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope
+crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:9: cannot find type `ChronoDuration` in this scope
+crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:21: cannot find type `ChronoDuration` in this scope
+crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:22: cannot find type `ChronoDuration` in this scope
+crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:23: cannot find type `ChronoDuration` in this scope
+crates/persistence-postgres/tests/scim_security_events.rs:428: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope
+crates/persistence-postgres/tests/scim_security_events.rs:431: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope
+crates/persistence-postgres/tests/token_issuance_fresh.rs:204: mismatched types

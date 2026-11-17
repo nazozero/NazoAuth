@@ -21,9 +21,9 @@ crates/nazoauth/src/http/runtime_modules.rs:4: use web_time::{SystemTime, UNIX_E
 crates/nazoauth/src/http/runtime_modules.rs:31: now: fn() -> SystemTime,
 crates/nazoauth/src/http/runtime_modules.rs:41: Self::with_clock(sessions, cookies, administration, SystemTime::now)
 crates/nazoauth/src/http/runtime_modules.rs:49: now: fn() -> SystemTime,
-crates/nazoauth/src/http/runtime_modules.rs:472: struct RuntimeTimestamp(SystemTime);
-crates/nazoauth/src/http/runtime_modules.rs:492: fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {
-crates/nazoauth/src/http/runtime_modules.rs:500: fn unix_timestamp(value: SystemTime) -> i64 {
+crates/nazoauth/src/http/runtime_modules.rs:468: struct RuntimeTimestamp(SystemTime);
+crates/nazoauth/src/http/runtime_modules.rs:488: fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {
+crates/nazoauth/src/http/runtime_modules.rs:496: fn unix_timestamp(value: SystemTime) -> i64 {
 crates/nazoauth/tests/unit/http/runtime_modules.rs:43: fn fixed_now() -> SystemTime {
 crates/openid4vci/src/service.rs:385: // Proof validation is asynchronous; use a fresh clock value for
 crates/persistence-postgres/src/pool.rs:301: // diesel-async bridges Diesel's synchronous migration harness with

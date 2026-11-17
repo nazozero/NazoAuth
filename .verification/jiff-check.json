@@ -5,29 +5,10 @@
     "compile": 101,
     "check": 101
   },
-  "parent": "7f52db530c8d1c1ab3e016e7cee33b52af940ebb",
-  "source_tree_before_evidence": "d080c0ae6a31ab628f0848bdd627820373b003e2",
-  "workflow_run": "44141217087",
+  "parent": "f4b77c80a1d3d77d01359ed18fc406fd6602ffbf",
+  "source_tree_before_evidence": "8a67317479de41fe7fa863d58f36fba9acb8ac02",
+  "workflow_run": "44141482983",
   "errors": [
-    {
-      "code": "E0599",
-      "message": "no method named `as_secs` found for struct `Span` in the current scope",
-      "rendered": "error[E0599]: no method named `as_secs` found for struct `Span` in the current scope\n   --> crates/persistence-postgres/tests/controller_recovery.rs:657:37\n    |\n657 |         (issued.expires_at - at(4)).as_secs(),\n    |                                     ^^^^^^^ method not found in `Span`\n\n",
-      "sites": [
-        {
-          "file": "crates/persistence-postgres/tests/controller_recovery.rs",
-          "line": 657,
-          "text": [
-            {
-              "highlight_end": 44,
-              "highlight_start": 37,
-              "text": "        (issued.expires_at - at(4)).as_secs(),"
-            }
-          ],
-          "label": "method not found in `Span`"
-        }
-      ]
-    },
     {
       "code": "E0252",
       "message": "the name `Timestamp` is defined multiple times",
@@ -220,6 +201,25 @@
     },
     {
       "code": "E0599",
+      "message": "no method named `as_secs` found for struct `Span` in the current scope",
+      "rendered": "error[E0599]: no method named `as_secs` found for struct `Span` in the current scope\n   --> crates/persistence-postgres/tests/controller_recovery.rs:657:37\n    |\n657 |         (issued.expires_at - at(4)).as_secs(),\n    |                                     ^^^^^^^ method not found in `Span`\n\n",
+      "sites": [
+        {
+          "file": "crates/persistence-postgres/tests/controller_recovery.rs",
+          "line": 657,
+          "text": [
+            {
+              "highlight_end": 44,
+              "highlight_start": 37,
+              "text": "        (issued.expires_at - at(4)).as_secs(),"
+            }
+          ],
+          "label": "method not found in `Span`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
       "message": "no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope",
       "rendered": "error[E0599]: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope\n   --> crates/persistence-postgres/tests/scim_security_events.rs:428:76\n    |\n428 |             (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),\n    |                                                                            ^^^^^^^^^ method not found in `(jiff::Timestamp,)`\n    |\nhelp: one of the expressions' fields has a method of the same name\n    |\n428 |             (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).0.to_diesel(),\n    |                                                                            ++\n\n",
       "sites": [
@@ -276,5 +276,5 @@
       ]
     }
   ],
-  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\nerror: could not compile `nazo-postgres` (test \"controller_recovery\") due to 1 previous error\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `nazo-server` (lib test) due to 5 previous errors\nerror: could not compile `nazo-server` (lib) due to 5 previous errors\nerror: could not compile `nazo-postgres` (test \"scim_security_events\") due to 2 previous errors\nerror: could not compile `nazo-postgres` (test \"token_issuance_fresh\") due to 1 previous error"
+  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\nerror: could not compile `nazo-server` (lib) due to 5 previous errors\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `nazo-server` (lib test) due to 5 previous errors\nerror: could not compile `nazo-postgres` (test \"controller_recovery\") due to 1 previous error\nerror: could not compile `nazo-postgres` (test \"scim_security_events\") due to 2 previous errors\nerror: could not compile `nazo-postgres` (test \"token_issuance_fresh\") due to 1 previous error"
 }
