@@ -2,7 +2,7 @@ use super::*;
 use crate::{AccountIdentity, Principal, TenantContext, UserProfile, UserRole};
 
 fn account() -> PublicAccount {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,

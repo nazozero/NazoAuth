@@ -1206,7 +1206,7 @@ fn validate_external_registration(registration: &ExternalKeyRegistration) -> any
 }
 
 fn timestamp(value: Timestamp) -> String {
-    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    format!("{:.0}", value)
 }
 
 #[cfg(test)]

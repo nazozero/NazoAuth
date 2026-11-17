@@ -54,7 +54,7 @@ async fn create_fixture() -> Value {
     let leaf_key =
         KeyPair::from_pem(&keyset.database_local_private_key_pem(&kid).unwrap()).unwrap();
     let certs = certificate_fixture_with_key("issuer.example", leaf_key);
-    let issued_at = Utc::now();
+    let issued_at = jiff::Timestamp::now();
     let (encoded, transcript) =
         valid_mdoc_presentation_with_holder(&certs, issued_at, None, &holder);
     let record = repository.snapshot().unwrap();
@@ -179,7 +179,7 @@ fn mdoc_embedded_api_latency() {
         input.issued_at = serde_json::from_value(fixture["issued_at"].clone()).unwrap();
         input.expires_at = serde_json::from_value(fixture["expires_at"].clone()).unwrap();
         assert!(
-            input.expires_at > Utc::now(),
+            input.expires_at > jiff::Timestamp::now(),
             "shared fixture expired; regenerate it and repeat both revisions"
         );
         let transcript: Vec<u8> = serde_json::from_value(fixture["transcript"].clone()).unwrap();

@@ -292,7 +292,7 @@ struct Openid4vcFixture {
 fn openid4vc_fixture(status: Option<CertificateRevocationStatus>, stale: bool) -> Openid4vcFixture {
     let signing_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-    let now = time::OffsetTimestamp::now_utc();
+    let now = time::OffsetDateTime::now_utc();
 
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
@@ -507,10 +507,10 @@ fn load_payload_rejects_tampered_local_and_generation_metadata() {
     assert!(load_payload(None, &active_purpose).is_err());
 
     let mut active_retired = base.clone();
-    active_entry_mut(&mut active_retired)["retire_at"] = json!(
+    active_entry_mut(&mut active_retired)["retire_at"] = json!(format!(
+        "{:.0}",
         (jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    );
+    ));
     assert!(load_payload(None, &active_retired).is_err());
 }
 
@@ -667,7 +667,7 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
 
     let mut activate_now = valid_payload();
     let original_kid = activate_now["active_kid"].clone();
-    due.prepublish_window = jiff::SignedDuration::zero();
+    due.prepublish_window = jiff::SignedDuration::ZERO;
     assert!(maintain_payload(&mut activate_now, &due).unwrap());
     let candidate_kid = activate_now["keys"]
         .as_array()
@@ -993,7 +993,9 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
     assert!(loaded_snapshot.this_update <= jiff::Timestamp::now());
     assert!(loaded_snapshot.next_update > jiff::Timestamp::now());
     assert_eq!(
-        loaded_snapshot.next_update - loaded_snapshot.this_update,
+        loaded_snapshot
+            .next_update
+            .duration_since(loaded_snapshot.this_update),
         jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
     );
 
@@ -1014,7 +1016,9 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         .unwrap();
     assert!(reloaded_snapshot.next_update > jiff::Timestamp::now());
     assert_eq!(
-        reloaded_snapshot.next_update - reloaded_snapshot.this_update,
+        reloaded_snapshot
+            .next_update
+            .duration_since(reloaded_snapshot.this_update),
         jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
     );
 }

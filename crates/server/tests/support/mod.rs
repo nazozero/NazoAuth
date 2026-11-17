@@ -83,7 +83,7 @@ pub(crate) fn rfc9440_certificate_fixture(common_name: &str) -> Rfc9440Certifica
     params
         .distinguished_name
         .push(DnType::CommonName, common_name);
-    let now = time::OffsetTimestamp::now_utc();
+    let now = time::OffsetDateTime::now_utc();
     params.not_before = now - time::Duration::minutes(1);
     params.not_after = now + time::Duration::hours(1);
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test P-256 key");

@@ -134,7 +134,7 @@ async fn fixture_crypto() -> Openid4vcCredentialCrypto {
     )
     .expect("database endpoint P-256 signing key");
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("endpoint CA key");
-    let now = time::OffsetTimestamp::now_utc();
+    let now = time::OffsetDateTime::now_utc();
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];

@@ -373,7 +373,7 @@ impl PromptNoneFixture {
         )
         .await;
         let sid = format!("prompt-none-session-{suffix}");
-        live.store_session(&user, &sid, Utc::now().timestamp())
+        live.store_session(&user, &sid, jiff::Timestamp::now().as_second())
             .await;
         let repository =
             AuthorizationFlowRepository::new(live.state.diesel_db.clone(), DEFAULT_TENANT_ID);
@@ -454,7 +454,7 @@ impl PromptNoneFixture {
     }
     pub(super) async fn push(&mut self) -> String {
         let uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let pushed = PushedAuthorizationRequest {
             client_id: self.client_id.clone(),
             params: self.q.clone(),

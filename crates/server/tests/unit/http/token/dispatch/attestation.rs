@@ -7,7 +7,7 @@ use std::collections::HashMap;
 fn signed_attestation(
     client_id: &str,
 ) -> (Openid4vcClientAttestationValidator, String, String, String) {
-    signed_attestation_at(client_id, Utc::now().timestamp() + 60)
+    signed_attestation_at(client_id, jiff::Timestamp::now().as_second() + 60)
 }
 
 fn signed_attestation_at(
@@ -19,7 +19,7 @@ fn signed_attestation_at(
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
     header.typ = Some("oauth-client-attestation+jwt".to_owned());
     header.kid = Some("attester".to_owned());
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let attestation = attester.encode_jwt(
         &header,
         &json!({

@@ -4,7 +4,7 @@ async fn store_ciba_session(state: &TestInfrastructure, sid: &str, user_id: Uuid
     let payload = crate::test_support::SessionPayload {
         authorization_epoch: 0,
         user_id,
-        auth_time: Utc::now().timestamp(),
+        auth_time: jiff::Timestamp::now().as_second(),
         amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
         pending_mfa: false,
         oidc_sid: Some(format!("oidc-{sid}")),
@@ -489,7 +489,7 @@ async fn ciba_approved_poll_reads_subject_claims_once_for_oidc_and_never_for_pla
         let plain_user = Uuid::now_v7();
         insert_ciba_user(&state, plain_user).await;
         let plain_req_id = format!("plain-claims-count-{}", Uuid::now_v7());
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         CibaStore::new(&state.valkey_connection())
             .create(
                 &plain_req_id,

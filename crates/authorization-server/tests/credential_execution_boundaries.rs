@@ -28,7 +28,7 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
             .clone();
         let leaf_key =
             KeyPair::from_pem(&keyset.database_local_private_key_pem(&kid).unwrap()).unwrap();
-        let now = time::OffsetTimestamp::now_utc();
+        let now = time::OffsetDateTime::now_utc();
         let mut ca_params = CertificateParams::default();
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];

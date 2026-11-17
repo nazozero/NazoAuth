@@ -37,7 +37,7 @@ pub enum ControllerKeyWarning {
 #[must_use]
 pub fn expiry_warning(now: Timestamp, expires_at: Timestamp) -> Option<ControllerKeyWarning> {
     let remaining = expires_at - now;
-    if remaining <= SignedDuration::zero() {
+    if remaining <= SignedDuration::ZERO {
         None
     } else if remaining <= SignedDuration::from_hours(EXPIRY_URGENT_HOURS) {
         Some(ControllerKeyWarning::Urgent)

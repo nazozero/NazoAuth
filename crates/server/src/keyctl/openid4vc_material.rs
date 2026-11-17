@@ -112,13 +112,13 @@ pub(crate) async fn signed_mdoc_crl(
     // sign_crl matches and signs with the same prepared private key. The CA's
     // public key supplies the identifier after the exact issuer binding above.
     let issuer_public_key = ca.public_key().subject_public_key.data.as_ref();
-    let this_update = time::OffsetTimestamp::now_utc();
+    let this_update = time::OffsetDateTime::now_utc();
     let next_update = this_update + time::Duration::hours(24);
     let revoked_certs = match entry.status {
         nazo_digital_credentials::CertificateRevocationStatus::Good => Vec::new(),
         nazo_digital_credentials::CertificateRevocationStatus::Revoked => vec![RevokedCertParams {
             serial_number: SerialNumber::from(leaf.raw_serial().to_vec()),
-            revocation_time: time::OffsetTimestamp::from_unix_timestamp(
+            revocation_time: time::OffsetDateTime::from_unix_timestamp(
                 entry
                     .revoked_at
                     .context("revoked DS has no recorded revocation time")?
@@ -542,7 +542,7 @@ fn build_managed_material(
         signing_key_pem,
         &profile.hostname,
         profile.mdoc_profile.as_ref(),
-        time::OffsetTimestamp::now_utc(),
+        time::OffsetDateTime::now_utc(),
     )?;
     let (mut anchors, mut iacas, mut revocation_snapshot) = match previous {
         Some(previous) => (

@@ -295,7 +295,7 @@ impl AuthorizationStore {
             &self.connection,
             BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT,
             vec![keys::authorization_code_hash(code_hash)],
-            vec![consuming_at.to_rfc3339_opts(SecondsFormat::Millis, true)],
+            vec![format!("{:.3}", consuming_at)],
         )
         .await?;
         parse_authorization_code_begin_reply(&reply)

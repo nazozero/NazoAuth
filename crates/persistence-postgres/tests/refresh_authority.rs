@@ -1634,7 +1634,7 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
     let Some(url) = database_url() else { return };
     for binding in ["dpop", "mtls"] {
         for elapsed in [
-            SignedDuration::zero(),
+            SignedDuration::ZERO,
             SignedDuration::from_secs(60),
             SignedDuration::from_micros(-1),
             SignedDuration::from_secs(60) + SignedDuration::from_micros(1),
@@ -1651,7 +1651,7 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
             assert_eq!(spent.expires_at, original.expires_at);
             let retry_started_at = spent.revoked_at.unwrap() + elapsed;
             let within =
-                elapsed >= SignedDuration::zero() && elapsed <= SignedDuration::from_secs(60);
+                elapsed >= SignedDuration::ZERO && elapsed <= SignedDuration::from_secs(60);
             let snapshot = repository
                 .refresh_token_snapshot(
                     tenant(),

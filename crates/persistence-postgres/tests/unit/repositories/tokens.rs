@@ -19,7 +19,7 @@ fn valid_context(auth_time: i64) -> nazo_auth::RefreshTokenAuthenticationContext
 }
 
 fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
-    let issued_at = Utc::now();
+    let issued_at = jiff::Timestamp::now();
     nazo_auth::RefreshTokenCommit::IssueNew {
         token: NewRefreshToken {
             raw_token: "refresh".to_owned(),
@@ -152,7 +152,7 @@ fn refresh_contract_preparation_excludes_response_only_facts() {
 }
 
 fn ownership_family(contract: &RefreshContract) -> RefreshFamilyRow {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     RefreshFamilyRow {
         tenant_id: Uuid::from_u128(1),
         token_family_id: Uuid::from_u128(2),

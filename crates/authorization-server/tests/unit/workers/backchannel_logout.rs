@@ -1,7 +1,7 @@
 use super::*;
 #[test]
 fn retries_are_bounded_and_never_scheduled_after_expiry() {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     assert_eq!(
         next_retry_at(0, now, now + Duration::seconds(60)),
         Some(now + Duration::seconds(5))
@@ -54,7 +54,7 @@ fn backchannel_response_classification_retries_only_recoverable_statuses() {
 
 #[test]
 fn delivery_failure_state_distinguishes_terminal_and_retryable_outcomes() {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     let expires_at = now + Duration::seconds(60);
     let (next_attempt_at, terminal) =
         delivery_failure_state(Ok(http::StatusCode::BAD_REQUEST), 1, now, expires_at);

@@ -19,9 +19,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 fn fixture_user() -> PublicAccount {
-    let timestamp = Utc
-        .with_ymd_and_hms(2025, 1, 2, 3, 4, 5)
-        .single()
+    let timestamp = "2025-01-02T03:04:05Z"
+        .parse::<jiff::Timestamp>()
         .expect("fixture timestamp is valid");
     PublicAccount {
         principal: Principal {
@@ -272,9 +271,8 @@ fn patch_schema_and_operations_preserve_scim_error_semantics() {
 
 #[test]
 fn cursor_core_binds_tenant_actor_filter_count_and_lifetime() {
-    let now = Utc
-        .with_ymd_and_hms(2025, 2, 3, 4, 5, 6)
-        .single()
+    let now = "2025-02-03T04:05:06Z"
+        .parse::<jiff::Timestamp>()
         .expect("fixture timestamp is valid");
     let subject = ScimCursorSubject {
         tenant_id: Uuid::from_u128(0x22222222222222222222222222222222),

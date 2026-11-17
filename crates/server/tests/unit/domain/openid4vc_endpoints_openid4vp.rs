@@ -97,8 +97,8 @@ pub(crate) async fn fixture_crypto_with_dns(
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
-    ca_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
+    ca_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
+    ca_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("fixture CA certificate");
 
     let mut leaf_params = if include_dns {
@@ -108,8 +108,8 @@ pub(crate) async fn fixture_crypto_with_dns(
     };
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
-    leaf_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
+    leaf_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
+    leaf_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let leaf = leaf_params
         .signed_by(&signing_key, &ca)
         .expect("fixture leaf certificate");
@@ -137,16 +137,16 @@ fn rotated_material(current: &Openid4vcPublicMaterial) -> Openid4vcMaterial {
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
-    ca_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
+    ca_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
+    ca_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("rotated CA certificate");
     let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("rotated leaf key");
     let mut leaf_params =
         CertificateParams::new(vec!["issuer.example".to_owned()]).expect("rotated leaf params");
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
-    leaf_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
+    leaf_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
+    leaf_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let leaf = leaf_params
         .signed_by(&leaf_key, &ca)
         .expect("rotated leaf certificate");
@@ -264,8 +264,8 @@ fn ordinary_trust_policy_material() -> serde_json::Value {
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
-    ca_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
+    ca_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
+    ca_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
     let anchor = CertifiedIssuer::self_signed(ca_params, ca_key)
         .expect("trust anchor certificate")
         .pem();

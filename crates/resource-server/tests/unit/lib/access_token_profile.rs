@@ -26,7 +26,7 @@ fn sign(fixture: &Fixture, claims: &Value, typ: Option<&str>) -> String {
 #[test]
 fn standard_profile_does_not_require_a_private_token_use_claim() {
     let fixture = fixture();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     for typ in ["at+jwt", "application/at+jwt"] {
         let token = sign(&fixture, &claims(now), Some(typ));
         assert!(fixture.verifier.verify_at(&token, now).is_ok());
@@ -36,7 +36,7 @@ fn standard_profile_does_not_require_a_private_token_use_claim() {
 #[test]
 fn access_token_issuance_time_is_required_and_must_be_numeric() {
     let fixture = fixture();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut missing = claims(now);
     missing["token_use"] = json!("access");
     missing.as_object_mut().unwrap().remove("iat");
@@ -71,7 +71,7 @@ fn access_token_issuance_time_is_required_and_must_be_numeric() {
 #[test]
 fn absent_private_marker_does_not_allow_other_token_types() {
     let fixture = fixture();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     for typ in [None, Some("JWT"), Some("application/jwt"), Some("id+jwt")] {
         let token = sign(&fixture, &claims(now), typ);
         assert_eq!(

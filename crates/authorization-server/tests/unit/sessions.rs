@@ -114,7 +114,7 @@ fn snapshot(pending_mfa: bool, oidc_sid: Option<&str>) -> SessionSnapshot {
 }
 
 fn account(active: bool) -> PublicAccount {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,

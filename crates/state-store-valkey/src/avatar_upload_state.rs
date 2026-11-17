@@ -219,7 +219,7 @@ impl TryFrom<AvatarUploadAuthorizationWire> for AvatarUploadAuthorization {
                 .ok_or_else(|| Error::corrupt_data("invalid avatar revision"))?,
             staging_object_id: value.staging_object_id,
             expires_at: Timestamp::new(value.expires_at, 0)
-                .ok_or_else(|| Error::corrupt_data("invalid avatar upload expiry"))?,
+                .map_err(|_| Error::corrupt_data("invalid avatar upload expiry"))?,
         })
     }
 }

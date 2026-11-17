@@ -234,7 +234,7 @@ fn signed_id_token(
     nonce: &str,
     overrides: Value,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut claims = json!({
         "iss": provider.issuer,
         "sub": "subject-1",
@@ -312,7 +312,7 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
         "oidc-kid",
         &key,
         &nonce,
-        json!({"iat": Utc::now().timestamp() + 120}),
+        json!({"iat": jiff::Timestamp::now().as_second() + 120}),
     );
     assert!(verify_oidc_id_token(&provider, &jwks, &future_iat, &nonce).is_err());
 }
@@ -353,7 +353,7 @@ fn verify_oidc_id_token_rejects_expired_and_wrong_issuer_claims() {
         "oidc-kid",
         &key,
         &nonce,
-        json!({"exp": Utc::now().timestamp() - 1}),
+        json!({"exp": jiff::Timestamp::now().as_second() - 1}),
     );
     assert!(
         verify_oidc_id_token(&provider, &jwks, &expired, &nonce).is_err(),
@@ -391,7 +391,7 @@ fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
             "iss": provider.issuer,
             "sub": "subject-1",
             "aud": provider.client_id,
-            "exp": Utc::now().timestamp() + 300,
+            "exp": jiff::Timestamp::now().as_second() + 300,
             "nonce": nonce
         }),
     );

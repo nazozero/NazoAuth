@@ -48,7 +48,7 @@ pub fn validate_mtls_trust_anchor(
     let body = trimmed
         .strip_prefix(BEGIN_CERTIFICATE)
         .and_then(|value| value.strip_suffix(END_CERTIFICATE))
-        .ok_or(MtlsTrustAnchorError::InvalidPem)?;
+        .map_err(|_| MtlsTrustAnchorError::InvalidPem)?;
     let encoded = body
         .chars()
         .filter(|character| !character.is_ascii_whitespace())
@@ -87,9 +87,9 @@ pub fn validate_mtls_trust_anchor(
     }
 
     let not_before = Timestamp::new(certificate.validity().not_before.timestamp(), 0)
-        .ok_or(MtlsTrustAnchorError::InvalidPem)?;
+        .map_err(|_| MtlsTrustAnchorError::InvalidPem)?;
     let not_after = Timestamp::new(certificate.validity().not_after.timestamp(), 0)
-        .ok_or(MtlsTrustAnchorError::InvalidPem)?;
+        .map_err(|_| MtlsTrustAnchorError::InvalidPem)?;
     Ok(ValidatedMtlsTrustAnchor {
         certificate_pem: crate::serialization::der_to_pem(&der, "CERTIFICATE"),
         certificate_sha256: hex::encode(Sha256::digest(&der)),

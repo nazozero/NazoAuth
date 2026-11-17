@@ -1272,7 +1272,7 @@ async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_rev
 fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
     // Two unrelated key generations on the same day must not expose their
     // creation second through the MSO's certificate lower bound.
-    let day = time::OffsetTimestamp::from_unix_timestamp(1_791_590_400).unwrap();
+    let day = time::OffsetDateTime::from_unix_timestamp(1_791_590_400).unwrap();
     assert_eq!(day.unix_timestamp().rem_euclid(86_400), 0);
     for offset in [0, 1, 43_217, 86_399, 86_400] {
         let now = day + time::Duration::seconds(offset);

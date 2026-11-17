@@ -6,7 +6,7 @@ use nazo_auth::{SignError, SignRequest, Signer, SigningPurpose};
 fn settings(rotation_interval: jiff::SignedDuration) -> KeySettings {
     KeySettings {
         rotation_interval,
-        prepublish_window: jiff::SignedDuration::zero(),
+        prepublish_window: jiff::SignedDuration::ZERO,
         verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }

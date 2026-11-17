@@ -3,8 +3,6 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use chrono::TimeZone as _;
-
 use super::*;
 
 fn committed_execution(operation_key: &str) -> nazo_auth::LogoutExecution {

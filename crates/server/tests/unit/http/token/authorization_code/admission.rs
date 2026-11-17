@@ -118,7 +118,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
             security_audit: crate::http::authorization::test_support::test_security_audit(),
             remote_client_documents: crate::test_support::test_remote_client_documents(),
         };
-        payload.expires_at = Utc::now() - Duration::seconds(1);
+        payload.expires_at = jiff::Timestamp::now() - Duration::seconds(1);
         let expired =
             validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
                 .map_err(crate::test_support::http::oauth_endpoint_error_response)
@@ -128,7 +128,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
         assert_eq!(expired.status(), StatusCode::BAD_REQUEST);
         assert_eq!(oauth_error_code(expired).await, "invalid_grant");
 
-        payload.expires_at = Utc::now() + Duration::seconds(60);
+        payload.expires_at = jiff::Timestamp::now() + Duration::seconds(60);
         payload.pkce = (None).into();
         for verifier in ["", "wrong-verifier", VALID_CODE_VERIFIER] {
             form.code_verifier = Some(verifier.to_owned());

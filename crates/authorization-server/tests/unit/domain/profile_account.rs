@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::contracts::profile_account::{ProfileAccountError, ProfileMe};
-use jiff::{TimeZone as _, Timestamp};
+use jiff::Timestamp;
 use nazo_identity::{
     AccountIdentity, AccountProfileService, Principal, ProfilePatch, PublicAccount, SessionId,
     SessionService, TenantContext, TenantId, UserId, UserProfile, UserRole,

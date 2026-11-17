@@ -143,7 +143,7 @@ fn login_success() -> LoginSuccess {
         session: SessionRecord::new(
             UserId::new(Uuid::from_u128(1)).unwrap(),
             0,
-            Utc::now().timestamp(),
+            jiff::Timestamp::now().as_second(),
             vec!["passkey".to_owned()],
             false,
             Some("oidc-session".to_owned()),
@@ -402,7 +402,7 @@ fn write_rejects_invalid_csrf_before_session_or_core_lookup() {
 #[test]
 fn public_passkey_projection_excludes_tenant_user_and_credential_material() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let credential = PasskeyCredential {
             id: Uuid::from_u128(1),
             tenant_id: TenantId::new(Uuid::from_u128(2)).unwrap(),

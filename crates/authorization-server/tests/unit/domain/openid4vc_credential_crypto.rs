@@ -125,7 +125,7 @@ fn certificate_fixture_with_key_and_aki(
     leaf_key: KeyPair,
     include_aki: bool,
 ) -> CertificateFixture {
-    let now = time::OffsetTimestamp::now_utc();
+    let now = time::OffsetDateTime::now_utc();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("CA key");
     let mut ca_params = CertificateParams::default();
     ca_params.distinguished_name = DistinguishedName::new();
@@ -1821,8 +1821,8 @@ fn expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_s
     let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
-    params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::days(2);
-    params.not_after = time::OffsetTimestamp::now_utc() - time::Duration::days(1);
+    params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(2);
+    params.not_after = time::OffsetDateTime::now_utc() - time::Duration::days(1);
     let expired = CertifiedIssuer::self_signed(
         params,
         KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
@@ -2246,7 +2246,7 @@ fn signed_unused_configured_anchor_cannot_supply_a_dcql_aki() {
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         params.use_authority_key_identifier_extension = true;
-        let now = time::OffsetTimestamp::now_utc();
+        let now = time::OffsetDateTime::now_utc();
         params.not_before = now - time::Duration::minutes(1);
         params.not_after = now + time::Duration::days(365);
         let unused = params
@@ -2890,12 +2890,8 @@ fn resign_mdoc_validity(
                 Some("validUntil") => valid_until,
                 _ => continue,
             };
-            *value = ciborium::Value::Tag(
-                0,
-                Box::new(ciborium::Value::Text(
-                    date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                )),
-            );
+            *value =
+                ciborium::Value::Tag(0, Box::new(ciborium::Value::Text(format!("{:.0}", date))));
         }
     })
 }

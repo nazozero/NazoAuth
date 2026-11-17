@@ -1,62 +1,14 @@
 [
   {
     "code": null,
-    "message": "Some errors have detailed explanations: E0433, E0599.",
-    "rendered": "Some errors have detailed explanations: E0433, E0599.\n",
+    "message": "For more information about this error, try `rustc --explain E0599`.",
+    "rendered": "For more information about this error, try `rustc --explain E0599`.\n",
     "sites": []
   },
   {
     "code": null,
-    "message": "For more information about an error, try `rustc --explain E0433`.",
-    "rendered": "For more information about an error, try `rustc --explain E0433`.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "Some errors have detailed explanations: E0277, E0433, E0599.",
-    "rendered": "Some errors have detailed explanations: E0277, E0433, E0599.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "For more information about an error, try `rustc --explain E0277`.",
-    "rendered": "For more information about an error, try `rustc --explain E0277`.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "For more information about this error, try `rustc --explain E0432`.",
-    "rendered": "For more information about this error, try `rustc --explain E0432`.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "Some errors have detailed explanations: E0308, E0433, E0599.",
-    "rendered": "Some errors have detailed explanations: E0308, E0433, E0599.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "For more information about an error, try `rustc --explain E0308`.",
-    "rendered": "For more information about an error, try `rustc --explain E0308`.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "For more information about this error, try `rustc --explain E0425`.",
-    "rendered": "For more information about this error, try `rustc --explain E0425`.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "For more information about this error, try `rustc --explain E0433`.",
-    "rendered": "For more information about this error, try `rustc --explain E0433`.\n",
-    "sites": []
-  },
-  {
-    "code": null,
-    "message": "For more information about this error, try `rustc --explain E0433`.",
-    "rendered": "For more information about this error, try `rustc --explain E0433`.\n",
+    "message": "For more information about this error, try `rustc --explain E0599`.",
+    "rendered": "For more information about this error, try `rustc --explain E0599`.\n",
     "sites": []
   }
 ]

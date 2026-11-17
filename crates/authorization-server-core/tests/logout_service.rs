@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use jiff::{TimeZone as _, Timestamp};
+use jiff::Timestamp;
 use nazo_auth::{
     BackchannelLogoutOutboxPort, IdTokenHintClaims, IdempotentBackchannelLogoutDelivery,
     LogoutClientRepositoryPort, LogoutFuture, LogoutInput, LogoutService, LogoutServiceError,

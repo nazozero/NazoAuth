@@ -461,10 +461,10 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
         .unwrap()
         .iter_mut()
         .find(|key| key["kid"] == active_kid)
-        .unwrap()["created_at"] = serde_json::json!(
+        .unwrap()["created_at"] = serde_json::json!(format!(
+        "{:.0}",
         (jiff::Timestamp::now() - jiff::SignedDuration::from_hours((91) * 24))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    );
+    ));
     replace_payload(&repository, tenant, &ring, payload);
 
     let restarted =
@@ -492,7 +492,7 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
 async fn expired_database_key_discards_private_material_but_preserves_public_provenance() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_secs(-1),
-        prepublish_window: jiff::SignedDuration::zero(),
+        prepublish_window: jiff::SignedDuration::ZERO,
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
@@ -515,10 +515,10 @@ async fn expired_database_key_discards_private_material_but_preserves_public_pro
         .unwrap()
         .iter_mut()
         .find(|key| key["kid"] == retired_kid)
-        .unwrap()["retire_at"] = serde_json::json!(
+        .unwrap()["retire_at"] = serde_json::json!(format!(
+        "{:.0}",
         (jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    );
+    ));
     replace_payload(&repository, tenant, &ring, payload);
 
     let restarted = KeyManager::load_or_create_database(

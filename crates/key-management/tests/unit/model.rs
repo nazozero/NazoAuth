@@ -587,7 +587,7 @@ async fn database_rotation_retains_old_public_key_for_grace_and_snapshot_bounds(
     let settings = database_settings(
         "retirement-bound",
         jiff::SignedDuration::from_secs(-1),
-        jiff::SignedDuration::zero(),
+        jiff::SignedDuration::ZERO,
     );
     let manager = database_manager(settings).await;
     let old_kid = manager.snapshot().active_kid.clone();

@@ -904,7 +904,7 @@ impl RefreshPresentationRow {
                         && self.family.revoked_at.is_none()
                         && self.family.reuse_detected_at.is_none()
                         && self.family.current_expires_at > now
-                        && elapsed >= SignedDuration::zero()
+                        && elapsed >= SignedDuration::ZERO
                         && elapsed <= SignedDuration::from_secs(LOST_REFRESH_TOKEN_RETRY_SECONDS)
                 });
                 // Preserve dependency-error ordering: candidate projection errors
@@ -1143,7 +1143,7 @@ async fn persist_refresh_token_inner(
             ) && matches!(
                 elapsed,
                 Some(elapsed)
-                    if elapsed >= SignedDuration::zero()
+                    if elapsed >= SignedDuration::ZERO
                         && elapsed <= SignedDuration::from_secs(LOST_REFRESH_TOKEN_RETRY_SECONDS)
             );
             if !edge_valid {

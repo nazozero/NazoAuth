@@ -1210,7 +1210,7 @@ async fn rf06_lost_response_successor_is_single_read() {
         .spent_at
     };
     for (case, elapsed, expect_successor) in [
-        ("0s", SignedDuration::zero(), true),
+        ("0s", SignedDuration::ZERO, true),
         ("60s", SignedDuration::from_secs(60), true),
         (
             "60s + 1ms",

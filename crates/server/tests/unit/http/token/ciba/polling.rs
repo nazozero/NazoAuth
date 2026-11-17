@@ -132,7 +132,7 @@ async fn ciba_token_poll_fails_closed_for_approved_state_without_authentication_
     client.require_mtls_bound_tokens = true;
     persist_ciba_test_client(&state, &client).await;
     let auth_req_id = format!("approved-without-context-{}", Uuid::now_v7());
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     CibaStore::new(&state.valkey_connection())
         .create(
             &auth_req_id,
@@ -183,7 +183,7 @@ async fn ciba_token_poll_maps_an_expired_state_before_user_lookup() {
     client.require_mtls_bound_tokens = true;
     persist_ciba_test_client(&state, &client).await;
     let auth_req_id = format!("expired-status-{}", Uuid::now_v7());
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     CibaStore::new(&state.valkey_connection())
         .create(
             &auth_req_id,

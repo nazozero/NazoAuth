@@ -14,7 +14,7 @@ fn token_with_exact_header(
     claim_overrides: serde_json::Value,
     header: Header,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut claims = json!({
         "iss": "https://issuer.example",
         "sub": "subject-1",
@@ -195,7 +195,7 @@ fn rejects_missing_required_scope() {
 #[test]
 fn rejects_expired_and_not_yet_valid_tokens_with_clock_skew() {
     let fixture = fixture();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let outside_skew = fixture.verifier.clock_skew_seconds + 60;
 
     let expired = fixture
