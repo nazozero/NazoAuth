@@ -1,29 +1,25 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
-use coset::{AsCborValue, CborSerializable};
-use mdoc_rs::{
-    builder::DocumentBuilder,
-    cbor::data_item::{TAG_ENCODED_CBOR, encode_cbor_canonical},
-    model::types::{Mso, ValidityInfo},
-};
+use coset::CborSerializable;
+use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
+};
+use nazo_mdoc::{
+    builder::DocumentBuilder,
+    model::types::{CoseAlgorithm, ValidityInfo},
+    session::SessionTranscript,
+    verifier::{VerificationOptions, verify_presentation},
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::super::crypto_helpers::{cbor_to_json, json_to_cbor, jwk_to_cose_key};
-use super::Openid4vcCredentialCrypto;
+use super::{MdocStatusIssuancePolicy, Openid4vcCredentialCrypto, status};
 
 const MDL_DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const MDL_NAMESPACE: &str = "org.iso.18013.5.1";
-
-struct MdocVerificationMaterial {
-    mso: Result<Mso, CredentialTrustError>,
-    certificates: Result<Vec<Vec<u8>>, CredentialTrustError>,
-    encoded_device_key: Option<Vec<u8>>,
-}
 
 pub(super) async fn sign(
     crypto: &Openid4vcCredentialCrypto,
@@ -37,13 +33,24 @@ pub(super) async fn sign(
         .subject_claims
         .as_object()
         .ok_or(CredentialTrustError::InvalidEncoding)?;
+    if input.status.is_some()
+        && crypto.mdoc_status_issuance != MdocStatusIssuancePolicy::PublishedTokenStatusList
+    {
+        return Err(CredentialTrustError::InvalidStatus);
+    }
+    let resolved_status = match input.status.as_ref() {
+        Some(reference) => {
+            Some(status::resolve(crypto, CredentialFormat::MsoMdoc, reference).await?)
+        }
+        None => None,
+    };
     let lease = crypto
         .prepare_signing()
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let signing_material = crypto
         .signing_material(lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
-    let (remainder, certificate) = x509_parser::parse_x509_certificate(&signing_material.leaf_der)
+    let (remainder, certificate) = x509_parser::parse_x509_certificate(signing_material.leaf_der())
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     if !remainder.is_empty() {
         return Err(CredentialTrustError::InvalidEncoding);
@@ -51,9 +58,8 @@ pub(super) async fn sign(
     validate_mdl_issuing_country(&certificate, &input.payload.credential_type, namespaces)?;
     let not_before = DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
         .ok_or(CredentialTrustError::InvalidEncoding)?;
-    // A privacy-rounded timestamp may predate a newly selected certificate.
-    // Use that certificate's public cohort boundary, not a per-request clock;
-    // never extend the credential deadline to create a valid interval.
+    // The public certificate cohort boundary preserves privacy rounding without
+    // extending the credential deadline or predating the selected signing key.
     let signed = input.issued_at.max(not_before);
     if signed >= input.expires_at
         || signed.timestamp() > certificate.validity().not_after.timestamp()
@@ -68,6 +74,19 @@ pub(super) async fn sign(
             valid_until: input.expires_at,
             expected_update: None,
         });
+    if let Some(resolved_status) = resolved_status {
+        // Fetch before selecting a lease. Authenticate the already published
+        // list against that exact signing chain immediately before preparation.
+        resolved_status.verify(
+            crypto,
+            &[],
+            &input.payload.issuer,
+            &signing_material.certificate_chain_der,
+        )?;
+        builder = builder.status_raw(json_to_cbor(
+            input.status.as_ref().expect("resolved status reference"),
+        )?);
+    }
     for (namespace, values) in namespaces {
         let object = values
             .as_object()
@@ -83,42 +102,25 @@ pub(super) async fn sign(
             .collect::<Result<Vec<_>, CredentialTrustError>>()?;
         builder = builder.add_namespace(namespace, entries);
     }
-    let document = crypto
-        .mdoc_signer
-        .sign(builder, signing_material.lease, signing_material.leaf_der)
-        .await?;
-    let mut namespace_entries = Vec::new();
-    for (namespace, items) in document.issuer_signed.name_spaces {
-        namespace_entries.push((
-            ciborium::Value::Text(namespace),
-            ciborium::Value::Array(
-                items
-                    .into_iter()
-                    .map(|item| {
-                        ciborium::Value::Tag(
-                            TAG_ENCODED_CBOR,
-                            Box::new(ciborium::Value::Bytes(item.encoded)),
-                        )
-                    })
-                    .collect(),
-            ),
-        ));
-    }
-    let cose = document
-        .issuer_signed
-        .issuer_auth
-        .cose_sign1
-        .to_cbor_value()
+    let prepared = builder
+        .prepare(CoseAlgorithm::ES256, signing_material.certificate_chain_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let issuer_signed = ciborium::Value::Map(vec![
-        (
-            ciborium::Value::Text("nameSpaces".to_owned()),
-            ciborium::Value::Map(namespace_entries),
-        ),
-        (ciborium::Value::Text("issuerAuth".to_owned()), cose),
-    ]);
+    let signature = signing_material
+        .lease
+        .sign(SignRequest {
+            purpose: SigningPurpose::Credential,
+            algorithm: "ES256",
+            signing_input: prepared.signing_input(),
+        })
+        .await
+        .map_err(|_| CredentialTrustError::Unavailable)?;
+    let document = prepared
+        .finish(signature.into_bytes())
+        .map_err(|_| CredentialTrustError::InvalidSignature)?;
     Ok(URL_SAFE_NO_PAD.encode(
-        encode_cbor_canonical(&issuer_signed).map_err(|_| CredentialTrustError::InvalidEncoding)?,
+        document
+            .to_issuer_signed_cbor()
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?,
     ))
 }
 
@@ -158,110 +160,147 @@ pub(super) fn mdoc_element_to_cbor(
     element: &str,
     value: &Value,
 ) -> Result<ciborium::Value, CredentialTrustError> {
-    if doc_type == "org.iso.18013.5.1.mDL"
-        && namespace == "org.iso.18013.5.1"
-        && matches!(element, "portrait" | "signature_usual_mark")
-    {
-        let encoded = value
-            .as_str()
-            .ok_or(CredentialTrustError::InvalidEncoding)?;
-        let bytes = URL_SAFE_NO_PAD
-            .decode(encoded)
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-        return Ok(ciborium::Value::Bytes(bytes));
+    if doc_type != MDL_DOCTYPE || namespace != MDL_NAMESPACE {
+        return json_to_cbor(value);
     }
-    json_to_cbor(value)
+    match element {
+        "portrait" | "signature_usual_mark" => {
+            let encoded = value
+                .as_str()
+                .ok_or(CredentialTrustError::InvalidEncoding)?;
+            URL_SAFE_NO_PAD
+                .decode(encoded)
+                .map(ciborium::Value::Bytes)
+                .map_err(|_| CredentialTrustError::InvalidEncoding)
+        }
+        "birth_date" => mdoc_date(value, true),
+        "issue_date" | "expiry_date" => {
+            mdoc_date(value, value.as_str().is_some_and(|date| date.len() == 10))
+        }
+        "portrait_capture_date" => mdoc_date(value, false),
+        "driving_privileges" => {
+            let privileges = value
+                .as_array()
+                .ok_or(CredentialTrustError::InvalidEncoding)?;
+            privileges
+                .iter()
+                .map(|privilege| {
+                    let fields = privilege
+                        .as_object()
+                        .ok_or(CredentialTrustError::InvalidEncoding)?;
+                    let fields = fields
+                        .iter()
+                        .map(|(name, value)| {
+                            let encoded = if matches!(name.as_str(), "issue_date" | "expiry_date") {
+                                // ISO 18013-5 §7.2.4 uses full-date here, even though the
+                                // top-level issue/expiry dates also permit tdate.
+                                mdoc_date(value, true)?
+                            } else {
+                                json_to_cbor(value)?
+                            };
+                            Ok((ciborium::Value::Text(name.clone()), encoded))
+                        })
+                        .collect::<Result<Vec<_>, CredentialTrustError>>()?;
+                    Ok(ciborium::Value::Map(fields))
+                })
+                .collect::<Result<Vec<_>, CredentialTrustError>>()
+                .map(ciborium::Value::Array)
+        }
+        _ => json_to_cbor(value),
+    }
 }
 
+fn mdoc_date(value: &Value, full_date: bool) -> Result<ciborium::Value, CredentialTrustError> {
+    let text = value
+        .as_str()
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    let valid = if full_date {
+        text.len() == 10
+            && chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
+                .is_ok_and(|date| date.format("%Y-%m-%d").to_string() == text)
+    } else {
+        text.len() == 20
+            && text.as_bytes().get(10) == Some(&b'T')
+            && text.ends_with('Z')
+            && chrono::DateTime::parse_from_rfc3339(text)
+                .is_ok_and(|date| date.timestamp_subsec_nanos() == 0)
+    };
+    if !valid {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
+    Ok(ciborium::Value::Tag(
+        if full_date { 1004 } else { 0 },
+        Box::new(ciborium::Value::Text(text.to_owned())),
+    ))
+}
+
+/// Authenticate protocol bytes first. Only this application owner completes
+/// certificate path, certificate revocation and credential-status policy.
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
     presentation: &PresentedCredential<'_>,
 ) -> Result<(VerifiedCredential, Vec<Vec<u8>>), CredentialTrustError> {
+    // Bound the base64 allocation at the public credential boundary as well as
+    // the decoded CBOR inside the protocol parser.
+    let max_bytes = nazo_mdoc::cbor::raw::Limits::default().max_bytes;
+    if presentation.encoded.len() > max_bytes.div_ceil(3) * 4 {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
     let bytes = URL_SAFE_NO_PAD
         .decode(presentation.encoded.as_bytes())
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let session_transcript = presentation
+    let transcript_bytes = presentation
         .mdoc_session_transcript
-        .as_ref()
+        .as_deref()
         .ok_or(CredentialTrustError::InvalidHolderBinding)?;
+    // PresentationService creates these bytes from its retained Final request;
+    // enforce CBOR/profile structure here without re-encoding the signed bytes.
+    let transcript = SessionTranscript::from_cbor(transcript_bytes)
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    let mut documents = verify_presentation(
+        &bytes,
+        &transcript,
+        &VerificationOptions {
+            now: Utc::now(),
+            max_documents: 1,
+        },
+    )
+    .map_err(|error| match error {
+        nazo_mdoc::MdocError::DeviceAuth(_)
+        | nazo_mdoc::MdocError::Session(_)
+        | nazo_mdoc::MdocError::DocumentCount { .. } => CredentialTrustError::InvalidSessionBinding,
+        nazo_mdoc::MdocError::Signature(_) | nazo_mdoc::MdocError::Disclosure(_) => {
+            CredentialTrustError::InvalidSignature
+        }
+        nazo_mdoc::MdocError::Validity(_) => CredentialTrustError::InvalidValidity,
+        nazo_mdoc::MdocError::Certificate(_) => CredentialTrustError::UntrustedIssuer,
+        _ => CredentialTrustError::InvalidEncoding,
+    })?;
+    // HAIP carries each credential in its own DeviceResponse. The core enforces
+    // max_documents during parsing; an empty response provides no evidence.
+    let pending = documents
+        .pop()
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
     let trust_anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
-    // This build has no mdoc-rs TSP backend; the authenticated chain is checked below.
-    let verifier = mdoc_rs::Verifier::new(Vec::new());
-    let verified = verifier
-        .verify(
-            &bytes,
-            &mdoc_rs::VerifyOptions {
-                session_transcript: Some(mdoc_rs::session::SessionTranscript::Raw(
-                    std::borrow::Cow::Borrowed(session_transcript),
-                )),
-                ..Default::default()
-            },
-        )
-        .map_err(|error| {
-            tracing::warn!(%error, "OpenID4VP mdoc verifier could not process a credential");
-            CredentialTrustError::InvalidEncoding
-        })?;
-    // Keep parse results until their validation stage so an issuer encoding error cannot
-    // hide an earlier holder/session mismatch. Each document is decoded only once here.
-    let mut material: Vec<_> = verified
-        .mdoc
-        .documents
-        .iter()
-        .map(|document| {
-            let issuer_auth = &document.issuer_signed.issuer_auth;
-            MdocVerificationMaterial {
-                mso: issuer_auth
-                    .mso()
-                    .map_err(|_| CredentialTrustError::InvalidEncoding),
-                certificates: issuer_auth
-                    .certificate_chain_der()
-                    .map_err(|_| CredentialTrustError::InvalidEncoding),
-                encoded_device_key: None,
-            }
-        })
-        .collect();
-    let standard_device_authentication_valid =
-        verify_standard_mdoc_device_signatures(&verified, &mut material, session_transcript)?;
-    let issuer_chain_valid = verify_mdoc_issuer_certificate_chains(
-        &material,
+    verify_mdoc_issuer_certificate_chain(
+        pending.certificates(),
+        pending.mso().validity_info.signed.timestamp(),
         &trust_anchors,
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
     )?;
-    if !mdoc_assessments_accepted(
-        &verified,
-        standard_device_authentication_valid,
-        issuer_chain_valid,
-    ) || verified.mdoc.documents.len() != 1
-    {
-        let assessments = verified
-            .assessments
-            .iter()
-            .map(|assessment| {
-                format!(
-                    "{}: {:?}: {}",
-                    assessment.check,
-                    assessment.status,
-                    assessment.reason.as_deref().unwrap_or("")
-                )
-            })
-            .collect::<Vec<_>>();
-        let session_transcript_sha256 = URL_SAFE_NO_PAD.encode(Sha256::digest(session_transcript));
-        tracing::warn!(
-            document_count = verified.mdoc.documents.len(),
-            %session_transcript_sha256,
-            standard_device_authentication_valid,
-            issuer_chain_valid,
-            ?assessments,
-            "OpenID4VP mdoc credential failed verification"
-        );
-        return Err(CredentialTrustError::InvalidSignature);
-    }
-    let document = verified.mdoc.documents.into_iter().next().unwrap();
-    let material = material.into_iter().next().unwrap();
-    let mso = material.mso.unwrap();
-    let certificates = material.certificates.unwrap();
-    let holder_key = mdoc_holder_key(material.encoded_device_key)?;
+    let holder_key = mdoc_holder_key(
+        pending
+            .device_key()
+            .clone()
+            .to_vec()
+            .map_err(|_| CredentialTrustError::InvalidHolderBinding)?,
+    );
+    let (document, mso, certificates) = pending.into_parts();
+    let status = mso
+        .status
+        .map(|status| status::mdoc_reference_to_json(status.raw))
+        .transpose()?;
     let mut namespaces = Map::new();
     for (namespace, items) in document.issuer_signed.name_spaces {
         let mut claims = Map::new();
@@ -281,135 +320,44 @@ pub(super) fn verify(
             holder_key: Some(holder_key),
             issued_at: Some(mso.validity_info.signed),
             expires_at: Some(mso.validity_info.valid_until),
-            status: mso
-                .status
-                .map(|status| cbor_to_json(status.raw))
-                .transpose()?,
+            status,
         },
         certificates,
     ))
 }
 
-pub(crate) fn standard_device_authentication_bytes(
-    session_transcript: &[u8],
-    doc_type: &str,
-    device_name_spaces: &[u8],
-) -> Result<Vec<u8>, mdoc_rs::MdocError> {
-    let device_authentication = mdoc_rs::session::build_device_authentication_bytes(
-        session_transcript,
-        doc_type,
-        device_name_spaces,
-    )?;
-    encode_cbor_canonical(&ciborium::Value::Tag(
-        TAG_ENCODED_CBOR,
-        Box::new(ciborium::Value::Bytes(device_authentication)),
-    ))
-}
-
-fn verify_standard_mdoc_device_signatures(
-    verified: &mdoc_rs::verifier::VerifiedMDoc,
-    material: &mut [MdocVerificationMaterial],
-    session_transcript: &[u8],
-) -> Result<bool, CredentialTrustError> {
-    if verified.mdoc.documents.is_empty() {
-        return Ok(false);
-    }
-
-    for (document, material) in verified.mdoc.documents.iter().zip(material) {
-        let Some(device_signed) = document.device_signed.as_ref() else {
-            return Ok(false);
-        };
-        if !matches!(
-            device_signed.device_auth,
-            mdoc_rs::model::types::DeviceAuth::Signature(_)
-        ) {
-            return Ok(false);
-        }
-        let mso = material.mso.as_mut().map_err(|error| *error)?;
-        let device_key_bytes = mso
-            .device_key_info
-            .take()
-            .ok_or(CredentialTrustError::InvalidHolderBinding)?
-            .device_key
-            .to_vec()
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-        let device_authentication = standard_device_authentication_bytes(
-            session_transcript,
-            &document.doc_type,
-            &device_signed.name_spaces_bytes,
-        )
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-        let result = mdoc_rs::device_auth::verify_device_auth(
-            &device_signed.device_auth,
-            &device_authentication,
-            &device_key_bytes,
-            None,
-        )
-        .map_err(|_| CredentialTrustError::InvalidSignature)?;
-        if !result.is_valid {
-            // mdoc binds the nonce inside the signed SessionTranscript rather
-            // than a readable claim. A failed current-session proof cannot be
-            // safely classified as an individually discardable nonce match.
-            return Err(CredentialTrustError::InvalidSessionBinding);
-        }
-        // The same COSE encoding becomes the verified holder-key projection.
-        material.encoded_device_key = Some(device_key_bytes);
-    }
-
-    Ok(true)
-}
-
-fn verify_mdoc_issuer_certificate_chains(
-    material: &[MdocVerificationMaterial],
+fn verify_mdoc_issuer_certificate_chain(
+    certificates: &[Vec<u8>],
+    signed_at: i64,
     trust_anchors: &[Vec<u8>],
     scoped_trust_anchors: &[Vec<u8>],
     revocation_policy: &nazo_digital_credentials::CertificateRevocationPolicy,
-) -> Result<bool, CredentialTrustError> {
-    // mdoc-rs fails this assessment closed without its optional TSP backend.
-    // Avoid an unrelated RSA implementation in this ES256 mdoc path and perform
-    // path, CA, signature, and signing-time validation with the AWS-LC-backed
-    // X.509 verifier.
-    if material.is_empty() {
-        return Ok(false);
+) -> Result<(), CredentialTrustError> {
+    if certificates.is_empty() {
+        return Err(CredentialTrustError::UntrustedIssuer);
     }
-    for material in material {
-        let certificates = material.certificates.as_ref().map_err(|error| *error)?;
-        if certificates.is_empty() {
-            return Err(CredentialTrustError::UntrustedIssuer);
-        }
-        let signed_at = material
-            .mso
-            .as_ref()
-            .map_err(|error| *error)?
-            .validity_info
-            .signed
-            .timestamp();
-        let direct_scoped_trust_anchor =
-            verify_direct_scoped_trust_anchor(certificates, scoped_trust_anchors, signed_at)?;
-        let scoped_anchor_authenticated = if direct_scoped_trust_anchor {
-            true
-        } else {
-            let Some(anchor) = verify_certificate_chain_with_scoped_at(
-                certificates,
-                trust_anchors,
-                scoped_trust_anchors,
-                signed_at,
-            )?
-            else {
-                return Ok(false);
-            };
-            scoped_trust_anchors
-                .iter()
-                .any(|candidate| candidate.as_slice() == anchor)
-        };
-        revocation_policy.check_chain_with_scoped_trust(
-            None,
+    let direct_scoped_trust_anchor =
+        verify_direct_scoped_trust_anchor(certificates, scoped_trust_anchors, signed_at)?;
+    let scoped_anchor_authenticated = if direct_scoped_trust_anchor {
+        true
+    } else {
+        let anchor = verify_certificate_chain_with_scoped_at(
             certificates,
-            Utc::now(),
-            scoped_anchor_authenticated,
-        )?;
-    }
-    Ok(true)
+            trust_anchors,
+            scoped_trust_anchors,
+            signed_at,
+        )?
+        .ok_or(CredentialTrustError::UntrustedIssuer)?;
+        scoped_trust_anchors
+            .iter()
+            .any(|candidate| candidate.as_slice() == anchor)
+    };
+    revocation_policy.check_chain_with_scoped_trust(
+        None,
+        certificates,
+        Utc::now(),
+        scoped_anchor_authenticated,
+    )
 }
 
 /// Accept a single self-signed IACA only when an explicit, scoped trust policy
@@ -470,56 +418,9 @@ pub(super) fn verify_certificate_chain_with_scoped_at<'a>(
     Ok(None)
 }
 
-pub(super) fn mdoc_assessments_accepted(
-    verified: &mdoc_rs::verifier::VerifiedMDoc,
-    standard_device_authentication_valid: bool,
-    issuer_chain_valid: bool,
-) -> bool {
-    if !standard_device_authentication_valid || !issuer_chain_valid {
-        return false;
-    }
-    if verified.is_valid {
-        return true;
-    }
-
-    mdoc_failed_assessments_accepted(
-        verified.assessments.iter(),
-        standard_device_authentication_valid,
-        issuer_chain_valid,
-    )
-}
-
-pub(crate) fn mdoc_failed_assessments_accepted<'a>(
-    assessments: impl Iterator<Item = &'a mdoc_rs::verifier::VerificationAssessment>,
-    standard_device_authentication_valid: bool,
-    issuer_chain_valid: bool,
-) -> bool {
-    // Only library checks that were independently re-run against the normative
-    // bytes or trust store may be replaced. Every other warning/failure remains
-    // fatal, including future checks added by mdoc-rs.
-    let mut failed = 0usize;
-    for assessment in assessments
-        .filter(|assessment| assessment.status != mdoc_rs::verifier::VerificationStatus::Passed)
-    {
-        failed += 1;
-        let accepted = match assessment.id {
-            mdoc_rs::verifier::CheckId::DeviceSignatureValidity => {
-                standard_device_authentication_valid
-            }
-            mdoc_rs::verifier::CheckId::IssuerCertificateValidity => issuer_chain_valid,
-            _ => false,
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    failed > 0
-}
-
-pub(crate) fn mdoc_holder_key(encoded: Option<Vec<u8>>) -> Result<Value, CredentialTrustError> {
-    let encoded = encoded.ok_or(CredentialTrustError::InvalidHolderBinding)?;
-    Ok(Value::Object(Map::from_iter([(
+fn mdoc_holder_key(encoded: Vec<u8>) -> Value {
+    Value::Object(Map::from_iter([(
         "cose_key".to_owned(),
         Value::String(URL_SAFE_NO_PAD.encode(encoded)),
-    )])))
+    )]))
 }

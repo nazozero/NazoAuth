@@ -127,7 +127,6 @@ pub(crate) async fn fixture_crypto_with_dns(
         key_manager.clone(),
         VcIssuerTrustPolicy::san_bound(),
         nazo_oauth_server::policy::Openid4vcRevocationPolicy::Disabled,
-        Arc::new(crate::adapters::mdoc_signer::TokioMdocDocumentSigner),
     )
     .expect("fixture OpenID4VC crypto should load");
     (crypto, key_manager)

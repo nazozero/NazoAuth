@@ -150,7 +150,6 @@ impl LiveOpenid4vcAdminFixture {
             key_manager.clone(),
             VcIssuerTrustPolicy::san_bound(),
             nazo_oauth_server::policy::Openid4vcRevocationPolicy::Disabled,
-            Arc::new(crate::adapters::mdoc_signer::TokioMdocDocumentSigner),
         )
         .expect("credential crypto should validate the generated chain");
 

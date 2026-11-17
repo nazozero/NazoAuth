@@ -62,7 +62,7 @@ x509-parser = { workspace = true, optional = true, features = ["verify-aws"] }
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 aes-kw = { version = "0.3.1", optional = true, features = ["zeroize"] }
 getrandom = { version = "0.4.3", features = ["wasm_js"] }
-# passkey-auth and mdoc-rs still consume the rand 0.8 / getrandom 0.2 API.
+# passkey-auth still consumes the rand 0.8 / getrandom 0.2 API.
 getrandom02 = { package = "getrandom", version = "0.2.17", features = ["js"] }
 jsonwebtoken = { workspace = true, optional = true, features = ["rust_crypto"] }
 ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc"], optional = true }

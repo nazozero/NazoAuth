@@ -11,7 +11,7 @@ futures-util.workspace = true
 flate2.workspace = true
 coset.workspace = true
 ciborium.workspace = true
-mdoc-rs.workspace = true
+nazo-mdoc = { workspace = true, features = ["issue"] }
 rustls-pki-types.workspace = true
 x509-parser.workspace = true
 anyhow.workspace = true
@@ -57,6 +57,9 @@ nazo-key-management = { workspace = true, features = ["test-support"] }
 aws-lc-rs.workspace = true
 nazo-crypto = { workspace = true, features = ["certificate-issuance"] }
 rcgen.workspace = true
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+nazo-mdoc = { workspace = true, features = ["wasm-js"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test.workspace = true

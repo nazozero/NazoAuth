@@ -80,7 +80,7 @@ HOST_PATHS = re.compile(
     r"|std::time::(?:Instant|SystemTime)::(?:now|elapsed)(?:::|$)"
     r"|rustls::(?:ClientConnection|ServerConnection|Connection|Stream|StreamOwned)(?:::|$)"
     r"|lettre::(?:AsyncSmtpTransport|SmtpTransport|AsyncTransport|Transport|transport)(?:::|$)"
-    r"|mdoc_rs::(?:runtime|transport|http|ble|nfc)(?:::|$)"
+    r"|nazo_mdoc::(?:runtime|transport|http|ble|nfc)(?:::|$)"
     r"|image::(?:open|save_buffer|save_buffer_with_format|ImageReader::open|io::Reader::open)(?:::|$))"
 )
 

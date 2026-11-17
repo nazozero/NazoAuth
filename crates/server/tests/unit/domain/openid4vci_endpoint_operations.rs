@@ -165,7 +165,6 @@ async fn fixture_crypto() -> Openid4vcCredentialCrypto {
         keyset,
         VcIssuerTrustPolicy::san_bound(),
         nazo_oauth_server::policy::Openid4vcRevocationPolicy::Disabled,
-        Arc::new(crate::adapters::mdoc_signer::TokioMdocDocumentSigner),
     )
     .expect("endpoint credential crypto")
 }

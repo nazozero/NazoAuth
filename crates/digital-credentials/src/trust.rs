@@ -38,6 +38,11 @@ pub struct PresentedCredential<'a> {
     pub encoded: Cow<'a, str>,
     pub expected_nonce: Cow<'a, str>,
     pub expected_audience: Cow<'a, str>,
+    /// The expected transcript built from the verifier's retained request.
+    /// For mdoc, this binds the nonce, full client ID, response URI and actual
+    /// response-encryption key. Never populate it from wallet-supplied bytes.
+    /// `expected_nonce` and `expected_audience` alone cannot reconstruct or
+    /// independently validate the opaque OpenID4VP Handover hash.
     pub mdoc_session_transcript: Option<Cow<'a, [u8]>>,
     pub additional_trust_anchors: Cow<'a, [Vec<u8>]>,
 }

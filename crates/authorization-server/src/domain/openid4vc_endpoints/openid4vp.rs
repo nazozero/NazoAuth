@@ -729,15 +729,22 @@ impl PresentationOperations for ServerPresentationOperations {
                                 "Presentation response key is unavailable.",
                             )
                         })?;
-                    let plaintext = EphemeralEncryptionKey::from_secret_bytes(key)
-                        .and_then(|key| key.decrypt(&encoded))
-                        .map_err(|_| {
+                    let response_key =
+                        EphemeralEncryptionKey::from_secret_bytes(key).map_err(|_| {
                             vp_error(
                                 400,
                                 "invalid_request",
                                 "Encrypted presentation response is invalid.",
                             )
                         })?;
+                    validate_response_encryption_key(&transaction.request, &response_key)?;
+                    let plaintext = response_key.decrypt(&encoded).map_err(|_| {
+                        vp_error(
+                            400,
+                            "invalid_request",
+                            "Encrypted presentation response is invalid.",
+                        )
+                    })?;
                     serde_json::from_slice(&plaintext).map_err(|_| {
                         vp_error(
                             400,
@@ -857,6 +864,35 @@ fn validate_retained_request_profile(
             "Stored presentation request profile is unsupported.",
         )
     })
+}
+
+/// The Final handover thumbprint identifies the key that actually decrypted the
+/// response. A retained request's advertised key cannot override that fact.
+fn validate_response_encryption_key(
+    request: &AuthorizationRequest,
+    key: &EphemeralEncryptionKey,
+) -> Result<(), PresentationHttpError> {
+    let advertised = request
+        .client_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.jwks.as_ref())
+        .and_then(|jwks| jwks.get("keys"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|keys| keys.len() == 1)
+        .and_then(|keys| keys.first());
+    let actual = key.public_jwk();
+    if advertised.is_none_or(|advertised| {
+        ["kty", "crv", "x", "y"]
+            .iter()
+            .any(|name| advertised.get(*name) != actual.get(*name))
+    }) {
+        return Err(vp_error(
+            400,
+            "invalid_request",
+            "Presentation response key does not match the retained request.",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

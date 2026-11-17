@@ -33,7 +33,6 @@ futures-util = { workspace = true }
 hmac = { workspace = true }
 lettre = { workspace = true, features = ["aws-lc-rs", "builder", "rustls-platform-verifier", "smtp-transport", "tokio1-rustls"] }
 lru = { workspace = true }
-mdoc-rs = { workspace = true }
 nazo-auth = { workspace = true }
 nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509", "certificate-issuance"] }
 nazo-digital-credentials = { workspace = true }
@@ -82,6 +81,7 @@ yasna = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+nazo-mdoc = { workspace = true, features = ["issue"] }
 nazoauth = { workspace = true, features = ["conformance", "test-support"] }
 ciborium = { workspace = true }
 coset = { workspace = true }

@@ -76,7 +76,7 @@ hkdf = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "12.0.0", default-features = false }
-mdoc-rs = { version = "0.2.0", default-features = false, features = ["issue"] }
+nazo-mdoc = { git = "https://github.com/nazozero/mdoc-rs", rev = "d0eb5421e3b8b06623d9059bd3435aaba0fe03ad", default-features = false }
 lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
@@ -153,9 +153,6 @@ strip = "symbols"
 panic = "abort"
 
 [patch.crates-io]
-# TODO: replace this fork when a maintained release uses patched crypto-bigint
-# and preserves the coset 0.4 and borrowed-transcript contracts.
-mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }
 # TODO: replace this fork when a maintained release uses patched crypto-bigint
 # and passes the existing passkey and attestation tests.
 passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "d59b317998e56f4a16a69133d7a854c5c34f795b" }

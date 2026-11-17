@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_digital_credentials::{
     CertificateRevocationPolicy, CredentialTrustError, VcIssuerTrustPolicy,
@@ -66,7 +64,7 @@ pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Ve
 pub(crate) struct Openid4vcSigningMaterial {
     pub(super) lease: Openid4vcSigningLease,
     pub(super) x5c: Vec<String>,
-    pub(super) leaf_der: Vec<u8>,
+    pub(super) certificate_chain_der: Vec<Vec<u8>>,
 }
 
 impl Openid4vcCredentialCrypto {
@@ -74,7 +72,6 @@ impl Openid4vcCredentialCrypto {
         keyset: KeyManager,
         issuer_trust_policy: VcIssuerTrustPolicy,
         revocation_policy: crate::policy::Openid4vcRevocationPolicy,
-        mdoc_signer: Arc<dyn crate::ports::mdoc::MdocDocumentSigner>,
     ) -> anyhow::Result<Self> {
         let material = keyset.openid4vc_public_material().ok_or_else(|| {
             anyhow::anyhow!("OpenID4VC managed certificate material is unavailable")
@@ -82,9 +79,9 @@ impl Openid4vcCredentialCrypto {
         validate_public_material(&material)?;
         Ok(Self {
             keyset,
-            mdoc_signer,
             issuer_trust_policy,
             revocation_policy,
+            mdoc_status_issuance: super::MdocStatusIssuancePolicy::Disabled,
             status_resolver: None,
         })
     }
@@ -146,15 +143,20 @@ impl Openid4vcCredentialCrypto {
 }
 
 impl Openid4vcSigningMaterial {
+    pub(super) fn leaf_der(&self) -> &[u8] {
+        &self.certificate_chain_der[0]
+    }
+
     pub(crate) fn x509_hash_client_id(&self) -> String {
         format!(
             "x509_hash:{}",
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(&self.leaf_der))
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(Sha256::digest(self.leaf_der()))
         )
     }
 
     pub(crate) fn x509_san_dns_client_id(&self) -> anyhow::Result<String> {
-        let (_, certificate) = parse_x509(&self.leaf_der, "OpenID4VC signing leaf")?;
+        let (_, certificate) = parse_x509(self.leaf_der(), "OpenID4VC signing leaf")?;
         let dns_name = certificate
             .subject_alternative_name()?
             .into_iter()
@@ -177,16 +179,15 @@ fn signing_material(lease: Openid4vcSigningLease) -> anyhow::Result<Openid4vcSig
     }
     let trust_anchors = parse_trust_anchors(lease.material())?;
     verify_openid4vc_chain(&certificates, &trust_anchors)?;
+    certificates.retain(|certificate| !trust_anchors.contains(certificate));
     let x5c = certificates
         .iter()
-        .filter(|certificate| !trust_anchors.contains(certificate))
         .map(|certificate| STANDARD.encode(certificate))
         .collect::<Vec<_>>();
-    let leaf_der = certificates.swap_remove(0);
     Ok(Openid4vcSigningMaterial {
         lease,
         x5c,
-        leaf_der,
+        certificate_chain_der: certificates,
     })
 }
 

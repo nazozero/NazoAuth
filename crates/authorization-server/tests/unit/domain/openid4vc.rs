@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
-use coset::{CborSerializable, CoseKeyBuilder, iana};
+use coset::{CoseKeyBuilder, iana};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use nazo_digital_credentials::CredentialTrustError;
 use nazo_openid4vci::{ProofError, Proofs};
@@ -14,9 +14,6 @@ use serde_json::{Value, json};
 use nazo_openid4vci::ProofValidatorPort as _;
 
 use super::Openid4vcProofValidator;
-use super::credential_crypto::mdoc::{
-    mdoc_failed_assessments_accepted, mdoc_holder_key, standard_device_authentication_bytes,
-};
 use super::crypto_helpers::algorithm_name;
 use super::crypto_helpers::cbor_to_json;
 use super::crypto_helpers::decoding_key_trust;
@@ -386,29 +383,6 @@ fn jwt_proof_key_attestation_rejects_missing_nonce() {
 }
 
 #[test]
-fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {
-    let key =
-        CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, vec![7; 32], vec![11; 32])
-            .build();
-
-    let holder =
-        mdoc_holder_key(Some(key.clone().to_vec().unwrap())).expect("device key must be retained");
-    let encoded = holder
-        .get("cose_key")
-        .and_then(Value::as_str)
-        .expect("holder binding must expose the verified COSE key");
-
-    assert_eq!(
-        URL_SAFE_NO_PAD.decode(encoded).expect("base64url COSE key"),
-        key.to_vec().expect("CBOR COSE key")
-    );
-    assert_eq!(
-        mdoc_holder_key(None),
-        Err(CredentialTrustError::InvalidHolderBinding)
-    );
-}
-
-#[test]
 fn mdoc_holder_binding_rejects_rsa_attested_keys() {
     let modulus = vec![0x81; 256];
     let exponent = vec![0x01, 0x00, 0x01];
@@ -436,8 +410,8 @@ fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
     )
     .build();
     let session_transcript = [0x83, 0xf6, 0xf6, 0xf6];
-    let device_name_spaces = [0xa0];
-    let standard_payload = standard_device_authentication_bytes(
+    let device_name_spaces = [0xd8, 0x18, 0x41, 0xa0];
+    let standard_payload = nazo_mdoc::session::build_device_authentication_bytes(
         &session_transcript,
         "org.iso.18013.5.1.mDL",
         &device_name_spaces,
@@ -453,87 +427,27 @@ fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
             signature.to_bytes().to_vec()
         })
         .build();
-    let auth = mdoc_rs::model::types::DeviceAuth::Signature(sign1);
-    let key_bytes = device_key.to_vec().expect("CBOR COSE key");
+    let auth = nazo_mdoc::model::types::DeviceAuth::Signature(sign1);
 
     let standard =
-        mdoc_rs::device_auth::verify_device_auth(&auth, &standard_payload, &key_bytes, None)
+        nazo_mdoc::device_auth::verify_device_auth(&auth, &standard_payload, &device_key, None)
             .expect("standard signature verification");
     assert!(standard.is_valid);
 
-    let untagged_payload = mdoc_rs::session::build_device_authentication_bytes(
-        &session_transcript,
-        "org.iso.18013.5.1.mDL",
-        &device_name_spaces,
-    )
-    .expect("untagged DeviceAuthentication");
+    let tagged: ciborium::Value = ciborium::from_reader(standard_payload.as_slice()).unwrap();
+    let ciborium::Value::Tag(24, contents) = tagged else {
+        panic!("Tag24 required")
+    };
+    let ciborium::Value::Bytes(untagged_payload) = *contents else {
+        panic!("embedded bytes required")
+    };
     let untagged =
-        mdoc_rs::device_auth::verify_device_auth(&auth, &untagged_payload, &key_bytes, None)
+        nazo_mdoc::device_auth::verify_device_auth(&auth, &untagged_payload, &device_key, None)
             .expect("untagged signature verification result");
     assert!(
         !untagged.is_valid,
         "the ISO DeviceAuthenticationBytes tag is part of the signed payload"
     );
-}
-
-#[test]
-fn mdoc_fallback_accepts_only_independently_verified_checks() {
-    let issuer = assessment(
-        mdoc_rs::verifier::CheckId::IssuerCertificateValidity,
-        mdoc_rs::verifier::VerificationStatus::Failed,
-    );
-    let device = assessment(
-        mdoc_rs::verifier::CheckId::DeviceSignatureValidity,
-        mdoc_rs::verifier::VerificationStatus::Failed,
-    );
-    let issuer_signature = assessment(
-        mdoc_rs::verifier::CheckId::IssuerSignatureValidity,
-        mdoc_rs::verifier::VerificationStatus::Failed,
-    );
-
-    assert!(mdoc_failed_assessments_accepted(
-        [&device].into_iter(),
-        true,
-        true,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        [&device].into_iter(),
-        false,
-        true,
-    ));
-    assert!(mdoc_failed_assessments_accepted(
-        [&issuer, &device].into_iter(),
-        true,
-        true,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        [&issuer, &issuer_signature].into_iter(),
-        true,
-        true,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        [&issuer].into_iter(),
-        true,
-        false,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        std::iter::empty(),
-        true,
-        true,
-    ));
-}
-
-fn assessment(
-    id: mdoc_rs::verifier::CheckId,
-    status: mdoc_rs::verifier::VerificationStatus,
-) -> mdoc_rs::verifier::VerificationAssessment {
-    mdoc_rs::verifier::VerificationAssessment {
-        status,
-        check: "test assessment".to_owned(),
-        reason: None,
-        category: mdoc_rs::verifier::VerificationCategory::IssuerAuth,
-        id,
-    }
 }
 
 #[test]

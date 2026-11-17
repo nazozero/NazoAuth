@@ -13,7 +13,7 @@ pub use nazo_identity::ports::{
 };
 pub use nazo_key_management::KeyManager;
 pub use nazo_oauth_server::ports::{
-    audit::SecurityAudit, mdoc::MdocDocumentSigner, persistence::ServerPersistenceBindings,
+    audit::SecurityAudit, persistence::ServerPersistenceBindings,
     transient_state::ServerTransientStateBindings,
 };
 pub use nazo_runtime_modules::ModuleLifecycle;
@@ -58,7 +58,6 @@ pub struct Capabilities {
     pub federation_http: Arc<dyn FederationHttpClient>,
     pub module_lifecycle: Arc<dyn ModuleLifecycle>,
     pub scim_events: Arc<dyn EventPollerPort>,
-    pub mdoc_signer: Option<Arc<dyn MdocDocumentSigner>>,
     pub certificate_verifier: Option<Arc<dyn CertificateChainVerifier>>,
 }
 

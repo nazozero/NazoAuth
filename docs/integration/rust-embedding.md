@@ -11,8 +11,9 @@ library contract.
 Cargo does not inherit `[patch]` entries from dependencies. Copy the applicable
 `[patch.crates-io]` overrides from the [workspace manifest](../../Cargo.toml)
 for the NazoAuth revision being consumed into your own workspace-root
-`Cargo.toml`. The neutral facade requires the `mdoc-rs` and `passkey-auth`
-overrides. Actix uses official registry releases and requires no Git override.
+`Cargo.toml`. The neutral facade requires the `passkey-auth` override.
+The `nazo-mdoc` dependency selects its immutable Git revision directly, so
+embedding workspaces do not copy an mdoc `[patch.crates-io]` entry. Actix uses official registry releases and requires no Git override.
 The `rustls` override applies only to the native host's shared-certificate TLS
 integration; it is not a dependency of the neutral facade.
 
@@ -46,15 +47,33 @@ contracts; it is not guaranteed to be a drop-in operation.
   the existing upstream borrowed `peer_certificates` API, own the chain once per
   connection in this adapter and retain the same neutral certificate facts.
   Re-run direct TLS/mTLS, certificate rotation and connection-boundary tests.
-- `mdoc-rs`: replace the pin only with a maintained, advisory-clean release that
-  supports the current `coset` and borrowed-transcript contracts. Re-run mdoc
-  issuance, presentation, signature and transcript tests, including WASM.
 - `passkey-auth`: require an advisory-clean cryptographic dependency graph and
   equivalent registration, authentication and attestation behavior. Re-run
   passkey and attestation tests before replacing the pin.
 
 No mutable upstream branch is used as a release dependency. Prefer official
 stable registry releases, with the resulting versions recorded in `Cargo.lock`.
+
+`nazo-mdoc` is the maintained protocol core in the existing `nazozero/mdoc-rs`
+repository. The old `mdoc-rs` package is not aliased or wrapped. Embedders migrate
+once to `nazo_mdoc`, preserve the exact production revision in the workspace
+manifest and lockfile, and use `issue` only where credentials are constructed.
+The WASM issuer enables its `wasm-js` randomness backend. Upgrades require mdoc
+issuance, presentation, status, transcript and WASM regressions.
+
+mdoc issuance uses the existing key lease asynchronously: the protocol core
+prepares the COSE signing input, `Openid4vcSigningLease` signs it, and the core
+completes the credential. There is no separate mdoc signing capability, native
+runtime adapter, private-key import or blocking runtime bridge to supply.
+
+When calling `CredentialVerifierPort` directly for mdoc, construct
+`PresentedCredential.mdoc_session_transcript` from the verifier's retained
+request context: nonce, full client ID, response URI and actual response
+encryption key. The built-in `PresentationService` owns this construction.
+Wallet-supplied transcript bytes cannot serve as the expected transcript;
+`expected_nonce` and `expected_audience` alone cannot validate an opaque
+handover hash. The core checks the supplied CBOR and verifies the holder's
+signature against those exact bytes.
 
 ## Build one tenant
 

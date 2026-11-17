@@ -320,13 +320,91 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
             0xc0, 0x04, 0x42, 0xaf, 0x9b, 0x8e, 0xed, 0x49, 0x4c, 0xef, 0xdd, 0x9d, 0x95, 0x24,
             0x0d, 0x25, 0x4b, 0x04, 0x6b, 0x11, 0xb6, 0x80, 0x13, 0x72, 0x2a, 0xad, 0x38, 0xac,
         ],
-        "OpenID4VP 1.0 Appendix B.2.6.2 encrypted-response vector"
+        "OpenID4VP 1.0 Final Appendix B.2.6.1 encrypted-response vector"
     );
     assert_eq!(
         *recorded_trust.lock().expect("recording trust lock"),
         vec![vec![1, 2, 3]],
         "transaction-bound trust reaches credential verification"
     );
+
+    for field in ["client_id", "nonce", "response_uri", "jwk"] {
+        let mut changed = transaction.clone();
+        match field {
+            "client_id" => changed.request.client_id.push_str(".different"),
+            "nonce" => changed.request.nonce.push_str("-different"),
+            "response_uri" => changed.request.response_uri.push_str("/different"),
+            "jwk" => {
+                changed
+                    .request
+                    .client_metadata
+                    .as_mut()
+                    .unwrap()
+                    .jwks
+                    .as_mut()
+                    .unwrap()["keys"][0]["x"] =
+                    nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk()["x"]
+                        .clone();
+            }
+            _ => unreachable!(),
+        }
+        service
+            .verify_response(
+                &changed,
+                &AuthorizationResponse {
+                    vp_token: Some(json!({"mdl":["base64url-mdoc"]})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                now,
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            *recorded.lock().unwrap(),
+            Some(transcript.clone()),
+            "{field}"
+        );
+    }
+    for metadata in [
+        None,
+        Some(ClientMetadata {
+            jwks: None,
+            ..transaction.request.client_metadata.clone().unwrap()
+        }),
+        Some(ClientMetadata {
+            jwks: Some(json!({"keys":[]})),
+            ..transaction.request.client_metadata.clone().unwrap()
+        }),
+    ] {
+        let mut changed = transaction.clone();
+        changed.request.client_metadata = metadata;
+        *recorded.lock().unwrap() = None;
+        assert_eq!(
+            service
+                .verify_response(
+                    &changed,
+                    &AuthorizationResponse {
+                        vp_token: Some(json!({"mdl":["base64url-mdoc"]})),
+                        state: Some("state".to_owned()),
+                        error: None,
+                        error_description: None,
+                    },
+                    &[],
+                    now,
+                )
+                .await,
+            Err(PresentationServiceError::Presentation(
+                PresentationError::InvalidRequest
+            ))
+        );
+        assert!(
+            recorded.lock().unwrap().is_none(),
+            "missing encrypted-response key must not become a null thumbprint"
+        );
+    }
 
     let mut unencrypted_transaction = transaction.clone();
     unencrypted_transaction.request.response_mode = ResponseMode::DirectPost;

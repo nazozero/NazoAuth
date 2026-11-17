@@ -6,7 +6,7 @@ facts. The existing persistence adapter commits the complete encrypted record
 with compare-and-swap. No new database table or object-storage adapter is used.
 IACA private material is excluded from public keyset metadata.
 
-A signing operation captures one key generation. Its x5c, mdoc leaf certificate,
+A signing operation captures one key generation. Its x5c, mdoc non-root certificate chain,
 OpenID4VP certificate-derived client_id and signature use that same generation.
 A pending signed-post VP request bound to an old certificate hash is rejected
 if explicit certificate rotation occurs before nonce retrieval; the wallet must

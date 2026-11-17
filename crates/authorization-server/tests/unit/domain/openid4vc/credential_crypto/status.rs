@@ -3,6 +3,7 @@ use super::*;
 use coset::{CborSerializable, CoseSign1Builder, HeaderBuilder, TaggedCborSerializable, iana};
 use nazo_crypto::jwt::Header;
 use nazo_crypto::signature::PreparedSigningKey;
+use nazo_digital_credentials::PresentedCredential;
 use std::io::Write;
 
 const URI: &str = "https://issuer.example/status/1";
@@ -20,6 +21,173 @@ impl crate::ports::credential_status::CredentialStatusResolver for ListResolver 
         assert_eq!(uri, URI);
         assert_eq!(format, self.format);
         Box::pin(async { Ok(self.bytes.clone()) })
+    }
+}
+
+struct UnreachableListResolver;
+
+impl crate::ports::credential_status::CredentialStatusResolver for UnreachableListResolver {
+    fn fetch<'a>(
+        &'a self,
+        _uri: &'a str,
+        _format: CredentialFormat,
+    ) -> nazo_digital_credentials::CredentialFuture<'a, Result<Vec<u8>, CredentialTrustError>> {
+        Box::pin(async { Err(CredentialTrustError::Unavailable) })
+    }
+}
+
+#[test]
+fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() {
+    use super::super::MdocStatusIssuancePolicy;
+    use nazo_digital_credentials::{
+        CredentialPayload, CredentialSignInput, CredentialSignerPort, HolderBinding,
+    };
+    use std::sync::Arc;
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let key = nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk();
+        let now = Utc::now();
+        let mut input = CredentialSignInput {
+            payload: CredentialPayload {
+                issuer: "https://issuer.example".into(),
+                configuration_id: "example-mdoc".into(),
+                format: CredentialFormat::MsoMdoc,
+                credential_type: "org.example.credential".into(),
+                subject_claims: serde_json::json!({"org.example.namespace":{"name":"Ada"}}),
+                holder_binding: Some(HolderBinding::Jwk { jwk: key }),
+            },
+            issued_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            status: Some(serde_json::json!({"status_list":{"idx":0,"uri":URI}})),
+        };
+        assert_eq!(
+            crypto.sign(&input).await,
+            Err(CredentialTrustError::InvalidStatus)
+        );
+        let enabled = crypto
+            .clone()
+            .with_mdoc_status_issuance(MdocStatusIssuancePolicy::PublishedTokenStatusList);
+        assert_eq!(
+            enabled.sign(&input).await,
+            Err(CredentialTrustError::InvalidStatus)
+        );
+        assert_eq!(
+            enabled
+                .clone()
+                .with_status_resolver(Arc::new(UnreachableListResolver))
+                .sign(&input)
+                .await,
+            Err(CredentialTrustError::Unavailable)
+        );
+        let token = cwt(
+            &certs,
+            URI,
+            now.timestamp() + 300,
+            "application/statuslist+cwt",
+        );
+        let enabled = enabled.with_status_resolver(Arc::new(ListResolver {
+            bytes: token.clone(),
+            format: CredentialFormat::MsoMdoc,
+        }));
+        let encoded = enabled
+            .sign(&input)
+            .await
+            .expect("published good status entry");
+        let issued =
+            nazo_mdoc::parser::parse_issued(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+        let mso = issued.issuer_auth.mso().unwrap();
+        assert_eq!(
+            mdoc_reference_to_json(mso.status.unwrap().raw).unwrap(),
+            input.status.clone().unwrap()
+        );
+        // The same resolver does not authorize issuance without the explicit policy.
+        assert_eq!(
+            crypto
+                .clone()
+                .with_status_resolver(Arc::new(ListResolver {
+                    bytes: token,
+                    format: CredentialFormat::MsoMdoc,
+                }))
+                .sign(&input)
+                .await,
+            Err(CredentialTrustError::InvalidStatus)
+        );
+
+        for reference in [
+            serde_json::json!({"status_list":{"idx":1,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":2,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":3,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":4,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":8,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":u64::MAX,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":-1,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":0.5,"uri":URI}}),
+            serde_json::json!({"status_list":{"idx":0,"uri":"http://issuer.example/status/1"}}),
+            serde_json::json!({"status_list":{"idx":0,"uri":"https://user@issuer.example/status/1"}}),
+            serde_json::json!({"status_list":{"idx":0,"uri":"https://issuer.example/status/1#fragment"}}),
+            serde_json::json!({"status_list":{"idx":0,"uri":URI,"certificate":"delegation"}}),
+            serde_json::json!({"status_list":{"idx":0,"uri":URI},"future_status":{}}),
+            serde_json::json!({"future_status":{"uri":URI}}),
+        ] {
+            input.status = Some(reference);
+            assert_eq!(
+                enabled.sign(&input).await,
+                Err(CredentialTrustError::InvalidStatus)
+            );
+        }
+        input.status = None;
+        assert!(
+            crypto
+                .with_status_resolver(Arc::new(UnreachableListResolver))
+                .sign(&input)
+                .await
+                .is_ok(),
+            "no status reference must not initiate a status request"
+        );
+    });
+}
+
+#[test]
+fn mdoc_status_projection_preserves_presence_and_rejects_unknown_semantics() {
+    let good = Cbor::Map(vec![(
+        Cbor::Text("status_list".into()),
+        Cbor::Map(vec![
+            (Cbor::Text("idx".into()), Cbor::Integer(0.into())),
+            (Cbor::Text("uri".into()), Cbor::Text(URI.into())),
+        ]),
+    )]);
+    assert_eq!(
+        mdoc_reference_to_json(good.clone()).unwrap(),
+        serde_json::json!({"status_list":{"idx":0,"uri":URI}})
+    );
+    let mut tagged_index = good.clone();
+    let Cbor::Map(mechanisms) = &mut tagged_index else {
+        unreachable!()
+    };
+    let Cbor::Map(reference) = &mut mechanisms[0].1 else {
+        unreachable!()
+    };
+    reference[0].1 = Cbor::Tag(1, Box::new(Cbor::Integer(0.into())));
+    let mut duplicate = good.clone();
+    let Cbor::Map(mechanisms) = &mut duplicate else {
+        unreachable!()
+    };
+    mechanisms.push(mechanisms[0].clone());
+    for raw in [
+        Cbor::Null,
+        Cbor::Map(vec![]),
+        Cbor::Tag(24, Box::new(good)),
+        Cbor::Map(vec![(
+            Cbor::Text("future_status".into()),
+            Cbor::Map(vec![]),
+        )]),
+        tagged_index,
+        duplicate,
+    ] {
+        assert_eq!(
+            mdoc_reference_to_json(raw),
+            Err(CredentialTrustError::InvalidStatus)
+        );
     }
 }
 
@@ -73,7 +241,7 @@ fn credential_verifier_resolves_signed_status_after_authentication() {
             ),
             format: CredentialFormat::MsoMdoc,
         }));
-        for (index, accepted) in [(0, true), (1, false), (8, false)] {
+        for (index, accepted) in [(0, true), (1, false), (2, false), (3, false), (4, false)] {
             let reference = serde_json::json!({"status_list":{"idx":index,"uri":URI}});
             let reference = super::super::super::crypto_helpers::json_to_cbor(&reference).unwrap();
             let (encoded, transcript) =
@@ -86,6 +254,17 @@ fn credential_verifier_resolves_signed_status_after_authentication() {
                 ..presentation(CredentialFormat::MsoMdoc)
             };
             assert_eq!(crypto.verify(&p).await.is_ok(), accepted);
+            if accepted {
+                assert_eq!(
+                    crypto
+                        .clone()
+                        .with_status_resolver(Arc::new(UnreachableListResolver))
+                        .verify(&p)
+                        .await,
+                    Err(CredentialTrustError::Unavailable),
+                    "a valid signature does not bypass an unavailable status server",
+                );
+            }
         }
     });
 }
@@ -129,9 +308,29 @@ fn mdoc_status_signer_must_belong_to_the_credential_iaca() {
             Utc::now().timestamp() + 300,
             "application/statuslist+cwt",
         );
-        assert!(verify_cwt(&crypto, &p, &[credential.leaf_der], URI, 0, &token).is_ok());
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &[credential.leaf_der],
+                URI,
+                0,
+                &token
+            )
+            .is_ok()
+        );
         let unrelated = certificate_fixture("issuer.example");
-        assert!(verify_cwt(&crypto, &p, &[unrelated.leaf_der], URI, 0, &token).is_err());
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &[unrelated.leaf_der],
+                URI,
+                0,
+                &token
+            )
+            .is_err()
+        );
     });
 }
 
@@ -207,7 +406,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
         assert!(
             verify_jwt(
                 &crypto,
-                &p,
+                &p.additional_trust_anchors,
                 &issuer,
                 "https://issuer.example",
                 URI,
@@ -220,7 +419,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
             assert!(
                 verify_jwt(
                     &crypto,
-                    &p,
+                    &p.additional_trust_anchors,
                     &issuer,
                     "https://issuer.example",
                     URI,
@@ -233,7 +432,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
         assert!(
             verify_jwt(
                 &crypto,
-                &p,
+                &p.additional_trust_anchors,
                 &issuer,
                 "https://issuer.example",
                 "https://issuer.example/other",
@@ -245,7 +444,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
         assert!(
             verify_jwt(
                 &crypto,
-                &p,
+                &p.additional_trust_anchors,
                 &issuer,
                 "https://issuer.example",
                 URI,
@@ -267,7 +466,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
             assert!(
                 verify_jwt(
                     &crypto,
-                    &p,
+                    &p.additional_trust_anchors,
                     &issuer,
                     "https://issuer.example",
                     URI,
@@ -282,7 +481,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
         assert!(
             verify_jwt(
                 &crypto,
-                &p,
+                &p.additional_trust_anchors,
                 &issuer,
                 "https://issuer.example",
                 URI,
@@ -301,7 +500,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
         assert!(
             verify_jwt(
                 &crypto,
-                &p,
+                &p.additional_trust_anchors,
                 &issuer,
                 "https://issuer.example",
                 URI,
@@ -323,8 +522,11 @@ fn cwt(certs: &CertificateFixture, uri: &str, exp: i64, typ: &str) -> Vec<u8> {
         (
             Cbor::Integer(65533.into()),
             Cbor::Map(vec![
-                (Cbor::Text("bits".into()), Cbor::Integer(1.into())),
-                (Cbor::Text("lst".into()), Cbor::Bytes(compressed(&[2]))),
+                (Cbor::Text("bits".into()), Cbor::Integer(2.into())),
+                (
+                    Cbor::Text("lst".into()),
+                    Cbor::Bytes(compressed(&[0b11100100])),
+                ),
             ]),
         ),
     ]);
@@ -357,9 +559,39 @@ fn signed_cwt_lists_validate_cose_and_fail_closed() {
             Utc::now().timestamp() + 300,
             "application/statuslist+cwt",
         );
-        assert!(verify_cwt(&crypto, &p, &issuer, URI, 0, &token).is_ok());
-        assert!(verify_cwt(&crypto, &p, &issuer, URI, 1, &token).is_err());
-        assert!(verify_cwt(&crypto, &p, &issuer, URI, 8, &token).is_err());
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                0,
+                &token
+            )
+            .is_ok()
+        );
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                1,
+                &token
+            )
+            .is_err()
+        );
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                8,
+                &token
+            )
+            .is_err()
+        );
         for (uri, exp, typ) in [
             (
                 "https://issuer.example/other",
@@ -373,13 +605,23 @@ fn signed_cwt_lists_validate_cose_and_fail_closed() {
             ),
             (URI, Utc::now().timestamp() + 300, "application/cwt"),
         ] {
-            assert!(verify_cwt(&crypto, &p, &issuer, URI, 0, &cwt(&certs, uri, exp, typ)).is_err());
+            assert!(
+                verify_cwt(
+                    &crypto,
+                    &p.additional_trust_anchors,
+                    &issuer,
+                    URI,
+                    0,
+                    &cwt(&certs, uri, exp, typ)
+                )
+                .is_err()
+            );
         }
         let rogue = certificate_fixture("issuer.example");
         assert!(
             verify_cwt(
                 &crypto,
-                &p,
+                &p.additional_trust_anchors,
                 &issuer,
                 URI,
                 0,
@@ -396,12 +638,58 @@ fn signed_cwt_lists_validate_cose_and_fail_closed() {
             .unwrap()
             .to_vec()
             .unwrap();
-        assert!(verify_cwt(&crypto, &p, &issuer, URI, 0, &untagged).is_err());
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                0,
+                &untagged
+            )
+            .is_err()
+        );
+        let mut critical_unprotected = coset::CoseSign1::from_tagged_slice(&token).unwrap();
+        critical_unprotected.unprotected = HeaderBuilder::new()
+            .add_critical(iana::HeaderParameter::Alg)
+            .build();
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                0,
+                &critical_unprotected.to_tagged_vec().unwrap(),
+            )
+            .is_err(),
+            "a critical header cannot be accepted from the unprotected bucket",
+        );
         let cwt_tagged = [vec![0xd8, 61], token.clone()].concat();
-        assert!(verify_cwt(&crypto, &p, &issuer, URI, 0, &cwt_tagged).is_err());
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                0,
+                &cwt_tagged
+            )
+            .is_err()
+        );
         let mut corrupted = token;
         let last = corrupted.len() - 1;
         corrupted[last] ^= 1;
-        assert!(verify_cwt(&crypto, &p, &issuer, URI, 0, &corrupted).is_err());
+        assert!(
+            verify_cwt(
+                &crypto,
+                &p.additional_trust_anchors,
+                &issuer,
+                URI,
+                0,
+                &corrupted
+            )
+            .is_err()
+        );
     });
 }

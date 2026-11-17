@@ -1,28 +1,26 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-#[path = "../../support/mdoc_signer.rs"]
-mod mdoc_signer;
-
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use chrono::{Duration, Utc};
-use coset::{CborSerializable, CoseKeyBuilder, SignatureContext, iana};
+use coset::{CborSerializable, CoseKeyBuilder, iana};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, decode_header, encode};
-use mdoc_rs::{
-    MdocError,
-    builder::{CoseSigner, DocumentBuilder},
-    model::types::ValidityInfo,
-    response_builder::DeviceResponseBuilder,
-    session::SessionTranscript,
-};
 use nazo_digital_credentials::{
     CertificateRevocationSnapshot, CredentialFormat, CredentialSignInput, CredentialSignerPort,
     CredentialTrustError, HolderBinding, PresentedCredential, VcIssuerTrustPolicy,
 };
 use nazo_key_management::{
     KeyManager, KeySettings, LocalKeyRegistration, Openid4vcMaterial, Openid4vcPublicMaterial,
+};
+use nazo_mdoc::{
+    builder::DocumentBuilder,
+    model::{
+        document::DeviceSigned,
+        types::{CoseAlgorithm, DeviceAuth, ValidityInfo},
+    },
+    session::{RedirectHandover, SessionTranscript, build_device_authentication_bytes},
 };
 use p256::{
     ecdsa::{SigningKey, signature::Signer as _},
@@ -35,11 +33,13 @@ use rcgen::{
 use serde_json::{Value, json};
 use sha2::Digest as _;
 
-use super::mdoc::{
-    mdoc_assessments_accepted, mdoc_failed_assessments_accepted, mdoc_holder_key,
-    standard_device_authentication_bytes, verify_direct_scoped_trust_anchor,
-};
+use super::mdoc::verify_direct_scoped_trust_anchor;
 use super::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "openid4vc_credential_perf.rs"]
+mod performance;
+
 fn verify_certificate_chain_at<'a>(
     certificates: &[Vec<u8>],
     anchors: &'a [Vec<u8>],
@@ -226,29 +226,8 @@ fn crypto_with_certificate(
         keyset,
         VcIssuerTrustPolicy::san_bound(),
         revocation_policy,
-        Arc::new(mdoc_signer::LocalTestMdocDocumentSigner),
     )
     .expect("fixture OpenID4VC material should validate")
-}
-
-struct TestMdocIssuerSigner {
-    signing_key: SigningKey,
-    certificate_der: Vec<u8>,
-}
-
-impl CoseSigner for TestMdocIssuerSigner {
-    fn sign(&self, tbs: &[u8]) -> Result<Vec<u8>, MdocError> {
-        let signature: p256::ecdsa::Signature = self.signing_key.sign(tbs);
-        Ok(signature.to_bytes().to_vec())
-    }
-
-    fn algorithm(&self) -> i64 {
-        -7
-    }
-
-    fn certificate_der(&self) -> &[u8] {
-        &self.certificate_der
-    }
 }
 
 pub(super) fn valid_mdoc_presentation(
@@ -273,7 +252,7 @@ pub(super) fn valid_mdoc_presentation(
         .device_key(device_key)
         .validity(ValidityInfo {
             signed: signed_at,
-            valid_from: now - Duration::minutes(1),
+            valid_from: signed_at.max(now - Duration::minutes(1)),
             valid_until: now + Duration::hours(1),
             expected_update: None,
         })
@@ -288,60 +267,48 @@ pub(super) fn valid_mdoc_presentation(
         Some(status) => builder.status_raw(status),
         None => builder,
     };
-    let issuer_document = builder
-        .sign(&TestMdocIssuerSigner {
-            signing_key: issuer_signing_key,
-            certificate_der: certs.leaf_der.clone(),
-        })
+    let prepared = builder
+        .prepare(CoseAlgorithm::ES256, vec![certs.leaf_der.clone()])
+        .expect("prepared issuer-signed mdoc");
+    let issuer_signature: p256::ecdsa::Signature =
+        issuer_signing_key.sign(prepared.signing_input());
+    let mut document = prepared
+        .finish(issuer_signature.to_bytes().to_vec())
         .expect("issuer-signed mdoc");
-    let transcript = SessionTranscript::Oid4vp {
-        mdoc_nonce: "mdoc-nonce".to_owned(),
-        client_id: "https://verifier.example".to_owned(),
-        response_uri: "https://verifier.example/response".to_owned(),
-        verifier_nonce: "verifier-nonce".to_owned(),
-    };
-    let transcript_bytes = transcript
-        .to_cbor_bytes()
-        .expect("session transcript")
-        .into_owned();
-    let device_key_der = device_signing_key.to_bytes().to_vec();
-    let mut response = DeviceResponseBuilder::from_documents(vec![issuer_document])
-        .session_transcript(transcript)
-        .authenticate_with_signature(device_key_der, -7)
-        .build()
-        .expect("device response");
-    let document = response
-        .documents
-        .first_mut()
-        .expect("device response document");
-    let device_signed = document
-        .device_signed
-        .as_mut()
-        .expect("device-signed response");
-    let mdoc_rs::model::types::DeviceAuth::Signature(device_signature) =
-        &mut device_signed.device_auth
-    else {
-        panic!("device response should use a signature");
-    };
-    let device_authentication = standard_device_authentication_bytes(
+    let transcript = SessionTranscript::redirect(RedirectHandover {
+        client_id: "https://verifier.example",
+        nonce: "verifier-nonce",
+        jwk_thumbprint: None,
+        response_uri: "https://verifier.example/response",
+    })
+    .expect("Final redirect transcript");
+    let transcript_bytes = transcript.into_bytes();
+    let name_spaces_bytes = vec![0xd8, 0x18, 0x41, 0xa0];
+    let device_authentication = build_device_authentication_bytes(
         &transcript_bytes,
         &document.doc_type,
-        &device_signed.name_spaces_bytes,
+        &name_spaces_bytes,
     )
-    .expect("standard DeviceAuthenticationBytes");
-    let signature_input = coset::sig_structure_data(
-        SignatureContext::CoseSign1,
-        device_signature.protected.clone(),
-        None,
-        &[],
-        &device_authentication,
-    );
-    let signature: p256::ecdsa::Signature = device_signing_key.sign(&signature_input);
-    device_signature.payload = None;
-    device_signature.signature = signature.to_bytes().to_vec();
+    .expect("DeviceAuthenticationBytes");
+    let signature = coset::CoseSign1Builder::new()
+        .protected(
+            coset::HeaderBuilder::new()
+                .algorithm(iana::Algorithm::ES256)
+                .build(),
+        )
+        .create_detached_signature(&device_authentication, &[], |tbs| {
+            let signature: p256::ecdsa::Signature = device_signing_key.sign(tbs);
+            signature.to_bytes().to_vec()
+        })
+        .build();
+    document.device_signed = Some(DeviceSigned {
+        device_auth: DeviceAuth::Signature(signature),
+        name_spaces: Default::default(),
+        name_spaces_bytes,
+    });
     (
         URL_SAFE_NO_PAD.encode(
-            response
+            document
                 .to_device_response_cbor()
                 .expect("device response CBOR"),
         ),
@@ -509,7 +476,6 @@ fn constructor_fails_closed_without_managed_material() {
             nazo_key_management::KeyManager::for_test(Algorithm::ES256),
             VcIssuerTrustPolicy::san_bound(),
             crate::policy::Openid4vcRevocationPolicy::Disabled,
-            Arc::new(mdoc_signer::LocalTestMdocDocumentSigner),
         )
         .is_err()
     );
@@ -802,10 +768,10 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
                 .1
                 .clone();
             let cose = coset::CoseSign1::from_slice(
-                &mdoc_rs::cbor::data_item::encode_cbor_canonical(&issuer_auth).unwrap(),
+                &nazo_mdoc::cbor::data_item::encode_cbor_canonical(&issuer_auth).unwrap(),
             )
             .unwrap();
-            let mso = mdoc_rs::model::issuer_auth::IssuerAuth::new(cose)
+            let mso = nazo_mdoc::model::issuer_auth::IssuerAuth::new(cose)
                 .mso()
                 .unwrap();
             assert!(
@@ -890,6 +856,107 @@ fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
             .expect("matching mDL issuing country");
         assert!(!encoded.is_empty());
     })
+}
+
+#[test]
+fn mdoc_date_tags_are_scoped_to_the_iso_mdl_schema() {
+    use super::mdoc::mdoc_element_to_cbor;
+    const DOC: &str = "org.iso.18013.5.1.mDL";
+    const NS: &str = "org.iso.18013.5.1";
+    for (element, text, expected_tag) in [
+        ("birth_date", "2000-02-29", 1004),
+        ("issue_date", "2026-11-17", 1004),
+        ("expiry_date", "2030-11-17", 1004),
+        ("issue_date", "2026-11-17T00:00:00Z", 0),
+        ("expiry_date", "2030-11-17T23:59:59Z", 0),
+        ("portrait_capture_date", "2026-11-17T12:34:56Z", 0),
+    ] {
+        let value = json!(text);
+        assert_eq!(
+            mdoc_element_to_cbor(DOC, NS, element, &value).unwrap(),
+            ciborium::Value::Tag(expected_tag, Box::new(ciborium::Value::Text(text.into()))),
+        );
+        for (doc, namespace) in [("org.example.custom", NS), (DOC, "org.example.custom")] {
+            assert_eq!(
+                mdoc_element_to_cbor(doc, namespace, element, &value).unwrap(),
+                ciborium::Value::Text(text.into()),
+                "custom schemas must not inherit mDL date semantics",
+            );
+        }
+    }
+    for (element, value) in [
+        ("birth_date", json!("2025-02-29")),
+        ("birth_date", json!("2026-11-17T00:00:00Z")),
+        ("birth_date", json!("2026-1-7")),
+        ("birth_date", json!(42)),
+        ("issue_date", json!("2026-11-17T00:00:00.1Z")),
+        ("expiry_date", json!("2030-11-17T00:00:00+00:00")),
+        ("portrait_capture_date", json!("2026-11-17")),
+    ] {
+        assert_eq!(
+            mdoc_element_to_cbor(DOC, NS, element, &value),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    }
+    let privileges = json!([{"vehicle_category_code":"B", "issue_date":"2026-11-17", "expiry_date":"2030-11-17"}]);
+    let encoded = mdoc_element_to_cbor(DOC, NS, "driving_privileges", &privileges).unwrap();
+    let fields = encoded.as_array().unwrap()[0].as_map().unwrap();
+    for name in ["issue_date", "expiry_date"] {
+        assert!(matches!(
+            fields
+                .iter()
+                .find(|(key, _)| key.as_text() == Some(name))
+                .unwrap()
+                .1,
+            ciborium::Value::Tag(1004, _)
+        ));
+    }
+    let invalid = json!([{"vehicle_category_code":"B", "issue_date":"2026-11-17T00:00:00Z"}]);
+    assert_eq!(
+        mdoc_element_to_cbor(DOC, NS, "driving_privileges", &invalid),
+        Err(CredentialTrustError::InvalidEncoding)
+    );
+}
+
+#[test]
+fn mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let holder = nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk();
+        let input = mdoc_input(
+            Some(HolderBinding::Jwk { jwk: holder }),
+            json!({
+                "org.iso.18013.5.1": {"issuing_country":"US", "birth_date":"2000-02-29", "issue_date":"2026-11-17T00:00:00Z"},
+                "org.example.custom": {"birth_date":"a custom literal"}
+            }),
+        );
+        let issued = URL_SAFE_NO_PAD
+            .decode(crypto.sign(&input).await.unwrap())
+            .unwrap();
+        let pending =
+            nazo_mdoc::verifier::verify_issued(&issued, "org.iso.18013.5.1.mDL", Utc::now())
+                .unwrap();
+        let namespaces = &pending.document().issuer_signed.name_spaces;
+        let mdl = &namespaces["org.iso.18013.5.1"];
+        assert!(matches!(
+            mdl.iter()
+                .find(|item| item.element_identifier == "birth_date")
+                .unwrap()
+                .element_value,
+            ciborium::Value::Tag(1004, _)
+        ));
+        assert!(matches!(
+            mdl.iter()
+                .find(|item| item.element_identifier == "issue_date")
+                .unwrap()
+                .element_value,
+            ciborium::Value::Tag(0, _)
+        ));
+        assert_eq!(
+            namespaces["org.example.custom"][0].element_value,
+            ciborium::Value::Text("a custom literal".into())
+        );
+    });
 }
 
 #[test]
@@ -996,7 +1063,6 @@ fn current_revocation_policy_preserves_optional_and_required_snapshots() {
             keyset,
             VcIssuerTrustPolicy::san_bound(),
             mode,
-            Arc::new(mdoc_signer::LocalTestMdocDocumentSigner),
         )
         .expect("revocation policy fixture");
         let policy = crypto.current_revocation_policy();
@@ -1407,8 +1473,15 @@ fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
 fn mdoc_verification_rejects_signing_before_certificate_validity() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, transcript) =
-            valid_mdoc_presentation(&certs, Utc::now() - Duration::hours(1), None);
+        let now = Utc::now();
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, now, None);
+        let encoded = resign_mdoc_validity(
+            &encoded,
+            &certs,
+            now - Duration::hours(1),
+            now,
+            now + Duration::minutes(10),
+        );
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
@@ -1428,7 +1501,7 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
         );
         assert_eq!(
             crypto.verify_mdoc(&presentation),
-            Err(CredentialTrustError::InvalidSignature)
+            Err(CredentialTrustError::InvalidValidity)
         );
     })
 }
@@ -1507,61 +1580,6 @@ fn mdoc_direct_scoped_trust_anchor_is_exact_self_signed_and_lease_scoped() {
         )
         .expect("direct-anchor mode requires an exact one-certificate chain")
     );
-}
-
-#[test]
-fn mdoc_assessment_and_holder_helpers_fail_closed() {
-    let passed = mdoc_rs::verifier::VerificationAssessment {
-        status: mdoc_rs::verifier::VerificationStatus::Passed,
-        check: "passed".to_owned(),
-        reason: None,
-        category: mdoc_rs::verifier::VerificationCategory::IssuerAuth,
-        id: mdoc_rs::verifier::CheckId::IssuerCertificateValidity,
-    };
-    assert!(!mdoc_failed_assessments_accepted(
-        [&passed].into_iter(),
-        true,
-        true
-    ));
-    assert!(!mdoc_assessments_accepted(
-        &mdoc_rs::verifier::VerifiedMDoc {
-            mdoc: mdoc_rs::model::MDoc {
-                version: "1.0".to_owned(),
-                status: mdoc_rs::model::MDocStatus::Ok,
-                documents: vec![],
-            },
-            assessments: vec![],
-            is_valid: true,
-        },
-        false,
-        true,
-    ));
-
-    let key = CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, vec![1; 32], vec![2; 32])
-        .build();
-    let holder = mdoc_holder_key(Some(key.clone().to_vec().unwrap())).expect("holder key");
-    assert_eq!(
-        URL_SAFE_NO_PAD
-            .decode(holder["cose_key"].as_str().expect("encoded key"))
-            .expect("COSE key"),
-        key.to_vec().expect("COSE serialization")
-    );
-    assert_eq!(
-        mdoc_holder_key(None),
-        Err(CredentialTrustError::InvalidHolderBinding)
-    );
-}
-
-#[test]
-fn standard_device_authentication_bytes_is_deterministic_and_rejects_bad_inputs() {
-    let transcript = [0x83, 0xf6, 0xf6, 0xf6];
-    let first = standard_device_authentication_bytes(&transcript, "org.iso.18013.5.1.mDL", &[0xa0])
-        .expect("DeviceAuthenticationBytes");
-    let second =
-        standard_device_authentication_bytes(&transcript, "org.iso.18013.5.1.mDL", &[0xa0])
-            .expect("DeviceAuthenticationBytes");
-    assert_eq!(first, second);
-    assert!(standard_device_authentication_bytes(&[0xff], "doc", &[0xa0]).is_err());
 }
 
 fn install_revocation_snapshot(
@@ -2022,15 +2040,14 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
         let (encoded, _) = valid_mdoc_presentation(&certs, Utc::now(), None);
-        let different_transcript = SessionTranscript::Oid4vp {
-            mdoc_nonce: "mdoc-nonce".to_owned(),
-            client_id: "https://verifier.example".to_owned(),
-            response_uri: "https://verifier.example/response".to_owned(),
-            verifier_nonce: "another-transaction".to_owned(),
-        }
-        .to_cbor_bytes()
+        let different_transcript = SessionTranscript::redirect(RedirectHandover {
+            client_id: "https://verifier.example",
+            response_uri: "https://verifier.example/response",
+            nonce: "another-transaction",
+            jwk_thumbprint: None,
+        })
         .unwrap()
-        .into_owned();
+        .into_bytes();
         let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
@@ -2043,7 +2060,7 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
             crypto.verify_mdoc(&presentation),
             Err(CredentialTrustError::InvalidSessionBinding)
         );
-        let mut response = mdoc_rs::parser::parse(
+        let mut response = nazo_mdoc::parser::parse(
             &URL_SAFE_NO_PAD
                 .decode(presentation.encoded.as_bytes())
                 .unwrap(),
@@ -2053,7 +2070,7 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
         malformed.issuer_signed.issuer_auth.cose_sign1.payload = Some(vec![0xff]);
         response.documents.push(malformed);
         presentation.encoded = URL_SAFE_NO_PAD
-            .encode(mdoc_rs::encoder::encode_device_response(&response).unwrap())
+            .encode(nazo_mdoc::encoder::encode_device_response(&response).unwrap())
             .into();
         assert_eq!(
             crypto.verify_mdoc(&presentation),
@@ -2626,6 +2643,222 @@ fn verifier_requires_status_resolver_for_mdoc() {
         assert_eq!(
             crypto.verify(&presentation).await,
             Err(CredentialTrustError::InvalidStatus)
+        );
+    });
+}
+
+#[test]
+fn authenticated_unknown_mdoc_status_cannot_become_absent() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        for status in [
+            json!({"future_status":{"uri":"https://issuer.example/status"}}),
+            json!({"status_list":{"idx":0,"uri":"https://issuer.example/status"},"future_status":{}}),
+        ] {
+            let (encoded, transcript) = valid_mdoc_presentation(
+                &certs,
+                Utc::now(),
+                Some(super::super::crypto_helpers::json_to_cbor(&status).unwrap()),
+            );
+            let presentation = PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: encoded.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.into()),
+                additional_trust_anchors: vec![].into(),
+            };
+            assert_eq!(
+                crypto.verify_mdoc(&presentation),
+                Err(CredentialTrustError::InvalidStatus)
+            );
+            assert_eq!(
+                crypto.verify(&presentation).await,
+                Err(CredentialTrustError::InvalidStatus)
+            );
+        }
+    });
+}
+
+#[test]
+fn mdoc_status_tampering_or_removal_fails_before_status_resolution() {
+    struct MustNotFetch;
+    impl crate::ports::credential_status::CredentialStatusResolver for MustNotFetch {
+        fn fetch<'a>(
+            &'a self,
+            _uri: &'a str,
+            _format: CredentialFormat,
+        ) -> nazo_digital_credentials::CredentialFuture<'a, Result<Vec<u8>, CredentialTrustError>>
+        {
+            panic!("unauthenticated or absent MSO status must not initiate a request")
+        }
+    }
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let crypto = crypto.with_status_resolver(Arc::new(MustNotFetch));
+        let reference = super::super::crypto_helpers::json_to_cbor(&json!({
+            "status_list": {"idx":0, "uri":"https://issuer.example/status"}
+        }))
+        .unwrap();
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), Some(reference));
+        for remove in [false, true] {
+            let mut response =
+                nazo_mdoc::parser::parse(&URL_SAFE_NO_PAD.decode(&encoded).unwrap()).unwrap();
+            let auth = &mut response.documents[0].issuer_signed.issuer_auth.cose_sign1;
+            let ciborium::Value::Tag(24, embedded) =
+                ciborium::from_reader(auth.payload.as_deref().unwrap()).unwrap()
+            else {
+                panic!("MSO Tag24")
+            };
+            let ciborium::Value::Bytes(inner) = *embedded else {
+                panic!("MSO bytes")
+            };
+            let mut mso: ciborium::Value = ciborium::from_reader(inner.as_slice()).unwrap();
+            let fields = mso.as_map_mut().unwrap();
+            if remove {
+                fields.retain(|(key, _)| key.as_text() != Some("status"));
+            } else {
+                fields
+                    .iter_mut()
+                    .find(|(key, _)| key.as_text() == Some("status"))
+                    .unwrap()
+                    .1 = super::super::crypto_helpers::json_to_cbor(&json!({
+                    "status_list": {"idx":1, "uri":"https://issuer.example/status"}
+                }))
+                .unwrap();
+            }
+            let inner = nazo_mdoc::cbor::data_item::encode_cbor_canonical(&mso).unwrap();
+            auth.payload = Some(
+                nazo_mdoc::cbor::data_item::encode_cbor_canonical(&ciborium::Value::Tag(
+                    24,
+                    Box::new(ciborium::Value::Bytes(inner)),
+                ))
+                .unwrap(),
+            );
+            let presentation = PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: URL_SAFE_NO_PAD
+                    .encode(response.to_device_response_cbor().unwrap())
+                    .into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.as_slice().into()),
+                additional_trust_anchors: vec![].into(),
+            };
+            assert_eq!(
+                crypto.verify(&presentation).await,
+                Err(CredentialTrustError::InvalidSignature)
+            );
+        }
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![].into(),
+        };
+        assert!(crypto.verify(&presentation).await.is_ok());
+    });
+}
+
+// Deliberately mutate and re-sign the wire payload: the production issuance
+// builder rejects these invalid dates before it creates signing material.
+fn resign_mdoc_validity(
+    encoded: &str,
+    certs: &CertificateFixture,
+    signed: chrono::DateTime<Utc>,
+    valid_from: chrono::DateTime<Utc>,
+    valid_until: chrono::DateTime<Utc>,
+) -> String {
+    let mut response = nazo_mdoc::parser::parse(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+    let auth = &mut response.documents[0].issuer_signed.issuer_auth.cose_sign1;
+    let outer: ciborium::Value = ciborium::from_reader(auth.payload.as_deref().unwrap()).unwrap();
+    let ciborium::Value::Tag(24, embedded) = outer else {
+        panic!("MSO Tag24")
+    };
+    let ciborium::Value::Bytes(inner) = *embedded else {
+        panic!("MSO bytes")
+    };
+    let mut mso: ciborium::Value = ciborium::from_reader(inner.as_slice()).unwrap();
+    let validity = mso
+        .as_map_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| key.as_text() == Some("validityInfo"))
+        .unwrap()
+        .1
+        .as_map_mut()
+        .unwrap();
+    for (key, value) in validity {
+        let date = match key.as_text() {
+            Some("signed") => signed,
+            Some("validFrom") => valid_from,
+            Some("validUntil") => valid_until,
+            _ => continue,
+        };
+        *value = ciborium::Value::Tag(
+            0,
+            Box::new(ciborium::Value::Text(
+                date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            )),
+        );
+    }
+    let inner = nazo_mdoc::cbor::data_item::encode_cbor_canonical(&mso).unwrap();
+    auth.payload = Some(
+        nazo_mdoc::cbor::data_item::encode_cbor_canonical(&ciborium::Value::Tag(
+            24,
+            Box::new(ciborium::Value::Bytes(inner)),
+        ))
+        .unwrap(),
+    );
+    let secret = p256::SecretKey::from_pkcs8_der(&certs.leaf_key.serialize_der()).unwrap();
+    let signing = SigningKey::from_slice(&secret.to_bytes()).unwrap();
+    let signature: p256::ecdsa::Signature = signing.sign(&auth.tbs_data(&[]));
+    auth.signature = signature.to_bytes().to_vec();
+    URL_SAFE_NO_PAD.encode(response.to_device_response_cbor().unwrap())
+}
+
+#[test]
+fn mdoc_current_session_failure_precedes_expiration_policy() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let now = Utc::now();
+        let encoded = resign_mdoc_validity(
+            &encoded,
+            &certs,
+            now - Duration::seconds(45),
+            now - Duration::seconds(45),
+            now - Duration::seconds(30),
+        );
+        let mut presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![].into(),
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::InvalidValidity)
+        );
+        presentation.mdoc_session_transcript = Some(
+            SessionTranscript::redirect(RedirectHandover {
+                client_id: "https://verifier.example",
+                nonce: "another-transaction",
+                jwk_thumbprint: None,
+                response_uri: "https://verifier.example/response",
+            })
+            .unwrap()
+            .into_bytes()
+            .into(),
+        );
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::InvalidSessionBinding)
         );
     });
 }

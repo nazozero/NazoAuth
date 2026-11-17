@@ -9,7 +9,7 @@ use chrono::Utc;
 use ciborium::Value as Cbor;
 use coset::AsCborValue;
 use nazo_crypto::jwt::{Algorithm, Validation, VerificationKey, decode, decode_header};
-use nazo_digital_credentials::{CredentialFormat, CredentialTrustError, PresentedCredential};
+use nazo_digital_credentials::{CredentialFormat, CredentialTrustError};
 use serde_json::Value;
 
 use super::super::crypto_helpers::{parse_x509, verify_openid4vc_chain_with_scoped};
@@ -19,13 +19,50 @@ const INVALID: CredentialTrustError = CredentialTrustError::InvalidStatus;
 const MAX_TOKEN_BYTES: usize = 128 * 1024;
 const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
 
-pub(super) async fn verify(
+/// Project only the supported authenticated MSO mechanism. The general claim
+/// converter strips CBOR tags, so it must never decide whether status exists.
+pub(super) fn mdoc_reference_to_json(raw: Cbor) -> Result<Value, CredentialTrustError> {
+    let mechanisms = unique_map(&raw)?;
+    let [(Cbor::Text(mechanism), reference)] = mechanisms else {
+        return Err(INVALID);
+    };
+    if mechanism != "status_list" {
+        return Err(INVALID);
+    }
+    let reference = unique_map(reference)?;
+    if reference.len() != 2 {
+        return Err(INVALID);
+    }
+    let mut index = None;
+    let mut uri = None;
+    for (name, value) in reference {
+        match (name.as_text(), value) {
+            (Some("idx"), Cbor::Integer(value)) => {
+                index = Some(u64::try_from(*value).map_err(|_| INVALID)?);
+            }
+            (Some("uri"), Cbor::Text(value)) => uri = Some(value),
+            _ => return Err(INVALID),
+        }
+    }
+    Ok(serde_json::json!({
+        "status_list": {"idx": index.ok_or(INVALID)?, "uri": uri.ok_or(INVALID)?}
+    }))
+}
+
+/// Bounded response bytes associated with one validated reference. Signature and
+/// trust checks remain pending until `verify` receives the credential's chain.
+pub(super) struct ResolvedStatusList<'a> {
+    format: CredentialFormat,
+    uri: &'a str,
+    index: u64,
+    token: Vec<u8>,
+}
+
+pub(super) async fn resolve<'a>(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
-    status: &Value,
-    issuer: &str,
-    issuer_chain: &[Vec<u8>],
-) -> Result<(), CredentialTrustError> {
+    format: CredentialFormat,
+    status: &'a Value,
+) -> Result<ResolvedStatusList<'a>, CredentialTrustError> {
     let reference = status
         .get("status_list")
         .and_then(Value::as_object)
@@ -58,30 +95,52 @@ pub(super) async fn verify(
         .status_resolver
         .as_ref()
         .ok_or(INVALID)?
-        .fetch(uri, presentation.format)
+        .fetch(uri, format)
         .await?;
     if token.is_empty() || token.len() > MAX_TOKEN_BYTES {
         return Err(INVALID);
     }
-    match presentation.format {
-        CredentialFormat::SdJwtVc => verify_jwt(
-            crypto,
-            presentation,
-            issuer_chain,
-            issuer,
-            uri,
-            index,
-            &token,
-        ),
-        CredentialFormat::MsoMdoc => {
-            verify_cwt(crypto, presentation, issuer_chain, uri, index, &token)
+    Ok(ResolvedStatusList {
+        format,
+        uri,
+        index,
+        token,
+    })
+}
+
+impl ResolvedStatusList<'_> {
+    pub(super) fn verify(
+        self,
+        crypto: &Openid4vcCredentialCrypto,
+        additional_trust_anchors: &[Vec<u8>],
+        issuer: &str,
+        issuer_chain: &[Vec<u8>],
+    ) -> Result<(), CredentialTrustError> {
+        match self.format {
+            CredentialFormat::SdJwtVc => verify_jwt(
+                crypto,
+                additional_trust_anchors,
+                issuer_chain,
+                issuer,
+                self.uri,
+                self.index,
+                &self.token,
+            ),
+            CredentialFormat::MsoMdoc => verify_cwt(
+                crypto,
+                additional_trust_anchors,
+                issuer_chain,
+                self.uri,
+                self.index,
+                &self.token,
+            ),
         }
     }
 }
 
 fn verify_jwt(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
+    additional_trust_anchors: &[Vec<u8>],
     issuer_chain: &[Vec<u8>],
     issuer: &str,
     uri: &str,
@@ -112,7 +171,14 @@ fn verify_jwt(
         .iter()
         .map(|der| STANDARD.decode(der).map_err(|_| INVALID))
         .collect::<Result<Vec<_>, _>>()?;
-    let key = status_key(crypto, presentation, issuer_chain, &chain, Some(issuer))?;
+    let key = status_key(
+        crypto,
+        CredentialFormat::SdJwtVc,
+        additional_trust_anchors,
+        issuer_chain,
+        &chain,
+        Some(issuer),
+    )?;
     let mut validation = Validation::new(Algorithm::ES256);
     validation.required_spec_claims = ["sub", "iat"].into_iter().map(str::to_owned).collect();
     validation.validate_exp = false;
@@ -151,7 +217,7 @@ fn verify_jwt(
 
 fn verify_cwt(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
+    additional_trust_anchors: &[Vec<u8>],
     issuer_chain: &[Vec<u8>],
     uri: &str,
     index: u64,
@@ -174,6 +240,7 @@ fn verify_cwt(
             coset::iana::Algorithm::ES256 | coset::iana::Algorithm::ESP256
         ))
     ) || !protected.crit.is_empty()
+        || !sign1.unprotected.crit.is_empty()
         || sign1.unprotected.alg.is_some()
         || sign1
             .unprotected
@@ -207,7 +274,14 @@ fn verify_cwt(
             .collect::<Result<Vec<_>, _>>()?,
         _ => return Err(INVALID),
     };
-    let key = status_key(crypto, presentation, issuer_chain, &chain, None)?;
+    let key = status_key(
+        crypto,
+        CredentialFormat::MsoMdoc,
+        additional_trust_anchors,
+        issuer_chain,
+        &chain,
+        None,
+    )?;
     nazo_crypto::signature::verify(
         Algorithm::ES256,
         &key,
@@ -273,7 +347,8 @@ fn verify_cwt(
 /// separate MSO-list signer must be issued directly by that same IACA.
 fn status_key(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
+    format: CredentialFormat,
+    additional_trust_anchors: &[Vec<u8>],
     issuer_chain: &[Vec<u8>],
     chain: &[Vec<u8>],
     issuer: Option<&str>,
@@ -288,19 +363,15 @@ fn status_key(
     let issuer_leaf = issuer_chain.first().ok_or(INVALID)?;
     let (_, credential_signer) =
         parse_x509(issuer_leaf, "credential signer").map_err(|_| INVALID)?;
-    if presentation.format == CredentialFormat::SdJwtVc {
+    if format == CredentialFormat::SdJwtVc {
         // HAIP excludes trust anchors from x5c. Authenticate the presented chain,
         // then bind its signing key to the already authenticated credential key.
-        let anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
+        let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
         if chain.iter().any(|der| anchors.contains(der)) {
             return Err(INVALID);
         }
-        let anchor = verify_openid4vc_chain_with_scoped(
-            chain,
-            &anchors,
-            &presentation.additional_trust_anchors,
-        )
-        .map_err(|_| INVALID)?;
+        let anchor = verify_openid4vc_chain_with_scoped(chain, &anchors, additional_trust_anchors)
+            .map_err(|_| INVALID)?;
         if leaf.public_key().raw != credential_signer.public_key().raw {
             return Err(INVALID);
         }
@@ -310,13 +381,12 @@ fn status_key(
                 issuer,
                 chain,
                 Utc::now(),
-                presentation
-                    .additional_trust_anchors
+                additional_trust_anchors
                     .iter()
                     .any(|der| der.as_slice() == anchor),
             )?;
     } else {
-        let anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
+        let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
         let issuer = issuer_chain
             .iter()
             .skip(1)
@@ -360,7 +430,7 @@ fn status_key(
                 None,
                 chain,
                 Utc::now(),
-                presentation.additional_trust_anchors.contains(issuer),
+                additional_trust_anchors.contains(issuer),
             )?;
     }
     Ok(VerificationKey::from_ec_sec1(

@@ -9,17 +9,20 @@ repository.workspace = true
 [dependencies]
 chrono = { workspace = true, features = ["serde"] }
 nazo-digital-credentials.workspace = true
+nazo-mdoc = { workspace = true, default-features = false }
 nazo-operator-protocol.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 blake3.workspace = true
-ciborium.workspace = true
 sha2.workspace = true
 uuid = { workspace = true, features = ["serde", "v7"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+ciborium.workspace = true
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

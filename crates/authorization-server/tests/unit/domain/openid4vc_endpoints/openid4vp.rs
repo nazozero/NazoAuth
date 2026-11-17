@@ -2,6 +2,58 @@ use super::*;
 use std::collections::BTreeMap;
 
 #[test]
+fn encrypted_response_key_matches_the_key_bound_by_the_handover() {
+    let key = EphemeralEncryptionKey::generate();
+    let mut request: AuthorizationRequest = serde_json::from_value(json!({
+        "client_id": "x509_san_dns:verifier.example",
+        "response_type": "vp_token",
+        "response_mode": "direct_post.jwt",
+        "response_uri": "https://verifier.example/response",
+        "nonce": "nonce",
+        "state": "state",
+        "dcql_query": {"credentials": []},
+        "client_metadata": {
+            "vp_formats_supported": {},
+            "jwks": {"keys": [key.public_jwk()]}
+        }
+    }))
+    .unwrap();
+    assert!(validate_response_encryption_key(&request, &key).is_ok());
+    assert!(
+        validate_response_encryption_key(&request, &EphemeralEncryptionKey::generate()).is_err()
+    );
+    let original = request.client_metadata.clone().unwrap();
+    for jwks in [
+        None,
+        Some(json!({"keys":[]})),
+        Some(json!({"keys":[key.public_jwk(),key.public_jwk()]})),
+    ] {
+        request.client_metadata.as_mut().unwrap().jwks = jwks;
+        assert!(validate_response_encryption_key(&request, &key).is_err());
+    }
+    request.client_metadata = Some(original);
+    for member in ["kty", "crv", "x", "y"] {
+        let mut changed = request.clone();
+        changed
+            .client_metadata
+            .as_mut()
+            .unwrap()
+            .jwks
+            .as_mut()
+            .unwrap()["keys"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove(member);
+        assert!(
+            validate_response_encryption_key(&changed, &key).is_err(),
+            "{member}"
+        );
+    }
+    request.client_metadata = None;
+    assert!(validate_response_encryption_key(&request, &key).is_err());
+}
+
+#[test]
 fn query_parameters_preserve_request_fields_and_encoding() {
     for optional in [false, true] {
         for mode in [ResponseMode::DirectPost, ResponseMode::DirectPostJwt] {
