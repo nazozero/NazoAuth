@@ -1,0 +1,100 @@
+name: Jiff peer reconciliation
+on:
+  push:
+    branches: [audit/passkey-resume-20261118]
+    paths: [.github/workflows/jiff-peer-reconcile.yml, .audit/reconcile-jiff.py]
+permissions:
+  contents: write
+concurrency:
+  group: jiff-peer-reconciliation
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RUSTUP_TOOLCHAIN: '1.100.0'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: audit
+          persist-credentials: true
+          show-progress: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: validation/jiff-continuation-20261118
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+      - name: Merge frozen peer without discarding either side
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          git -C candidate config user.name 'github-actions[bot]'
+          git -C candidate config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C candidate rev-parse HEAD > evidence/original-head.txt
+          git -C candidate merge --no-commit --no-ff e0014c4a7088085b7b08288ae5f739f27f3f818c > evidence/merge.log 2>&1 || true
+          git -C candidate diff --name-only --diff-filter=U > evidence/conflicts.txt
+          cat evidence/merge.log evidence/conflicts.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines = ['# Frozen peer reconciliation', '', 'Peer: e0014c4a7088085b7b08288ae5f739f27f3f818c', 'Jiff parent: ' + Path('evidence/original-head.txt').read_text().strip(), '']
+          for name in Path('evidence/conflicts.txt').read_text().splitlines():
+              text = (Path('candidate')/name).read_text()
+              lines += ['## ' + name, '']
+              numbered = text.splitlines()
+              active = False
+              for i, line in enumerate(numbered):
+                  if line.startswith('<<<<<<<'):
+                      active = True
+                      lines.extend(f'{j+1}: {numbered[j]}' for j in range(max(0,i-4),i))
+                  if active:
+                      lines.append(f'{i+1}: {line}')
+                  if line.startswith('>>>>>>>'):
+                      active = False
+                      lines.extend(f'{j+1}: {numbered[j]}' for j in range(i+1,min(len(numbered),i+5)))
+                      lines.append('')
+          Path('evidence/reconciliation.md').write_text('\n'.join(lines)+'\n')
+          PY
+          if test -f audit/.audit/reconcile-jiff.py; then
+            python3 audit/.audit/reconcile-jiff.py candidate
+            test -z "$(git -C candidate diff --name-only --diff-filter=U)"
+            rustup toolchain install 1.100.0 --profile minimal --component rustfmt
+            (cd candidate && cargo fmt --all && cargo metadata --format-version 1 > ../evidence/metadata.json)
+            git -C candidate diff --check
+            git -C candidate add -A
+            git -C candidate commit -m 'merge(validation): preserve current mdoc security and Jiff time semantics'
+            original=$(cat evidence/original-head.txt)
+            current=$(git -C candidate ls-remote origin refs/heads/validation/jiff-continuation-20261118 | cut -f1)
+            test "$current" = "$original"
+            git -C candidate push origin HEAD:refs/heads/validation/jiff-continuation-20261118
+            git -C candidate rev-parse HEAD HEAD^{tree} > evidence/merged-identity.txt
+          fi
+      - name: Preserve reconciliation evidence on the audit branch
+        if: always()
+        working-directory: audit
+        run: |
+          set -euo pipefail
+          git fetch origin audit/passkey-resume-20261118
+          git reset --hard origin/audit/passkey-resume-20261118
+          mkdir -p .verification
+          cp ../evidence/reconciliation.md .verification/jiff-peer-reconciliation.md
+          if test -f ../evidence/merged-identity.txt; then cp ../evidence/merged-identity.txt .verification/jiff-peer-merged.txt; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .verification
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs(audit): retain exact frozen-peer reconciliation findings'
+            git push origin HEAD:refs/heads/audit/passkey-resume-20261118
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: jiff-peer-reconciliation
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: error
