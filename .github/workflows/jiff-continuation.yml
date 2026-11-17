@@ -1,0 +1,136 @@
+name: Jiff continuation candidate
+
+on:
+  push:
+    branches: [audit/passkey-resume-20261118]
+    paths: [.audit/continue-jiff.py, .audit/jiff-fixes.py, .github/workflows/jiff-continuation.yml]
+
+concurrency:
+  group: jiff-continuation-candidate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RUSTUP_TOOLCHAIN: '1.100.0'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: audit
+          persist-credentials: false
+          show-progress: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: validation/jiff-continuation-20261118
+          path: nazo
+          persist-credentials: true
+          show-progress: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 652507a91af36284a52b024db5bb0a573ed90967
+          path: independent
+          persist-credentials: false
+          sparse-checkout: crates/server/tests/unit/domain/passkey/profile.rs
+          sparse-checkout-cone-mode: false
+          show-progress: false
+      - name: Install the pinned compiler
+        run: rustup toolchain install 1.100.0 --profile minimal --component clippy --component rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: nazo -> target
+          key: jiff-continuation-v1
+          cache-on-failure: true
+      - name: Apply the reviewed migration and targeted corrections
+        run: |
+          set -euo pipefail
+          python3 audit/.audit/continue-jiff.py nazo independent
+          if test -f audit/.audit/jiff-fixes.py; then python3 audit/.audit/jiff-fixes.py nazo; fi
+          cd nazo
+          cargo fmt --all
+      - name: Compile all workspace targets and retain diagnostics
+        id: compile
+        working-directory: nazo
+        shell: bash
+        run: |
+          set +e
+          mkdir -p ../evidence
+          rustc -Vv > ../evidence/compiler.txt
+          cargo check --workspace --all-targets --all-features --message-format=json > ../evidence/check.jsonl 2> ../evidence/check.stderr
+          result=$?
+          echo "$result" > ../evidence/check.exit
+          echo "exit=$result" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          errors = []
+          warnings = []
+          for line in Path('../evidence/check.jsonl').read_text().splitlines():
+              try:
+                  item = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if item.get('reason') != 'compiler-message':
+                  continue
+              message = item['message']
+              (errors if message['level'] == 'error' else warnings).append(message)
+          Path('../evidence/errors.json').write_text(json.dumps(errors, indent=2) + '\n')
+          print(f'COMPILER DIAGNOSTICS: {len(errors)} errors; {len(warnings)} other messages')
+          for error in errors[:30]:
+              print(error.get('rendered') or error['message'])
+          if not errors:
+              print('\n'.join(Path('../evidence/check.stderr').read_text().splitlines()[-35:]))
+          PY
+      - name: Preserve candidate source and exact compilation status
+        if: always() && steps.compile.outcome != 'skipped'
+        working-directory: nazo
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f ../evidence/check.exit
+          mkdir -p .verification
+          git add -A -- ':!.verification'
+          source_tree=$(git write-tree)
+          SOURCE_TREE="$source_tree" python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          result = {
+              'status': 'PASS' if Path('../evidence/check.exit').read_text().strip() == '0' else 'FAIL',
+              'command': 'cargo check --workspace --all-targets --all-features --message-format=json',
+              'parent': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'source_tree_before_evidence': os.environ['SOURCE_TREE'],
+              'workflow_run': os.environ['GITHUB_RUN_ID'],
+              'errors': json.loads(Path('../evidence/errors.json').read_text()),
+              'stderr_tail': '\n'.join(Path('../evidence/check.stderr').read_text().splitlines()[-50:]),
+          }
+          Path('.verification/jiff-check.json').write_text(json.dumps(result, indent=2) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'refactor(time): stage native Jiff conversion with explicit verification status'
+            git push origin HEAD:refs/heads/validation/jiff-continuation-20261118
+          fi
+          git rev-parse HEAD HEAD^{tree} > ../evidence/candidate-identity.txt
+          cat ../evidence/candidate-identity.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: jiff-continuation-diagnostics
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Enforce the compilation result
+        if: always() && steps.compile.outcome != 'skipped'
+        run: exit "$(cat evidence/check.exit)"
