@@ -1,0 +1,2227 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "utc": "2026-11-17T17:25:29.669192+00:00",
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "glibc": "glibc 2.39",
+    "profiler": {
+      "path": "/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so.0",
+      "bytes": 60744,
+      "sha256": "bd019e51ce7d91743961d13d0c6524eb54cafdf2ca87358f19ccc1403f9c6ea3"
+    },
+    "artifacts": {
+      "baseline": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/baseline-portable",
+        "bytes": 1012496,
+        "sha256": "404b6d2093dd4ff5d1fb7cef0938c1fddab71418815a73b135746c43012ccea0"
+      },
+      "rustcrypto": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/candidate-portable",
+        "bytes": 1227432,
+        "sha256": "14a6a8b4273984664e8957e4eefcaa7998a80e0eb43c746fc636b328b59a4e9f"
+      },
+      "aws_lc": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/candidate-aws",
+        "bytes": 3760480,
+        "sha256": "d00dc9874d44907916b87379e75b670d1cd4115d1175dcbb93c4536d117bf086"
+      },
+      "checkpoint_rustcrypto": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/checkpoint-portable",
+        "bytes": 1239528,
+        "sha256": "c27a144e8ab8ff78ea4b18f32a0e5e8bdb981634fed7ae769b8d4c5c48a6251c"
+      },
+      "checkpoint_aws_lc": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/checkpoint-aws",
+        "bytes": 3773312,
+        "sha256": "933c45506d09566b9e5588c9f384c3af14105170dcbf4afe9f9f8380159cf6b2"
+      }
+    },
+    "harness_source": {
+      "path": "/home/runner/work/NazoAuth/NazoAuth/candidate/benches/ceremony.rs",
+      "bytes": 9154,
+      "sha256": "424a717b7b09adde4eee013b097ca592de017f0444691ec96f87cb521bbabb8f"
+    },
+    "driver_source": {
+      "path": "/home/runner/work/NazoAuth/NazoAuth/candidate/perf/allocations.py",
+      "bytes": 11595,
+      "sha256": "c5bb52510cb0aa73e809715aea6b9578c540dad0dced3dffa11dad9d15769f69"
+    },
+    "aws_lc_rs": "1.19.0",
+    "aws_lc_sys": "0.47.0"
+  },
+  "method": {
+    "trace_window_operations": 100,
+    "warmup_operations_before_trace": 200,
+    "unreported_timing_iterations_before_trace": 10,
+    "concurrency": 1,
+    "counted_trace_events": [
+      "+",
+      ">"
+    ],
+    "definition": "Successful malloc/calloc/aligned-allocation and realloc requests intercepted by glibc mtrace. Realloc contributes its full requested new size, not the size delta.",
+    "scope": "Steady-state API calls and returned-value destruction. Fixture construction, warm-up, tracing startup/shutdown and JSON reporting are outside the traced window.",
+    "limits": "Requested bytes are cumulative and exclude allocator metadata; they are not peak memory, RSS or retained bytes. Direct mmap and allocations bypassing glibc malloc hooks are not counted. No traced latency is reported."
+  },
+  "cases": {
+    "baseline": {
+      "es256.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.registration_begin.trace",
+          "bytes": 169614,
+          "sha256": "e8ea9f592fc3f148d05ddcf07e07b0b177bf937d1afe9a00b1f77b7375d08c55"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.registration_begin.stdout",
+          "bytes": 203,
+          "sha256": "05e00ffa663135c1e4aabb8ff725d13d9e92ccdad2d2464f4fdaac2bd6cce8f7"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 2600,
+          "reallocation_new_events": 200,
+          "reallocation_old_events": 200,
+          "deallocation_events": 2600,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 183600,
+          "reallocation_new_requested_bytes": 102400,
+          "requests_total": 2800,
+          "requested_bytes_total": 286000,
+          "requests_per_operation": 28.0,
+          "requested_bytes_per_operation": 2860.0
+        },
+        "rust_global": {
+          "requests_total": 2800,
+          "requested_bytes_total": 286000,
+          "requests_per_operation": 28.0,
+          "requested_bytes_per_operation": 2860.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.registration_finish.trace",
+          "bytes": 529114,
+          "sha256": "c966f689011c4019bdf5a2e86f480651e08a8dddb04423ecc3e8d3bbed440207"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.registration_finish.stdout",
+          "bytes": 207,
+          "sha256": "77aa67f4603edc955d59cedc3c5feece84131db3c12908a7c4ac5df7cfd8d849"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1200,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1200,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 35100,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1200,
+          "requested_bytes_total": 35100,
+          "requests_per_operation": 12.0,
+          "requested_bytes_per_operation": 351.0
+        },
+        "rust_global": {
+          "requests_total": 1200,
+          "requested_bytes_total": 35100,
+          "requests_per_operation": 12.0,
+          "requested_bytes_per_operation": 351.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.authentication_begin.trace",
+          "bytes": 226514,
+          "sha256": "f4ce8f17cd21c14a2b4ae015f5e357c9bdfd86d513691333219a1e64b53df851"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.authentication_begin.stdout",
+          "bytes": 206,
+          "sha256": "a729341c963499b22da3adeca7ef6687a826a702ff356ddd09656d06cc1da365"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 1500,
+          "reallocation_new_events": 100,
+          "reallocation_old_events": 100,
+          "deallocation_events": 1500,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 85100,
+          "reallocation_new_requested_bytes": 51200,
+          "requests_total": 1600,
+          "requested_bytes_total": 136300,
+          "requests_per_operation": 16.0,
+          "requested_bytes_per_operation": 1363.0
+        },
+        "rust_global": {
+          "requests_total": 1600,
+          "requested_bytes_total": 136300,
+          "requests_per_operation": 16.0,
+          "requested_bytes_per_operation": 1363.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.authentication_finish.trace",
+          "bytes": 302414,
+          "sha256": "2c70ccf3909fee425c7be79a786cf34070314611b6742200d0eb68dc9e966b15"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.authentication_finish.stdout",
+          "bytes": 216,
+          "sha256": "a80dfd032fb33266b427cf315adedd1fae2d79dd7987fed360d1f49e27f26dd3"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-es256.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.registration_begin.trace",
+          "bytes": 169614,
+          "sha256": "1972f92f3d63d6fac14d88be3169181aae330104c358cbc09c937ed8edbbc0c2"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.registration_begin.stdout",
+          "bytes": 205,
+          "sha256": "b165d73587e3a94e3b266962cb4ee358299a47c858b11a4727f30f7a9755c3e1"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 2300,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 2300,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 159900,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 2300,
+          "requested_bytes_total": 159900,
+          "requests_per_operation": 23.0,
+          "requested_bytes_per_operation": 1599.0
+        },
+        "rust_global": {
+          "requests_total": 2300,
+          "requested_bytes_total": 159900,
+          "requests_per_operation": 23.0,
+          "requested_bytes_per_operation": 1599.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.registration_finish.trace",
+          "bytes": 434414,
+          "sha256": "a66cbef165825b389e8b718adfb3b9ab33ae8bca558ffccb003d782ffa30e0eb"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.registration_finish.stdout",
+          "bytes": 211,
+          "sha256": "c6df042442f085091de6d569d8f228ad711f306e22b820dd98a02a364bc2b6fe"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1200,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1200,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 35100,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1200,
+          "requested_bytes_total": 35100,
+          "requests_per_operation": 12.0,
+          "requested_bytes_per_operation": 351.0
+        },
+        "rust_global": {
+          "requests_total": 1200,
+          "requested_bytes_total": 35100,
+          "requests_per_operation": 12.0,
+          "requested_bytes_per_operation": 351.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.authentication_begin.trace",
+          "bytes": 226514,
+          "sha256": "1f4a7752aa427f75121ed5c8d5bd03b13be0111d891ff4dbb9248f6d4f2df5a7"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.authentication_begin.stdout",
+          "bytes": 208,
+          "sha256": "1e5d013c18651087b0c1daf94bd5dbc89cb3fa8ab08cfd21be57d0b204254ea1"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 1300,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1300,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 78100,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1300,
+          "requested_bytes_total": 78100,
+          "requests_per_operation": 13.0,
+          "requested_bytes_per_operation": 781.0
+        },
+        "rust_global": {
+          "requests_total": 1300,
+          "requested_bytes_total": 78100,
+          "requests_per_operation": 13.0,
+          "requested_bytes_per_operation": 781.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.authentication_finish.trace",
+          "bytes": 245614,
+          "sha256": "2390c0c83ef61349e405f637740513e7c0a61ce2f739f86b0ca05657c9438544"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.authentication_finish.stdout",
+          "bytes": 215,
+          "sha256": "2d862f068ebe6f9090947c1e1ac59553ba0d31620b50a1b4d888de8cc46c1eb6"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-ed25519.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.es256.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-primitive.es256.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-primitive.es256.rustcrypto.stdout",
+          "bytes": 211,
+          "sha256": "e82bb032baae4477f5f1d4865ff4ce929775350cf3a09d260e1067d6711d0bf7"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-primitive.es256.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-primitive.ed25519_strict.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-primitive.ed25519_strict.rustcrypto.stdout",
+          "bytes": 217,
+          "sha256": "0d89b49beb8a2d140cb52cc707296a98b0ef5246a94ba4fc205fc3ff51b62491"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/baseline-primitive.ed25519_strict.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "rustcrypto": {
+      "es256.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.registration_begin.trace",
+          "bytes": 171414,
+          "sha256": "ea0850319c56558b92d05813cde6af167d3fc12f55b11da9f6f06de327afdb25"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.registration_begin.stdout",
+          "bytes": 205,
+          "sha256": "d5ad57b7048f8d983bc7128d52a87aeead4d70093e87cbae3ba1236d3e19dbed"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 700,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 700,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 48600,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 700,
+          "requested_bytes_total": 48600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 486.0
+        },
+        "rust_global": {
+          "requests_total": 700,
+          "requested_bytes_total": 48600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 486.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.registration_finish.trace",
+          "bytes": 133514,
+          "sha256": "c22eca76f3b294714e7106a1d9a15f50106aaeb28f5d82a3a5161541bece668b"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.registration_finish.stdout",
+          "bytes": 206,
+          "sha256": "d51eac1849e06aaf7090912ea0bba4ee299231d74d882d0b6d06dde8d5d347bc"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.authentication_begin.trace",
+          "bytes": 190714,
+          "sha256": "2ff0862dd13447f115970552550cf053f4bfa02c76a7d8fd2d0a0ac4be67dfff"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.authentication_begin.stdout",
+          "bytes": 205,
+          "sha256": "122947d4682680818698aea6dab6d576edd3587c0cff79fbc12f1ceefb91378b"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 300,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 300,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 20400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "rust_global": {
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.authentication_finish.trace",
+          "bytes": 57314,
+          "sha256": "f83bf1ce460544216d11a8c8a7fcd6b77c385bfda58df7cda34abcfb202cbe60"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.authentication_finish.stdout",
+          "bytes": 215,
+          "sha256": "7090ed4821e86873de1e5fb4973b80e2e8d9e771bcc3eef7253070eb8cc8d9ae"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-es256.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.registration_begin.trace",
+          "bytes": 171414,
+          "sha256": "c34859922fd18a0a5f4dfd43237b4dcfec6d47b7d56dc1676951c9333b1fb3f8"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.registration_begin.stdout",
+          "bytes": 205,
+          "sha256": "eb7294f51810fe111278ac09cf253a62edcdf4be16ad1c88be22bcce9cf2f994"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 700,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 700,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 41500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 700,
+          "requested_bytes_total": 41500,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 415.0
+        },
+        "rust_global": {
+          "requests_total": 700,
+          "requested_bytes_total": 41500,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 415.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.registration_finish.trace",
+          "bytes": 133514,
+          "sha256": "d110a4e0ac617b2eca6b4e919f0e13eb81a5fcec6a3f9d306a653b920e6c63c5"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.registration_finish.stdout",
+          "bytes": 209,
+          "sha256": "fabe3ae29614afe4062900ec5a0b223e7e8e581020480c613689c1565e599252"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.authentication_begin.trace",
+          "bytes": 190714,
+          "sha256": "82aa441d993cfc77ecd27590977200c199be09ca19cc9e72985d91e4b1e21bf4"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.authentication_begin.stdout",
+          "bytes": 208,
+          "sha256": "2df9ef5494e5dcb7ab212e941b0755fda4eb01b3f9869ad0ae857d6c489f3f77"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 300,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 300,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 20400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "rust_global": {
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.authentication_finish.trace",
+          "bytes": 57314,
+          "sha256": "7504e08f30617200d3c471eb0a7b26f25d18567ac96044d449281ff01b765457"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.authentication_finish.stdout",
+          "bytes": 214,
+          "sha256": "992376cdc5823e56e183b3b562797b486e138e6e6d3d62165ae1e6788dd17026"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-ed25519.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.es256.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-primitive.es256.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-primitive.es256.rustcrypto.stdout",
+          "bytes": 211,
+          "sha256": "472d7e3802a4796d4122082b637d22f6567734b3445aa79a858c3e4ccc2372fa"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-primitive.es256.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-primitive.ed25519_strict.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-primitive.ed25519_strict.rustcrypto.stdout",
+          "bytes": 218,
+          "sha256": "1e6c5b3cd0943be5bf1be62772cd5acf2b910e022e58844f81756936164d7378"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/rustcrypto-primitive.ed25519_strict.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "aws_lc": {
+      "es256.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.registration_begin.trace",
+          "bytes": 164214,
+          "sha256": "6f904d2b1861285bddbd1e425bd68b39fcc41695526ce2927308251f789475b3"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.registration_begin.stdout",
+          "bytes": 203,
+          "sha256": "0523ef29f38c8e76fff22cad7946250ddf0353094f8185bc695e6e8d1babc9f8"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 700,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 700,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 48600,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 700,
+          "requested_bytes_total": 48600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 486.0
+        },
+        "rust_global": {
+          "requests_total": 700,
+          "requested_bytes_total": 48600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 486.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.registration_finish.trace",
+          "bytes": 127914,
+          "sha256": "55aa79901f9de6fb94b441047077cc3a6bc5d44c436e34605a02acd01d5c439f"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.registration_finish.stdout",
+          "bytes": 206,
+          "sha256": "642e7ef014ef5d27286f22b9a12cde9f966506b8bdf6f87a132736f703b8392b"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.authentication_begin.trace",
+          "bytes": 182714,
+          "sha256": "e1d0eb50b330e0662fd43e1f931ec177a80426832fa4e1b552fc58305649fc17"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.authentication_begin.stdout",
+          "bytes": 207,
+          "sha256": "7e7a4012ef8ad6988c3d0cb9a09e0c196bf97cec53b7d20ca3b3dcb319a60956"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 2000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 2000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 120700,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 2000,
+          "requested_bytes_total": 120700,
+          "requests_per_operation": 20.0,
+          "requested_bytes_per_operation": 1207.0
+        },
+        "rust_global": {
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "native_minus_rust": {
+          "requests_total": 1700,
+          "requested_bytes_total": 100300,
+          "requests_per_operation": 17.0,
+          "requested_bytes_per_operation": 1003.0
+        },
+        "native_matches_rust_global": false,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.authentication_finish.trace",
+          "bytes": 365414,
+          "sha256": "62f086ebe8c2b486519275cf864a6e21f6a05e3ab38297a9586456a03532863e"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.authentication_finish.stdout",
+          "bytes": 211,
+          "sha256": "54147005b0c4b142b02478f7a63bfeb8001b707c6e18a62768372708382b1b9a"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-es256.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.registration_begin.trace",
+          "bytes": 164214,
+          "sha256": "a8f5d03cb8af130d91cc07ba0efc76a4380a792d99c47070ea828c7a13a8bb68"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.registration_begin.stdout",
+          "bytes": 205,
+          "sha256": "4f2bb27ff6d4c6642c03b5f86caecfa26e1b3a294d8ffb2ab42a1518df522838"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 700,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 700,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 41500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 700,
+          "requested_bytes_total": 41500,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 415.0
+        },
+        "rust_global": {
+          "requests_total": 700,
+          "requested_bytes_total": 41500,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 415.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.registration_finish.trace",
+          "bytes": 127914,
+          "sha256": "daa09d706c10b126770b3a6b8389e37d410db37e35a3e90d904f3e0e5df913cc"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.registration_finish.stdout",
+          "bytes": 209,
+          "sha256": "f2f41438004ce2fbe28605f807d9b2eb43297c142441485e78920d6276032b1b"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.authentication_begin.trace",
+          "bytes": 182714,
+          "sha256": "6386269277e3bcb08bbc413bf5aca1b0b8b9f0c541b4ecc48534a9224ad04927"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.authentication_begin.stdout",
+          "bytes": 206,
+          "sha256": "09cc320f4976a070b0742eddd9f4bdb1944310ce0cbd701e8e137d4bdf7a77be"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 300,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 300,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 20400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "rust_global": {
+          "requests_total": 300,
+          "requested_bytes_total": 20400,
+          "requests_per_operation": 3.0,
+          "requested_bytes_per_operation": 204.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.authentication_finish.trace",
+          "bytes": 54914,
+          "sha256": "3b3e5bd0acd1564060efce343e7396bd7e30ce413532a559b5465acb85a0ae99"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.authentication_finish.stdout",
+          "bytes": 214,
+          "sha256": "bc8595ea48e26f654a5750a5b1db17ac8c99e70f864a15d5cf0b05030fd59b1f"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-ed25519.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.es256.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-primitive.es256.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-primitive.es256.rustcrypto.stdout",
+          "bytes": 212,
+          "sha256": "995ee119db7222a0fc430b6af8fe26b7c0ae41d73f1a6fe8457ec3565f76ff79"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-primitive.es256.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-primitive.ed25519_strict.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-primitive.ed25519_strict.rustcrypto.stdout",
+          "bytes": 217,
+          "sha256": "c70e892c31fe8195933501862350fb34b40b4c92960266b954cfd9b2f2658c5d"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/aws_lc-primitive.ed25519_strict.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "checkpoint_rustcrypto": {
+      "es256.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.registration_begin.trace",
+          "bytes": 173214,
+          "sha256": "4931029e1ec84a15c0081a5c993932b38dd0d4209422372b2d3e14e6f372d7f2"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.registration_begin.stdout",
+          "bytes": 203,
+          "sha256": "9364d16815a4307163cdb59dce2fbbcaf4b93851c8f427c2ecc24298b0bb8e04"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 800,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 800,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 51900,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 800,
+          "requested_bytes_total": 51900,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 519.0
+        },
+        "rust_global": {
+          "requests_total": 800,
+          "requested_bytes_total": 51900,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 519.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.registration_finish.trace",
+          "bytes": 154214,
+          "sha256": "292e183e21883a0dd4cc6e851cbd8354b132c08b9d7274442042e3154844e7c0"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.registration_finish.stdout",
+          "bytes": 205,
+          "sha256": "c830c2a51935d9a2bdfbb8d74b0848a39ab7cbb38506c198b2d0975dc8ccb707"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.authentication_begin.trace",
+          "bytes": 192714,
+          "sha256": "fd90326ecad76408c032596f6c37fb322985eb3194a3bb58c04979e3ee208c0d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.authentication_begin.stdout",
+          "bytes": 205,
+          "sha256": "b3f97b6fc919f015ff4f1de9805e4e165d646907f3c78998bf894175b723bf29"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 600,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 600,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 32400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 600,
+          "requested_bytes_total": 32400,
+          "requests_per_operation": 6.0,
+          "requested_bytes_per_operation": 324.0
+        },
+        "rust_global": {
+          "requests_total": 600,
+          "requested_bytes_total": 32400,
+          "requests_per_operation": 6.0,
+          "requested_bytes_per_operation": 324.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.authentication_finish.trace",
+          "bytes": 115714,
+          "sha256": "f890135e6a97d08ea2e6038073b4e956a1f821d1f389d7b6c1ca560594efabfe"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.authentication_finish.stdout",
+          "bytes": 214,
+          "sha256": "bd738f0b1eee8260707a02fffad8d35d67a17833ba002e4b0840532215c59de0"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-es256.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.registration_begin.trace",
+          "bytes": 173214,
+          "sha256": "2547a15d36eb89f0ba704d9b37ba531586a22fed3810e11175df225b6146f6ae"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.registration_begin.stdout",
+          "bytes": 205,
+          "sha256": "4069c12cea1b251b0ca23254b9cdeaa1a4301d0a4fe9776c49ebd3c383145786"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 800,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 800,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 44800,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 800,
+          "requested_bytes_total": 44800,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 448.0
+        },
+        "rust_global": {
+          "requests_total": 800,
+          "requested_bytes_total": 44800,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 448.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.registration_finish.trace",
+          "bytes": 154214,
+          "sha256": "030da3c7b59a36663ba94f9603b6eb5b64469b8ed8e52e8d4a0ee69cbad9af09"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.registration_finish.stdout",
+          "bytes": 209,
+          "sha256": "f1a232b9e41cefb5844346155358dd172380601d7c0b94176d3528d44be0069f"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.authentication_begin.trace",
+          "bytes": 192714,
+          "sha256": "a9f30d30a620a90596ef771e168703e75c6a3bf61e412986d782492a61d061c2"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.authentication_begin.stdout",
+          "bytes": 207,
+          "sha256": "7b6bd792468a64235912bb7151d8ce95f4fed736d0a6f7920028a39912fafdd2"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 600,
+          "reallocation_new_events": 100,
+          "reallocation_old_events": 100,
+          "deallocation_events": 600,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 31800,
+          "reallocation_new_requested_bytes": 7800,
+          "requests_total": 700,
+          "requested_bytes_total": 39600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 396.0
+        },
+        "rust_global": {
+          "requests_total": 700,
+          "requested_bytes_total": 39600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 396.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.authentication_finish.trace",
+          "bytes": 135014,
+          "sha256": "e86b9ec8b919d09a8ebdbbb11fc461edbf09e4c24881faf456d1ce29abf90ccb"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.authentication_finish.stdout",
+          "bytes": 214,
+          "sha256": "3e30668f4429e019424aa41716ad83d6fa90ac9f570c46c430425edd38291e91"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-ed25519.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.es256.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-primitive.es256.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-primitive.es256.rustcrypto.stdout",
+          "bytes": 211,
+          "sha256": "3540918fcf3ba0c2358b73fab29c373c1f17c6cc0f89f170e3f5449b699f0010"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-primitive.es256.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-primitive.ed25519_strict.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-primitive.ed25519_strict.rustcrypto.stdout",
+          "bytes": 218,
+          "sha256": "e44ad52723d8056f711ea278fd19fddfd863156eafe37d7f347573e6ed245890"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_rustcrypto-primitive.ed25519_strict.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "checkpoint_aws_lc": {
+      "es256.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.registration_begin.trace",
+          "bytes": 166014,
+          "sha256": "d1a04add1bf900c70aaac735f56cf09fbcc22fa5fa1b8d3742394a0924f5ab81"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.registration_begin.stdout",
+          "bytes": 203,
+          "sha256": "39fc6e1751b97c83753b9a6e1292eda7b4bb06a1a5344b9416737832ea50211e"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 800,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 800,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 51900,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 800,
+          "requested_bytes_total": 51900,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 519.0
+        },
+        "rust_global": {
+          "requests_total": 800,
+          "requested_bytes_total": 51900,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 519.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.registration_finish.trace",
+          "bytes": 147814,
+          "sha256": "d41d17c0bfca558d4e66256bee1b1d2676ee37dcdc480e02ad4bf2cdb1b690d9"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.registration_finish.stdout",
+          "bytes": 205,
+          "sha256": "4994e939bc712ebf847f5ee5a67f41864c3002ff55f55cb8c3163ad5de0c9c29"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.authentication_begin.trace",
+          "bytes": 184714,
+          "sha256": "bbb4cfb0fd1e5f89184b2dd3630f846b537ec4317a83a24c9daaec5235d789fe"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.authentication_begin.stdout",
+          "bytes": 206,
+          "sha256": "6639d3df0151c1b1b19d451e749c1c7414118e91ec475edfe46019f8d94c26b0"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "es256.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 2300,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 2300,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 132700,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 2300,
+          "requested_bytes_total": 132700,
+          "requests_per_operation": 23.0,
+          "requested_bytes_per_operation": 1327.0
+        },
+        "rust_global": {
+          "requests_total": 600,
+          "requested_bytes_total": 32400,
+          "requests_per_operation": 6.0,
+          "requested_bytes_per_operation": 324.0
+        },
+        "native_minus_rust": {
+          "requests_total": 1700,
+          "requested_bytes_total": 100300,
+          "requests_per_operation": 17.0,
+          "requested_bytes_per_operation": 1003.0
+        },
+        "native_matches_rust_global": false,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.authentication_finish.trace",
+          "bytes": 424814,
+          "sha256": "aeabad0ca2d424d705657a9514ca416d2e40d902abadf6e61397d3c468861684"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.authentication_finish.stdout",
+          "bytes": 211,
+          "sha256": "264b2037600a4a57c03725b0a7b098533e30ce3be085837abdfe8956b6808753"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-es256.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 900,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 900,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 18400,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "rust_global": {
+          "requests_total": 900,
+          "requested_bytes_total": 18400,
+          "requests_per_operation": 9.0,
+          "requested_bytes_per_operation": 184.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.registration_begin.trace",
+          "bytes": 166014,
+          "sha256": "daf1715034c657845e6ca33fa1c1a9c7706bf8ac2a845dd1a9e41d239a8fb24a"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.registration_begin.stdout",
+          "bytes": 204,
+          "sha256": "8c3149361acfbab1e4d68b97bf83e2da4425b450bfcf5c888736a18f7dfdb053"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.registration_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.registration_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 800,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 800,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 44800,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 800,
+          "requested_bytes_total": 44800,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 448.0
+        },
+        "rust_global": {
+          "requests_total": 800,
+          "requested_bytes_total": 44800,
+          "requests_per_operation": 8.0,
+          "requested_bytes_per_operation": 448.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.registration_finish.trace",
+          "bytes": 147814,
+          "sha256": "e31f6a048f93106c67426c67f505e112da5e7da09b8c68f901442ab988b25967"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.registration_finish.stdout",
+          "bytes": 209,
+          "sha256": "9e0ccdbf6539bbaeeb3629f19e81a0684228e010c570a6134dd1b3752ba3159a"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.registration_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_begin": {
+        "native_glibc": {
+          "allocation_plus_events": 1000,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 1000,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 29500,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "rust_global": {
+          "requests_total": 1000,
+          "requested_bytes_total": 29500,
+          "requests_per_operation": 10.0,
+          "requested_bytes_per_operation": 295.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.authentication_begin.trace",
+          "bytes": 184714,
+          "sha256": "dbafe7427d7d7463dc82b11f01b3288da07642fa4041477cc9484bdb16d741bc"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.authentication_begin.stdout",
+          "bytes": 207,
+          "sha256": "60fd3f4b91c56b8021f9ab5752bc2aa34a1f6a9e587d4e32b3780947e0ac343a"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.authentication_begin.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "ed25519.authentication_finish": {
+        "native_glibc": {
+          "allocation_plus_events": 600,
+          "reallocation_new_events": 100,
+          "reallocation_old_events": 100,
+          "deallocation_events": 600,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 31800,
+          "reallocation_new_requested_bytes": 7800,
+          "requests_total": 700,
+          "requested_bytes_total": 39600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 396.0
+        },
+        "rust_global": {
+          "requests_total": 700,
+          "requested_bytes_total": 39600,
+          "requests_per_operation": 7.0,
+          "requested_bytes_per_operation": 396.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.authentication_finish.trace",
+          "bytes": 129414,
+          "sha256": "ab0733b6a242f188f716e084fc7e633a50f05b7e3053b30e04c121fcfbe02180"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.authentication_finish.stdout",
+          "bytes": 214,
+          "sha256": "dd2851af21df8b1d5aa1be79c9d0bd23817dad170747b59f3e555de02c141134"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-ed25519.authentication_finish.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.es256.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-primitive.es256.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-primitive.es256.rustcrypto.stdout",
+          "bytes": 211,
+          "sha256": "058303b17d95ef192a6593d5655741665b45c9a116e467f2cce60c3627106d33"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-primitive.es256.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "native_glibc": {
+          "allocation_plus_events": 0,
+          "reallocation_new_events": 0,
+          "reallocation_old_events": 0,
+          "deallocation_events": 0,
+          "failed_reallocation_events": 0,
+          "allocation_plus_requested_bytes": 0,
+          "reallocation_new_requested_bytes": 0,
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "rust_global": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_minus_rust": {
+          "requests_total": 0,
+          "requested_bytes_total": 0,
+          "requests_per_operation": 0.0,
+          "requested_bytes_per_operation": 0.0
+        },
+        "native_matches_rust_global": true,
+        "trace": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-primitive.ed25519_strict.rustcrypto.trace",
+          "bytes": 14,
+          "sha256": "fbe1dbe3939a166e9af459e15ff139b07e87b31d980140c7362c891f0625868d"
+        },
+        "benchmark_stdout": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-primitive.ed25519_strict.rustcrypto.stdout",
+          "bytes": 218,
+          "sha256": "58cbed947668a4ea43e6a7b1117d54836af2c9c28920793aa930266765d94728"
+        },
+        "benchmark_stderr": {
+          "path": "/home/runner/work/NazoAuth/NazoAuth/traces/1cf6797f012141d4abca7819e56a0980/checkpoint_aws_lc-primitive.ed25519_strict.rustcrypto.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  }
+}

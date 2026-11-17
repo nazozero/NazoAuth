@@ -1,0 +1,15 @@
+   Compiling digest v0.11.3
+   Compiling curve25519-dalek v5.0.0
+   Compiling signature v3.0.0
+   Compiling hmac v0.13.0
+   Compiling elliptic-curve v0.14.3
+   Compiling sha2 v0.11.1
+   Compiling ed25519 v3.0.0
+   Compiling rfc6979 v0.6.0
+   Compiling ecdsa v0.17.0
+   Compiling primeorder v0.14.0
+   Compiling ed25519-dalek v3.0.0
+   Compiling p256 v0.14.0
+   Compiling passkey-auth v0.2.0 (/home/runner/work/NazoAuth/NazoAuth/candidate)
+   Compiling passkey-auth-perf v0.0.0 (/home/runner/work/NazoAuth/NazoAuth/candidate/perf)
+    Finished `release` profile [optimized] target(s) in 7.02s

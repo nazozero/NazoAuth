@@ -1,0 +1,7 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded web-time v1.1.0
+   Compiling web-time v1.1.0
+   Compiling passkey-auth v0.2.0 (/home/runner/work/NazoAuth/NazoAuth/checkpoint)
+   Compiling passkey-auth-perf v0.0.0 (/home/runner/work/NazoAuth/NazoAuth/checkpoint/perf)
+    Finished `release` profile [optimized] target(s) in 6.70s

@@ -1,0 +1,2563 @@
+{
+  "environment": {
+    "utc": "2026-11-17T17:23:06Z",
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "cpu": {
+      "model name": "AMD EPYC 9V74 80-Core Processor",
+      "cpu MHz": "3694.770",
+      "cpu cores": "2"
+    },
+    "logical_cpus": 4,
+    "affinity": [
+      0
+    ],
+    "memory": [
+      "MemTotal:       16367528 kB",
+      "MemFree:        12870796 kB",
+      "MemAvailable:   15419012 kB"
+    ],
+    "node": "v22.23.4",
+    "mode": "WASI preview1 / Node",
+    "artifacts": {
+      "baseline": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/baseline.wasm",
+        "bytes": 735655,
+        "sha256": "b835732b46cad980fbe1999958f7d202b00e98936bf5c05e908b5b0983cc98df"
+      },
+      "checkpoint": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/checkpoint.wasm",
+        "bytes": 954507,
+        "sha256": "a3e125bea0d42065cd1e8e613d22b9371121bed63df2a22ae1b76fd09abd0a4a"
+      },
+      "candidate": {
+        "path": "/home/runner/work/NazoAuth/NazoAuth/binaries/candidate.wasm",
+        "bytes": 949189,
+        "sha256": "4df234659b1abf6b05797e0e7aa2fecaae76199c1eca0871c11ea1196387607b"
+      }
+    },
+    "iterations": 5000,
+    "rounds": 6,
+    "driver_sha256": "4830f2c02c7b68253b6004011d63b1288da7ba35b8ce19e19cd055e802d175bb",
+    "summary_statistic": "median of per-round values; not pooled percentiles",
+    "process_order": [
+      {
+        "round": 1,
+        "labels": [
+          "baseline",
+          "checkpoint",
+          "candidate"
+        ]
+      },
+      {
+        "round": 2,
+        "labels": [
+          "baseline",
+          "candidate",
+          "checkpoint"
+        ]
+      },
+      {
+        "round": 3,
+        "labels": [
+          "candidate",
+          "baseline",
+          "checkpoint"
+        ]
+      },
+      {
+        "round": 4,
+        "labels": [
+          "candidate",
+          "checkpoint",
+          "baseline"
+        ]
+      },
+      {
+        "round": 5,
+        "labels": [
+          "checkpoint",
+          "candidate",
+          "baseline"
+        ]
+      },
+      {
+        "round": 6,
+        "labels": [
+          "checkpoint",
+          "baseline",
+          "candidate"
+        ]
+      }
+    ]
+  },
+  "runs": [
+    {
+      "round": 1,
+      "label": "baseline",
+      "wall_seconds": 8.129078548999985,
+      "cpu_seconds": 8.002616,
+      "cpu_percent_of_one_core": 98.44431877195304,
+      "stderr": "(node:9001) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 531,
+          "p95_ns": 3786,
+          "p99_ns": 3826,
+          "throughput_per_sec": 385515.4742827253
+        },
+        {
+          "allocated_bytes_per_op": 2848.0,
+          "allocations_per_op": 28.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 5188,
+          "p95_ns": 15223,
+          "p99_ns": 16374,
+          "throughput_per_sec": 58206.84636377407
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 441,
+          "p95_ns": 1101,
+          "p99_ns": 1172,
+          "throughput_per_sec": 837183.8207864036
+        },
+        {
+          "allocated_bytes_per_op": 1363.0,
+          "allocations_per_op": 16.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 603869,
+          "p95_ns": 614564,
+          "p99_ns": 647644,
+          "throughput_per_sec": 1648.2640425744019
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 361,
+          "p95_ns": 1002,
+          "p99_ns": 1092,
+          "throughput_per_sec": 1708436.8076559836
+        },
+        {
+          "allocated_bytes_per_op": 1587.0,
+          "allocations_per_op": 23.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 4596,
+          "p95_ns": 4697,
+          "p99_ns": 5338,
+          "throughput_per_sec": 208235.66213130782
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 420,
+          "p95_ns": 1111,
+          "p99_ns": 1152,
+          "throughput_per_sec": 1529928.772636061
+        },
+        {
+          "allocated_bytes_per_op": 781.0,
+          "allocations_per_op": 13.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 115203,
+          "p95_ns": 122825,
+          "p99_ns": 139960,
+          "throughput_per_sec": 8443.916424959138
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 591810,
+          "p95_ns": 693974,
+          "p99_ns": 1033314,
+          "throughput_per_sec": 1628.2460083104595
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113901,
+          "p95_ns": 125518,
+          "p99_ns": 129164,
+          "throughput_per_sec": 8627.500992831247
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "label": "checkpoint",
+      "wall_seconds": 8.154039114,
+      "cpu_seconds": 8.152149000000001,
+      "cpu_percent_of_one_core": 99.97681990515899,
+      "stderr": "(node:9013) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1161,
+          "p95_ns": 1212,
+          "p99_ns": 1432,
+          "throughput_per_sec": 253719.3737881094
+        },
+        {
+          "allocated_bytes_per_op": 507.0,
+          "allocations_per_op": 8.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3595,
+          "p95_ns": 3946,
+          "p99_ns": 6780,
+          "throughput_per_sec": 71101.63291583545
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1062,
+          "p95_ns": 1152,
+          "p99_ns": 1222,
+          "throughput_per_sec": 404812.80322503025
+        },
+        {
+          "allocated_bytes_per_op": 324.0,
+          "allocations_per_op": 6.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 601615,
+          "p95_ns": 1056259,
+          "p99_ns": 1062779,
+          "throughput_per_sec": 1565.267956754861
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 981,
+          "p95_ns": 991,
+          "p99_ns": 1032,
+          "throughput_per_sec": 888027.0684858907
+        },
+        {
+          "allocated_bytes_per_op": 436.0,
+          "allocations_per_op": 8.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 12098,
+          "p95_ns": 12619,
+          "p99_ns": 19149,
+          "throughput_per_sec": 75626.58707119629
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1001,
+          "p95_ns": 1082,
+          "p99_ns": 1412,
+          "throughput_per_sec": 919977.5893459235
+        },
+        {
+          "allocated_bytes_per_op": 396.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 126540,
+          "p95_ns": 134232,
+          "p99_ns": 142775,
+          "throughput_per_sec": 7732.603861342548
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 588194,
+          "p95_ns": 598019,
+          "p99_ns": 630088,
+          "throughput_per_sec": 1696.362623604924
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114372,
+          "p95_ns": 121583,
+          "p99_ns": 127992,
+          "throughput_per_sec": 8644.614191318162
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "label": "candidate",
+      "wall_seconds": 7.900705039000002,
+      "cpu_seconds": 7.898347999999999,
+      "cpu_percent_of_one_core": 99.97016672577487,
+      "stderr": "(node:9026) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1172,
+          "p95_ns": 1252,
+          "p99_ns": 1983,
+          "throughput_per_sec": 245449.59763692907
+        },
+        {
+          "allocated_bytes_per_op": 474.0,
+          "allocations_per_op": 7.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3355,
+          "p95_ns": 11146,
+          "p99_ns": 12990,
+          "throughput_per_sec": 64328.23000759343
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1022,
+          "p95_ns": 1152,
+          "p99_ns": 1172,
+          "throughput_per_sec": 387710.5675477881
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 607694,
+          "p95_ns": 621475,
+          "p99_ns": 649107,
+          "throughput_per_sec": 1635.068995392275
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 962,
+          "p95_ns": 981,
+          "p99_ns": 1001,
+          "throughput_per_sec": 906200.9518734799
+        },
+        {
+          "allocated_bytes_per_op": 403.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 10586,
+          "p95_ns": 10816,
+          "p99_ns": 17216,
+          "throughput_per_sec": 87627.63205584923
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 992,
+          "p95_ns": 1011,
+          "p99_ns": 1022,
+          "throughput_per_sec": 943249.7557454758
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114272,
+          "p95_ns": 121944,
+          "p99_ns": 130346,
+          "throughput_per_sec": 8561.4246983281
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589597,
+          "p95_ns": 598931,
+          "p99_ns": 622055,
+          "throughput_per_sec": 1694.470742865717
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114091,
+          "p95_ns": 121232,
+          "p99_ns": 127202,
+          "throughput_per_sec": 8638.58788583661
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "label": "baseline",
+      "wall_seconds": 7.898949136999988,
+      "cpu_seconds": 7.896288000000001,
+      "cpu_percent_of_one_core": 99.96631024008596,
+      "stderr": "(node:9038) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 461,
+          "p95_ns": 1181,
+          "p99_ns": 3826,
+          "throughput_per_sec": 325948.7896641378
+        },
+        {
+          "allocated_bytes_per_op": 2848.0,
+          "allocations_per_op": 28.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 5298,
+          "p95_ns": 15323,
+          "p99_ns": 17256,
+          "throughput_per_sec": 56868.57901139525
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 450,
+          "p95_ns": 1072,
+          "p99_ns": 1112,
+          "throughput_per_sec": 837500.0355937515
+        },
+        {
+          "allocated_bytes_per_op": 1363.0,
+          "allocations_per_op": 16.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 605080,
+          "p95_ns": 616437,
+          "p99_ns": 654764,
+          "throughput_per_sec": 1644.0414677263327
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 361,
+          "p95_ns": 1011,
+          "p99_ns": 1042,
+          "throughput_per_sec": 1731347.5008345095
+        },
+        {
+          "allocated_bytes_per_op": 1587.0,
+          "allocations_per_op": 23.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 4687,
+          "p95_ns": 4787,
+          "p99_ns": 5188,
+          "throughput_per_sec": 204282.12930944387
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 481,
+          "p95_ns": 1082,
+          "p99_ns": 1161,
+          "throughput_per_sec": 1560944.9086347725
+        },
+        {
+          "allocated_bytes_per_op": 781.0,
+          "allocations_per_op": 13.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 115464,
+          "p95_ns": 122864,
+          "p99_ns": 130866,
+          "throughput_per_sec": 8436.289444137039
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 592321,
+          "p95_ns": 602757,
+          "p99_ns": 625461,
+          "throughput_per_sec": 1686.0662913813123
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114442,
+          "p95_ns": 121503,
+          "p99_ns": 127632,
+          "throughput_per_sec": 8612.69027753943
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "label": "candidate",
+      "wall_seconds": 7.8729568640000025,
+      "cpu_seconds": 7.871047000000001,
+      "cpu_percent_of_one_core": 99.97574146495411,
+      "stderr": "(node:9050) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1171,
+          "p95_ns": 1602,
+          "p99_ns": 1873,
+          "throughput_per_sec": 255187.72400059426
+        },
+        {
+          "allocated_bytes_per_op": 474.0,
+          "allocations_per_op": 7.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3385,
+          "p95_ns": 10726,
+          "p99_ns": 12649,
+          "throughput_per_sec": 65440.65347465984
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1042,
+          "p95_ns": 1142,
+          "p99_ns": 1573,
+          "throughput_per_sec": 387176.0478648712
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 601725,
+          "p95_ns": 612631,
+          "p99_ns": 658460,
+          "throughput_per_sec": 1653.40360963563
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 982,
+          "p95_ns": 1011,
+          "p99_ns": 1402,
+          "throughput_per_sec": 883319.812651401
+        },
+        {
+          "allocated_bytes_per_op": 403.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 10636,
+          "p95_ns": 10876,
+          "p99_ns": 17286,
+          "throughput_per_sec": 87091.98233649186
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1001,
+          "p95_ns": 1011,
+          "p99_ns": 1022,
+          "throughput_per_sec": 940687.0477176674
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114322,
+          "p95_ns": 121793,
+          "p99_ns": 130225,
+          "throughput_per_sec": 8550.708723696915
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589286,
+          "p95_ns": 598981,
+          "p99_ns": 623258,
+          "throughput_per_sec": 1694.8097399789713
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114071,
+          "p95_ns": 121402,
+          "p99_ns": 128834,
+          "throughput_per_sec": 8634.44086569512
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "label": "checkpoint",
+      "wall_seconds": 7.940454583000019,
+      "cpu_seconds": 7.938628999999998,
+      "cpu_percent_of_one_core": 99.97700908706247,
+      "stderr": "(node:9068) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1161,
+          "p95_ns": 1502,
+          "p99_ns": 1823,
+          "throughput_per_sec": 268282.9174286349
+        },
+        {
+          "allocated_bytes_per_op": 507.0,
+          "allocations_per_op": 8.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3365,
+          "p95_ns": 5268,
+          "p99_ns": 10976,
+          "throughput_per_sec": 71377.32047311972
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1011,
+          "p95_ns": 1032,
+          "p99_ns": 1132,
+          "throughput_per_sec": 520867.5695246219
+        },
+        {
+          "allocated_bytes_per_op": 324.0,
+          "allocations_per_op": 6.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 602185,
+          "p95_ns": 613422,
+          "p99_ns": 640844,
+          "throughput_per_sec": 1654.6204271238296
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 972,
+          "p95_ns": 991,
+          "p99_ns": 1002,
+          "throughput_per_sec": 898915.6739791059
+        },
+        {
+          "allocated_bytes_per_op": 436.0,
+          "allocations_per_op": 8.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 12118,
+          "p95_ns": 12710,
+          "p99_ns": 19179,
+          "throughput_per_sec": 75190.25503015664
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1001,
+          "p95_ns": 1082,
+          "p99_ns": 1092,
+          "throughput_per_sec": 921667.4808062747
+        },
+        {
+          "allocated_bytes_per_op": 396.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 126531,
+          "p95_ns": 134312,
+          "p99_ns": 144006,
+          "throughput_per_sec": 7724.579094212426
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589787,
+          "p95_ns": 599431,
+          "p99_ns": 627524,
+          "throughput_per_sec": 1692.2182146294438
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113530,
+          "p95_ns": 120922,
+          "p99_ns": 130206,
+          "throughput_per_sec": 8689.564461511027
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "label": "candidate",
+      "wall_seconds": 7.901402836000045,
+      "cpu_seconds": 7.899532000000003,
+      "cpu_percent_of_one_core": 99.9763227361157,
+      "stderr": "(node:9085) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1062,
+          "p95_ns": 1803,
+          "p99_ns": 3625,
+          "throughput_per_sec": 275239.00378894014
+        },
+        {
+          "allocated_bytes_per_op": 474.0,
+          "allocations_per_op": 7.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3365,
+          "p95_ns": 11127,
+          "p99_ns": 11427,
+          "throughput_per_sec": 64491.64217983505
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1031,
+          "p95_ns": 1051,
+          "p99_ns": 1072,
+          "throughput_per_sec": 393440.80667325965
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 602826,
+          "p95_ns": 615165,
+          "p99_ns": 655726,
+          "throughput_per_sec": 1649.48191976608
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 972,
+          "p95_ns": 1071,
+          "p99_ns": 1482,
+          "throughput_per_sec": 878605.2247489737
+        },
+        {
+          "allocated_bytes_per_op": 403.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 10636,
+          "p95_ns": 10866,
+          "p99_ns": 17416,
+          "throughput_per_sec": 86944.37069629712
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1001,
+          "p95_ns": 1091,
+          "p99_ns": 1092,
+          "throughput_per_sec": 930150.5318414711
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114312,
+          "p95_ns": 121784,
+          "p99_ns": 129415,
+          "throughput_per_sec": 8553.091725153521
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589046,
+          "p95_ns": 603147,
+          "p99_ns": 853693,
+          "throughput_per_sec": 1681.4331346392094
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114162,
+          "p95_ns": 121873,
+          "p99_ns": 143335,
+          "throughput_per_sec": 8596.531031517015
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "label": "baseline",
+      "wall_seconds": 7.932925452999996,
+      "cpu_seconds": 7.930893999999998,
+      "cpu_percent_of_one_core": 99.9743921329901,
+      "stderr": "(node:9119) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 421,
+          "p95_ns": 1192,
+          "p99_ns": 3795,
+          "throughput_per_sec": 341318.9684466997
+        },
+        {
+          "allocated_bytes_per_op": 2848.0,
+          "allocations_per_op": 28.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 5308,
+          "p95_ns": 15173,
+          "p99_ns": 17085,
+          "throughput_per_sec": 54362.975630100045
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 421,
+          "p95_ns": 1042,
+          "p99_ns": 1091,
+          "throughput_per_sec": 888667.2355321863
+        },
+        {
+          "allocated_bytes_per_op": 1363.0,
+          "allocations_per_op": 16.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 608576,
+          "p95_ns": 618239,
+          "p99_ns": 657309,
+          "throughput_per_sec": 1634.8262115521147
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 351,
+          "p95_ns": 981,
+          "p99_ns": 1071,
+          "throughput_per_sec": 1749745.7619407899
+        },
+        {
+          "allocated_bytes_per_op": 1587.0,
+          "allocations_per_op": 23.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 4677,
+          "p95_ns": 4777,
+          "p99_ns": 5168,
+          "throughput_per_sec": 204275.35238928214
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 401,
+          "p95_ns": 1032,
+          "p99_ns": 1112,
+          "throughput_per_sec": 1578490.1047612312
+        },
+        {
+          "allocated_bytes_per_op": 781.0,
+          "allocations_per_op": 13.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 116054,
+          "p95_ns": 124006,
+          "p99_ns": 141874,
+          "throughput_per_sec": 8377.252616002374
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 592351,
+          "p95_ns": 602656,
+          "p99_ns": 629748,
+          "throughput_per_sec": 1685.886665361914
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114502,
+          "p95_ns": 122324,
+          "p99_ns": 137938,
+          "throughput_per_sec": 8581.023548333143
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "label": "checkpoint",
+      "wall_seconds": 7.985419807000028,
+      "cpu_seconds": 7.98354599999999,
+      "cpu_percent_of_one_core": 99.97653464632636,
+      "stderr": "(node:9130) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1152,
+          "p95_ns": 1803,
+          "p99_ns": 3676,
+          "throughput_per_sec": 237213.21159930856
+        },
+        {
+          "allocated_bytes_per_op": 507.0,
+          "allocations_per_op": 8.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3365,
+          "p95_ns": 10917,
+          "p99_ns": 11277,
+          "throughput_per_sec": 69927.52906684593
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1012,
+          "p95_ns": 1112,
+          "p99_ns": 1192,
+          "throughput_per_sec": 396258.4013715613
+        },
+        {
+          "allocated_bytes_per_op": 324.0,
+          "allocations_per_op": 6.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 601785,
+          "p95_ns": 614083,
+          "p99_ns": 660503,
+          "throughput_per_sec": 1652.1092360987093
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 972,
+          "p95_ns": 1523,
+          "p99_ns": 1652,
+          "throughput_per_sec": 831212.6328360909
+        },
+        {
+          "allocated_bytes_per_op": 436.0,
+          "allocations_per_op": 8.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 12098,
+          "p95_ns": 12709,
+          "p99_ns": 19459,
+          "throughput_per_sec": 75167.19326046134
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 992,
+          "p95_ns": 1011,
+          "p99_ns": 1021,
+          "throughput_per_sec": 943531.5252753225
+        },
+        {
+          "allocated_bytes_per_op": 396.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 126451,
+          "p95_ns": 134543,
+          "p99_ns": 149165,
+          "throughput_per_sec": 7723.637200710121
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 596206,
+          "p95_ns": 605550,
+          "p99_ns": 638390,
+          "throughput_per_sec": 1673.93530667228
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113621,
+          "p95_ns": 121483,
+          "p99_ns": 142494,
+          "throughput_per_sec": 8664.093281939528
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "label": "candidate",
+      "wall_seconds": 7.902757019000035,
+      "cpu_seconds": 7.901018000000016,
+      "cpu_percent_of_one_core": 99.97799478086145,
+      "stderr": "(node:9145) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1122,
+          "p95_ns": 1713,
+          "p99_ns": 1813,
+          "throughput_per_sec": 248652.6136497852
+        },
+        {
+          "allocated_bytes_per_op": 474.0,
+          "allocations_per_op": 7.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3375,
+          "p95_ns": 11006,
+          "p99_ns": 11237,
+          "throughput_per_sec": 72565.29853697619
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1022,
+          "p95_ns": 1052,
+          "p99_ns": 1072,
+          "throughput_per_sec": 517897.44822605106
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 608485,
+          "p95_ns": 619181,
+          "p99_ns": 647494,
+          "throughput_per_sec": 1635.3097825603545
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 982,
+          "p95_ns": 992,
+          "p99_ns": 1002,
+          "throughput_per_sec": 891043.0746261049
+        },
+        {
+          "allocated_bytes_per_op": 403.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 10596,
+          "p95_ns": 10876,
+          "p99_ns": 17336,
+          "throughput_per_sec": 86248.54121373605
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1022,
+          "p95_ns": 1042,
+          "p99_ns": 1061,
+          "throughput_per_sec": 913084.0747728201
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114232,
+          "p95_ns": 121893,
+          "p99_ns": 138338,
+          "throughput_per_sec": 8539.586113929317
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589717,
+          "p95_ns": 599772,
+          "p99_ns": 630609,
+          "throughput_per_sec": 1692.1249132959847
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114122,
+          "p95_ns": 121313,
+          "p99_ns": 129545,
+          "throughput_per_sec": 8628.854485569354
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "label": "checkpoint",
+      "wall_seconds": 7.966894195999998,
+      "cpu_seconds": 7.964176999999996,
+      "cpu_percent_of_one_core": 99.96589391131407,
+      "stderr": "(node:9158) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1172,
+          "p95_ns": 1803,
+          "p99_ns": 2013,
+          "throughput_per_sec": 242005.645991721
+        },
+        {
+          "allocated_bytes_per_op": 507.0,
+          "allocations_per_op": 8.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3585,
+          "p95_ns": 4206,
+          "p99_ns": 10936,
+          "throughput_per_sec": 71699.31932537995
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1022,
+          "p95_ns": 1112,
+          "p99_ns": 1132,
+          "throughput_per_sec": 420858.77073886804
+        },
+        {
+          "allocated_bytes_per_op": 324.0,
+          "allocations_per_op": 6.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 603338,
+          "p95_ns": 614795,
+          "p99_ns": 650309,
+          "throughput_per_sec": 1649.893198503014
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 972,
+          "p95_ns": 991,
+          "p99_ns": 1051,
+          "throughput_per_sec": 889779.1425803453
+        },
+        {
+          "allocated_bytes_per_op": 436.0,
+          "allocations_per_op": 8.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 12098,
+          "p95_ns": 12649,
+          "p99_ns": 18688,
+          "throughput_per_sec": 75581.20701101555
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 992,
+          "p95_ns": 1002,
+          "p99_ns": 1012,
+          "throughput_per_sec": 943155.4548433202
+        },
+        {
+          "allocated_bytes_per_op": 396.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 126551,
+          "p95_ns": 134603,
+          "p99_ns": 148703,
+          "throughput_per_sec": 7714.5343695983465
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 592431,
+          "p95_ns": 601916,
+          "p99_ns": 637459,
+          "throughput_per_sec": 1686.5244475153522
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113601,
+          "p95_ns": 120711,
+          "p99_ns": 124467,
+          "throughput_per_sec": 8705.266845922271
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "label": "baseline",
+      "wall_seconds": 7.946957771999962,
+      "cpu_seconds": 7.945133999999993,
+      "cpu_percent_of_one_core": 99.9770506896816,
+      "stderr": "(node:9172) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 541,
+          "p95_ns": 1202,
+          "p99_ns": 3796,
+          "throughput_per_sec": 333021.13711798977
+        },
+        {
+          "allocated_bytes_per_op": 2848.0,
+          "allocations_per_op": 28.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 5258,
+          "p95_ns": 15534,
+          "p99_ns": 16615,
+          "throughput_per_sec": 56629.001056946334
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 430,
+          "p95_ns": 1072,
+          "p99_ns": 1122,
+          "throughput_per_sec": 844185.6208850171
+        },
+        {
+          "allocated_bytes_per_op": 1363.0,
+          "allocations_per_op": 16.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 610879,
+          "p95_ns": 623077,
+          "p99_ns": 650970,
+          "throughput_per_sec": 1627.7923727414404
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 351,
+          "p95_ns": 992,
+          "p99_ns": 1031,
+          "throughput_per_sec": 1976351.7653169238
+        },
+        {
+          "allocated_bytes_per_op": 1587.0,
+          "allocations_per_op": 23.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 4627,
+          "p95_ns": 4737,
+          "p99_ns": 5238,
+          "throughput_per_sec": 206216.98852670542
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 450,
+          "p95_ns": 1102,
+          "p99_ns": 1142,
+          "throughput_per_sec": 1469171.7808536359
+        },
+        {
+          "allocated_bytes_per_op": 781.0,
+          "allocations_per_op": 13.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 115153,
+          "p95_ns": 123135,
+          "p99_ns": 147412,
+          "throughput_per_sec": 8433.652202582622
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 590799,
+          "p95_ns": 602737,
+          "p99_ns": 895026,
+          "throughput_per_sec": 1674.5216192896403
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113711,
+          "p95_ns": 121022,
+          "p99_ns": 129836,
+          "throughput_per_sec": 8653.009466072195
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "label": "checkpoint",
+      "wall_seconds": 7.98748435899995,
+      "cpu_seconds": 7.9855990000000086,
+      "cpu_percent_of_one_core": 99.97639608523531,
+      "stderr": "(node:9184) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1062,
+          "p95_ns": 1723,
+          "p99_ns": 1873,
+          "throughput_per_sec": 295230.4749177798
+        },
+        {
+          "allocated_bytes_per_op": 507.0,
+          "allocations_per_op": 8.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3435,
+          "p95_ns": 10846,
+          "p99_ns": 11277,
+          "throughput_per_sec": 70143.11271229445
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1021,
+          "p95_ns": 1032,
+          "p99_ns": 1102,
+          "throughput_per_sec": 590629.0092635435
+        },
+        {
+          "allocated_bytes_per_op": 324.0,
+          "allocations_per_op": 6.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 603538,
+          "p95_ns": 614064,
+          "p99_ns": 653953,
+          "throughput_per_sec": 1647.865059151451
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 962,
+          "p95_ns": 981,
+          "p99_ns": 1002,
+          "throughput_per_sec": 960731.4471228783
+        },
+        {
+          "allocated_bytes_per_op": 436.0,
+          "allocations_per_op": 8.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 12078,
+          "p95_ns": 12629,
+          "p99_ns": 18788,
+          "throughput_per_sec": 75412.680434076
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1001,
+          "p95_ns": 1012,
+          "p99_ns": 1022,
+          "throughput_per_sec": 938624.824524089
+        },
+        {
+          "allocated_bytes_per_op": 396.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 126421,
+          "p95_ns": 134121,
+          "p99_ns": 142715,
+          "throughput_per_sec": 7733.849242536132
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 598260,
+          "p95_ns": 607534,
+          "p99_ns": 631960,
+          "throughput_per_sec": 1669.491637395684
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113511,
+          "p95_ns": 120561,
+          "p99_ns": 125469,
+          "throughput_per_sec": 8711.324847221787
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "label": "candidate",
+      "wall_seconds": 7.869188010999949,
+      "cpu_seconds": 7.867293000000002,
+      "cpu_percent_of_one_core": 99.97591859544723,
+      "stderr": "(node:9196) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1142,
+          "p95_ns": 1773,
+          "p99_ns": 2033,
+          "throughput_per_sec": 241126.55483827906
+        },
+        {
+          "allocated_bytes_per_op": 474.0,
+          "allocations_per_op": 7.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3385,
+          "p95_ns": 11117,
+          "p99_ns": 11488,
+          "throughput_per_sec": 66207.35359250104
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1031,
+          "p95_ns": 1042,
+          "p99_ns": 1161,
+          "throughput_per_sec": 518203.8267694355
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 601525,
+          "p95_ns": 611921,
+          "p99_ns": 657399,
+          "throughput_per_sec": 1652.724508038297
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 971,
+          "p95_ns": 991,
+          "p99_ns": 1012,
+          "throughput_per_sec": 900553.4981910582
+        },
+        {
+          "allocated_bytes_per_op": 403.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 10596,
+          "p95_ns": 10957,
+          "p99_ns": 17266,
+          "throughput_per_sec": 86943.53313131134
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1011,
+          "p95_ns": 1092,
+          "p99_ns": 1102,
+          "throughput_per_sec": 925069.5513542186
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114182,
+          "p95_ns": 121803,
+          "p99_ns": 135914,
+          "throughput_per_sec": 8559.662874596204
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589356,
+          "p95_ns": 597458,
+          "p99_ns": 630068,
+          "throughput_per_sec": 1693.4359919746105
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114031,
+          "p95_ns": 121173,
+          "p99_ns": 127352,
+          "throughput_per_sec": 8643.101321211609
+        }
+      ]
+    },
+    {
+      "round": 5,
+      "label": "baseline",
+      "wall_seconds": 7.891237788000012,
+      "cpu_seconds": 7.88936899999999,
+      "cpu_percent_of_one_core": 99.97631818923435,
+      "stderr": "(node:9208) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 530,
+          "p95_ns": 3775,
+          "p99_ns": 4036,
+          "throughput_per_sec": 250225.50322350505
+        },
+        {
+          "allocated_bytes_per_op": 2848.0,
+          "allocations_per_op": 28.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 5248,
+          "p95_ns": 6479,
+          "p99_ns": 9825,
+          "throughput_per_sec": 57263.28411989264
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 421,
+          "p95_ns": 1081,
+          "p99_ns": 1132,
+          "throughput_per_sec": 681011.2144840735
+        },
+        {
+          "allocated_bytes_per_op": 1363.0,
+          "allocations_per_op": 16.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 604439,
+          "p95_ns": 614534,
+          "p99_ns": 652632,
+          "throughput_per_sec": 1646.0133227297813
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 351,
+          "p95_ns": 1002,
+          "p99_ns": 1061,
+          "throughput_per_sec": 1724107.0160121266
+        },
+        {
+          "allocated_bytes_per_op": 1587.0,
+          "allocations_per_op": 23.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 4637,
+          "p95_ns": 4747,
+          "p99_ns": 6189,
+          "throughput_per_sec": 204683.88784108934
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 420,
+          "p95_ns": 1062,
+          "p99_ns": 1131,
+          "throughput_per_sec": 1516535.238667766
+        },
+        {
+          "allocated_bytes_per_op": 781.0,
+          "allocations_per_op": 13.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 115353,
+          "p95_ns": 123105,
+          "p99_ns": 133100,
+          "throughput_per_sec": 8432.67408497551
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 592211,
+          "p95_ns": 601414,
+          "p99_ns": 617278,
+          "throughput_per_sec": 1687.3209321591398
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113901,
+          "p95_ns": 121083,
+          "p99_ns": 126190,
+          "throughput_per_sec": 8654.223817516455
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "label": "checkpoint",
+      "wall_seconds": 7.968050655000013,
+      "cpu_seconds": 7.966238999999996,
+      "cpu_percent_of_one_core": 99.97726351050642,
+      "stderr": "(node:9223) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1131,
+          "p95_ns": 1212,
+          "p99_ns": 1422,
+          "throughput_per_sec": 276320.3872994971
+        },
+        {
+          "allocated_bytes_per_op": 507.0,
+          "allocations_per_op": 8.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3415,
+          "p95_ns": 10806,
+          "p99_ns": 10947,
+          "throughput_per_sec": 69282.3535669999
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1012,
+          "p95_ns": 1032,
+          "p99_ns": 1112,
+          "throughput_per_sec": 521329.954420122
+        },
+        {
+          "allocated_bytes_per_op": 324.0,
+          "allocations_per_op": 6.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 601455,
+          "p95_ns": 615616,
+          "p99_ns": 943339,
+          "throughput_per_sec": 1642.025874131415
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 972,
+          "p95_ns": 991,
+          "p99_ns": 1012,
+          "throughput_per_sec": 893914.9954776841
+        },
+        {
+          "allocated_bytes_per_op": 436.0,
+          "allocations_per_op": 8.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 12098,
+          "p95_ns": 12619,
+          "p99_ns": 18978,
+          "throughput_per_sec": 75656.91423318851
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 991,
+          "p95_ns": 1002,
+          "p99_ns": 1002,
+          "throughput_per_sec": 944988.7999927425
+        },
+        {
+          "allocated_bytes_per_op": 396.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 126461,
+          "p95_ns": 133961,
+          "p99_ns": 142124,
+          "throughput_per_sec": 7737.343267809734
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 588465,
+          "p95_ns": 600964,
+          "p99_ns": 681636,
+          "throughput_per_sec": 1689.0777522844821
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 113431,
+          "p95_ns": 120581,
+          "p99_ns": 126410,
+          "throughput_per_sec": 8716.081775248444
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "label": "baseline",
+      "wall_seconds": 7.879663121999954,
+      "cpu_seconds": 7.877921999999981,
+      "cpu_percent_of_one_core": 99.97790359850396,
+      "stderr": "(node:9238) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 521,
+          "p95_ns": 3775,
+          "p99_ns": 4106,
+          "throughput_per_sec": 299129.813424958
+        },
+        {
+          "allocated_bytes_per_op": 2848.0,
+          "allocations_per_op": 28.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 5207,
+          "p95_ns": 15173,
+          "p99_ns": 16635,
+          "throughput_per_sec": 48735.74411254666
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 421,
+          "p95_ns": 1081,
+          "p99_ns": 1122,
+          "throughput_per_sec": 668203.9812929614
+        },
+        {
+          "allocated_bytes_per_op": 1363.0,
+          "allocations_per_op": 16.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 603768,
+          "p95_ns": 614194,
+          "p99_ns": 655485,
+          "throughput_per_sec": 1647.4635948684315
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 361,
+          "p95_ns": 1002,
+          "p99_ns": 1032,
+          "throughput_per_sec": 1737784.3319279293
+        },
+        {
+          "allocated_bytes_per_op": 1587.0,
+          "allocations_per_op": 23.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 4627,
+          "p95_ns": 4727,
+          "p99_ns": 5268,
+          "throughput_per_sec": 206701.2546766159
+        },
+        {
+          "allocated_bytes_per_op": 283.0,
+          "allocations_per_op": 12.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 411,
+          "p95_ns": 1071,
+          "p99_ns": 1122,
+          "throughput_per_sec": 1551052.2648775382
+        },
+        {
+          "allocated_bytes_per_op": 781.0,
+          "allocations_per_op": 13.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 115624,
+          "p95_ns": 123095,
+          "p99_ns": 132429,
+          "throughput_per_sec": 8425.747025003959
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 590037,
+          "p95_ns": 600322,
+          "p99_ns": 617248,
+          "throughput_per_sec": 1693.2104559081954
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114052,
+          "p95_ns": 121272,
+          "p99_ns": 128413,
+          "throughput_per_sec": 8634.479559170859
+        }
+      ]
+    },
+    {
+      "round": 6,
+      "label": "candidate",
+      "wall_seconds": 7.8815012030000275,
+      "cpu_seconds": 7.879751000000017,
+      "cpu_percent_of_one_core": 99.97779353253992,
+      "stderr": "(node:9250) ExperimentalWarning: WASI is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "rows": [
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "es256.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1202,
+          "p95_ns": 1742,
+          "p99_ns": 2063,
+          "throughput_per_sec": 253217.6749786044
+        },
+        {
+          "allocated_bytes_per_op": 474.0,
+          "allocations_per_op": 7.0,
+          "case": "es256.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 3445,
+          "p95_ns": 3886,
+          "p99_ns": 10836,
+          "throughput_per_sec": 70103.67408027976
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "es256.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1022,
+          "p95_ns": 1122,
+          "p99_ns": 1132,
+          "throughput_per_sec": 399585.7414701031
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "es256.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 602026,
+          "p95_ns": 612612,
+          "p99_ns": 647334,
+          "throughput_per_sec": 1652.1973970612075
+        },
+        {
+          "allocated_bytes_per_op": 168.0,
+          "allocations_per_op": 9.0,
+          "case": "ed25519.registration_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 971,
+          "p95_ns": 991,
+          "p99_ns": 992,
+          "throughput_per_sec": 898786.4046692314
+        },
+        {
+          "allocated_bytes_per_op": 403.0,
+          "allocations_per_op": 7.0,
+          "case": "ed25519.registration_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 10656,
+          "p95_ns": 10957,
+          "p99_ns": 17316,
+          "throughput_per_sec": 86804.91054684523
+        },
+        {
+          "allocated_bytes_per_op": 239.0,
+          "allocations_per_op": 10.0,
+          "case": "ed25519.authentication_begin",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 1002,
+          "p95_ns": 1082,
+          "p99_ns": 1091,
+          "throughput_per_sec": 918126.7789854002
+        },
+        {
+          "allocated_bytes_per_op": 204.0,
+          "allocations_per_op": 3.0,
+          "case": "ed25519.authentication_finish",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114422,
+          "p95_ns": 121923,
+          "p99_ns": 133301,
+          "throughput_per_sec": 8532.419786486946
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.es256.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 589507,
+          "p95_ns": 599462,
+          "p99_ns": 620844,
+          "throughput_per_sec": 1691.1297388540747
+        },
+        {
+          "allocated_bytes_per_op": 0.0,
+          "allocations_per_op": 0.0,
+          "case": "primitive.ed25519_strict.rustcrypto",
+          "concurrency": 1,
+          "iterations": 5000,
+          "p50_ns": 114282,
+          "p95_ns": 121683,
+          "p99_ns": 129325,
+          "throughput_per_sec": 8619.514458682132
+        }
+      ]
+    }
+  ],
+  "median_by_case": {
+    "baseline": {
+      "ed25519.authentication_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 420.0,
+        "p95_ns": 1076.5,
+        "p99_ns": 1136.5,
+        "throughput_per_sec": 1540490.5187567996,
+        "allocations_per_op": 12.0,
+        "allocated_bytes_per_op": 283.0
+      },
+      "ed25519.authentication_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 115408.5,
+        "p95_ns": 123100.0,
+        "p99_ns": 136530.0,
+        "throughput_per_sec": 8433.163143779066,
+        "allocations_per_op": 13.0,
+        "allocated_bytes_per_op": 781.0
+      },
+      "ed25519.registration_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 356.0,
+        "p95_ns": 1002.0,
+        "p99_ns": 1051.5,
+        "throughput_per_sec": 1734565.9163812194,
+        "allocations_per_op": 9.0,
+        "allocated_bytes_per_op": 168.0
+      },
+      "ed25519.registration_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 4632.0,
+        "p95_ns": 4742.0,
+        "p99_ns": 5253.0,
+        "throughput_per_sec": 205450.43818389738,
+        "allocations_per_op": 23.0,
+        "allocated_bytes_per_op": 1587.0
+      },
+      "es256.authentication_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 425.5,
+        "p95_ns": 1076.5,
+        "p99_ns": 1122.0,
+        "throughput_per_sec": 837341.9281900775,
+        "allocations_per_op": 12.0,
+        "allocated_bytes_per_op": 283.0
+      },
+      "es256.authentication_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 604759.5,
+        "p95_ns": 615500.5,
+        "p99_ns": 653698.0,
+        "throughput_per_sec": 1645.027395228057,
+        "allocations_per_op": 16.0,
+        "allocated_bytes_per_op": 1363.0
+      },
+      "es256.registration_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 525.5,
+        "p95_ns": 2488.5,
+        "p99_ns": 3826.0,
+        "throughput_per_sec": 329484.9633910638,
+        "allocations_per_op": 9.0,
+        "allocated_bytes_per_op": 168.0
+      },
+      "es256.registration_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 5253.0,
+        "p95_ns": 15198.0,
+        "p99_ns": 16625.0,
+        "throughput_per_sec": 56748.790034170794,
+        "allocations_per_op": 28.0,
+        "allocated_bytes_per_op": 2848.0
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 113976.5,
+        "p95_ns": 121387.5,
+        "p99_ns": 128788.5,
+        "throughput_per_sec": 8630.990276001052,
+        "allocations_per_op": 0.0,
+        "allocated_bytes_per_op": 0.0
+      },
+      "primitive.es256.rustcrypto": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 592010.5,
+        "p95_ns": 602696.5,
+        "p99_ns": 627604.5,
+        "throughput_per_sec": 1685.9764783716132,
+        "allocations_per_op": 0.0,
+        "allocated_bytes_per_op": 0.0
+      }
+    },
+    "checkpoint": {
+      "ed25519.authentication_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 996.5,
+        "p95_ns": 1011.5,
+        "p99_ns": 1021.5,
+        "throughput_per_sec": 940890.1396837046,
+        "allocations_per_op": 10.0,
+        "allocated_bytes_per_op": 239.0
+      },
+      "ed25519.authentication_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 126496.0,
+        "p95_ns": 134272.0,
+        "p99_ns": 143390.5,
+        "throughput_per_sec": 7728.591477777487,
+        "allocations_per_op": 7.0,
+        "allocated_bytes_per_op": 396.0
+      },
+      "ed25519.registration_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 972.0,
+        "p95_ns": 991.0,
+        "p99_ns": 1022.0,
+        "throughput_per_sec": 891847.0690290147,
+        "allocations_per_op": 9.0,
+        "allocated_bytes_per_op": 168.0
+      },
+      "ed25519.registration_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 12098.0,
+        "p95_ns": 12639.0,
+        "p99_ns": 19063.5,
+        "throughput_per_sec": 75496.94372254578,
+        "allocations_per_op": 8.0,
+        "allocated_bytes_per_op": 436.0
+      },
+      "es256.authentication_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 1016.5,
+        "p95_ns": 1072.0,
+        "p99_ns": 1132.0,
+        "throughput_per_sec": 470863.17013174493,
+        "allocations_per_op": 10.0,
+        "allocated_bytes_per_op": 239.0
+      },
+      "es256.authentication_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 601985.0,
+        "p95_ns": 614439.0,
+        "p99_ns": 657228.0,
+        "throughput_per_sec": 1648.8791288272325,
+        "allocations_per_op": 6.0,
+        "allocated_bytes_per_op": 324.0
+      },
+      "es256.registration_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 1156.5,
+        "p95_ns": 1612.5,
+        "p99_ns": 1848.0,
+        "throughput_per_sec": 261001.14560837214,
+        "allocations_per_op": 9.0,
+        "allocated_bytes_per_op": 168.0
+      },
+      "es256.registration_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 3425.0,
+        "p95_ns": 8037.0,
+        "p99_ns": 10961.5,
+        "throughput_per_sec": 70622.37281406495,
+        "allocations_per_op": 8.0,
+        "allocated_bytes_per_op": 507.0
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 113565.5,
+        "p95_ns": 120816.5,
+        "p99_ns": 127201.0,
+        "throughput_per_sec": 8697.41565371665,
+        "allocations_per_op": 0.0,
+        "allocated_bytes_per_op": 0.0
+      },
+      "primitive.es256.rustcrypto": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 591109.0,
+        "p95_ns": 601440.0,
+        "p99_ns": 634709.5,
+        "throughput_per_sec": 1687.801099899917,
+        "allocations_per_op": 0.0,
+        "allocated_bytes_per_op": 0.0
+      }
+    },
+    "candidate": {
+      "ed25519.authentication_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 1001.5,
+        "p95_ns": 1062.0,
+        "p99_ns": 1076.0,
+        "throughput_per_sec": 927610.0415978448,
+        "allocations_per_op": 10.0,
+        "allocated_bytes_per_op": 239.0
+      },
+      "ed25519.authentication_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 114292.0,
+        "p95_ns": 121848.0,
+        "p99_ns": 131823.5,
+        "throughput_per_sec": 8551.900224425219,
+        "allocations_per_op": 3.0,
+        "allocated_bytes_per_op": 204.0
+      },
+      "ed25519.registration_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 971.5,
+        "p95_ns": 991.5,
+        "p99_ns": 1007.0,
+        "throughput_per_sec": 894914.7396476681,
+        "allocations_per_op": 9.0,
+        "allocated_bytes_per_op": 168.0
+      },
+      "ed25519.registration_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 10616.0,
+        "p95_ns": 10876.0,
+        "p99_ns": 17301.0,
+        "throughput_per_sec": 86943.95191380422,
+        "allocations_per_op": 7.0,
+        "allocated_bytes_per_op": 403.0
+      },
+      "es256.authentication_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 1026.5,
+        "p95_ns": 1087.0,
+        "p99_ns": 1146.5,
+        "throughput_per_sec": 396513.2740716814,
+        "allocations_per_op": 10.0,
+        "allocated_bytes_per_op": 239.0
+      },
+      "es256.authentication_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 602426.0,
+        "p95_ns": 613898.0,
+        "p99_ns": 652416.5,
+        "throughput_per_sec": 1650.8396584136437,
+        "allocations_per_op": 3.0,
+        "allocated_bytes_per_op": 204.0
+      },
+      "es256.registration_begin": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 1156.5,
+        "p95_ns": 1727.5,
+        "p99_ns": 2008.0,
+        "throughput_per_sec": 250935.1443141948,
+        "allocations_per_op": 9.0,
+        "allocated_bytes_per_op": 168.0
+      },
+      "es256.registration_finish": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 3380.0,
+        "p95_ns": 11061.5,
+        "p99_ns": 11457.5,
+        "throughput_per_sec": 65824.00353358044,
+        "allocations_per_op": 7.0,
+        "allocated_bytes_per_op": 474.0
+      },
+      "primitive.ed25519_strict.rustcrypto": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 114106.5,
+        "p95_ns": 121357.5,
+        "p99_ns": 129079.5,
+        "throughput_per_sec": 8631.647675632237,
+        "allocations_per_op": 0.0,
+        "allocated_bytes_per_op": 0.0
+      },
+      "primitive.es256.rustcrypto": {
+        "iterations": 5000.0,
+        "concurrency": 1.0,
+        "p50_ns": 589431.5,
+        "p95_ns": 599221.5,
+        "p99_ns": 626663.0,
+        "throughput_per_sec": 1692.7804526352975,
+        "allocations_per_op": 0.0,
+        "allocated_bytes_per_op": 0.0
+      }
+    }
+  }
+}
