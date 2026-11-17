@@ -1,0 +1,106 @@
+name: upstream-rustls-preparation
+
+on:
+  push:
+    branches: [audit/upstream-rustls-20261117]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Check out the unchanged base, not this temporary preparation workflow.
+      # The published branch therefore contains only the reviewed product edits.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9560ea04bbc01a2da7b002eeeeb0ebe2e7dffbe9
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71
+        with:
+          components: rustfmt
+      - name: Apply the connection-boundary change
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 9560ea04bbc01a2da7b002eeeeb0ebe2e7dffbe9
+          cp Cargo.lock "$RUNNER_TEMP/rustls-base.lock"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected one exact edit in {path}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace("Cargo.toml", '\n# Direct mTLS shares the immutable peer chain across the TLS/HTTP boundary.\n# Retire when upstream provides shared ownership or a measured per-connection copy is acceptable.\nrustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }\n', '')
+          replace("deny.toml", '    "https://github.com/bymoye/rustls",\n', '')
+          replace("crates/server/src/adapters/transport_facts.rs", '    let client_certificate = connection\n        .peer_certificates_shared()\n', '    // Own the peer chain once per TLS connection using the upstream API.\n    // Every request on this connection shares the resulting certificate facts.\n    let client_certificate = connection\n        .peer_certificates()\n        .map(|chain| Arc::new(chain.to_vec()))\n')
+
+          path = "crates/server/tests/unit/http/framework_boundary_transport/mtls_real_boundary.rs"
+          replace(path, '    let expected_chain = vec![material.leaf.der().clone(), material.ca.der().clone()];\n    let server = HttpServer::new(|| {', '    let expected_chain = vec![material.leaf.der().clone(), material.ca.der().clone()];\n    let retained_chain = Arc::new(std::sync::Mutex::new(None));\n    let on_connect_chain = Arc::clone(&retained_chain);\n    let authenticated_connections = Arc::new(std::sync::atomic::AtomicUsize::new(0));\n    let connection_count = Arc::clone(&authenticated_connections);\n    let server = HttpServer::new(|| {')
+          replace(path, '                    let resolver = ServerMtlsThumbprintExtractor;\n                    let request = crate::test_support::transport::request_with_policy(&request, &[], mtls::MtlsCertificateSourceMode::DirectTls);', '                    let resolver = ServerMtlsThumbprintExtractor;\n                    let original = request\n                        .conn_data::<nazoauth::ConnectionFacts>()\n                        .and_then(|facts| facts.client_certificate.clone());\n                    let request = crate::test_support::transport::request_with_policy(&request, &[], mtls::MtlsCertificateSourceMode::DirectTls);\n                    if let Some(original) = original {\n                        let forwarded = request.extensions().get::<nazoauth::ConnectionFacts>()\n                            .and_then(|facts| facts.client_certificate.as_ref()).unwrap();\n                        assert!(Arc::ptr_eq(&original, forwarded));\n                        assert!(Arc::ptr_eq(&original.certificate_chain_der, &forwarded.certificate_chain_der));\n                    }')
+          replace(path, '            let peer = stream.get_ref().1.peer_certificates_shared().unwrap();\n            assert!(Arc::ptr_eq(&peer, &certificate.certificate_chain_der));\n            for (original, retained) in peer.iter().zip(certificate.certificate_chain_der.iter()) {\n                assert_eq!(original.as_ptr(), retained.as_ptr());\n            }\n', '            let peer = stream.get_ref().1.peer_certificates().unwrap();\n            assert_eq!(peer, certificate.certificate_chain_der.as_slice());\n            connection_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n            *on_connect_chain.lock().unwrap() = Some(Arc::clone(&certificate.certificate_chain_der));\n')
+          replace(path, '    drop(authenticated);\n    drop(anonymous);\n    handle.stop(true).await;\n', '    // A second request reuses the TLS connection and the captured Arc facts.\n    let repeated = authenticated.get(&url).send().await.unwrap();\n    assert_eq!(repeated.status(), reqwest::StatusCode::OK);\n    assert_eq!(repeated.bytes().await.unwrap().as_ref(), URL_SAFE_NO_PAD.encode(Sha256::digest(material.leaf.der())).as_bytes());\n    assert_eq!(authenticated_connections.load(std::sync::atomic::Ordering::Relaxed), 1);\n    drop(authenticated);\n    drop(anonymous);\n    handle.stop(true).await;\n    // Captured facts remain valid after the TLS connection has been destroyed.\n    assert_eq!(retained_chain.lock().unwrap().as_ref().unwrap().as_ref(), &vec![material.leaf.der().clone(), material.ca.der().clone()]);\n')
+
+          replace("scripts/check_native_transport.py", 'if name in {"actix-web", "actix-http", "actix-router"}:', 'if name in {"actix-web", "actix-http", "actix-router", "rustls"}:')
+          replace("scripts/check_native_transport.py", 'Native transport: official Actix, inbound HTTP/2 disabled, no affected h2 version', 'Native transport: official Actix and rustls, inbound HTTP/2 disabled, no affected h2 version')
+
+          replace("docs/project/architecture.md", 'Direct TLS and request facts share the authenticated certificate chain through\nthe pinned rustls `peer_certificates_shared` API. RFC 9440 decoding moves DER into\nthe same certificate representation; tenant CA verification borrows that chain.', 'The native host uses official rustls. Its connection callback owns the peer\ncertificate chain once through `peer_certificates`; requests then share the\nimmutable `Arc` facts without copying DER per request. RFC 9440 decoding moves\nDER into the same certificate representation; tenant CA verification borrows\nthat chain. The connection-boundary copy does not change certificate validation.')
+          replace("docs/integration/rust-embedding.md", 'The `rustls` override applies only to the native host\'s shared-certificate TLS\nintegration; it is not a dependency of the neutral facade.', 'The native host also uses official rustls releases. Its connection callback\nowns the peer certificate chain once and shares immutable facts across requests;\nthere is no per-request DER copy. rustls is not a dependency of the neutral facade.')
+          p = Path("docs/integration/rust-embedding.md")
+          text = p.read_text()
+          start = text.index('- `rustls`:')
+          end = text.index('- `mdoc-rs`:', start)
+          p.write_text(text[:start] + text[end:])
+          PY
+      - name: Resolve only the official rustls source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo update -p rustls --precise 0.23.46
+          python3 - <<'PY'
+          import os, tomllib
+          from pathlib import Path
+          before = tomllib.loads(Path(os.environ['RUNNER_TEMP'], 'rustls-base.lock').read_text())
+          after = tomllib.loads(Path('Cargo.lock').read_text())
+          keep = lambda lock: [p for p in lock['package'] if p['name'] != 'rustls']
+          assert keep(before) == keep(after), 'unrelated lockfile packages changed'
+          packages = [p for p in after['package'] if p['name'] == 'rustls']
+          assert len(packages) == 1
+          assert packages[0]['version'] == '0.23.46'
+          assert packages[0]['source'] == 'registry+https://github.com/rust-lang/crates.io-index'
+          assert 'checksum' in packages[0]
+          assert 'bymoye/rustls' not in Path('Cargo.lock').read_text()
+          print('Only rustls changed source; every other lockfile package is unchanged.')
+          PY
+          cargo fmt --all
+          git diff --check
+          python3 scripts/check_native_transport.py
+          python3 scripts/verify_static_contracts.py
+      - name: Publish the product-only branch for normal pull-request CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              'Cargo.toml', 'Cargo.lock', 'deny.toml',
+              'crates/server/src/adapters/transport_facts.rs',
+              'crates/server/tests/unit/http/framework_boundary_transport/mtls_real_boundary.rs',
+              'scripts/check_native_transport.py',
+              'docs/project/architecture.md', 'docs/integration/rust-embedding.md',
+          }
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          assert changed == allowed, (changed - allowed, allowed - changed)
+          PY
+          git diff --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.toml Cargo.lock deny.toml crates/server/src/adapters/transport_facts.rs crates/server/tests/unit/http/framework_boundary_transport/mtls_real_boundary.rs scripts/check_native_transport.py docs/project/architecture.md docs/integration/rust-embedding.md
+          git commit -m 'refactor: use official rustls with connection-owned certificate facts'
+          git push origin HEAD:refs/heads/refactor/upstream-rustls-20261117
+          git rev-parse HEAD
