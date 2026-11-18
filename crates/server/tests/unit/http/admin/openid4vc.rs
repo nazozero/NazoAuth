@@ -320,29 +320,22 @@ impl LiveOpenid4vcAdminFixture {
     }
 
     fn post_request(&self, sid: &str, csrf: Option<&str>, uri: &str) -> HttpRequest {
-        let mut cookies = cookie::CookieJar::new();
+        let session = &self.state.settings.session;
+        let session_cookie = Cookie::new(session.session_cookie_name.as_str(), sid);
         let mut request = actix_web::test::TestRequest::post().uri(uri);
-        cookies.add(Cookie::new(
-            self.state.settings.session.session_cookie_name.clone(),
-            sid.to_owned(),
-        ));
-        if let Some(csrf) = csrf {
-            cookies.add(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
-            ));
+        let cookies = if let Some(csrf) = csrf {
             request = request.insert_header(("x-csrf-token", csrf));
-        }
-        request
-            .insert_header((
-                "cookie",
-                cookies
-                    .delta()
-                    .map(|cookie| cookie.stripped().encoded().to_string())
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            ))
-            .to_http_request()
+            format!(
+                "{}; {}",
+                session_cookie.stripped().encoded(),
+                Cookie::new(session.csrf_cookie_name.as_str(), csrf)
+                    .stripped()
+                    .encoded()
+            )
+        } else {
+            session_cookie.stripped().encoded().to_string()
+        };
+        request.insert_header(("cookie", cookies)).to_http_request()
     }
 
     async fn endpoint_with_admission(&self, enabled: bool) -> Data<CredentialDatasetAdminService> {

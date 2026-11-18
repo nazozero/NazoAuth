@@ -496,29 +496,25 @@ impl DecisionLiveFixture {
     }
 
     fn auth_request(&self, sid: &str, csrf_token: Option<&str>) -> HttpRequest {
-        let mut cookies = cookie::CookieJar::new();
-        let mut request = TestRequest::post().uri("/authorize/decision");
-        cookies.add(Cookie::new(
-            self.state.settings.session.session_cookie_name.clone(),
-            sid.to_owned(),
-        ));
-        cookies.add(Cookie::new(
-            self.state.settings.session.csrf_cookie_name.clone(),
-            "csrf-session-token".to_owned(),
-        ));
-        if let Some(csrf_token) = csrf_token {
-            request = request.insert_header(("x-csrf-token", csrf_token.to_owned()));
-        }
-        request
+        let session = &self.state.settings.session;
+        let mut request = TestRequest::post()
+            .uri("/authorize/decision")
             .insert_header((
                 "cookie",
-                cookies
-                    .delta()
-                    .map(|cookie| cookie.stripped().encoded().to_string())
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            ))
-            .to_http_request()
+                format!(
+                    "{}; {}",
+                    Cookie::new(session.session_cookie_name.as_str(), sid)
+                        .stripped()
+                        .encoded(),
+                    Cookie::new(session.csrf_cookie_name.as_str(), "csrf-session-token")
+                        .stripped()
+                        .encoded()
+                ),
+            ));
+        if let Some(csrf_token) = csrf_token {
+            request = request.insert_header(("x-csrf-token", csrf_token));
+        }
+        request.to_http_request()
     }
 }
 

@@ -555,25 +555,27 @@ mod ciba_device_contract {
             (false, Some("golden-csrf"), 401),
             (true, Some("golden-csrf"), 200),
         ] {
-            let mut cookies = cookie::CookieJar::new();
-            if session {
-                cookies.add(cookie::Cookie::new(
-                    state.settings.session.session_cookie_name.clone(),
-                    sid.clone(),
-                ));
-            }
-            cookies.add(cookie::Cookie::new(
-                state.settings.session.csrf_cookie_name.clone(),
+            let csrf_cookie = cookie::Cookie::new(
+                state.settings.session.csrf_cookie_name.as_str(),
                 "golden-csrf",
-            ));
-            let request = TestRequest::post().uri("/device/decision").insert_header((
-                "cookie",
-                cookies
-                    .delta()
-                    .map(|cookie| cookie.stripped().encoded().to_string())
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            ));
+            );
+            let cookies = if session {
+                format!(
+                    "{}; {}",
+                    cookie::Cookie::new(
+                        state.settings.session.session_cookie_name.as_str(),
+                        sid.as_str(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    csrf_cookie.stripped().encoded()
+                )
+            } else {
+                csrf_cookie.stripped().encoded().to_string()
+            };
+            let request = TestRequest::post()
+                .uri("/device/decision")
+                .insert_header(("cookie", cookies));
             let form: DeviceDecisionForm = serde_json::from_value(
                 json!({"user_code":code,"decision":"deny","csrf_token":csrf}),
             )
