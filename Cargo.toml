@@ -83,7 +83,7 @@ lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
 ciborium = "0.2.2"
-lettre = { version = "0.11.23", default-features = false }
+lettre = { version = "0.11.24", default-features = false }
 nazo-auth = { version = "0.3.9", path = "crates/authorization-server-core" }
 nazo-crypto = { version = "0.3.9", path = "crates/crypto", default-features = false }
 nazo-digital-credentials = { version = "0.3.9", path = "crates/digital-credentials" }

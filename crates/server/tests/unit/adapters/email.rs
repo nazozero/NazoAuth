@@ -34,6 +34,19 @@ fn recipient_email_is_normalized_and_has_no_display_name() {
 }
 
 #[test]
+fn verification_email_preserves_quoted_recipient_in_envelope() {
+    let from: Mailbox = "Nazo <no-reply@example.test>".parse().unwrap();
+    for raw in [r#""D "@Example.COM"#, r#""Alice Smith"@Example.COM"#] {
+        let recipient = parse_email_recipient(raw).unwrap();
+        let normalized = recipient.normalized;
+        let message = build_verification_email(&from, recipient.mailbox, "123456", 900).unwrap();
+        let destinations = message.envelope().to();
+        assert_eq!(destinations.len(), 1);
+        assert_eq!(destinations[0].to_string(), normalized);
+    }
+}
+
+#[test]
 fn invalid_recipient_email_does_not_fallback_to_raw_input() {
     for raw in ["", "not an email", "user@example.com,other@example.com"] {
         let err = match parse_email_recipient(raw) {

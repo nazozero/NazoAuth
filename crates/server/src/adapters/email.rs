@@ -21,6 +21,22 @@ fn parse_email_address(raw: &str) -> anyhow::Result<Address> {
     Address::try_from(normalized).context("email address is invalid")
 }
 
+fn build_verification_email(
+    from: &Mailbox,
+    recipient: Mailbox,
+    code: &str,
+    code_ttl_seconds: u64,
+) -> anyhow::Result<Message> {
+    Message::builder()
+        .from(from.clone())
+        .to(recipient)
+        .subject("Nazo OAuth 注册验证码")
+        .singlepart(html_part(
+            VerificationEmail::new(code, code_ttl_seconds).render_html(),
+        ))
+        .context("failed to build verification email")
+}
+
 async fn send_verification_email_with_ttl(
     from: &Mailbox,
     transport: &AsyncSmtpTransport<Tokio1Executor>,
@@ -28,15 +44,7 @@ async fn send_verification_email_with_ttl(
     code: &str,
     code_ttl_seconds: u64,
 ) -> anyhow::Result<()> {
-    let message = Message::builder()
-        .from(from.clone())
-        .to(recipient)
-        .subject("Nazo OAuth 注册验证码")
-        .singlepart(html_part(
-            VerificationEmail::new(code, code_ttl_seconds).render_html(),
-        ))
-        .context("failed to build verification email")?;
-
+    let message = build_verification_email(from, recipient, code, code_ttl_seconds)?;
     transport
         .send(message)
         .await
