@@ -171,7 +171,7 @@ impl TokenRepositoryPort for CountingTokenRepository {
                 }
             };
             assert!(
-                *expires_at > chrono::Utc::now(),
+                *expires_at > jiff::Timestamp::now(),
                 "fixture must reach commit with an initially live grant"
             );
             return Box::pin(async { Ok(CommitTokenIssuanceResult::GrantExpired) });
@@ -220,7 +220,7 @@ impl TokenRepositoryPort for CountingTokenRepository {
         tenant_id: Uuid,
         raw_token: &'a str,
         client_id: Uuid,
-        retry_started_at: chrono::DateTime<chrono::Utc>,
+        retry_started_at: jiff::Timestamp,
         prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         self.refresh_snapshot_calls.fetch_add(1, Ordering::SeqCst);
@@ -293,7 +293,7 @@ impl TokenRepositoryPort for CountingTokenRepository {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &'a str,
-        access_token_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        access_token_expires_at: Option<jiff::Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()> {
         self.inner.revoke_issued_tokens(

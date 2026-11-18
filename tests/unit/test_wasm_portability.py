@@ -36,7 +36,7 @@ class WasmPortability(unittest.TestCase):
     def test_neutral_data_algorithms_and_web_primitives_are_allowed(self):
         tree = "\n".join(f"{package} v1.0.0" for package in (
             "nazoauth", "nazo-identity", "futures-util", "http", "rustls-pki-types", "rustls-webpki",
-            "chrono", "web-time", "wasm-bindgen", "getrandom", "p256", "sha2",
+            "jiff", "web-time", "wasm-bindgen", "getrandom", "p256", "sha2",
         ))
         self.assertEqual(GATE.runtime_violations(tree), set())
 

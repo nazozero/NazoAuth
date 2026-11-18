@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_auth::{
     BackchannelLogoutDelivery, BackchannelLogoutOutboxPort, IdempotentBackchannelLogoutDelivery,
     LogoutDependencyError, LogoutFuture,
@@ -95,7 +95,10 @@ impl AuditRepository {
             .iter()
             .map(|value| value.operation_key.as_str())
             .collect();
-        let expires_at: Vec<_> = deliveries.iter().map(|value| value.expires_at).collect();
+        let expires_at: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.expires_at.to_diesel())
+            .collect();
         let mut connection = self.connection().await?;
         diesel::sql_query(
             r#"
@@ -184,7 +187,7 @@ impl AuditRepository {
         )
         .set((
             backchannel_logout_deliveries::delivered_at.eq(diesel::dsl::now),
-            backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+            backchannel_logout_deliveries::locked_at.eq::<Option<jiff_diesel::Timestamp>>(None),
             backchannel_logout_deliveries::updated_at.eq(diesel::dsl::now),
         ))
         .execute(&mut connection)
@@ -197,7 +200,7 @@ impl AuditRepository {
         &self,
         delivery_id: Uuid,
         expected_attempts: i32,
-        next_attempt_at: Option<DateTime<Utc>>,
+        next_attempt_at: Option<Timestamp>,
         last_error: &str,
     ) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
@@ -210,8 +213,9 @@ impl AuditRepository {
         let updated = if let Some(next_attempt_at) = next_attempt_at {
             diesel::update(target)
                 .set((
-                    backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at),
-                    backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+                    backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at.to_diesel()),
+                    backchannel_logout_deliveries::locked_at
+                        .eq::<Option<jiff_diesel::Timestamp>>(None),
                     backchannel_logout_deliveries::last_error.eq(Some(last_error)),
                     backchannel_logout_deliveries::updated_at.eq(diesel::dsl::now),
                 ))
@@ -222,7 +226,8 @@ impl AuditRepository {
             diesel::update(target)
                 .set((
                     backchannel_logout_deliveries::failed_at.eq(diesel::dsl::now),
-                    backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+                    backchannel_logout_deliveries::locked_at
+                        .eq::<Option<jiff_diesel::Timestamp>>(None),
                     backchannel_logout_deliveries::last_error.eq(Some(last_error)),
                     backchannel_logout_deliveries::updated_at.eq(diesel::dsl::now),
                 ))
@@ -284,7 +289,7 @@ impl nazo_persistence::BackchannelLogoutDeliveryStore for AuditRepository {
         &'a self,
         delivery_id: Uuid,
         expected_attempts: i32,
-        next_attempt_at: Option<DateTime<Utc>>,
+        next_attempt_at: Option<Timestamp>,
         last_error: &'a str,
     ) -> futures_util::future::BoxFuture<'a, Result<(), RepositoryError>> {
         Box::pin(async move {
@@ -341,7 +346,7 @@ pub(super) async fn insert_identity_security_event(
     .bind::<diesel::sql_types::Text, _>(security_event_type(event.event_type))
     .bind::<diesel::sql_types::Text, _>(security_outcome(event.outcome))
     .bind::<diesel::sql_types::Text, _>(security_reason(event.reason))
-    .bind::<diesel::sql_types::Timestamptz, _>(DateTime::<Utc>::from(event.occurred_at))
+    .bind::<diesel::sql_types::Timestamptz, _>((Timestamp::try_from(event.occurred_at).map_err(|error| RepositoryError::Consistency(format!("audit timestamp is out of range: {error}")))?).to_diesel())
     // Drain the statement so an INSERT/trigger failure cannot be hidden by
     // the eligibility row returned by the outer SELECT.
     .load::<Participants>(connection).await.map_err(map_error)?;
@@ -449,7 +454,11 @@ pub(super) async fn append_runtime_event(
             runtime_module_state_events::before_state.eq(event.before.map(event_state)),
             runtime_module_state_events::after_state.eq(event.after.map(event_state)),
             runtime_module_state_events::outcome_code.eq(event.outcome_code.as_deref()),
-            runtime_module_state_events::occurred_at.eq(DateTime::<Utc>::from(event.occurred_at)),
+            runtime_module_state_events::occurred_at.eq((Timestamp::try_from(event.occurred_at)
+                .map_err(|error| {
+                RepositoryError::Consistency(format!("audit timestamp is out of range: {error}"))
+            })?)
+            .to_diesel()),
         ))
         .execute(connection)
         .await
@@ -566,3 +575,5 @@ fn json_string_array(value: serde_json::Value) -> Vec<String> {
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/audit.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

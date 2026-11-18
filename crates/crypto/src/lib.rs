@@ -5,9 +5,9 @@
 //! error translation live inside this crate; no backend type, provider, or
 //! error escapes the public surface.
 
-// Select the platform CSPRNG implementations for both supported dependency generations.
+// Select the Web Crypto CSPRNG for portable cryptographic operations.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use {getrandom as _, getrandom02 as _};
+use getrandom as _;
 
 #[cfg(all(
     target_arch = "wasm32",

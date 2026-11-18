@@ -96,7 +96,7 @@ impl CibaStateStorePort for Ports {
             std::thread::sleep(std::time::Duration::from_millis(
                 self.create_delay_ms.load(Ordering::Relaxed),
             ));
-            let now = chrono::Utc::now().timestamp();
+            let now = jiff::Timestamp::now().as_second();
             if deadline.is_some_and(|deadline| now >= deadline) {
                 assert!(
                     now < state.retention_expires_at,
@@ -129,7 +129,7 @@ impl CibaStateStorePort for Ports {
         Box::pin(async move {
             // This in-memory test adapter checks its clock while holding the mutation lock.
             let mut stored = self.state.lock().unwrap();
-            if deadline.is_some_and(|deadline| chrono::Utc::now().timestamp() >= deadline) {
+            if deadline.is_some_and(|deadline| jiff::Timestamp::now().as_second() >= deadline) {
                 return Ok(CibaAtomicResult::DeadlineElapsed);
             }
             let _ = (id, version);
@@ -243,7 +243,7 @@ fn fixture_with_client(
     authorization_fixture::Fixture,
 ) {
     let user = authorization_fixture::account();
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let state = CibaRequestState {
         client_id: "client-1".into(),
         user_id: user.id(),

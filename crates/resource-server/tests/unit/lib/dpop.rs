@@ -417,13 +417,13 @@ fn dpop_proof_verifier_rejects_expired_and_future_iat() {
     let expired = signed_dpop_proof_with_overrides(
         &dpop,
         access_token,
-        json!({"iat": Utc::now().timestamp() - 10, "jti": "expired-jti"}),
+        json!({"iat": jiff::Timestamp::now().as_second() - 10, "jti": "expired-jti"}),
         None,
     );
     let future = signed_dpop_proof_with_overrides(
         &dpop,
         access_token,
-        json!({"iat": Utc::now().timestamp() + 10, "jti": "future-jti"}),
+        json!({"iat": jiff::Timestamp::now().as_second() + 10, "jti": "future-jti"}),
         None,
     );
     let verifier = DpopProofVerifier::new(DpopProofVerifierConfig {
@@ -798,7 +798,7 @@ fn signed_dpop_proof_with_overrides(
     let mut claims = json!({
         "htu": "https://api.example/orders",
         "htm": "GET",
-        "iat": Utc::now().timestamp(),
+        "iat": jiff::Timestamp::now().as_second(),
         "jti": "proof-jti-overrides",
         "ath": access_token_hash(access_token),
     });
@@ -825,7 +825,7 @@ fn signed_dpop_proof_with_raw_jwk(
     let claims = json!({
         "htu": "https://api.example/orders",
         "htm": "GET",
-        "iat": Utc::now().timestamp(),
+        "iat": jiff::Timestamp::now().as_second(),
         "jti": "private-header-jwk",
         "ath": access_token_hash(access_token),
     });

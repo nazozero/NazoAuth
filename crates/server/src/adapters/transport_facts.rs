@@ -34,8 +34,11 @@ pub(crate) fn capture_direct_tls_client_certificate(
         .server_name()
         .and_then(|name| nazo_identity::canonical_tenant_host(name).ok())
         .map(Arc::from);
+    // Own the peer chain once per TLS connection using the upstream API.
+    // Every request on this connection shares the resulting certificate facts.
     let client_certificate = connection
-        .peer_certificates_shared()
+        .peer_certificates()
+        .map(|chain| Arc::new(chain.to_vec()))
         .and_then(nazo_oauth_server::security::mtls::certificate_chain_identity)
         .map(|mut identity| {
             let (leaf, intermediates) = identity

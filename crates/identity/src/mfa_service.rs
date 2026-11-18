@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::{
     PublicAccount,
@@ -361,7 +361,7 @@ impl MfaService {
         account: &PublicAccount,
         proof: &MfaVerificationProof,
         user_agent_hash: Option<String>,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     ) -> Result<Option<String>, MfaServiceError> {
         let token = random_urlsafe_token();
         let remembered = self

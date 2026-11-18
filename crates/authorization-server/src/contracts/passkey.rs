@@ -1,11 +1,11 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     LoginSuccess, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
-use passkey_auth::{AuthenticationResponse, RegistrationResponse};
+use nazo_passkey::{AuthenticationResponse, RegistrationResponse};
 use uuid::Uuid;
 
 pub type PasskeyFuture<'a, T> =
@@ -31,7 +31,10 @@ pub struct PasskeyLoginFinishCommand {
     pub source_ip: String,
     pub remembered_mfa: Option<RememberedMfaProof>,
     pub previous_session_id: Option<String>,
-    pub now: DateTime<Utc>,
+    /// Transport verified the existing session's CSRF token. This permits
+    /// checking that session for independent UV-initialization evidence.
+    pub csrf_verified: bool,
+    pub now: Timestamp,
 }
 
 pub trait PasskeyLoginOperations: Send + Sync {

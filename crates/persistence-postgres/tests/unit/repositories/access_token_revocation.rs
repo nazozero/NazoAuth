@@ -23,8 +23,8 @@ fn blake3_hex(value: &str) -> String {
 
 /// PostgreSQL stores timestamptz at microsecond precision; truncating the
 /// fixture timestamps keeps equality assertions exact.
-fn micros(value: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_micros(value.timestamp_micros()).expect("in-range timestamp")
+fn micros(value: Timestamp) -> Timestamp {
+    Timestamp::from_microsecond(value.as_microsecond()).expect("in-range timestamp")
 }
 
 #[derive(QueryableByName)]
@@ -42,9 +42,11 @@ struct StoredRevocation {
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    revoked_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    revoked_at: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
 }
 
 async fn stored_revocation(
@@ -100,27 +102,27 @@ fn revocation(
     tenant_id: Uuid,
     client_id: Uuid,
     jti: &str,
-    revoked_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    revoked_at: Timestamp,
+    expires_at: Timestamp,
 ) -> NewAccessTokenRevocation {
     NewAccessTokenRevocation {
         access_token_jti_blake3: blake3_hex(jti),
         client_id,
         tenant_id,
-        revoked_at,
-        expires_at,
+        revoked_at: revoked_at.into(),
+        expires_at: expires_at.into(),
     }
 }
 
 #[test]
 fn deadline_is_exp_plus_exactly_one_clock_skew_window() {
-    let exp = DateTime::from_timestamp(1_700_000_000, 123_456_789)
-        .expect("fixed exp should be representable");
+    let exp =
+        Timestamp::new(1_700_000_000, 123_456_789).expect("fixed exp should be representable");
     let deadline =
         access_token_revocation_deadline(exp).expect("a representable exp must produce a deadline");
     assert_eq!(
-        deadline.signed_duration_since(exp),
-        chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+        deadline.duration_since(exp),
+        jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
         "the stored deadline is the verified exp plus exactly one maximum \
          verifier clock-skew window"
     );
@@ -129,7 +131,7 @@ fn deadline_is_exp_plus_exactly_one_clock_skew_window() {
 
 #[test]
 fn deadline_rejects_an_unrepresentable_exp_instead_of_wrapping() {
-    let result = access_token_revocation_deadline(DateTime::<Utc>::MAX_UTC);
+    let result = access_token_revocation_deadline(Timestamp::MAX);
     match &result {
         Err(RepositoryError::Consistency(message)) => assert!(
             message.contains("not representable"),
@@ -146,18 +148,18 @@ fn deadline_rejects_an_unrepresentable_exp_instead_of_wrapping() {
 /// silent idempotence inside this function.
 #[test]
 fn deadline_adds_one_more_window_to_an_already_padded_input() {
-    let exp = DateTime::from_timestamp(1_700_000_000, 0).expect("fixed exp should be valid");
+    let exp = Timestamp::new(1_700_000_000, 0).expect("fixed exp should be valid");
     let padded = access_token_revocation_deadline(exp).expect("first window should apply");
     let repadded =
         access_token_revocation_deadline(padded).expect("a padded input still represents an exp");
     assert_eq!(
-        repadded.signed_duration_since(padded),
-        chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+        repadded.duration_since(padded),
+        jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
         "an already-padded value gains exactly one more window"
     );
     assert_eq!(
-        repadded.signed_duration_since(exp),
-        chrono::Duration::seconds(2 * MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+        repadded.duration_since(exp),
+        jiff::SignedDuration::from_secs(2 * MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
     );
 }
 
@@ -170,15 +172,15 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
     let first_client = Uuid::now_v7();
     let other_client = Uuid::now_v7();
     let jti = format!("mono-{}", Uuid::now_v7());
-    let first_revoked_at = micros(Utc::now() - chrono::Duration::minutes(2));
-    let base = micros(Utc::now() + chrono::Duration::minutes(5));
+    let first_revoked_at = micros(Timestamp::now() - jiff::SignedDuration::from_mins(2));
+    let base = micros(Timestamp::now() + jiff::SignedDuration::from_mins(5));
 
     let first = revocation(
         tenant,
         first_client,
         &jti,
         first_revoked_at,
-        base + chrono::Duration::seconds(60),
+        base + jiff::SignedDuration::from_secs(60),
     );
     let first_id = first.access_token_jti_blake3.clone();
     assert_eq!(
@@ -190,7 +192,7 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
 
     // An equal or shorter deadline is not an extension: the upsert filter
     // leaves the stored row byte-identical and reports no write.
-    for expires_at in [base + chrono::Duration::seconds(60), base] {
+    for expires_at in [base + jiff::SignedDuration::from_secs(60), base] {
         assert_eq!(
             upsert_access_token_revocations(
                 &mut connection,
@@ -198,7 +200,7 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
                     tenant,
                     other_client,
                     &jti,
-                    micros(Utc::now()),
+                    micros(Timestamp::now()),
                     expires_at,
                 )],
             )
@@ -224,7 +226,10 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
         stored.revoked_at, first_revoked_at,
         "the first revocation timestamp is authoritative"
     );
-    assert_eq!(stored.expires_at, base + chrono::Duration::seconds(60));
+    assert_eq!(
+        stored.expires_at,
+        base + jiff::SignedDuration::from_secs(60)
+    );
 
     // A longer deadline extends the retention window; identity stays intact.
     assert_eq!(
@@ -234,8 +239,8 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
                 tenant,
                 other_client,
                 &jti,
-                micros(Utc::now()),
-                base + chrono::Duration::seconds(120),
+                micros(Timestamp::now()),
+                base + jiff::SignedDuration::from_secs(120),
             )],
         )
         .await
@@ -250,7 +255,7 @@ async fn upsert_extends_only_forward_and_preserves_the_first_fact() {
     assert_eq!(stored.revoked_at, first_revoked_at);
     assert_eq!(
         stored.expires_at,
-        base + chrono::Duration::seconds(120),
+        base + jiff::SignedDuration::from_secs(120),
         "the stored deadline is the maximum ever observed"
     );
 }
@@ -266,21 +271,21 @@ async fn upsert_rejects_duplicate_authority_keys_inside_one_batch() {
     let tenant = Uuid::now_v7();
     let client = Uuid::now_v7();
     let jti = format!("dup-{}", Uuid::now_v7());
-    let now = micros(Utc::now());
+    let now = micros(Timestamp::now());
     let batch = [
         revocation(
             tenant,
             client,
             &jti,
             now,
-            now + chrono::Duration::seconds(60),
+            now + jiff::SignedDuration::from_secs(60),
         ),
         revocation(
             tenant,
             client,
             &jti,
             now,
-            now + chrono::Duration::seconds(120),
+            now + jiff::SignedDuration::from_secs(120),
         ),
     ];
     let error = upsert_access_token_revocations(&mut connection, &batch)
@@ -307,8 +312,8 @@ async fn owner_batch_dedups_duplicate_keys_to_the_longest_deadline() {
     let user = Uuid::now_v7();
     let token_id = Uuid::now_v7();
     let jti = token_id.to_string();
-    let short_exp = micros(Utc::now() + chrono::Duration::seconds(300));
-    let long_exp = micros(Utc::now() + chrono::Duration::seconds(600));
+    let short_exp = micros(Timestamp::now() + jiff::SignedDuration::from_secs(300));
+    let long_exp = micros(Timestamp::now() + jiff::SignedDuration::from_secs(600));
 
     sql_query("INSERT INTO oauth_clients VALUES ($1, $2, 'dup-client')")
         .bind::<sql_types::Uuid, _>(client)
@@ -321,7 +326,7 @@ async fn owner_batch_dedups_duplicate_keys_to_the_longest_deadline() {
         .bind::<sql_types::Uuid, _>(client)
         .bind::<sql_types::Uuid, _>(user)
         .bind::<sql_types::Text, _>(jti.clone())
-        .bind::<sql_types::Timestamptz, _>(short_exp)
+        .bind::<sql_types::Timestamptz, _>((short_exp).to_diesel())
         .execute(&mut connection)
         .await
         .expect("issuance fixture should insert");
@@ -329,7 +334,7 @@ async fn owner_batch_dedups_duplicate_keys_to_the_longest_deadline() {
         .bind::<sql_types::Uuid, _>(tenant)
         .bind::<sql_types::Uuid, _>(user)
         .bind::<sql_types::Uuid, _>(token_id)
-        .bind::<sql_types::Timestamptz, _>(long_exp)
+        .bind::<sql_types::Timestamptz, _>((long_exp).to_diesel())
         .execute(&mut connection)
         .await
         .expect("vci grant fixture should insert");
@@ -349,7 +354,7 @@ async fn owner_batch_dedups_duplicate_keys_to_the_longest_deadline() {
     assert_eq!(stored.client_id, client);
     assert_eq!(
         stored.expires_at,
-        long_exp + chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+        long_exp + jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
         "the deduplicated fact keeps the longest of the duplicated deadlines"
     );
 }
@@ -369,15 +374,15 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
     let user = Uuid::now_v7();
     let token_id = Uuid::now_v7();
     let jti = token_id.to_string();
-    let exp = micros(Utc::now() + chrono::Duration::seconds(300));
+    let exp = micros(Timestamp::now() + jiff::SignedDuration::from_secs(300));
 
     // The same JTI under another tenant is an independent authority key.
     let foreign = revocation(
         other_tenant,
         Uuid::now_v7(),
         &jti,
-        micros(Utc::now()),
-        micros(Utc::now() + chrono::Duration::seconds(90)),
+        micros(Timestamp::now()),
+        micros(Timestamp::now() + jiff::SignedDuration::from_secs(90)),
     );
     let foreign_id = foreign.access_token_jti_blake3.clone();
     let foreign_expires_at = foreign.expires_at;
@@ -397,7 +402,7 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
         .bind::<sql_types::Uuid, _>(client)
         .bind::<sql_types::Uuid, _>(user)
         .bind::<sql_types::Text, _>(jti.clone())
-        .bind::<sql_types::Timestamptz, _>(exp)
+        .bind::<sql_types::Timestamptz, _>((exp).to_diesel())
         .execute(&mut connection)
         .await
         .expect("issuance fixture should insert");
@@ -405,7 +410,7 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
         .bind::<sql_types::Uuid, _>(tenant)
         .bind::<sql_types::Uuid, _>(user)
         .bind::<sql_types::Uuid, _>(token_id)
-        .bind::<sql_types::Timestamptz, _>(exp)
+        .bind::<sql_types::Timestamptz, _>((exp).to_diesel())
         .execute(&mut connection)
         .await
         .expect("conflicting vci grant fixture should insert");
@@ -420,8 +425,8 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
                     tenant,
                     client,
                     "marker-jti",
-                    micros(Utc::now()),
-                    micros(Utc::now() + chrono::Duration::seconds(120)),
+                    micros(Timestamp::now()),
+                    micros(Timestamp::now() + jiff::SignedDuration::from_secs(120)),
                 )],
             )
             .await?;
@@ -455,7 +460,101 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
         .expect("the other tenant's fact is a separate authority key");
     assert_eq!(foreign.access_token_jti_blake3, foreign_id);
     assert_eq!(
-        foreign.expires_at, foreign_expires_at,
+        foreign.expires_at,
+        jiff::Timestamp::from(foreign_expires_at),
         "the conflicting tenant-scoped batch must not touch other tenants"
     );
+}
+
+use jiff_diesel::ToDiesel as _;
+
+#[tokio::test]
+async fn jiff_postgres_timestamp_wire_roundtrips_preserve_epoch_precision() {
+    use jiff_diesel::ToDiesel as _;
+    let Some(mut connection) = temp_connection().await else {
+        return;
+    };
+    #[derive(QueryableByName)]
+    struct Row {
+        #[diesel(sql_type = sql_types::Timestamptz)]
+        #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+        value: Timestamp,
+    }
+    // The adapter truncates the signed duration from PostgreSQL's 2000 epoch,
+    // not the signed duration from the Unix epoch. These literal expectations
+    // catch an accidental change to floor rounding or Unix-epoch truncation.
+    for (input, expected) in [
+        ("2000-01-01T00:00:00Z", "2000-01-01T00:00:00Z"),
+        ("2000-01-01T00:00:00.000000001Z", "2000-01-01T00:00:00Z"),
+        ("1999-12-31T23:59:59.999999999Z", "2000-01-01T00:00:00Z"),
+        (
+            "2000-01-01T00:00:00.000001001Z",
+            "2000-01-01T00:00:00.000001Z",
+        ),
+        (
+            "1999-12-31T23:59:59.999998999Z",
+            "1999-12-31T23:59:59.999999Z",
+        ),
+        (
+            "1970-01-01T00:00:00.000000001Z",
+            "1970-01-01T00:00:00.000001Z",
+        ),
+        ("1969-12-31T23:59:59.999999999Z", "1970-01-01T00:00:00Z"),
+        ("1969-12-31T23:59:59.123456Z", "1969-12-31T23:59:59.123456Z"),
+        (
+            "2026-11-18T00:00:00.123456789Z",
+            "2026-11-18T00:00:00.123456Z",
+        ),
+        ("2026-11-18T08:00:00+08:00", "2026-11-18T00:00:00Z"),
+    ] {
+        let input: Timestamp = input.parse().unwrap();
+        let row = sql_query("SELECT $1::timestamptz AS value")
+            .bind::<sql_types::Timestamptz, _>(input.to_diesel())
+            .get_result::<Row>(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(
+            row.value,
+            expected.parse::<Timestamp>().unwrap(),
+            "input {input}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn jiff_postgres_nullable_and_array_bindings_roundtrip_without_timestamp_strings() {
+    use jiff_diesel::ToDiesel as _;
+    let Some(mut connection) = temp_connection().await else {
+        return;
+    };
+    #[derive(QueryableByName)]
+    struct Row {
+        #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+        #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+        optional: Option<Timestamp>,
+        #[diesel(sql_type = sql_types::Array<sql_types::Timestamptz>)]
+        values: Vec<jiff_diesel::Timestamp>,
+    }
+    let instants: Vec<Timestamp> = [
+        "1969-12-31T23:59:59.123456Z",
+        "1970-01-01T00:00:00Z",
+        "1999-12-31T23:59:59.999999Z",
+        "2000-01-01T00:00:00Z",
+        "2026-11-18T00:00:00.123456Z",
+    ]
+    .into_iter()
+    .map(|value| value.parse().unwrap())
+    .collect();
+    let bindings: Vec<_> = instants.iter().map(|value| value.to_diesel()).collect();
+    for optional in [None, Some(instants[0]), Some(instants[4])] {
+        let row = sql_query("SELECT $1::timestamptz AS optional, $2::timestamptz[] AS values")
+            .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(optional.to_diesel())
+            .bind::<sql_types::Array<sql_types::Timestamptz>, _>(&bindings)
+            .get_result::<Row>(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(row.optional, optional);
+        let restored: Vec<Timestamp> = row.values.into_iter().map(Into::into).collect();
+        assert_eq!(restored, instants);
+    }
 }

@@ -22,7 +22,7 @@ impl ServerProfileAccountOperations {
     ) -> Result<nazo_identity::Principal, ProfileAccountError> {
         match self
             .sessions
-            .current_principal(session_id, chrono::Utc::now().timestamp())
+            .current_principal(session_id, jiff::Timestamp::now().as_second())
             .await
         {
             Ok(SessionResolution::Present(session)) => Ok(session.into_user()),
@@ -39,7 +39,7 @@ impl ServerProfileAccountOperations {
     async fn me(&self, session_id: SessionId) -> Result<ProfileMe, ProfileAccountError> {
         match self
             .sessions
-            .resolve_for_mfa(&session_id, chrono::Utc::now().timestamp())
+            .resolve_for_mfa(&session_id, jiff::Timestamp::now().as_second())
             .await
         {
             Ok(SessionResolution::Present(session)) if session.pending_mfa() => {

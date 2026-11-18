@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -71,11 +71,11 @@ pub struct AuthorizationDecisionCommit {
     pub client_id: String,
     pub request_id: String,
     pub pushed_request_uri: Option<String>,
-    pub valid_until: DateTime<Utc>,
-    pub retain_until: DateTime<Utc>,
+    pub valid_until: Timestamp,
+    pub retain_until: Timestamp,
     pub decision: AuthorizationDecisionKind,
     pub event_id: Uuid,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     pub audit_fields: Value,
     pub scopes: Vec<String>,
     pub resource_indicators: Vec<String>,
@@ -143,8 +143,8 @@ pub struct ConsentAdmissionPreview {
     consent: ConsentPayload,
     consent_version: String,
     pushed_request_version: Option<String>,
-    valid_until: DateTime<Utc>,
-    retain_until: DateTime<Utc>,
+    valid_until: Timestamp,
+    retain_until: Timestamp,
 }
 
 impl ConsentAdmissionPreview {
@@ -152,11 +152,11 @@ impl ConsentAdmissionPreview {
         &self.consent
     }
 
-    pub fn valid_until(&self) -> DateTime<Utc> {
+    pub fn valid_until(&self) -> Timestamp {
         self.valid_until
     }
 
-    pub fn retain_until(&self) -> DateTime<Utc> {
+    pub fn retain_until(&self) -> Timestamp {
         self.retain_until
     }
 
@@ -201,7 +201,7 @@ pub struct AuthorizationApprovalInput<'a> {
     pub consent: &'a ConsentPayload,
     pub code_hash: &'a str,
     pub code_id: &'a str,
-    pub issued_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
     pub code_ttl_seconds: u64,
     pub tenant_id: Uuid,
 }
@@ -232,7 +232,7 @@ pub fn prepare_authorization_code(
         mtls_x5t_s256: consent.mtls_x5t_s256.clone(),
 
         expires_at: input.issued_at
-            + Duration::seconds(input.code_ttl_seconds.try_into().unwrap_or(i64::MAX)),
+            + SignedDuration::from_secs(input.code_ttl_seconds.try_into().unwrap_or(i64::MAX)),
     };
     PreparedAuthorizationCode {
         tenant_id: input.tenant_id,
@@ -240,6 +240,25 @@ pub fn prepare_authorization_code(
         payload: code_payload,
         ttl_seconds: input.code_ttl_seconds,
     }
+}
+
+// Consent retains this digest across hosts and upgrades. Keep its timestamp
+// bytes stable while writing directly into the existing hash serializer.
+fn serialize_par_timestamp<S: serde::Serializer>(
+    value: &Timestamp,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let nanos = value.subsec_nanosecond();
+    let precision = if nanos == 0 {
+        0
+    } else if nanos % 1_000_000 == 0 {
+        3
+    } else if nanos % 1_000 == 0 {
+        6
+    } else {
+        9
+    };
+    serializer.collect_str(&format_args!("{value:.precision$}"))
 }
 
 pub fn pushed_authorization_request_digest(
@@ -251,8 +270,10 @@ pub fn pushed_authorization_request_digest(
         params: std::collections::BTreeMap<&'a str, &'a str>,
         dpop_jkt: Option<&'a str>,
         mtls_x5t_s256: Option<&'a str>,
-        issued_at: &'a DateTime<Utc>,
-        expires_at: &'a DateTime<Utc>,
+        #[serde(serialize_with = "serialize_par_timestamp")]
+        issued_at: &'a Timestamp,
+        #[serde(serialize_with = "serialize_par_timestamp")]
+        expires_at: &'a Timestamp,
     }
 
     let canonical = CanonicalPushedAuthorizationRequest {

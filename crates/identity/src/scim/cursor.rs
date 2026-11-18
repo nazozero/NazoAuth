@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ pub struct ScimCursorSubject {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScimCursorPosition {
-    pub last_created_at: DateTime<Utc>,
+    pub last_created_at: Timestamp,
     pub last_id: Uuid,
 }
 
@@ -33,7 +33,7 @@ pub struct ScimCursorContext<'a> {
     pub subject: &'a ScimCursorSubject,
     pub filter: Option<&'a str>,
     pub count: i64,
-    pub last_created_at: DateTime<Utc>,
+    pub last_created_at: Timestamp,
     pub last_id: Uuid,
 }
 
@@ -54,7 +54,7 @@ struct ScimCursorPayload<'a> {
     count: i64,
     #[serde(borrow)]
     sort: Cow<'a, str>,
-    last_created_at: DateTime<Utc>,
+    last_created_at: Timestamp,
     last_id: Uuid,
     issued_at: i64,
     expires_at: i64,
@@ -68,7 +68,7 @@ struct ScimCursorPayload<'a> {
 /// compiler-owned here.
 pub fn build_scim_cursor_plaintext(
     context: &ScimCursorContext<'_>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec(&ScimCursorPayload {
         v: SCIM_CURSOR_VERSION,
@@ -79,8 +79,8 @@ pub fn build_scim_cursor_plaintext(
         sort: Cow::Borrowed(SCIM_CURSOR_SORT),
         last_created_at: context.last_created_at,
         last_id: context.last_id,
-        issued_at: now.timestamp(),
-        expires_at: now.timestamp() + SCIM_CURSOR_TIMEOUT_SECONDS,
+        issued_at: now.as_second(),
+        expires_at: now.as_second() + SCIM_CURSOR_TIMEOUT_SECONDS,
     })
 }
 
@@ -107,7 +107,7 @@ pub fn decode_scim_cursor_plaintext(
     subject: &ScimCursorSubject,
     filter: Option<&str>,
     count: i64,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<ScimCursorPosition, ScimCursorError> {
     let payload = serde_json::from_slice::<ScimCursorPayload>(plaintext)
         .map_err(|_| ScimCursorError::Invalid)?;
@@ -117,13 +117,13 @@ pub fn decode_scim_cursor_plaintext(
         || payload.actor != subject.actor
         || payload.filter.as_deref() != filter
         || !(0..=SCIM_MAX_PAGE_SIZE).contains(&payload.count)
-        || payload.issued_at > now.timestamp() + 60
+        || payload.issued_at > now.as_second() + 60
         || payload.expires_at <= payload.issued_at
         || payload.expires_at - payload.issued_at > SCIM_CURSOR_TIMEOUT_SECONDS
     {
         return Err(ScimCursorError::Invalid);
     }
-    if payload.expires_at <= now.timestamp() {
+    if payload.expires_at <= now.as_second() {
         return Err(ScimCursorError::Expired);
     }
     if payload.count != count {

@@ -179,12 +179,12 @@ mod real_userinfo_contract {
         http::{StatusCode, header},
         web::{Bytes, Data},
     };
-    use chrono::{DateTime, Utc};
     use diesel::{
         sql_query,
         sql_types::{Bool, Text, Uuid as SqlUuid},
     };
     use diesel_async::RunQueryDsl;
+    use jiff::Timestamp;
     use nazo_auth::PreparedTokenSubject;
     use nazo_auth::*;
     use nazo_identity::DEFAULT_ORGANIZATION_ID;
@@ -294,7 +294,7 @@ mod real_userinfo_contract {
             _tenant_id: Uuid,
             _raw_token: &'a str,
             _client_id: Uuid,
-            _retry_started_at: chrono::DateTime<chrono::Utc>,
+            _retry_started_at: jiff::Timestamp,
             _prepare_oidc_subject: bool,
         ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
             panic!("unexpected refresh snapshot lookup")
@@ -304,7 +304,7 @@ mod real_userinfo_contract {
             _: Uuid,
             _: Uuid,
             _: &'a str,
-            _: Option<DateTime<Utc>>,
+            _: Option<Timestamp>,
             _: Option<Uuid>,
         ) -> TokenFuture<'a, ()> {
             panic!("unexpected token revocation")

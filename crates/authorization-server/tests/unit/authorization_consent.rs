@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::json;
 fn consent_payload(user_id: Uuid) -> ConsentPayload {
     ConsentPayload {
@@ -38,7 +38,7 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
 
-        expires_at: Utc::now() + Duration::minutes(5),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(5),
     }
 }
 

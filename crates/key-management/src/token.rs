@@ -1,4 +1,4 @@
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     AccessTokenClaimsInput, AccessTokenSignInput, Claims, IdTokenClaimsInput, IdTokenSignInput,
     IntrospectionSignInput, IssuedAccessToken, SigningPurpose, TokenFuture, TokenPortError,
@@ -35,7 +35,7 @@ impl TokenSignerPort for KeyManager {
             };
             let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("at+jwt".to_owned());
-            let now = Utc::now().timestamp();
+            let now = Timestamp::now().as_second();
             let jti = Uuid::now_v7().to_string();
             let expires_at = now + input.ttl_seconds;
             let claims = access_token_claims(
@@ -95,7 +95,7 @@ impl TokenSignerPort for KeyManager {
                     extra_claims: input.extra_claims,
                     ttl: input.ttl_seconds,
                 },
-                Utc::now().timestamp(),
+                Timestamp::now().as_second(),
             );
             let algorithm = match input.signing_algorithm {
                 Some(name) => {
@@ -201,7 +201,7 @@ impl TokenSignerPort for KeyManager {
             header.typ = Some("token-introspection+jwt".to_owned());
             let claims = IntrospectionResponseClaims {
                 aud: input.audience,
-                iat: Utc::now().timestamp(),
+                iat: Timestamp::now().as_second(),
                 iss: input.issuer,
                 token_introspection: input.body,
             };

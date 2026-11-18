@@ -37,9 +37,6 @@ pub(super) async fn build(
                 keyset.clone(),
                 nazo_digital_credentials::VcIssuerTrustPolicy::san_bound(),
                 settings.openid4vc.revocation_policy,
-                startup.capabilities.mdoc_signer.clone().ok_or_else(|| {
-                    anyhow::anyhow!("enabled OpenID4VC requires an mdoc signing capability")
-                })?,
             )
             .context("failed to initialize OpenID4VC credential crypto from managed material")?
             .with_status_resolver(startup.capabilities.documents.clone()),

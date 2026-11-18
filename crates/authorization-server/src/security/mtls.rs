@@ -52,7 +52,7 @@ pub fn certificate_chain_identity(
 /// PKI authentication consumes the tenant's currently approved trust anchors.
 /// Revocation therefore takes effect on existing TLS connections as well.
 pub fn certificate_chain_trusted(certificate: &ClientCertificateFacts, anchors: &str) -> bool {
-    let Ok(unix_seconds) = u64::try_from(chrono::Utc::now().timestamp()) else {
+    let Ok(unix_seconds) = u64::try_from(jiff::Timestamp::now().as_second()) else {
         return false;
     };
     nazo_crypto::certificate::verify_client_chain_at(

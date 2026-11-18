@@ -9,7 +9,7 @@ use crate::contracts::mfa_profile::{
 };
 use crate::crypto::blake3_hex;
 use crate::ports::audit::{SecurityAudit, audit_fields};
-use chrono::{DateTime, Duration, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     MfaService, MfaServiceError, MfaServiceErrorKind, PublicAccount, SessionId, SessionResolution,
     SessionRotation, SessionService, TotpConfirmationOutcome,
@@ -164,7 +164,7 @@ impl ServerMfaProfileOperations {
                 method.amr(),
                 self.session_ttl_seconds,
                 require_pending_mfa,
-                Utc::now(),
+                Timestamp::now(),
             )
             .await
             .map_err(|error| {
@@ -307,16 +307,15 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 }
             };
             let remembered_device_token = if command.remember_device {
-                let now = DateTime::<Utc>::from_timestamp(command.context.now, 0)
-                    .unwrap_or_else(Utc::now);
-                let ttl = i64::try_from(self.remembered_mfa_ttl_seconds).unwrap_or(i64::MAX);
+                let expires_at = Timestamp::from_second(command.context.now)
+                    .and_then(|now| {
+                        now.checked_add(std::time::Duration::from_secs(
+                            self.remembered_mfa_ttl_seconds,
+                        ))
+                    })
+                    .map_err(|_| MfaProfileError::new(MfaProfileErrorKind::RememberDeviceFailed))?;
                 self.mfa
-                    .remember_device(
-                        &account,
-                        &method,
-                        command.user_agent_hash,
-                        now + Duration::seconds(ttl),
-                    )
+                    .remember_device(&account, &method, command.user_agent_hash, expires_at)
                     .await
                     .map_err(|error| {
                         tracing::warn!(?error, "failed to remember MFA device");

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::contracts::profile_account::{ProfileAccountError, ProfileMe};
-use chrono::{TimeZone as _, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     AccountIdentity, AccountProfileService, Principal, ProfilePatch, PublicAccount, SessionId,
     SessionService, TenantContext, TenantId, UserId, UserProfile, UserRole,
@@ -157,7 +157,7 @@ impl AuthorizedApplicationRepositoryPort for FixedApplications {
 type Operations = ServerProfileAccountOperations;
 
 fn account() -> PublicAccount {
-    let now = Utc::now();
+    let now = Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,
@@ -188,7 +188,7 @@ fn snapshot(pending_mfa: bool) -> SessionSnapshot {
         SessionRecord::new(
             account().user_id(),
             0,
-            Utc::now().timestamp(),
+            Timestamp::now().as_second(),
             vec!["pwd".to_owned()],
             pending_mfa,
             Some("oidc-session".to_owned()),
@@ -313,7 +313,7 @@ fn update_validation_and_application_projection_stay_in_focused_services() {
             client_id: "client-1".to_owned(),
             client_name: "Example Client".to_owned(),
             last_scopes: json!(["openid", 42, null, "profile"]),
-            last_authorized_at: Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
+            last_authorized_at: Timestamp::new(1_700_000_000, 0).unwrap(),
             authorization_count: 3,
         };
         let operations = operations(Ok(Some(snapshot(false))), vec![application]);

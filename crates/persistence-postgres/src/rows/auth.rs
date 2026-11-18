@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -26,9 +26,11 @@ pub(crate) struct RefreshFamilyRow {
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) current_audience: Value,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) current_issued_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) current_issued_at: Timestamp,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) current_expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) current_expires_at: Timestamp,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) current_id_token_sid: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
@@ -38,9 +40,11 @@ pub(crate) struct RefreshFamilyRow {
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) client_attestation_jkt: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    pub(crate) revoked_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    pub(crate) revoked_at: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    pub(crate) reuse_detected_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    pub(crate) reuse_detected_at: Option<Timestamp>,
 }
 
 #[derive(Debug, diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
@@ -58,9 +62,11 @@ pub(crate) struct SpentRefreshTokenRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) member_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) spent_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) spent_at: Timestamp,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) expires_at: Timestamp,
 }
 
 #[derive(Clone, diesel::QueryableByName)]
@@ -74,7 +80,8 @@ pub(crate) struct BackchannelLogoutDeliveryRow {
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub(crate) attempts: i32,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for BackchannelLogoutDeliveryRow {

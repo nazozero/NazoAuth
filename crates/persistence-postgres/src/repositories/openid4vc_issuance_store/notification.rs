@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_openid4vci::{
     CredentialResponseEncoding, CredentialStoreError, CredentialStoreFuture, IssuanceNotification,
     NotificationHandle, StoredCredentialResponse,
@@ -23,7 +23,7 @@ impl Openid4vciRepository {
         issuance_id: Uuid,
         token_id: Uuid,
         request_digest: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         Box::pin(async move {
@@ -44,7 +44,7 @@ impl Openid4vciRepository {
                         )
                         .bind::<sql_types::Uuid, _>(issuance_id)
                         .bind::<sql_types::Text, _>(request_digest)
-                        .bind::<sql_types::Timestamptz, _>(now)
+                        .bind::<sql_types::Timestamptz, _>((now).to_diesel())
                         .get_result::<IssuanceResponseRow>(connection)
                         .await
                         .optional()?;
@@ -106,7 +106,7 @@ impl Openid4vciRepository {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let body_ciphertext =
@@ -152,7 +152,7 @@ impl Openid4vciRepository {
                     )
                     .bind::<sql_types::Text, _>(notification_id)
                     .bind::<sql_types::Uuid, _>(notification_token_id)
-                    .bind::<sql_types::Timestamptz, _>(notification_expires_at)
+                    .bind::<sql_types::Timestamptz, _>((notification_expires_at).to_diesel())
                     .bind::<sql_types::Jsonb, _>(notification_selection)
                     .execute(connection)
                     .await?;
@@ -162,7 +162,7 @@ impl Openid4vciRepository {
                     )
                     .bind::<sql_types::Text, _>(nonce_hash)
                     .bind::<sql_types::Text, _>(claim_id)
-                    .bind::<sql_types::Timestamptz, _>(now)
+                    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
                     .execute(connection)
                     .await?;
                     if changed != 1 {
@@ -182,7 +182,7 @@ impl Openid4vciRepository {
         &'a self,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             let body_ciphertext =
@@ -228,7 +228,7 @@ impl Openid4vciRepository {
                     )
                     .bind::<sql_types::Text, _>(notification_id)
                     .bind::<sql_types::Uuid, _>(notification_token_id)
-                    .bind::<sql_types::Timestamptz, _>(notification_expires_at)
+                    .bind::<sql_types::Timestamptz, _>((notification_expires_at).to_diesel())
                     .bind::<sql_types::Jsonb, _>(notification_selection)
                     .execute(connection)
                     .await?;
@@ -249,7 +249,7 @@ impl Openid4vciRepository {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let body_ciphertext =
@@ -295,7 +295,7 @@ impl Openid4vciRepository {
                     )
                     .bind::<sql_types::Text, _>(notification_id)
                     .bind::<sql_types::Uuid, _>(notification_token_id)
-                    .bind::<sql_types::Timestamptz, _>(notification_expires_at)
+                    .bind::<sql_types::Timestamptz, _>((notification_expires_at).to_diesel())
                     .bind::<sql_types::Jsonb, _>(notification_selection)
                     .execute(connection)
                     .await?;
@@ -308,7 +308,7 @@ impl Openid4vciRepository {
                     .bind::<sql_types::Text, _>(transaction_hash)
                     .bind::<sql_types::Uuid, _>(token_id)
                     .bind::<sql_types::Text, _>(claim_id)
-                    .bind::<sql_types::Timestamptz, _>(now)
+                    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
                     .execute(connection)
                     .await?;
                     if changed != 1 {
@@ -341,7 +341,7 @@ impl Openid4vciRepository {
                          WHERE notification_id = $1 AND expires_at > $2 FOR UPDATE",
                     )
                     .bind::<sql_types::Text, _>(&notification.notification_id)
-                    .bind::<sql_types::Timestamptz, _>(notification.occurred_at)
+                    .bind::<sql_types::Timestamptz, _>((notification.occurred_at).to_diesel())
                     .get_result::<NotificationIdentityRow>(connection)
                     .await
                     .optional()?;
@@ -370,7 +370,7 @@ impl Openid4vciRepository {
                     .bind::<sql_types::Uuid, _>(handle.token_id)
                     .bind::<sql_types::Text, _>(notification_event(&notification.event))
                     .bind::<sql_types::Nullable<sql_types::Text>, _>(notification.description.as_deref())
-                    .bind::<sql_types::Timestamptz, _>(notification.occurred_at)
+                    .bind::<sql_types::Timestamptz, _>((notification.occurred_at).to_diesel())
                     .execute(connection)
                     .await?;
                     Ok(changed == 1)
@@ -391,3 +391,5 @@ struct NotificationIdentityRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
     credential_selection: Option<serde_json::Value>,
 }
+
+use jiff_diesel::ToDiesel as _;

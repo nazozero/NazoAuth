@@ -8,7 +8,7 @@ use std::{
     thread,
 };
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialIdentifier, CredentialResponseEncoding, CredentialStoreError,
@@ -19,24 +19,24 @@ use nazo_openid4vci::{
 use serde_json::json;
 use uuid::Uuid;
 
-fn nonce_claim_ttl() -> Duration {
-    Duration::minutes(5)
+fn nonce_claim_ttl() -> SignedDuration {
+    SignedDuration::from_mins(5)
 }
 
 #[derive(Clone, Debug)]
 struct NonceState {
-    expires_at: DateTime<Utc>,
-    consumed_at: Option<DateTime<Utc>>,
+    expires_at: Timestamp,
+    consumed_at: Option<Timestamp>,
     claim_id: Option<String>,
-    claim_expires_at: Option<DateTime<Utc>>,
+    claim_expires_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug)]
 struct DeferredState {
     credential: DeferredCredential,
-    consumed_at: Option<DateTime<Utc>>,
+    consumed_at: Option<Timestamp>,
     claim_id: Option<String>,
-    claim_expires_at: Option<DateTime<Utc>>,
+    claim_expires_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug)]
@@ -44,7 +44,7 @@ struct NotificationState {
     handle: NotificationHandle,
     event: Option<NotificationEvent>,
     description: Option<String>,
-    occurred_at: Option<DateTime<Utc>>,
+    occurred_at: Option<Timestamp>,
 }
 
 #[derive(Default)]
@@ -94,7 +94,7 @@ impl TransitionStore {
         state: &mut State,
         nonce_hash: &str,
         claim_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> bool {
         let Some(nonce) = state.nonces.get_mut(nonce_hash) else {
             return false;
@@ -117,7 +117,7 @@ impl TransitionStore {
         state: &mut State,
         nonce_hash: &str,
         claim_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> bool {
         let Some(nonce) = state.nonces.get_mut(nonce_hash) else {
             return false;
@@ -171,7 +171,7 @@ impl TransitionStore {
         claim_id: &str,
         handle: &NotificationHandle,
         response: &StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<bool, CredentialStoreError> {
         let mut state = self.state.lock().unwrap();
         let nonce = state
@@ -206,7 +206,7 @@ impl TransitionStore {
         credential: &DeferredCredential,
         claim: Option<(&str, &str)>,
         response: &StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CredentialStoreError> {
         let mut state = self.state.lock().unwrap();
         let key = (
@@ -274,7 +274,7 @@ impl CredentialStorePort for TransitionStore {
         &'a self,
         _: Uuid,
         _: Uuid,
-        _: DateTime<Utc>,
+        _: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
     {
         Box::pin(async { Ok(None) })
@@ -286,7 +286,7 @@ impl CredentialStorePort for TransitionStore {
         _: &'a str,
         _: Option<&'a str>,
         _: &'a str,
-        _: DateTime<Utc>,
+        _: Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<Option<nazo_openid4vci::PreparedPreAuthorizedOffer>, CredentialStoreError>,
@@ -316,7 +316,7 @@ impl CredentialStorePort for TransitionStore {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             Ok(Self::claim_nonce_locked(
@@ -332,7 +332,7 @@ impl CredentialStorePort for TransitionStore {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        _: DateTime<Utc>,
+        _: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
@@ -353,7 +353,7 @@ impl CredentialStorePort for TransitionStore {
         issuance_id: Uuid,
         token_id: Uuid,
         request_digest: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         Box::pin(async move {
@@ -372,7 +372,7 @@ impl CredentialStorePort for TransitionStore {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             self.commit_nonce_with_side_effects(nonce_hash, claim_id, handle, response, now)
@@ -383,7 +383,7 @@ impl CredentialStorePort for TransitionStore {
         &'a self,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        _: DateTime<Utc>,
+        _: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
@@ -402,7 +402,7 @@ impl CredentialStorePort for TransitionStore {
     fn resolve_access<'a>(
         &'a self,
         _: &'a str,
-        _: DateTime<Utc>,
+        _: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async { Ok(None) })
     }
@@ -413,7 +413,7 @@ impl CredentialStorePort for TransitionStore {
         nonce_hash: &'a str,
         claim_id: &'a str,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             self.commit_deferred_with_side_effects(
@@ -429,7 +429,7 @@ impl CredentialStorePort for TransitionStore {
         &'a self,
         credential: &'a DeferredCredential,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(
             async move { self.commit_deferred_with_side_effects(credential, None, response, now) },
@@ -441,7 +441,7 @@ impl CredentialStorePort for TransitionStore {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
@@ -481,7 +481,7 @@ impl CredentialStorePort for TransitionStore {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        _: DateTime<Utc>,
+        _: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
@@ -507,7 +507,7 @@ impl CredentialStorePort for TransitionStore {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
@@ -571,7 +571,7 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
         .block_on(future)
 }
 
-fn deferred_fixture(now: DateTime<Utc>) -> DeferredCredential {
+fn deferred_fixture(now: Timestamp) -> DeferredCredential {
     DeferredCredential {
         selection: None,
         id: Uuid::now_v7(),
@@ -587,7 +587,7 @@ fn deferred_fixture(now: DateTime<Utc>) -> DeferredCredential {
             configuration_ids: vec!["pid".to_owned()],
             credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
             dpop_jkt: None,
-            expires_at: now + Duration::hours(1),
+            expires_at: now + SignedDuration::from_hours(1),
         },
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
@@ -598,18 +598,14 @@ fn deferred_fixture(now: DateTime<Utc>) -> DeferredCredential {
             dataset: json!({"given_name":"Ada"}),
             status: None,
             issued_at: now,
-            expires_at: now + Duration::hours(1),
+            expires_at: now + SignedDuration::from_hours(1),
         },
-        ready_at: now + Duration::minutes(1),
-        expires_at: now + Duration::hours(1),
+        ready_at: now + SignedDuration::from_mins(1),
+        expires_at: now + SignedDuration::from_hours(1),
     }
 }
 
-fn response_fixture(
-    issuance_id: Uuid,
-    token_id: Uuid,
-    now: DateTime<Utc>,
-) -> StoredCredentialResponse {
+fn response_fixture(issuance_id: Uuid, token_id: Uuid, now: Timestamp) -> StoredCredentialResponse {
     StoredCredentialResponse {
         selection: None,
         issuance_id,
@@ -619,15 +615,13 @@ fn response_fixture(
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     }
 }
 
 #[test]
 fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
-    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc);
+    let now = ("2026-01-01T00:00:00Z").parse::<jiff::Timestamp>().unwrap();
     let store = TransitionStore::default();
     let response = response_fixture(Uuid::now_v7(), Uuid::now_v7(), now);
     let handle = NotificationHandle {
@@ -639,12 +633,14 @@ fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
     let hash = "nonce-hash";
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
-        expires_at: now + Duration::hours(1),
+        expires_at: now + SignedDuration::from_hours(1),
     }))
     .unwrap();
 
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
-    assert!(!block_on(store.claim_nonce(hash, "claim-b", now + Duration::minutes(1))).unwrap());
+    assert!(
+        !block_on(store.claim_nonce(hash, "claim-b", now + SignedDuration::from_mins(1))).unwrap()
+    );
     assert!(block_on(store.claim_nonce(hash, "claim-b", now + nonce_claim_ttl())).unwrap());
     assert!(
         !block_on(store.finalize_nonce_with_notification_and_response(
@@ -672,7 +668,7 @@ fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
 
 #[test]
 fn nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effects() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let hash = "nonce-hash";
     let token_id = Uuid::now_v7();
@@ -680,12 +676,12 @@ fn nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effe
         selection: None,
         notification_id: "notification-1".to_owned(),
         token_id,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     };
     let response = response_fixture(Uuid::now_v7(), token_id, now);
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
-        expires_at: now + Duration::hours(1),
+        expires_at: now + SignedDuration::from_hours(1),
     }))
     .unwrap();
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
@@ -722,7 +718,7 @@ fn nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effe
 
 #[test]
 fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let deferred = deferred_fixture(now);
     let tx_hash = deferred.transaction_hash.clone();
@@ -757,7 +753,7 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
                 &tx_hash,
                 token_id,
                 "claim-b",
-                ready_at + Duration::minutes(1),
+                ready_at + SignedDuration::from_mins(1),
             ))
             .unwrap()
         )
@@ -808,14 +804,14 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
 
 #[test]
 fn deferred_nonce_commit_rolls_back_all_state_when_claim_is_invalid() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let deferred = deferred_fixture(now);
     let response = response_fixture(Uuid::now_v7(), deferred.access.token_id, now);
     let hash = "nonce-hash";
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
-        expires_at: now + Duration::hours(1),
+        expires_at: now + SignedDuration::from_hours(1),
     }))
     .unwrap();
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
@@ -853,7 +849,7 @@ fn deferred_nonce_commit_rolls_back_all_state_when_claim_is_invalid() {
 
 #[test]
 fn response_lookup_is_bound_to_issuance_identity_and_expiry() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let issuance_id = Uuid::now_v7();
     let token_id = Uuid::now_v7();
@@ -862,11 +858,11 @@ fn response_lookup_is_bound_to_issuance_identity_and_expiry() {
         selection: None,
         notification_id: "notification-1".to_owned(),
         token_id,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     };
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: "nonce".to_owned(),
-        expires_at: now + Duration::hours(1),
+        expires_at: now + SignedDuration::from_hours(1),
     }))
     .unwrap();
     assert!(block_on(store.claim_nonce("nonce", "claim", now)).unwrap());
@@ -902,7 +898,7 @@ fn response_lookup_is_bound_to_issuance_identity_and_expiry() {
             issuance_id,
             token_id,
             "request-digest",
-            now + Duration::minutes(11),
+            now + SignedDuration::from_mins(11),
         ))
         .unwrap()
         .is_none()
@@ -911,14 +907,14 @@ fn response_lookup_is_bound_to_issuance_identity_and_expiry() {
 
 #[test]
 fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let token_id = Uuid::now_v7();
     let handle = NotificationHandle {
         selection: None,
         notification_id: "notification-duplicate".to_owned(),
         token_id,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     };
     let first = response_fixture(Uuid::now_v7(), token_id, now);
     let mut seed = response_fixture(Uuid::now_v7(), token_id, now);
@@ -949,7 +945,7 @@ fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
 
 #[test]
 fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let token_id = Uuid::now_v7();
     let first = response_fixture(Uuid::now_v7(), token_id, now);
@@ -957,7 +953,7 @@ fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
         selection: None,
         notification_id: "notification-first".to_owned(),
         token_id,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     };
     block_on(store.store_response_with_notification(&first_handle, &first, now)).unwrap();
 
@@ -966,7 +962,7 @@ fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
         selection: None,
         notification_id: "notification-second".to_owned(),
         token_id,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     };
     assert_eq!(
         block_on(store.store_response_with_notification(&second_handle, &second, now,)),
@@ -987,14 +983,14 @@ fn response_identity_conflict_is_keyed_by_token_and_digest_across_issuances() {
 
 #[test]
 fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the_handle() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     let token_id = Uuid::now_v7();
     let handle = NotificationHandle {
         selection: None,
         notification_id: "notification-1".to_owned(),
         token_id,
-        expires_at: now + Duration::minutes(1),
+        expires_at: now + SignedDuration::from_mins(1),
     };
     let response = response_fixture(Uuid::now_v7(), token_id, now);
     block_on(store.store_response_with_notification(&handle, &response, now)).unwrap();
@@ -1032,7 +1028,7 @@ fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the
     assert_eq!(recorded, Some(now));
     assert!(
         !block_on(store.record_notification(&IssuanceNotification {
-            occurred_at: now + Duration::minutes(2),
+            occurred_at: now + SignedDuration::from_mins(2),
             ..notification
         }))
         .unwrap()
@@ -1041,11 +1037,11 @@ fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the
 
 #[test]
 fn nonce_claim_is_linearizable_under_concurrent_requests() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = TransitionStore::default();
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: "nonce".to_owned(),
-        expires_at: now + Duration::hours(1),
+        expires_at: now + SignedDuration::from_hours(1),
     }))
     .unwrap();
     let barrier = Arc::new(Barrier::new(3));

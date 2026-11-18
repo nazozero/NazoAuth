@@ -16,7 +16,7 @@ use nazo_auth::DpopError;
 
 use http::StatusCode;
 
-use chrono::Utc;
+use jiff::Timestamp;
 
 use nazo_auth::TokenIssuanceMode;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
@@ -116,7 +116,7 @@ pub async fn token_refresh_with_service(
     client_assertion: Option<&ValidatedClientAssertion>,
     client_attestation_jkt: Option<&str>,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
-    let request_started_at = Utc::now();
+    let request_started_at = Timestamp::now();
     let Some(refresh_token) = &form.refresh_token else {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
@@ -156,7 +156,7 @@ pub async fn token_refresh_with_service(
         ));
     };
     let mut token = snapshot.presented;
-    if token.client_id != client.id || token.expires_at <= Utc::now() {
+    if token.client_id != client.id || token.expires_at <= Timestamp::now() {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -378,7 +378,7 @@ pub async fn token_refresh_with_service(
                 && state.refresh_token_family_id == token.token_family_id
                 && state.subject == token.contract.subject
                 && state.sid == sid
-                && state.expires_at > Utc::now()
+                && state.expires_at > Timestamp::now()
         }) {
             let device_secret = form
                 .device_secret

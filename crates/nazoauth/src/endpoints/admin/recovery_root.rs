@@ -19,7 +19,7 @@ use crate::http::{ClientIpConfig, client_ip_with_config};
 use crate::http::{
     csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store, oauth_error,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_oauth_server::crypto::blake3_hex;
 use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{IdentityApprovalError, RecoveryRotationError};
@@ -74,8 +74,8 @@ pub async fn admin_recovery_root(
             "recovery_kid": root.recovery_kid,
             "kdf": root.kdf,
             "generation": root.generation,
-            "created_at": root.created_at.to_rfc3339(),
-            "updated_at": root.updated_at.to_rfc3339(),
+            "created_at": root.created_at,
+            "updated_at": root.updated_at,
         })),
         Ok(None) => json_response_no_store(serde_json::json!({
             "deployment_id": deployment_id,
@@ -116,7 +116,7 @@ pub async fn admin_recovery_root_approval(
                 source_ip_hash: blake3_hex(&client_ip_with_config(req, client_ip_config)),
             },
             body,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
     {
@@ -127,7 +127,7 @@ pub async fn admin_recovery_root_approval(
                 "approval_token": issued.token,
                 "action": "recovery-root-rotate",
                 "action_sha256": issued.action_sha256,
-                "expires_at": issued.expires_at.to_rfc3339(),
+                "expires_at": issued.expires_at,
                 "single_use": true,
             }))
         }
@@ -166,7 +166,7 @@ pub async fn admin_recovery_root_rotate(
         .commit_rotation_with_required_audit(
             body.approval_token,
             change,
-            Utc::now(),
+            Timestamp::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
                 actor_user_id: admin.id(),
@@ -181,8 +181,8 @@ pub async fn admin_recovery_root_rotate(
                 "recovery_kid": root.recovery_kid,
                 "kdf": root.kdf,
                 "generation": root.generation,
-                "created_at": root.created_at.to_rfc3339(),
-                "updated_at": root.updated_at.to_rfc3339(),
+                "created_at": root.created_at,
+                "updated_at": root.updated_at,
             },
             "previous_generation_invalid": true,
         })),

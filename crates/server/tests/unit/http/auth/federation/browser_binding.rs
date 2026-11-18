@@ -275,7 +275,13 @@ async fn oidc_attacker_code_and_state_in_another_browser_cannot_burn_owner_login
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &fixture.state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let config = crate::test_support::federation_http_config(&fixture.state);
     let key = oidc_state_key(&state_token);
     let before = raw_state_snapshot(&fixture.state, key.clone()).await;
@@ -361,7 +367,11 @@ async fn social_attacker_code_and_state_in_another_browser_preserves_owner_compl
     provider.userinfo_endpoint = userinfo_endpoint;
     let service = crate::test_support::federation_service(&fixture.state);
     let start = service
-        .start_social("social".to_owned(), test_browser_binding_seed(), Utc::now())
+        .start_social(
+            "social".to_owned(),
+            test_browser_binding_seed(),
+            jiff::Timestamp::now(),
+        )
         .await
         .unwrap();
     let config = crate::test_support::federation_http_config(&fixture.state);
@@ -547,13 +557,13 @@ async fn existing_browser_cookie_supports_parallel_oidc_and_social_starts_withou
                 &oidc_state,
                 TEST_OIDC_PROVIDER_ID,
                 test_browser_binding_seed(),
-                Utc::now()
+                jiff::Timestamp::now()
             ),
             service.consume_social(
                 &social_state,
                 "social",
                 test_browser_binding_seed(),
-                Utc::now()
+                jiff::Timestamp::now()
             ),
         );
         let oidc_stored = oidc_stored.unwrap();
@@ -614,7 +624,7 @@ async fn invalid_start_cookie_is_replaced_with_a_fresh_canonical_owner_seed() {
             &redirect_state(&response),
             TEST_OIDC_PROVIDER_ID,
             &seed,
-            Utc::now(),
+            jiff::Timestamp::now(),
         )
         .await
         .unwrap();
@@ -680,7 +690,12 @@ async fn simultaneous_cold_starts_fail_closed_when_last_set_cookie_displaces_the
     assert_no_binding_cookie(&response);
     assert_eq!(raw_state_snapshot(&state, key).await, before);
     service
-        .consume_oidc(&first_state, TEST_OIDC_PROVIDER_ID, &first_seed, Utc::now())
+        .consume_oidc(
+            &first_state,
+            TEST_OIDC_PROVIDER_ID,
+            &first_seed,
+            jiff::Timestamp::now(),
+        )
         .await
         .unwrap();
     service
@@ -688,7 +703,7 @@ async fn simultaneous_cold_starts_fail_closed_when_last_set_cookie_displaces_the
             &second_state,
             TEST_OIDC_PROVIDER_ID,
             &second_seed,
-            Utc::now(),
+            jiff::Timestamp::now(),
         )
         .await
         .unwrap();

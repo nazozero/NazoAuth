@@ -18,11 +18,11 @@ use std::{
 };
 
 use base64::Engine as _;
-use chrono::Utc;
 use diesel::sql_types::{Nullable, Text as SqlText};
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection as _,
 };
+use jiff::Timestamp;
 use nazo_identity::{OrganizationId, RealmId, TenantContext, TenantDirectoryBinding, TenantId};
 use nazo_postgres::{
     TenantBoundaryDefinition, TenantDirectoryRepository, TenantProvisioningRequest, create_pool,
@@ -736,17 +736,17 @@ async fn device_code_consumes_exactly_once_under_concurrent_polling() {
             resource_indicators: Vec::new(),
             authorization_details: serde_json::json!([]),
             interval_seconds: 5,
-            issued_at: Utc::now(),
-            expires_at: Utc::now() + chrono::Duration::minutes(5),
+            issued_at: Timestamp::now(),
+            expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
         },
         approval: nazo_auth::DeviceAuthorizationApproval {
             user_id,
             subject: user_id.to_string(),
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned()],
             oidc_sid: None,
         },
-        approved_at: Utc::now(),
+        approved_at: Timestamp::now(),
     };
     let store = nazo_valkey::DeviceStore::new(&tenant_valkey);
     assert_eq!(
@@ -851,17 +851,17 @@ async fn expired_device_grant_fails_closed_without_an_issuance_row() {
             resource_indicators: Vec::new(),
             authorization_details: serde_json::json!([]),
             interval_seconds: 5,
-            issued_at: Utc::now() - chrono::Duration::minutes(10),
-            expires_at: Utc::now() - chrono::Duration::seconds(5),
+            issued_at: Timestamp::now() - jiff::SignedDuration::from_mins(10),
+            expires_at: Timestamp::now() - jiff::SignedDuration::from_secs(5),
         },
         approval: nazo_auth::DeviceAuthorizationApproval {
             user_id,
             subject: user_id.to_string(),
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned()],
             oidc_sid: None,
         },
-        approved_at: Utc::now() - chrono::Duration::minutes(5),
+        approved_at: Timestamp::now() - jiff::SignedDuration::from_mins(5),
     };
     let store = nazo_valkey::DeviceStore::new(&tenant_valkey);
     assert_eq!(

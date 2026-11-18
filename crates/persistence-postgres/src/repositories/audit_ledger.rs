@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use nazo_identity::ports::RepositoryError;
@@ -185,8 +185,10 @@ impl AuditLedgerRepository {
             .map(|event| event.event_category.as_str())
             .collect();
         let payloads: Vec<&serde_json::Value> = events.iter().map(|event| &event.payload).collect();
-        let occurred_ats: Vec<DateTime<Utc>> =
-            events.iter().map(|event| event.occurred_at).collect();
+        let occurred_ats: Vec<_> = events
+            .iter()
+            .map(|event| event.occurred_at.to_diesel())
+            .collect();
         let mut guard = DiscardOnDrop::new(self.connection().await?);
         // The single statement already commits or rolls back every function
         // call together. Separate BEGIN/COMMIT round trips add no atomicity.
@@ -341,7 +343,7 @@ impl AuditLedgerRepository {
     pub async fn fail_batch(
         &self,
         generation: i64,
-        available_at: DateTime<Utc>,
+        available_at: Timestamp,
         last_error: &str,
         blocked: bool,
     ) -> Result<(), RepositoryError> {
@@ -349,7 +351,7 @@ impl AuditLedgerRepository {
         let changed =
             sql_query("SELECT public.nazo_fail_security_audit_batch($1, $2, $3, $4) AS changed")
                 .bind::<diesel::sql_types::BigInt, _>(generation)
-                .bind::<diesel::sql_types::Timestamptz, _>(available_at)
+                .bind::<diesel::sql_types::Timestamptz, _>((available_at).to_diesel())
                 .bind::<diesel::sql_types::Text, _>(last_error)
                 .bind::<diesel::sql_types::Bool, _>(blocked)
                 .load::<AuditMutationRow>(guard.connection())
@@ -395,10 +397,13 @@ async fn append_on_connection(
     // A function's first DataRow is not an implicit-transaction commit ACK.
     // Drain through statement completion so late database errors propagate.
     // Inside a business transaction, its owner still awaits the final COMMIT.
-    AuditAppendQuery { event }
-        .load::<AuditMutationRow>(connection)
-        .await
-        .and_then(single_audit_mutation)
+    AuditAppendQuery {
+        event,
+        occurred_at: (event).occurred_at.into(),
+    }
+    .load::<AuditMutationRow>(connection)
+    .await
+    .and_then(single_audit_mutation)
 }
 
 /// Re-claim the committed in-flight batch. The identical sequence range and
@@ -413,7 +418,7 @@ async fn claim_inflight(
     if let Some(reason) = head.batch_blocked_reason.clone() {
         return Ok(SecurityAuditBatchClaim::Blocked { reason });
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     if head.batch_locked_until.is_some_and(|until| until > now)
         || head.batch_available_at.is_some_and(|at| at > now)
     {
@@ -688,9 +693,11 @@ struct AuditChainHeadRow {
     #[diesel(sql_type = diesel::sql_types::Integer)]
     batch_attempts: i32,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    batch_available_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    batch_available_at: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    batch_locked_until: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    batch_locked_until: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     batch_blocked_reason: Option<String>,
 }
@@ -720,19 +727,23 @@ struct SecurityAuditAnchorHealthRow {
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pending_orphan_exists: bool,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    oldest_pending_occurred_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    oldest_pending_occurred_at: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
     last_exported_sequence: Option<i64>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
     last_exported_hash: Option<Vec<u8>>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    last_exported_occurred_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    last_exported_occurred_at: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    last_exported_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    last_exported_at: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     deployment_id: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    observed_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    observed_at: Option<Timestamp>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Bool>)]
     batch_blocked: Option<bool>,
 }
@@ -788,7 +799,8 @@ struct SecurityAuditBatchMemberRow {
     #[diesel(sql_type = diesel::sql_types::Text)]
     payload_canonical: String,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    occurred_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    occurred_at: Timestamp,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
     previous_hash: Option<Vec<u8>>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
@@ -893,6 +905,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditPrivilegeQuer
 // Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
 struct AuditAppendQuery<'a> {
     event: &'a SecurityAuditEvent,
+    occurred_at: jiff_diesel::Timestamp,
 }
 impl diesel::query_builder::QueryId for AuditAppendQuery<'_> {
     type QueryId = AuditAppendQuery<'static>;
@@ -916,7 +929,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditAppendQuery<'
         out.push_sql(", ");
         out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.event.payload)?;
         out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.occurred_at)?;
         out.push_sql(") AS changed");
         Ok(())
     }
@@ -925,3 +938,5 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditAppendQuery<'
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/audit_ledger.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

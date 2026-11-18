@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::SubjectClaims;
 use serde_json::Value;
 use uuid::Uuid;
@@ -105,13 +105,13 @@ pub enum TokenIssuanceMode {
     Fresh,
     SingleUse {
         grant_key: String,
-        grant_expires_at: DateTime<Utc>,
+        grant_expires_at: Timestamp,
     },
     /// The fence identifies the code, never a request representation. Holder
     /// evidence is independent and only authorizes replay revocation.
     AuthorizationCode {
         code_identity: String,
-        grant_expires_at: DateTime<Utc>,
+        grant_expires_at: Timestamp,
         holder: AuthorizationCodeHolderEvidence,
     },
 }
@@ -141,7 +141,7 @@ pub struct NativeSsoSourceFence {
     pub user_id: Uuid,
     pub source_client_id: String,
     pub family_id: Uuid,
-    pub device_secret_expires_at: DateTime<Utc>,
+    pub device_secret_expires_at: Timestamp,
 }
 
 /// Owned input for the one durable token-issuance commit boundary.
@@ -308,7 +308,7 @@ impl AuthorizationCodeHolderEvidence {
 pub struct SingleUseRedemption {
     pub authorization_code_holder: Option<AuthorizationCodeHolderEvidence>,
     pub access_token_jti: String,
-    pub access_token_expires_at: DateTime<Utc>,
+    pub access_token_expires_at: Timestamp,
     pub refresh_token_family_id: Option<Uuid>,
 }
 
@@ -469,7 +469,7 @@ impl TokenInspection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AccessTokenRevocation {
     pub jti: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 pub struct TokenRevocation<'a> {
@@ -542,7 +542,7 @@ pub trait TokenRepositoryPort: Send + Sync {
         tenant_id: Uuid,
         raw_token: &'a str,
         client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
+        retry_started_at: Timestamp,
         prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>>;
 
@@ -567,7 +567,7 @@ pub trait TokenRepositoryPort: Send + Sync {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &'a str,
-        access_token_expires_at: Option<DateTime<Utc>>,
+        access_token_expires_at: Option<Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()>;
 
@@ -603,7 +603,7 @@ pub trait TokenStateStorePort: Send + Sync {
     fn begin_authorization_code<'a>(
         &'a self,
         code_hash: &'a str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> TokenFuture<'a, AuthorizationCodeBeginResult>;
 
     fn mark_authorization_code<'a>(
@@ -649,7 +649,7 @@ where
     fn begin_authorization_code<'a>(
         &'a self,
         code_hash: &'a str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> TokenFuture<'a, AuthorizationCodeBeginResult> {
         self.as_ref()
             .begin_authorization_code(code_hash, consuming_at)
@@ -772,7 +772,7 @@ where
         tenant_id: Uuid,
         raw_token: &str,
         client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
+        retry_started_at: Timestamp,
         prepare_oidc_subject: bool,
     ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
         self.repository
@@ -878,7 +878,7 @@ where
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &str,
-        access_token_expires_at: Option<DateTime<Utc>>,
+        access_token_expires_at: Option<Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> Result<(), TokenPortError> {
         self.repository
@@ -902,7 +902,7 @@ where
     pub async fn begin_authorization_code(
         &self,
         code_hash: &str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> Result<AuthorizationCodeBeginResult, TokenPortError> {
         self.state
             .begin_authorization_code(code_hash, consuming_at)
@@ -919,7 +919,7 @@ where
             .mark_authorization_code(
                 code_hash,
                 &AuthorizationCodeState::Failed {
-                    failed_at: Utc::now(),
+                    failed_at: Timestamp::now(),
                     error: error.to_owned(),
                 },
                 ttl_seconds,
@@ -996,7 +996,7 @@ where
         issuer: &str,
         raw_token: &str,
         resource_server: &OAuthClient,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<TokenInspection, TokenPortError> {
         if let Some(claims) = self.signer.decode_access_token(issuer, raw_token).await? {
             let audience_allowed = resource_server
@@ -1009,7 +1009,7 @@ where
             {
                 return Ok(TokenInspection::Inactive);
             }
-            if claims.exp <= now.timestamp() {
+            if claims.exp <= now.as_second() {
                 return Ok(TokenInspection::Inactive);
             }
             if self
@@ -1061,8 +1061,8 @@ where
         Ok(TokenInspection::ActiveRefresh {
             scope: token.contract.scopes.join(" "),
             client_id: resource_server.client_id.clone(),
-            expires_at: token.expires_at.timestamp(),
-            issued_at: token.issued_at.timestamp(),
+            expires_at: token.expires_at.as_second(),
+            issued_at: token.issued_at.as_second(),
             subject: token.contract.subject,
         })
     }
@@ -1110,7 +1110,7 @@ where
             .and_then(|claims| {
                 Some(AccessTokenRevocation {
                     jti: claims.jti,
-                    expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
+                    expires_at: Timestamp::from_second(claims.exp).ok()?,
                 })
             });
         Ok(access_token)

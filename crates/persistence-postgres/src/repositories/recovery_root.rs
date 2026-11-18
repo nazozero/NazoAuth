@@ -37,7 +37,6 @@
 //!   identifiers and timestamps but never key bytes, and no API here accepts
 //!   a secret-shaped input at all.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::result::Error as QueryError;
@@ -46,6 +45,7 @@ use diesel::sql_types::{
     BigInt, Binary, Bool, Integer, Nullable, SmallInt, Timestamptz, Uuid as DieselUuid, Varchar,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, TransactionManager as _};
+use jiff::{SignedDuration, Timestamp};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
@@ -98,7 +98,8 @@ pub struct AdmittedControllerSummary {
     #[diesel(sql_type = Varchar)]
     pub kid: String,
     #[diesel(sql_type = Timestamptz)]
-    pub expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub expires_at: Timestamp,
 }
 
 /// Typed recovery-plane failures.  Transport failures are infrastructure
@@ -261,9 +262,11 @@ struct RecoveryRootRow {
     #[diesel(sql_type = Integer)]
     generation: i32,
     #[diesel(sql_type = Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
     #[diesel(sql_type = Timestamptz)]
-    updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    updated_at: Timestamp,
 }
 
 impl From<RecoveryRootRow> for StoredRecoveryRoot {
@@ -303,9 +306,11 @@ struct ChallengeRow {
     #[diesel(sql_type = SmallInt)]
     attempts: i16,
     #[diesel(sql_type = Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    consumed_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    consumed_at: Option<Timestamp>,
     #[diesel(sql_type = Nullable<Binary>)]
     accepted_signature_sha256: Option<Vec<u8>>,
     #[diesel(sql_type = Nullable<Varchar>)]
@@ -313,9 +318,11 @@ struct ChallengeRow {
     #[diesel(sql_type = Nullable<SmallInt>)]
     recovered_slot_index: Option<i16>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    recovered_slot_issued_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    recovered_slot_issued_at: Option<Timestamp>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    recovered_slot_expires_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    recovered_slot_expires_at: Option<Timestamp>,
     #[diesel(sql_type = Nullable<Integer>)]
     recovery_generation: Option<i32>,
 }
@@ -365,7 +372,7 @@ async fn read_root_on_connection(
 pub(crate) async fn enroll_initial_root_on_connection(
     connection: &mut AsyncPgConnection,
     root: &NewRecoveryRoot,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<bool, RecoveryRootError> {
     let inserted = sql_query(
         "INSERT INTO controller_recovery_roots
@@ -378,7 +385,7 @@ pub(crate) async fn enroll_initial_root_on_connection(
     .bind::<Varchar, _>(&root.kid)
     .bind::<Binary, _>(&root.public_key[..])
     .bind::<Varchar, _>(RECOVERY_KDF_ID)
-    .bind::<Timestamptz, _>(now)
+    .bind::<Timestamptz, _>((now).to_diesel())
     .execute(connection)
     .await
     .map_err(transport)?;
@@ -418,7 +425,7 @@ async fn record_fresh_root_key_on_connection(
 async fn replace_root_on_connection(
     connection: &mut AsyncPgConnection,
     root: &NewRecoveryRoot,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<StoredRecoveryRoot, RecoveryRootError> {
     let mut rows = sql_query(format!(
         "INSERT INTO controller_recovery_roots
@@ -437,7 +444,7 @@ async fn replace_root_on_connection(
     .bind::<Varchar, _>(&root.kid)
     .bind::<Binary, _>(&root.public_key[..])
     .bind::<Varchar, _>(RECOVERY_KDF_ID)
-    .bind::<Timestamptz, _>(now)
+    .bind::<Timestamptz, _>((now).to_diesel())
     .load::<RecoveryRootRow>(connection)
     .await
     .map_err(transport)?;
@@ -463,7 +470,7 @@ async fn replace_root_on_connection(
          WHERE deployment_id = $1 AND consumed_at IS NULL",
     )
     .bind::<Varchar, _>(&root.deployment_id)
-    .bind::<Timestamptz, _>(now)
+    .bind::<Timestamptz, _>((now).to_diesel())
     .execute(connection)
     .await
     .map_err(transport)?;
@@ -596,7 +603,7 @@ impl RecoveryRootRepository {
     pub async fn issue_recovery_challenge(
         &self,
         challenge: NewRecoveryChallenge,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IssuedRecoveryChallenge, RecoveryRootError> {
         let connection = get_conn(&self.pool).await.map_err(transport)?;
         {
@@ -640,7 +647,7 @@ impl RecoveryRootRepository {
                      ORDER BY slot_index",
                     )
                     .bind::<Varchar, _>(&challenge.deployment_id)
-                    .bind::<Timestamptz, _>(now)
+                    .bind::<Timestamptz, _>((now).to_diesel())
                     .load::<AdmittedControllerSummary>(connection)
                     .await
                     .map_err(transport)?;
@@ -659,7 +666,7 @@ impl RecoveryRootRepository {
                        AND expires_at <= $2",
                     )
                     .bind::<Varchar, _>(&challenge.deployment_id)
-                    .bind::<Timestamptz, _>(now)
+                    .bind::<Timestamptz, _>((now).to_diesel())
                     .execute(connection)
                     .await
                     .map_err(transport)?;
@@ -701,7 +708,8 @@ impl RecoveryRootRepository {
 
                     let challenge_id = Uuid::now_v7();
                     let nonce = rand::random::<[u8; 32]>();
-                    let expires_at = now + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS);
+                    let expires_at =
+                        now + SignedDuration::from_secs(RECOVERY_CHALLENGE_TTL_SECONDS);
                     let inserted = sql_query(
                         "INSERT INTO controller_recovery_challenges
                         (challenge_id, deployment_id, nonce, allocation_nonce,
@@ -719,8 +727,8 @@ impl RecoveryRootRepository {
                     .bind::<Binary, _>(&challenge.controller_public_key[..])
                     .bind::<Varchar, _>(&challenge.recovery_kid)
                     .bind::<Binary, _>(&challenge.recovery_public_key[..])
-                    .bind::<Timestamptz, _>(expires_at)
-                    .bind::<Timestamptz, _>(now)
+                    .bind::<Timestamptz, _>((expires_at).to_diesel())
+                    .bind::<Timestamptz, _>((now).to_diesel())
                     .execute(connection)
                     .await;
                     if let Err(error) = inserted {
@@ -755,7 +763,7 @@ impl RecoveryRootRepository {
         connection: &mut AsyncPgConnection,
         deployment_id: &str,
         challenge_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), RecoveryRootError> {
         // Diesel may preserve the user error when rollback reports a broken
         // transaction manager. Reuse requires a confirmed idle transaction.
@@ -776,7 +784,7 @@ impl RecoveryRootRepository {
         )
         .bind::<DieselUuid, _>(challenge_id)
         .bind::<Integer, _>(MAX_RECOVERY_CHALLENGE_ATTEMPTS)
-        .bind::<Timestamptz, _>(now)
+        .bind::<Timestamptz, _>((now).to_diesel())
         .bind::<Varchar, _>(deployment_id)
         .execute(connection)
         .await
@@ -799,7 +807,7 @@ impl RecoveryRootRepository {
     pub async fn submit_recovery_challenge(
         &self,
         submission: RecoverySubmission,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<RecoveredSlotCommit, RecoveryRootError> {
         let submission = &submission;
         validate_deployment_id(&submission.deployment_id)
@@ -918,7 +926,7 @@ impl RecoveryRootRepository {
                      WHERE deployment_id = $1 AND status = 'active' AND expires_at > $2) AS present",
                 )
                 .bind::<Varchar, _>(&submission.deployment_id)
-                .bind::<Timestamptz, _>(now)
+                .bind::<Timestamptz, _>((now).to_diesel())
                 .get_result::<ExistsRow>(connection)
                 .await
                 .map_err(transport)?;
@@ -936,7 +944,7 @@ impl RecoveryRootRepository {
                      WHERE deployment_id = $1 AND status = 'active'",
                 )
                 .bind::<Varchar, _>(&submission.deployment_id)
-                .bind::<Timestamptz, _>(now)
+                .bind::<Timestamptz, _>((now).to_diesel())
                 .execute(connection)
                 .await
                 .map_err(transport)?;
@@ -974,12 +982,12 @@ impl RecoveryRootRepository {
                      WHERE challenge_id = $1",
                 )
                 .bind::<DieselUuid, _>(submission.challenge_id)
-                .bind::<Timestamptz, _>(now)
+                .bind::<Timestamptz, _>((now).to_diesel())
                 .bind::<Binary, _>(accepted_signature_sha256.as_slice())
                 .bind::<Varchar, _>(&slot.controller_id)
                 .bind::<SmallInt, _>(slot.slot_index)
-                .bind::<Timestamptz, _>(slot.issued_at)
-                .bind::<Timestamptz, _>(slot.expires_at)
+                .bind::<Timestamptz, _>((slot.issued_at).to_diesel())
+                .bind::<Timestamptz, _>((slot.expires_at).to_diesel())
                 .bind::<Integer, _>(replaced.generation)
                 .execute(connection)
                 .await
@@ -1120,7 +1128,7 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
     fn issue_recovery_challenge(
         &self,
         challenge: contract::NewRecoveryChallenge,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> futures_util::future::BoxFuture<
         '_,
         Result<contract::IssuedRecoveryChallenge, contract::RecoveryRootError>,
@@ -1135,7 +1143,7 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
     fn submit_recovery_challenge(
         &self,
         submission: contract::RecoverySubmission,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> futures_util::future::BoxFuture<
         '_,
         Result<contract::RecoveredSlotCommit, contract::RecoveryRootError>,
@@ -1151,3 +1159,5 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/recovery_root.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

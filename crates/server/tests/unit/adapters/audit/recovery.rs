@@ -1,8 +1,8 @@
 use super::tests::prepare_event;
 use super::*;
 use crate::adapters::audit_anchor::{AuditAnchorPreflightConfig, config::AuditAnchorMode};
-use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::SecurityAuditAnchorHealth;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -48,7 +48,7 @@ impl SecurityAuditLedger for RecoveryLedger {
         Box::pin(async move {
             self.health_calls.fetch_add(1, Ordering::SeqCst);
             if self.delay_health_once.swap(false, Ordering::SeqCst) {
-                // Tokio's paused clock does not advance Utc. These two ageing
+                // Tokio's paused clock does not advance the Jiff wall clock. These two ageing
                 // regressions deliberately use a short real wall-clock wait.
                 tokio::time::sleep(Duration::from_millis(2100)).await;
             }
@@ -65,10 +65,10 @@ impl SecurityAuditLedger for RecoveryLedger {
                 oldest_pending_occurred_at: pending.iter().map(|e| e.occurred_at).min(),
                 last_exported_sequence: Some(0),
                 last_exported_hash: Some(vec![0; 32]),
-                last_exported_occurred_at: Some(Utc::now()),
-                last_exported_at: Some(Utc::now()),
+                last_exported_occurred_at: Some(Timestamp::now()),
+                last_exported_at: Some(Timestamp::now()),
                 deployment_id: Some("recovery-test".to_owned()),
-                observed_at: Some(Utc::now()),
+                observed_at: Some(Timestamp::now()),
                 batch_blocked: None,
             })
         })
@@ -109,7 +109,7 @@ fn preflight(mode: AuditAnchorMode, max_lag: u64) -> AuditAnchorPreflight {
     .unwrap()
 }
 
-fn event_at(name: &str, occurred_at: DateTime<Utc>) -> SecurityAuditEvent {
+fn event_at(name: &str, occurred_at: Timestamp) -> SecurityAuditEvent {
     let mut event = prepare_event(name, serde_json::Map::new()).unwrap();
     event.occurred_at = occurred_at;
     event
@@ -117,15 +117,16 @@ fn event_at(name: &str, occurred_at: DateTime<Utc>) -> SecurityAuditEvent {
 
 #[test]
 fn telemetry_expiry_uses_required_lag_boundary_and_preserves_unknown_clock_state() {
-    let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
+    let now = Timestamp::new(1_700_000_000, 0).unwrap();
     let gate = preflight(AuditAnchorMode::Required, 10);
     assert!(!gate.telemetry_event_expired(now, now));
-    assert!(!gate.telemetry_event_expired(now - chrono::Duration::seconds(10), now));
-    assert!(gate.telemetry_event_expired(now - chrono::Duration::seconds(11), now));
-    assert!(!gate.telemetry_event_expired(now + chrono::Duration::seconds(1), now));
+    assert!(!gate.telemetry_event_expired(now - jiff::SignedDuration::from_secs(10), now));
+    assert!(gate.telemetry_event_expired(now - jiff::SignedDuration::from_secs(11), now));
+    assert!(!gate.telemetry_event_expired(now + jiff::SignedDuration::from_secs(1), now));
     for mode in [AuditAnchorMode::Optional, AuditAnchorMode::Disabled] {
         assert!(
-            !preflight(mode, 10).telemetry_event_expired(now - chrono::Duration::hours(1), now)
+            !preflight(mode, 10)
+                .telemetry_event_expired(now - jiff::SignedDuration::from_hours(1), now)
         );
     }
 }
@@ -137,10 +138,16 @@ async fn old_telemetry_backlog_cannot_re_poison_required_admission_after_recover
     let (sender, receiver) = mpsc::channel(AUDIT_QUEUE_CAPACITY);
     for _ in 0..130 {
         sender
-            .try_send(event_at("login_success", Utc::now() - chrono::Duration::hours(1)).into())
+            .try_send(
+                event_at(
+                    "login_success",
+                    Timestamp::now() - jiff::SignedDuration::from_hours(1),
+                )
+                .into(),
+            )
             .unwrap();
     }
-    let fresh = event_at("login_success", Utc::now());
+    let fresh = event_at("login_success", Timestamp::now());
     let fresh_id = fresh.event_id;
     let original_payload = fresh.payload.clone();
     let original_time = fresh.occurred_at;
@@ -169,7 +176,13 @@ async fn all_expired_unattempted_telemetry_can_leave_memory_without_a_healthy_da
     ledger.available.store(false, Ordering::SeqCst);
     let (sender, receiver) = mpsc::channel(2);
     sender
-        .try_send(event_at("login_success", Utc::now() - chrono::Duration::hours(1)).into())
+        .try_send(
+            event_at(
+                "login_success",
+                Timestamp::now() - jiff::SignedDuration::from_hours(1),
+            )
+            .into(),
+        )
         .unwrap();
     drop(sender);
     tokio::time::timeout(
@@ -189,7 +202,7 @@ async fn all_expired_unattempted_telemetry_can_leave_memory_without_a_healthy_da
 async fn required_class_and_unknown_names_are_never_expired_on_the_telemetry_channel() {
     let ledger = Arc::new(RecoveryLedger::new());
     let (sender, receiver) = mpsc::channel(3);
-    let when = Utc::now() - chrono::Duration::hours(1);
+    let when = Timestamp::now() - jiff::SignedDuration::from_hours(1);
     let required = event_at("mtls_trust_bundle_exported", when);
     let mut unknown = event_at("login_success", when);
     unknown.event_type = "future_unknown_evidence".to_owned();
@@ -221,7 +234,10 @@ async fn a_required_waiter_cannot_be_expired_even_for_a_telemetry_event_name() {
     *ledger.commit_gate.lock().unwrap() = Some(commit);
     let (sender, receiver) = mpsc::channel(1);
     let (completion, mut persisted) = oneshot::channel();
-    let event = event_at("login_success", Utc::now() - chrono::Duration::hours(1));
+    let event = event_at(
+        "login_success",
+        Timestamp::now() - jiff::SignedDuration::from_hours(1),
+    );
     let id = event.event_id;
     sender
         .try_send(AuditPersistRequest {
@@ -254,7 +270,7 @@ async fn telemetry_that_ages_during_the_health_query_is_checked_before_first_app
     ledger.delay_health_once.store(true, Ordering::SeqCst);
     let (sender, receiver) = mpsc::channel(1);
     sender
-        .try_send(event_at("login_success", Utc::now()).into())
+        .try_send(event_at("login_success", Timestamp::now()).into())
         .unwrap();
     drop(sender);
     tokio::time::timeout(
@@ -277,7 +293,7 @@ async fn an_attempted_batch_keeps_its_exact_identity_after_it_ages_and_returns_a
     let (sender, receiver) = mpsc::channel(2);
     for _ in 0..2 {
         sender
-            .try_send(event_at("login_success", Utc::now()).into())
+            .try_send(event_at("login_success", Timestamp::now()).into())
             .unwrap();
     }
     drop(sender);
@@ -312,7 +328,7 @@ async fn fresh_unattempted_telemetry_is_rejected_while_export_is_unhealthy() {
     let (sender, receiver) = mpsc::channel(130);
     for _ in 0..130 {
         sender
-            .try_send(event_at("login_success", Utc::now()).into())
+            .try_send(event_at("login_success", Timestamp::now()).into())
             .unwrap();
     }
     drop(sender);
@@ -329,7 +345,7 @@ async fn fresh_unattempted_telemetry_is_rejected_while_export_is_unhealthy() {
     assert!(ledger.attempts.lock().unwrap().is_empty());
     ledger.available.store(true, Ordering::SeqCst);
     let (sender, receiver) = mpsc::channel(1);
-    let fresh = event_at("login_success", Utc::now());
+    let fresh = event_at("login_success", Timestamp::now());
     let id = fresh.event_id;
     sender.try_send(fresh.into()).unwrap();
     drop(sender);

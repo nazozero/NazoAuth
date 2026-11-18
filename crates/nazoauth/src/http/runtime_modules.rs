@@ -3,7 +3,7 @@ use http::StatusCode;
 use std::{borrow::Cow, sync::Arc};
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{CurrentSession, SessionResolution, SessionService};
 use nazo_oauth_server::contracts::runtime_modules::{
     RuntimeModuleAdminError, RuntimeModuleAdministration,
@@ -342,9 +342,12 @@ impl Serialize for RuntimeModuleResponse<'_> {
             "disable_policy",
             &disable_policy_name(module.disable_policy),
         )?;
-        map.serialize_entry("drain_deadline", &module.drain_deadline.map(timestamp))?;
+        map.serialize_entry(
+            "drain_deadline",
+            &module.drain_deadline.map(RuntimeTimestamp),
+        )?;
         map.serialize_entry("failure_code", &module.failure_code)?;
-        map.serialize_entry("updated_at", &timestamp(module.updated_at))?;
+        map.serialize_entry("updated_at", &RuntimeTimestamp(module.updated_at))?;
         map.end()
     }
 }
@@ -365,7 +368,7 @@ impl Serialize for RuntimeEventResponse<'_> {
         map.serialize_entry("after_state", &event.after.map(event_state_name))?;
         map.serialize_entry("revision", &event.revision.get())?;
         map.serialize_entry("outcome_code", &event.outcome_code)?;
-        map.serialize_entry("created_at", &timestamp(event.occurred_at))?;
+        map.serialize_entry("created_at", &RuntimeTimestamp(event.occurred_at))?;
         map.end()
     }
 }
@@ -460,12 +463,36 @@ const fn event_state_name(value: ModuleEventState) -> &'static str {
     }
 }
 
-fn timestamp(value: SystemTime) -> String {
-    let value = match value.duration_since(UNIX_EPOCH) {
-        Ok(duration) => std::time::UNIX_EPOCH + duration,
-        Err(error) => std::time::UNIX_EPOCH - error.duration(),
+// Keep this endpoint's existing RFC3339 bytes (0/3/6/9 fractional digits and
+// +00:00) while streaming the value to serde without an intermediate String.
+struct RuntimeTimestamp(SystemTime);
+
+impl Serialize for RuntimeTimestamp {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let value = timestamp(self.0).map_err(<S::Error as serde::ser::Error>::custom)?;
+        let nanos = value.subsec_nanosecond();
+        let precision = if nanos == 0 {
+            0
+        } else if nanos % 1_000_000 == 0 {
+            3
+        } else if nanos % 1_000 == 0 {
+            6
+        } else {
+            9
+        };
+        let civil = jiff::tz::Offset::UTC.to_datetime(value);
+        serializer.collect_str(&format_args!("{civil:.precision$}+00:00"))
+    }
+}
+
+// web_time::SystemTime is distinct from std::time::SystemTime on WASM.
+// Keep this allocation-free epoch conversion shared by both targets.
+fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {
+    let nanos = match value.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_nanos() as i128,
+        Err(error) => -(error.duration().as_nanos() as i128),
     };
-    DateTime::<Utc>::from(value).to_rfc3339()
+    Timestamp::from_nanosecond(nanos)
 }
 
 fn unix_timestamp(value: SystemTime) -> i64 {

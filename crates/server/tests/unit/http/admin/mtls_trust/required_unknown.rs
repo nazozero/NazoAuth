@@ -1,12 +1,12 @@
 //! Real committed trust mutations with a semantic ACK hidden at the port.
 use super::*;
-use chrono::Utc;
 use diesel::{
     sql_query,
     sql_types::{Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
+use jiff::Timestamp;
 use nazo_identity::ports::{MtlsTrustAnchorStore, RepositoryError, RepositoryFuture};
 use nazo_identity::{
     MtlsTrustAnchorRequest, MtlsTrustAnchorRequestPage, MtlsTrustAnchorStatus,
@@ -149,7 +149,7 @@ async fn hidden_committed_trust_ack_is_503_for_approve_reject_and_revoke_with_re
     let payload = crate::test_support::SessionPayload {
         authorization_epoch: 0,
         user_id: admin.as_uuid(),
-        auth_time: Utc::now().timestamp(),
+        auth_time: Timestamp::now().as_second(),
         amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
         pending_mfa: false,
         oidc_sid: Some(format!("oidc-{sid}")),
@@ -179,8 +179,8 @@ async fn hidden_committed_trust_ack_is_503_for_approve_reject_and_revoke_with_re
                         "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n".to_owned(),
                     certificate_sha256: std::iter::repeat_n(['a', 'b', 'c'][action], 64).collect(),
                     subject_dn: "CN=Required trust fixture".to_owned(),
-                    not_before: Utc::now() - chrono::Duration::hours(1),
-                    not_after: Utc::now() + chrono::Duration::hours(1),
+                    not_before: Timestamp::now() - jiff::SignedDuration::from_hours(1),
+                    not_after: Timestamp::now() + jiff::SignedDuration::from_hours(1),
                 })
                 .await
                 .unwrap()
@@ -388,7 +388,7 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
     let payload = crate::test_support::SessionPayload {
         authorization_epoch: 0,
         user_id: admin,
-        auth_time: Utc::now().timestamp(),
+        auth_time: Timestamp::now().as_second(),
         amr: vec!["pwd".into()],
         pending_mfa: false,
         oidc_sid: Some(sid.clone()),

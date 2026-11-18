@@ -21,7 +21,7 @@ fn has_basic_authorization_scheme(headers: &HeaderMap) -> bool {
     }
     nazoauth::test_support::endpoints::security::has_basic_authorization_scheme(&converted)
 }
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::ValidatedClientAssertion;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
@@ -226,7 +226,7 @@ fn signed_client_assertion(
     fixture: &ClientSigningFixture,
     jti: &str,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let claims = json!({
         "iss": client_id,
         "sub": client_id,
@@ -247,7 +247,7 @@ fn signed_client_assertion_without_kid(
     fixture: &ClientSigningFixture,
     jti: &str,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let claims = json!({
         "iss": client_id,
         "sub": client_id,

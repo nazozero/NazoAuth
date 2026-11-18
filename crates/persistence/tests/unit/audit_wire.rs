@@ -12,7 +12,7 @@ fn escaped_payload_counts_match_final_json_and_maximum_singleton_bound() {
             event_type: "event\"name".into(),
             event_category: "security".into(),
             payload_canonical: serde_json::json!({"value":payload}).to_string(),
-            occurred_at: chrono::Utc::now(),
+            occurred_at: jiff::Timestamp::now(),
             previous_hash: vec![1; 32],
             event_hash: vec![2; 32],
         };
@@ -52,7 +52,7 @@ fn escaped_payload_counts_match_final_json_and_maximum_singleton_bound() {
         event_type: "e".repeat(128),
         event_category: "c".repeat(64),
         payload_canonical: "\\".repeat(crate::MAX_SECURITY_AUDIT_PAYLOAD_BYTES),
-        occurred_at: chrono::Utc::now(),
+        occurred_at: jiff::Timestamp::now(),
         previous_hash: vec![1; 32],
         event_hash: vec![2; 32],
     };
@@ -126,4 +126,29 @@ fn payload_representation_is_opaque_and_never_recanonicalized_by_wire_encoder() 
         assert_eq!(wire["payload_canonical"].as_str(), Some(payload));
     }
     assert_ne!(hashes[0], hashes[1]);
+}
+
+#[test]
+fn fractional_anchor_timestamps_preserve_the_frozen_v2_precision() {
+    #[derive(serde::Serialize)]
+    struct Wire {
+        #[serde(serialize_with = "serialize_audit_timestamp")]
+        timestamp: jiff::Timestamp,
+    }
+    for expected in [
+        "2026-10-01T00:00:00Z",
+        "2026-10-01T00:00:00.100Z",
+        "2026-10-01T00:00:00.123400Z",
+        "2026-10-01T00:00:00.123456Z",
+        "2026-10-01T00:00:00.123456700Z",
+        "2026-10-01T00:00:00.123456789Z",
+        "1969-12-31T23:59:59.900Z",
+        "1969-12-31T23:59:59.999999Z",
+    ] {
+        let value = serde_json::to_string(&Wire {
+            timestamp: expected.parse().unwrap(),
+        })
+        .unwrap();
+        assert_eq!(value, format!(r#"{{"timestamp":"{expected}"}}"#));
+    }
 }

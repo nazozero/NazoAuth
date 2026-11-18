@@ -461,7 +461,7 @@ impl LiveFederationFixture {
                 external_identity_links::subject.eq(subject),
                 external_identity_links::email.eq(email),
                 external_identity_links::claims.eq(json!({"sub": subject})),
-                external_identity_links::last_login_at.eq(Utc::now()),
+                external_identity_links::last_login_at.eq((jiff::Timestamp::now()).to_diesel()),
             ))
             .returning(DatabaseExternalIdentityFixture::as_returning())
             .get_result::<DatabaseExternalIdentityFixture>(&mut conn)
@@ -574,7 +574,7 @@ async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
         .start_oidc(
             TEST_OIDC_PROVIDER_ID.to_owned(),
             test_browser_binding_seed(),
-            Utc::now(),
+            jiff::Timestamp::now(),
         )
         .await
         .expect("bound fixture start should persist");
@@ -583,7 +583,7 @@ async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
             &start.state,
             TEST_OIDC_PROVIDER_ID,
             test_browser_binding_seed(),
-            Utc::now(),
+            jiff::Timestamp::now(),
         )
         .await
         .expect("fixture owner should consume its setup state")
@@ -647,7 +647,7 @@ fn signed_oidc_token(
     nonce: &str,
     overrides: Value,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut claims = json!({
         "iss": provider.issuer,
         "sub": "subject-1",
@@ -951,7 +951,7 @@ async fn oidc_callback_rejects_expired_stored_state_before_token_exchange() {
     store_oidc_state(
         &state,
         &state_token,
-        Utc::now().timestamp() - FEDERATION_STATE_TTL_SECONDS as i64 - 1,
+        jiff::Timestamp::now().as_second() - FEDERATION_STATE_TTL_SECONDS as i64 - 1,
     )
     .await;
     let state = Data::new(state);
@@ -1027,7 +1027,13 @@ async fn oidc_callback_requires_normalized_email_claim_before_identity_resolutio
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let state = Data::new(state);
     let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=email&code=code")
@@ -1061,7 +1067,13 @@ async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let state = Data::new(state);
     let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=email&code=code")
@@ -1095,7 +1107,13 @@ async fn oidc_callback_rejects_missing_email_verification_before_identity_resolu
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let state = Data::new(state);
     let req = bound_federation_test_request()
         .uri("/auth/federation/test-oidc/callback?state=email&code=code")
@@ -1194,7 +1212,7 @@ fn saml_gateway_signature_is_bound_to_assertion_fields() {
         audience: "nazo".to_owned(),
         secret: random_urlsafe_token(),
     };
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let signature = saml_gateway_signature(
         &settings.secret,
         &settings.issuer,
@@ -1233,7 +1251,7 @@ fn saml_gateway_assertion_rejects_correctly_signed_overlong_ttl() {
         audience: "nazo".to_owned(),
         secret: random_urlsafe_token(),
     };
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let signature = saml_gateway_signature(
         &settings.secret,
         &settings.issuer,
@@ -1268,7 +1286,7 @@ fn saml_gateway_assertion_rejects_wrong_issuer_audience_and_signature() {
         audience: "nazo".to_owned(),
         secret: random_urlsafe_token(),
     };
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut wrong_issuer = saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
     wrong_issuer.issuer = "other-gateway".to_owned();
     assert!(!valid_saml_gateway_assertion(
@@ -1311,7 +1329,7 @@ fn saml_gateway_assertion_rejects_expired_or_future_assertions() {
         audience: "nazo".to_owned(),
         secret: random_urlsafe_token(),
     };
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     for (iat, exp) in [(now - 600, now - 60), (now + 61, now + 120)] {
         let assertion = saml_assertion(&settings, "subject", "user@example.com", iat, exp);
 
@@ -1337,8 +1355,8 @@ async fn saml_acs_requires_gateway_configuration_before_payload_validation() {
         subject: "subject".to_owned(),
         email: "not-an-email".to_owned(),
         name: None,
-        iat: Utc::now().timestamp(),
-        exp: Utc::now().timestamp() + 60,
+        iat: jiff::Timestamp::now().as_second(),
+        exp: jiff::Timestamp::now().as_second() + 60,
         signature: "invalid".to_owned(),
     };
 
@@ -1370,8 +1388,8 @@ async fn saml_acs_rejects_invalid_email_before_signature_or_identity_resolution(
         subject: "subject".to_owned(),
         email: "not-an-email".to_owned(),
         name: None,
-        iat: Utc::now().timestamp(),
-        exp: Utc::now().timestamp() + 60,
+        iat: jiff::Timestamp::now().as_second(),
+        exp: jiff::Timestamp::now().as_second() + 60,
         signature: "invalid".to_owned(),
     };
 
@@ -1391,7 +1409,7 @@ async fn saml_acs_rejects_signed_assertion_with_wrong_audience_before_identity_r
         audience: "nazo".to_owned(),
         secret: random_urlsafe_token(),
     };
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut payload = saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
     payload.audience = "other-audience".to_owned();
     let Some(state) = live_federation_state(None, Some(settings)).await else {
@@ -1493,7 +1511,7 @@ async fn federation_provider_start_persists_oidc_state_nonce_and_pkce_binding() 
         params.get("code_challenge").map(|value| value.as_ref()),
         Some(expected_challenge.as_str())
     );
-    assert!(stored.created_at <= Utc::now().timestamp());
+    assert!(stored.created_at <= jiff::Timestamp::now().as_second());
 }
 
 #[actix_web::test]
@@ -1505,7 +1523,7 @@ async fn oidc_callback_denies_failed_token_exchange_and_consumes_state() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state(&state, &state_token, jiff::Timestamp::now().as_second()).await;
     let state = Data::new(state);
 
     let response = oidc_callback_after_rate_limit_for_provider(
@@ -1558,7 +1576,13 @@ async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let state = Data::new(state);
 
     let response = oidc_callback_after_rate_limit_for_provider(
@@ -1601,7 +1625,13 @@ async fn oidc_callback_rejects_id_token_policy_failures_and_consumes_state() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let state = Data::new(state);
 
     let response = oidc_callback_after_rate_limit_for_provider(
@@ -1654,7 +1684,13 @@ async fn oidc_callback_reports_identity_resolution_db_failure_without_session_co
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
     let state = Data::new(state);
 
     let response = oidc_callback_after_rate_limit_for_provider(
@@ -1715,7 +1751,13 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &fixture.state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
@@ -1796,7 +1838,13 @@ async fn oidc_callback_rejects_existing_active_email_account_without_explicit_li
     };
     let existing_user = fixture.create_user(&email, true).await;
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &fixture.state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
@@ -1863,7 +1911,13 @@ async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_s
     };
     let inactive_user = fixture.create_user(&email, false).await;
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &fixture.state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
@@ -1941,7 +1995,13 @@ async fn oidc_callback_rejects_inactive_linked_user() {
         )
         .await;
     let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(
+        &fixture.state,
+        &state_token,
+        &nonce,
+        jiff::Timestamp::now().as_second(),
+    )
+    .await;
 
     let response = oidc_callback_after_rate_limit_for_provider(
         fixture.state.clone(),
@@ -2051,7 +2111,7 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     let Some(fixture) = LiveFederationFixture::new(None, Some(settings.clone())).await else {
         return;
     };
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut payload = saml_assertion(&settings, &subject, &email, now, now + 60);
     payload.name = Some("SAML User".to_owned());
     let replay_payload = payload.clone();
@@ -2140,7 +2200,7 @@ async fn federation_response_exposes_pending_mfa_and_matching_cookie_lifetime() 
             session: nazo_identity::session::SessionRecord::new(
                 nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
                 0,
-                Utc::now().timestamp(),
+                jiff::Timestamp::now().as_second(),
                 vec!["oidc".into(), "federated".into()],
                 pending,
                 Some("sid".into()),
@@ -2196,3 +2256,5 @@ async fn upstream_fixture_captures_the_complete_fragmented_request() {
     assert!(request.ends_with("\r\n\r\ncode=abc&v=1"));
     assert!(response.starts_with(b"HTTP/1.1 200 OK"));
 }
+
+use jiff_diesel::ToDiesel as _;

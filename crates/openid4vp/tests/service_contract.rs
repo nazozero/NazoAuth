@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialFuture, CredentialQuery, CredentialTrustError,
     CredentialVerifierPort, DcqlQuery, PresentedCredential, VerifiedCredential,
@@ -47,7 +47,7 @@ impl PresentationStorePort for RecordingStore {
     fn request<'a>(
         &'a self,
         _transaction_id: Uuid,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
     {
         Box::pin(async { Ok(None) })
@@ -57,7 +57,7 @@ impl PresentationStorePort for RecordingStore {
         &'a self,
         _transaction_id: Uuid,
         _wallet_nonce: &'a str,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async { Ok(false) })
     }
@@ -67,7 +67,7 @@ impl PresentationStorePort for RecordingStore {
         _transaction_id: Uuid,
         _state_hash: &'a str,
         _result: &'a PresentationResult,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
             self.completed.fetch_add(1, Ordering::SeqCst);
@@ -81,7 +81,7 @@ impl PresentationStorePort for RecordingStore {
     fn result<'a>(
         &'a self,
         _transaction_id: Uuid,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>
     {
         Box::pin(async { Ok(None) })
@@ -175,7 +175,7 @@ impl CredentialVerifierPort for MissingHolderVerifier {
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let transaction_id = Uuid::now_v7();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let request = AuthorizationRequest {
         client_id: "x509_san_dns:example.com".to_owned(),
         response_type: "vp_token".to_owned(),
@@ -241,7 +241,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         openid4vc_trust_policy_digest: None,
         response_encryption_private_key: None,
         created_at: now,
-        expires_at: now + Duration::minutes(5),
+        expires_at: now + SignedDuration::from_mins(5),
     };
     let recorded = Arc::new(Mutex::new(None));
     let recorded_trust = Arc::new(Mutex::new(Vec::new()));
@@ -320,13 +320,91 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
             0xc0, 0x04, 0x42, 0xaf, 0x9b, 0x8e, 0xed, 0x49, 0x4c, 0xef, 0xdd, 0x9d, 0x95, 0x24,
             0x0d, 0x25, 0x4b, 0x04, 0x6b, 0x11, 0xb6, 0x80, 0x13, 0x72, 0x2a, 0xad, 0x38, 0xac,
         ],
-        "OpenID4VP 1.0 Appendix B.2.6.2 encrypted-response vector"
+        "OpenID4VP 1.0 Final Appendix B.2.6.1 encrypted-response vector"
     );
     assert_eq!(
         *recorded_trust.lock().expect("recording trust lock"),
         vec![vec![1, 2, 3]],
         "transaction-bound trust reaches credential verification"
     );
+
+    for field in ["client_id", "nonce", "response_uri", "jwk"] {
+        let mut changed = transaction.clone();
+        match field {
+            "client_id" => changed.request.client_id.push_str(".different"),
+            "nonce" => changed.request.nonce.push_str("-different"),
+            "response_uri" => changed.request.response_uri.push_str("/different"),
+            "jwk" => {
+                changed
+                    .request
+                    .client_metadata
+                    .as_mut()
+                    .unwrap()
+                    .jwks
+                    .as_mut()
+                    .unwrap()["keys"][0]["x"] =
+                    nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk()["x"]
+                        .clone();
+            }
+            _ => unreachable!(),
+        }
+        service
+            .verify_response(
+                &changed,
+                &AuthorizationResponse {
+                    vp_token: Some(json!({"mdl":["base64url-mdoc"]})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                now,
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            *recorded.lock().unwrap(),
+            Some(transcript.clone()),
+            "{field}"
+        );
+    }
+    for metadata in [
+        None,
+        Some(ClientMetadata {
+            jwks: None,
+            ..transaction.request.client_metadata.clone().unwrap()
+        }),
+        Some(ClientMetadata {
+            jwks: Some(json!({"keys":[]})),
+            ..transaction.request.client_metadata.clone().unwrap()
+        }),
+    ] {
+        let mut changed = transaction.clone();
+        changed.request.client_metadata = metadata;
+        *recorded.lock().unwrap() = None;
+        assert_eq!(
+            service
+                .verify_response(
+                    &changed,
+                    &AuthorizationResponse {
+                        vp_token: Some(json!({"mdl":["base64url-mdoc"]})),
+                        state: Some("state".to_owned()),
+                        error: None,
+                        error_description: None,
+                    },
+                    &[],
+                    now,
+                )
+                .await,
+            Err(PresentationServiceError::Presentation(
+                PresentationError::InvalidRequest
+            ))
+        );
+        assert!(
+            recorded.lock().unwrap().is_none(),
+            "missing encrypted-response key must not become a null thumbprint"
+        );
+    }
 
     let mut unencrypted_transaction = transaction.clone();
     unencrypted_transaction.request.response_mode = ResponseMode::DirectPost;
@@ -405,7 +483,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
 }
 
 fn cardinality_transaction() -> PresentationTransaction {
-    let now = Utc::now();
+    let now = Timestamp::now();
     PresentationTransaction {
         id: Uuid::now_v7(),
         client_id_prefix: ClientIdPrefix::RedirectUri,
@@ -432,7 +510,7 @@ fn cardinality_transaction() -> PresentationTransaction {
         openid4vc_trust_policy_digest: None,
         response_encryption_private_key: None,
         created_at: now,
-        expires_at: now + Duration::minutes(5),
+        expires_at: now + SignedDuration::from_mins(5),
     }
 }
 
@@ -471,7 +549,7 @@ async fn dcql_checks_all_returned_cardinalities_before_verification_or_completio
                     error_description: None,
                 },
                 &[],
-                Utc::now(),
+                Timestamp::now(),
             )
             .await;
         if valid {
@@ -537,7 +615,7 @@ async fn dcql_optional_queries_may_be_absent_but_not_malformed_or_overfilled() {
                     error_description: None,
                 },
                 &[],
-                Utc::now(),
+                Timestamp::now(),
             )
             .await;
         if let Some(expected) = expected {
@@ -661,7 +739,7 @@ async fn discarded_presentations_are_removed_before_required_alternative_selecti
                 error_description: None,
             },
             &[],
-            Utc::now(),
+            Timestamp::now(),
         )
         .await;
         assert_eq!(calls.load(Ordering::SeqCst), if multiple { 3 } else { 2 });
@@ -708,7 +786,7 @@ async fn optional_query_nonce_and_session_errors_reject_the_entire_response() {
                 error_description: None,
             },
             &[],
-            Utc::now(),
+            Timestamp::now(),
         )
         .await;
         assert_eq!(
@@ -755,7 +833,7 @@ async fn optional_query_verifier_unavailability_remains_a_dependency_failure() {
                 error_description: None,
             },
             &[],
-            Utc::now(),
+            Timestamp::now(),
         )
         .await;
         assert_eq!(
@@ -801,7 +879,7 @@ async fn dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings() {
                 error_description: None,
             },
             &[],
-            Utc::now(),
+            Timestamp::now(),
         )
         .await;
         assert_eq!(result.is_ok(), accepted);
@@ -876,7 +954,7 @@ async fn dcql_matches_verified_sd_jwt_alternative_types() {
                     error_description: None,
                 },
                 &[],
-                Utc::now(),
+                Timestamp::now(),
             )
             .await;
         assert_eq!(
@@ -922,7 +1000,7 @@ async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response()
                 error_description: None,
             },
             &[],
-            Utc::now(),
+            Timestamp::now(),
         )
         .await;
         assert_eq!(
@@ -1047,7 +1125,7 @@ async fn dcql_claim_modes_preserve_required_optional_and_wildcard_matching() {
                     error_description: None,
                 },
                 &[],
-                Utc::now(),
+                Timestamp::now(),
             )
             .await;
         assert_eq!(

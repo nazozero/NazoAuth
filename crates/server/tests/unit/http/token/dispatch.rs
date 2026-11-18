@@ -18,7 +18,7 @@ use crate::test_support::TestInfrastructure;
 
 use crate::settings::{Settings, TransportMode};
 
-use chrono::{Duration, Utc};
+use jiff::Timestamp;
 
 use serde_json::{Value, json};
 

@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, Utc};
-use coset::{CborSerializable, CoseKeyBuilder, iana};
+use coset::{CoseKeyBuilder, iana};
+use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use nazo_digital_credentials::CredentialTrustError;
 use nazo_openid4vci::{ProofError, Proofs};
@@ -14,11 +14,8 @@ use serde_json::{Value, json};
 use nazo_openid4vci::ProofValidatorPort as _;
 
 use super::Openid4vcProofValidator;
-use super::credential_crypto::mdoc::{
-    mdoc_failed_assessments_accepted, mdoc_holder_key, standard_device_authentication_bytes,
-};
 use super::crypto_helpers::algorithm_name;
-use super::crypto_helpers::cbor_to_json;
+use super::crypto_helpers::cbor_to_json as project_borrowed_cbor;
 use super::crypto_helpers::decoding_key_trust;
 use super::crypto_helpers::json_to_cbor;
 use super::crypto_helpers::jwk_to_cose_key;
@@ -82,7 +79,7 @@ fn validate_key_attestation(
     encoded: &str,
     expected_nonce: &str,
     metadata: &nazo_openid4vci::ProofTypeMetadata,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
     context: KeyAttestationContext,
 ) -> Result<Vec<Value>, ProofError> {
     validator.validate_key_attestation_with(
@@ -147,10 +144,10 @@ async fn validate_jwt_proof(
 
 #[test]
 fn key_attestation_rejects_missing_issued_at() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
         "nonce": "expected-nonce",
-        "exp": now.timestamp() + 300,
+        "exp": now.as_second() + 300,
         "attested_keys": [es256_test_key(17).0],
     }));
 
@@ -169,15 +166,15 @@ fn key_attestation_rejects_missing_issued_at() {
 
 #[test]
 fn key_attestation_rejects_out_of_window_issued_at() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     for issued_at in [
-        (now - Duration::minutes(5) - Duration::seconds(1)).timestamp(),
-        (now + Duration::minutes(5)).timestamp(),
+        (now - SignedDuration::from_mins(5) - SignedDuration::from_secs(1)).as_second(),
+        (now + SignedDuration::from_mins(5)).as_second(),
     ] {
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
             "iat": issued_at,
             "nonce": "expected-nonce",
-            "exp": now.timestamp() + 300,
+            "exp": now.as_second() + 300,
             "attested_keys": [es256_test_key(18).0],
         }));
 
@@ -197,10 +194,10 @@ fn key_attestation_rejects_out_of_window_issued_at() {
 
 #[test]
 fn attestation_proof_rejects_missing_nonce() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
+        "iat": now.as_second(),
+        "exp": now.as_second() + 300,
         "attested_keys": [es256_test_key(19).0],
     }));
 
@@ -219,9 +216,9 @@ fn attestation_proof_rejects_missing_nonce() {
 
 #[test]
 fn attestation_proof_accepts_missing_expiration() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
+        "iat": now.as_second(),
         "nonce": "expected-nonce",
         "attested_keys": [es256_test_key(21).0],
     }));
@@ -240,13 +237,13 @@ fn attestation_proof_accepts_missing_expiration() {
 #[test]
 fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let first_key = es256_test_key(27).0;
         let second_key = es256_test_key(29).0;
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "nonce": "expected-nonce",
-            "exp": now.timestamp() + 300,
+            "exp": now.as_second() + 300,
             "attested_keys": [first_key.clone(), second_key.clone()],
         }));
         let proofs = Proofs(std::collections::BTreeMap::from([(
@@ -284,9 +281,9 @@ fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
         let keys = (1..=11)
             .map(|seed| es256_test_key(seed).0)
             .collect::<Vec<_>>();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "nonce": "expected-nonce",
             "attested_keys": keys,
         }));
@@ -317,11 +314,11 @@ fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
 
 #[test]
 fn key_attestation_rejects_expired_optional_expiration() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
+        "iat": now.as_second(),
         "nonce": "expected-nonce",
-        "exp": now.timestamp(),
+        "exp": now.as_second(),
         "attested_keys": [es256_test_key(31).0],
     }));
 
@@ -341,16 +338,16 @@ fn key_attestation_rejects_expired_optional_expiration() {
 #[test]
 fn jwt_proof_key_attestation_requires_expiration() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (jwk, key) = es256_test_key(23);
         let (validator, attestation, metadata) = key_attestation_fixture(json!({
-            "iat":now.timestamp(), "nonce":"expected-nonce", "attested_keys":[jwk.clone()],
+            "iat":now.as_second(), "nonce":"expected-nonce", "attested_keys":[jwk.clone()],
         }));
         let proof = signed_jwt_proof(
             Some(&jwk),
             &key,
             &json!({
-                "aud":"https://issuer.example", "iat":now.timestamp(), "nonce":"expected-nonce",
+                "aud":"https://issuer.example", "iat":now.as_second(), "nonce":"expected-nonce",
             }),
             Some("openid4vci-proof+jwt"),
             Algorithm::ES256,
@@ -365,10 +362,10 @@ fn jwt_proof_key_attestation_requires_expiration() {
 
 #[test]
 fn jwt_proof_key_attestation_rejects_missing_nonce() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
+        "iat": now.as_second(),
+        "exp": now.as_second() + 300,
         "attested_keys": [es256_test_key(25).0],
     }));
 
@@ -382,29 +379,6 @@ fn jwt_proof_key_attestation_rejects_missing_nonce() {
             KeyAttestationContext::JwtProof,
         ),
         Err(ProofError::InvalidKeyAttestation)
-    );
-}
-
-#[test]
-fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {
-    let key =
-        CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, vec![7; 32], vec![11; 32])
-            .build();
-
-    let holder =
-        mdoc_holder_key(Some(key.clone().to_vec().unwrap())).expect("device key must be retained");
-    let encoded = holder
-        .get("cose_key")
-        .and_then(Value::as_str)
-        .expect("holder binding must expose the verified COSE key");
-
-    assert_eq!(
-        URL_SAFE_NO_PAD.decode(encoded).expect("base64url COSE key"),
-        key.to_vec().expect("CBOR COSE key")
-    );
-    assert_eq!(
-        mdoc_holder_key(None),
-        Err(CredentialTrustError::InvalidHolderBinding)
     );
 }
 
@@ -436,8 +410,8 @@ fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
     )
     .build();
     let session_transcript = [0x83, 0xf6, 0xf6, 0xf6];
-    let device_name_spaces = [0xa0];
-    let standard_payload = standard_device_authentication_bytes(
+    let device_name_spaces = [0xd8, 0x18, 0x41, 0xa0];
+    let standard_payload = nazo_mdoc::session::build_device_authentication_bytes(
         &session_transcript,
         "org.iso.18013.5.1.mDL",
         &device_name_spaces,
@@ -453,87 +427,27 @@ fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
             signature.to_bytes().to_vec()
         })
         .build();
-    let auth = mdoc_rs::model::types::DeviceAuth::Signature(sign1);
-    let key_bytes = device_key.to_vec().expect("CBOR COSE key");
+    let auth = nazo_mdoc::model::types::DeviceAuth::Signature(sign1);
 
     let standard =
-        mdoc_rs::device_auth::verify_device_auth(&auth, &standard_payload, &key_bytes, None)
+        nazo_mdoc::device_auth::verify_device_auth(&auth, &standard_payload, &device_key, None)
             .expect("standard signature verification");
     assert!(standard.is_valid);
 
-    let untagged_payload = mdoc_rs::session::build_device_authentication_bytes(
-        &session_transcript,
-        "org.iso.18013.5.1.mDL",
-        &device_name_spaces,
-    )
-    .expect("untagged DeviceAuthentication");
+    let tagged: ciborium::Value = ciborium::from_reader(standard_payload.as_slice()).unwrap();
+    let ciborium::Value::Tag(24, contents) = tagged else {
+        panic!("Tag24 required")
+    };
+    let ciborium::Value::Bytes(untagged_payload) = *contents else {
+        panic!("embedded bytes required")
+    };
     let untagged =
-        mdoc_rs::device_auth::verify_device_auth(&auth, &untagged_payload, &key_bytes, None)
+        nazo_mdoc::device_auth::verify_device_auth(&auth, &untagged_payload, &device_key, None)
             .expect("untagged signature verification result");
     assert!(
         !untagged.is_valid,
         "the ISO DeviceAuthenticationBytes tag is part of the signed payload"
     );
-}
-
-#[test]
-fn mdoc_fallback_accepts_only_independently_verified_checks() {
-    let issuer = assessment(
-        mdoc_rs::verifier::CheckId::IssuerCertificateValidity,
-        mdoc_rs::verifier::VerificationStatus::Failed,
-    );
-    let device = assessment(
-        mdoc_rs::verifier::CheckId::DeviceSignatureValidity,
-        mdoc_rs::verifier::VerificationStatus::Failed,
-    );
-    let issuer_signature = assessment(
-        mdoc_rs::verifier::CheckId::IssuerSignatureValidity,
-        mdoc_rs::verifier::VerificationStatus::Failed,
-    );
-
-    assert!(mdoc_failed_assessments_accepted(
-        [&device].into_iter(),
-        true,
-        true,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        [&device].into_iter(),
-        false,
-        true,
-    ));
-    assert!(mdoc_failed_assessments_accepted(
-        [&issuer, &device].into_iter(),
-        true,
-        true,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        [&issuer, &issuer_signature].into_iter(),
-        true,
-        true,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        [&issuer].into_iter(),
-        true,
-        false,
-    ));
-    assert!(!mdoc_failed_assessments_accepted(
-        std::iter::empty(),
-        true,
-        true,
-    ));
-}
-
-fn assessment(
-    id: mdoc_rs::verifier::CheckId,
-    status: mdoc_rs::verifier::VerificationStatus,
-) -> mdoc_rs::verifier::VerificationAssessment {
-    mdoc_rs::verifier::VerificationAssessment {
-        status,
-        check: "test assessment".to_owned(),
-        reason: None,
-        category: mdoc_rs::verifier::VerificationCategory::IssuerAuth,
-        id,
-    }
 }
 
 #[test]
@@ -574,11 +488,11 @@ fn crypto_helpers_cover_jwk_key_and_algorithm_boundaries() {
     assert_eq!(algorithm_name(Algorithm::EdDSA), Some("EdDSA"));
     assert_eq!(algorithm_name(Algorithm::HS256), None);
 
-    let timestamp = Utc::now().timestamp();
+    let timestamp = Timestamp::now().as_second();
     assert_eq!(
         timestamp_claim(&json!({"iat": timestamp}), "iat")
             .expect("valid timestamp")
-            .timestamp(),
+            .as_second(),
         timestamp
     );
     assert!(timestamp_claim(&json!({}), "iat").is_none());
@@ -602,6 +516,14 @@ fn crypto_helpers_cover_jwk_key_and_algorithm_boundaries() {
     }
 }
 
+fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTrustError> {
+    let mut encoded = Vec::new();
+    ciborium::into_writer(&value, &mut encoded).unwrap();
+    let borrowed = nazo_mdoc::model::borrowed::CborValueRef::parse(&encoded)
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    project_borrowed_cbor(borrowed)
+}
+
 #[test]
 fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
     let value = json!({
@@ -613,6 +535,8 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         "text": "hello",
         "array": [null, false, "nested"],
         "object": {"key": 3},
+        "empty_array": [],
+        "empty_object": {},
     });
     let cbor = json_to_cbor(&value).expect("JSON value should map to CBOR");
     assert_eq!(
@@ -627,12 +551,15 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         ),
         (
             ciborium::Value::Text("tagged".to_owned()),
-            ciborium::Value::Tag(42, Box::new(ciborium::Value::Text("tag".to_owned()))),
+            ciborium::Value::Tag(
+                1004,
+                Box::new(ciborium::Value::Text("2024-02-29".to_owned())),
+            ),
         ),
     ]);
     assert_eq!(
-        cbor_to_json(cbor).expect("bytes and tags should map to JSON"),
-        json!({"bytes": URL_SAFE_NO_PAD.encode([1_u8, 2, 3]), "tagged": "tag"})
+        cbor_to_json(cbor).expect("bytes and validated dates should map to JSON"),
+        json!({"bytes": URL_SAFE_NO_PAD.encode([1_u8, 2, 3]), "tagged": "2024-02-29"})
     );
     assert!(matches!(
         cbor_to_json(ciborium::Value::Map(vec![(
@@ -647,6 +574,45 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         cbor_to_json(ciborium::Value::Integer(too_negative)),
         Err(CredentialTrustError::InvalidEncoding)
     ));
+}
+
+#[test]
+fn mdoc_claim_projection_rejects_unknown_tags_and_invalid_date_semantics() {
+    use ciborium::Value as Cbor;
+    let tagged = |tag, value| Cbor::Tag(tag, Box::new(value));
+    assert_eq!(
+        cbor_to_json(tagged(0, Cbor::Text("2026-10-01T20:15:00Z".into()))).unwrap(),
+        json!("2026-10-01T20:15:00Z")
+    );
+    assert_eq!(
+        cbor_to_json(tagged(0, Cbor::Text("2016-12-31T23:59:60Z".into()))).unwrap(),
+        json!("2016-12-31T23:59:60Z")
+    );
+    for invalid in [
+        Cbor::Float(f64::INFINITY),
+        Cbor::Float(f64::NAN),
+        tagged(42, Cbor::Text("cannot erase the tag".into())),
+        tagged(2, Cbor::Bytes(vec![1])),
+        tagged(1, Cbor::Integer(0.into())),
+        tagged(100, Cbor::Integer(0.into())),
+        tagged(1004, Cbor::Text("2023-02-29".into())),
+        tagged(1004, Cbor::Text("2024-2-29".into())),
+        tagged(0, Cbor::Text("2026-02-30T00:00:00Z".into())),
+        tagged(0, Cbor::Text("2026-10-01T20:15:00.1Z".into())),
+        tagged(0, Cbor::Text("2026-10-01T20:15:00+00:00".into())),
+        tagged(0, Cbor::Integer(0.into())),
+        tagged(0, tagged(1004, Cbor::Text("2024-02-29".into()))),
+        Cbor::Array(vec![tagged(42, Cbor::Text("nested".into()))]),
+        Cbor::Map(vec![(
+            "nested".into(),
+            tagged(42, Cbor::Text("value".into())),
+        )]),
+    ] {
+        assert_eq!(
+            cbor_to_json(invalid),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    }
 }
 
 #[test]
@@ -704,9 +670,9 @@ fn crypto_helpers_verify_openid4vc_certificate_chain_and_anchor_policy() {
 #[test]
 fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (validator, attestation, metadata) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "nonce": "expected-nonce",
             "attested_keys": [es256_test_key(47).0],
         }));
@@ -794,14 +760,14 @@ fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
 #[test]
 fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (wallet_jwk, wallet_key) = es256_test_key(53);
         let validator = Openid4vcProofValidator::new(json!({"keys": []}))
             .expect("empty trust set is structurally valid");
         let metadata = proof_metadata(None);
         let claims = json!({
             "nonce": "expected-nonce",
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "aud": "https://issuer.example",
         });
 
@@ -878,8 +844,8 @@ fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
         );
 
         for iat in [
-            (now - Duration::minutes(5) - Duration::seconds(1)).timestamp(),
-            (now + Duration::minutes(5)).timestamp(),
+            (now - SignedDuration::from_mins(5) - SignedDuration::from_secs(1)).as_second(),
+            (now + SignedDuration::from_mins(5)).as_second(),
         ] {
             let stale = json!({
                 "nonce": "expected-nonce",
@@ -926,11 +892,11 @@ fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
 #[test]
 fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (wallet_jwk, wallet_key) = es256_test_key(59);
         let (validator, attestation, _) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
-            "exp": now.timestamp() + 300,
+            "iat": now.as_second(),
+            "exp": now.as_second() + 300,
             "attested_keys": [wallet_jwk.clone()],
             "nonce": "expected-nonce",
             "key_storage": ["iso_18045_moderate"],
@@ -943,7 +909,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
         let metadata = proof_metadata(Some(required));
         let claims = json!({
             "nonce": "expected-nonce",
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "aud": "https://issuer.example",
         });
         let proof = signed_jwt_proof(
@@ -1034,7 +1000,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
 
 #[test]
 fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (attester_jwk, attester_key) = es256_test_key(67);
     let mut trust_jwk = attester_jwk.clone();
     trust_jwk["kid"] = json!("attester-key");
@@ -1043,8 +1009,8 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
         .expect("key attestation validator");
     let attested_key = es256_test_key(71).0;
     let base_claims = json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
+        "iat": now.as_second(),
+        "exp": now.as_second() + 300,
         "nonce": "expected-nonce",
         "attested_keys": [attested_key],
         "key_storage": ["iso_18045_moderate"],
@@ -1104,10 +1070,10 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
     }
 
     for claims in [
-        json!({"iat": now.timestamp(), "nonce": "expected-nonce", "attested_keys": []}),
-        json!({"iat": now.timestamp(), "nonce": "wrong", "attested_keys": [es256_test_key(73).0]}),
-        json!({"iat": now.timestamp(), "nonce": "expected-nonce", "attested_keys": [es256_test_key(75).0], "key_storage": ["low"]}),
-        json!({"iat": now.timestamp(), "exp": "not-a-time", "attested_keys": [es256_test_key(77).0]}),
+        json!({"iat": now.as_second(), "nonce": "expected-nonce", "attested_keys": []}),
+        json!({"iat": now.as_second(), "nonce": "wrong", "attested_keys": [es256_test_key(73).0]}),
+        json!({"iat": now.as_second(), "nonce": "expected-nonce", "attested_keys": [es256_test_key(75).0], "key_storage": ["low"]}),
+        json!({"iat": now.as_second(), "exp": "not-a-time", "attested_keys": [es256_test_key(77).0]}),
     ] {
         assert!(matches!(
             validate_key_attestation(

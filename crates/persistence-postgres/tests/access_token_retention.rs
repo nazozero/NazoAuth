@@ -7,12 +7,12 @@
 //! one owner batch aborts the whole transaction, and the bounded maintenance
 //! cleanup reclaims a fact only after its padded deadline passes.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::{
     OptionalExtension, QueryableByName, sql_query,
     sql_types::{BigInt, Nullable, Text, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{AccessTokenRevocation, TokenRepositoryPort, TokenRevocation};
 use nazo_identity::{TenantId, UserId};
 use nazo_persistence::SecurityStateMaintenancePort;
@@ -41,8 +41,8 @@ fn blake3_hex(value: &str) -> String {
 
 /// timestamptz stores microseconds; truncating fixture timestamps keeps
 /// equality assertions exact.
-fn micros(value: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::from_timestamp_micros(value.timestamp_micros()).expect("in-range timestamp")
+fn micros(value: Timestamp) -> Timestamp {
+    Timestamp::from_microsecond(value.as_microsecond()).expect("in-range timestamp")
 }
 
 const SECURITY_POLICY: &str = r#"{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}"#;
@@ -80,9 +80,11 @@ struct RevocationRow {
     #[diesel(sql_type = SqlUuid)]
     tenant_id: Uuid,
     #[diesel(sql_type = Timestamptz)]
-    revoked_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    revoked_at: Timestamp,
     #[diesel(sql_type = Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
@@ -208,7 +210,7 @@ async fn insert_issuance(
     client_id: Uuid,
     user_id: Option<Uuid>,
     jti: &str,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) {
     sql_query(
         "INSERT INTO oauth_token_issuances (\
@@ -220,8 +222,10 @@ async fn insert_issuance(
     .bind::<SqlUuid, _>(client_id)
     .bind::<Nullable<SqlUuid>, _>(user_id)
     .bind::<Text, _>(jti.to_owned())
-    .bind::<Timestamptz, _>(expires_at)
-    .bind::<Timestamptz, _>(expires_at + Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS))
+    .bind::<Timestamptz, _>((expires_at).to_diesel())
+    .bind::<Timestamptz, _>(
+        (expires_at + SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS)).to_diesel(),
+    )
     .execute(connection)
     .await
     .expect("issuance fixture should insert");
@@ -236,8 +240,8 @@ async fn insert_vci_grant(
     subject_id: Uuid,
     client_public_id: &str,
     token_id: Uuid,
-    expires_at: DateTime<Utc>,
-    revoked_at: Option<DateTime<Utc>>,
+    expires_at: Timestamp,
+    revoked_at: Option<Timestamp>,
 ) {
     sql_query(
         "INSERT INTO openid4vci_access_grants (\
@@ -251,9 +255,9 @@ async fn insert_vci_grant(
     .bind::<SqlUuid, _>(tenant_id)
     .bind::<SqlUuid, _>(subject_id)
     .bind::<Text, _>(client_public_id.to_owned())
-    .bind::<Timestamptz, _>(expires_at)
-    .bind::<Nullable<Timestamptz>, _>(revoked_at)
-    .bind::<Timestamptz, _>(expires_at - Duration::hours(1))
+    .bind::<Timestamptz, _>((expires_at).to_diesel())
+    .bind::<Nullable<Timestamptz>, _>((revoked_at).to_diesel())
+    .bind::<Timestamptz, _>((expires_at - SignedDuration::from_hours(1)).to_diesel())
     .execute(connection)
     .await
     .expect("vci grant fixture should insert");
@@ -277,7 +281,7 @@ async fn insert_refresh(
             version: nazo_auth::RefreshTokenAuthenticationContext::CURRENT_VERSION,
             issuer: "https://issuer.example".to_owned(),
             audience: "retention-client".to_owned(),
-            auth_time: Utc::now().timestamp() - 1,
+            auth_time: Timestamp::now().as_second() - 1,
             amr: vec!["pwd".to_owned()],
             oidc_sid: None,
 
@@ -316,8 +320,8 @@ async fn insert_refresh(
             .as_bytes()
             .to_vec(),
     )
-    .bind::<Timestamptz, _>(Utc::now())
-    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .bind::<Timestamptz, _>((Timestamp::now()).to_diesel())
+    .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_hours(1)).to_diesel())
     .execute(connection)
     .await
     .expect("refresh fixture should insert");
@@ -366,7 +370,7 @@ async fn explicit_revoke(
     tenant_id: Uuid,
     client_id: Uuid,
     jti: &str,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) {
     let raw_token = format!("retention-refresh-{}", Uuid::now_v7());
     repository
@@ -401,7 +405,7 @@ async fn revoked_access_token_within_skew_survives_cleanup_until_its_padded_dead
     let tokens = TokenRepository::new(pool.clone());
 
     let jti = format!("rv02-{}", Uuid::now_v7());
-    let exp = micros(Utc::now() - Duration::seconds(30));
+    let exp = micros(Timestamp::now() - SignedDuration::from_secs(30));
     explicit_revoke(&issuance, SYSTEM_TENANT, fixture.client_id, &jti, exp).await;
 
     let mut connection = AsyncPgConnection::establish(&database_url)
@@ -412,7 +416,7 @@ async fn revoked_access_token_within_skew_survives_cleanup_until_its_padded_dead
         .expect("the revocation fact should be stored");
     assert_eq!(
         stored.expires_at,
-        exp + Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+        exp + SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
         "the stored deadline must cover exp plus the full verifier skew"
     );
     assert_eq!(stored.client_id, fixture.client_id);
@@ -465,7 +469,7 @@ async fn replay_compensation_writes_padded_deadline_and_missing_expiry_skips_the
     let tokens = TokenRepository::new(pool.clone());
 
     let jti = format!("rv03-{}", Uuid::now_v7());
-    let exp = micros(Utc::now() - Duration::seconds(15));
+    let exp = micros(Timestamp::now() - SignedDuration::from_secs(15));
     issuance
         .revoke_issued_tokens(SYSTEM_TENANT, fixture.client_id, &jti, Some(exp), None)
         .await
@@ -478,7 +482,7 @@ async fn replay_compensation_writes_padded_deadline_and_missing_expiry_skips_the
         .expect("compensation should store the revocation fact");
     assert_eq!(
         stored.expires_at,
-        exp + Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+        exp + SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
         "the compensation writer stores exp plus the skew window"
     );
     assert!(
@@ -558,13 +562,13 @@ async fn owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window() 
     .await;
     let pool = create_pool(&database_url, 4).expect("pool should build");
     let tokens = TokenRepository::new(pool.clone());
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     // Generic issuance rows at different in-skew offsets.
     let oauth_a = format!("rv04-oauth-a-{}", Uuid::now_v7());
-    let oauth_a_exp = micros(now - Duration::seconds(10));
+    let oauth_a_exp = micros(now - SignedDuration::from_secs(10));
     let oauth_b = format!("rv04-oauth-b-{}", Uuid::now_v7());
-    let oauth_b_exp = micros(now - Duration::seconds(45));
+    let oauth_b_exp = micros(now - SignedDuration::from_secs(45));
     insert_issuance(
         &mut connection,
         SYSTEM_TENANT,
@@ -591,7 +595,7 @@ async fn owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window() 
         fixture.client_id,
         Some(fixture.user_id),
         &oauth_expired,
-        micros(now - Duration::seconds(90)),
+        micros(now - SignedDuration::from_secs(90)),
     )
     .await;
     // Same owner, different client — outside the client-scoped batch.
@@ -602,15 +606,15 @@ async fn owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window() 
         other_client.client_id,
         Some(fixture.user_id),
         &oauth_other,
-        micros(now - Duration::seconds(10)),
+        micros(now - SignedDuration::from_secs(10)),
     )
     .await;
 
     // VCI access grants owned by the same client through its public id.
     let vci_a = Uuid::now_v7();
-    let vci_a_exp = micros(now - Duration::seconds(20));
+    let vci_a_exp = micros(now - SignedDuration::from_secs(20));
     let vci_b = Uuid::now_v7();
-    let vci_b_exp = micros(now - Duration::seconds(55));
+    let vci_b_exp = micros(now - SignedDuration::from_secs(55));
     let vci_expired = Uuid::now_v7();
     let vci_revoked = Uuid::now_v7();
     insert_vci_grant(
@@ -639,18 +643,18 @@ async fn owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window() 
         fixture.user_id,
         &fixture.client_public_id,
         vci_expired,
-        micros(now - Duration::seconds(80)),
+        micros(now - SignedDuration::from_secs(80)),
         None,
     )
     .await;
-    let vci_revoked_at = micros(now - Duration::seconds(10));
+    let vci_revoked_at = micros(now - SignedDuration::from_secs(10));
     insert_vci_grant(
         &mut connection,
         SYSTEM_TENANT,
         fixture.user_id,
         &fixture.client_public_id,
         vci_revoked,
-        micros(now - Duration::seconds(20)),
+        micros(now - SignedDuration::from_secs(20)),
         Some(vci_revoked_at),
     )
     .await;
@@ -678,7 +682,7 @@ async fn owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window() 
             .unwrap_or_else(|| panic!("owner batch must cover {jti}"));
         assert_eq!(
             stored.expires_at,
-            exp + Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
+            exp + SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS),
             "every selected source stores its own exp plus one skew window"
         );
         assert_eq!(stored.client_id, fixture.client_id);
@@ -734,9 +738,9 @@ async fn revocation_deadline_is_monotonic_across_writer_orderings() {
     let pool = create_pool(&database_url, 4).expect("pool should build");
     let issuance = TokenIssuanceRepository::new(pool.clone());
     let tokens = TokenRepository::new(pool.clone());
-    let short_exp = micros(Utc::now() + Duration::seconds(300));
-    let long_exp = micros(Utc::now() + Duration::seconds(600));
-    let window = Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+    let short_exp = micros(Timestamp::now() + SignedDuration::from_secs(300));
+    let long_exp = micros(Timestamp::now() + SignedDuration::from_secs(600));
+    let window = SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
 
     // explicit revoke, then an owner batch carrying the longer deadline.
     let jti_a = format!("rv05-a-{}", Uuid::now_v7());
@@ -972,7 +976,7 @@ async fn conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffecte
     // collides with the JTI but resolves to a different client.
     let shared_token_id = Uuid::now_v7();
     let shared_jti = shared_token_id.to_string();
-    let exp = micros(Utc::now() + Duration::seconds(300));
+    let exp = micros(Timestamp::now() + SignedDuration::from_secs(300));
     insert_issuance(
         &mut connection,
         SYSTEM_TENANT,
@@ -1101,7 +1105,7 @@ async fn conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffecte
     assert_eq!(stored.client_id, fixture.client_id);
     assert_eq!(
         stored.expires_at,
-        exp + Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
+        exp + SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
     );
     let foreign = revocation_row(&mut connection, foreign_tenant, &shared_jti)
         .await
@@ -1109,7 +1113,7 @@ async fn conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffecte
     assert_eq!(foreign.client_id, foreign_client.client_id);
     assert_eq!(
         foreign.expires_at,
-        exp + Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
+        exp + SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
     );
 }
 
@@ -1202,3 +1206,5 @@ async fn maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes()
         "a fact inside its retention window is kept"
     );
 }
+
+use jiff_diesel::ToDiesel as _;

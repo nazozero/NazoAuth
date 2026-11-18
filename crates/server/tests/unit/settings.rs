@@ -220,7 +220,10 @@ fn directory_tenant_uses_the_authoritative_host_and_tenant_storage_roots() {
         settings.endpoint.cors_allowed_origins,
         ["https://auth.example.test:8443"]
     );
-    assert_eq!(settings.identity.passkey.origin, settings.endpoint.issuer);
+    assert_eq!(
+        settings.identity.passkey.origin,
+        "https://auth.example.test:8443"
+    );
     assert_eq!(settings.identity.passkey.rp_id, "auth.example.test");
     assert_eq!(
         settings.storage.avatar_storage_dir,
@@ -269,6 +272,52 @@ fn explicit_endpoint_overrides_still_require_url_admission() {
         assert!(
             Settings::from_config(&config).is_err(),
             "{key} accepted {value}"
+        );
+    }
+}
+
+#[test]
+fn passkey_settings_validate_the_serialized_origin_and_rp_binding() {
+    let issuer = url::Url::parse("https://auth.example.test:8443/issuer").unwrap();
+    let settings = passkey::from_config(&ConfigSource::from_pairs_for_test([]), &issuer).unwrap();
+    assert_eq!(settings.origin, "https://auth.example.test:8443");
+    assert_eq!(settings.rp_id, "auth.example.test");
+    assert!(settings.require_user_verification);
+    assert!(settings.require_user_handle);
+
+    for (rp_id, origin) in [
+        ("example.test", "https://auth.example.test:8443"),
+        ("localhost", "http://localhost:18000"),
+        ("127.0.0.1", "http://127.0.0.1:18000"),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([
+            ("PASSKEY_RP_ID", rp_id),
+            ("PASSKEY_ORIGIN", origin),
+            ("PASSKEY_REQUIRE_USER_VERIFICATION", "false"),
+            ("PASSKEY_REQUIRE_USER_HANDLE", "false"),
+        ]);
+        let settings = passkey::from_config(&config, &issuer).unwrap();
+        assert!(!settings.require_user_verification);
+        assert!(!settings.require_user_handle);
+    }
+    for (rp_id, origin) in [
+        ("example.test", "https://example.test/"),
+        ("example.test", "https://example.test/path"),
+        ("example.test", "https://example.test?query"),
+        ("example.test", "https://EXAMPLE.test"),
+        ("example.test", "http://example.test"),
+        ("example.test", "https://evil-example.test"),
+        ("example.test", "https://different.test"),
+        ("example.test:443", "https://example.test"),
+        ("0.0.1", "http://127.0.0.1:18000"),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([
+            ("PASSKEY_RP_ID", rp_id),
+            ("PASSKEY_ORIGIN", origin),
+        ]);
+        assert!(
+            passkey::from_config(&config, &issuer).is_err(),
+            "invalid RP/origin pair accepted: {rp_id}, {origin}"
         );
     }
 }

@@ -94,7 +94,7 @@ fn security_facts_validate_signature_target_and_replay_without_host_state() {
     let header = serde_json::json!({"typ":"dpop+jwt", "alg":"EdDSA", "jwk": {
         "kty":"OKP", "crv":"Ed25519", "x":URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes())
     }});
-    let claims = serde_json::json!({"jti":"external-proof", "htm":"POST", "htu":"https://issuer.example/token", "iat":chrono::Utc::now().timestamp()});
+    let claims = serde_json::json!({"jti":"external-proof", "htm":"POST", "htu":"https://issuer.example/token", "iat":jiff::Timestamp::now().as_second()});
     let signing_input = format!(
         "{}.{}",
         URL_SAFE_NO_PAD.encode(header.to_string()),
@@ -226,7 +226,7 @@ fn oneshot_batch_delivers_records_result_and_returns_to_external_caller() {
             endpoint: "https://client.example/notify".into(),
             client_notification_token: "notification-token".into(),
             attempts: 1,
-            expires_at: chrono::Utc::now().timestamp() + 60,
+            expires_at: jiff::Timestamp::now().as_second() + 60,
         })),
         sent: Mutex::new(vec![]),
         finished: Mutex::new(vec![]),
@@ -278,7 +278,7 @@ fn token_signing_and_userinfo_execute_through_semantic_ports() {
             "email": "alice@example.test",
             "email_verified": true,
             "phone_number_verified": false,
-            "updated_at": chrono::Utc::now().timestamp(),
+            "updated_at": jiff::Timestamp::now().as_second(),
         }))
         .unwrap();
         let service = Arc::new(token_ports::userinfo_service(

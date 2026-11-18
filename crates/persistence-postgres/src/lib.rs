@@ -191,7 +191,7 @@ impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {
     fn fail_batch<'a>(
         &'a self,
         generation: i64,
-        available_at: chrono::DateTime<chrono::Utc>,
+        available_at: jiff::Timestamp,
         last_error: &'a str,
         blocked: bool,
     ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>

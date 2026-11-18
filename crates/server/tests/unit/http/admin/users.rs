@@ -12,11 +12,11 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_postgres::{UserRepository, create_pool};
 
 fn user_row() -> PublicAccount {
-    let now = Utc::now();
+    let now = Timestamp::now();
     DatabaseUserFixture {
         avatar_revision: 0,
         id: Uuid::now_v7(),

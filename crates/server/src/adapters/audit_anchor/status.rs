@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_persistence::{SecurityAuditAnchorHealth, SecurityAuditBatch};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,8 +32,8 @@ impl AnchorCheckpoint {
     }
 }
 
-pub(super) fn age_seconds(now: DateTime<Utc>, value: DateTime<Utc>) -> anyhow::Result<i64> {
-    let age = (now - value).num_seconds();
+pub(super) fn age_seconds(now: Timestamp, value: Timestamp) -> anyhow::Result<i64> {
+    let age = now.duration_since(value).as_secs();
     if age < 0 {
         anyhow::bail!("audit anchor timestamp is in the future");
     }

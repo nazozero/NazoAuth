@@ -1,4 +1,4 @@
-use chrono::{Duration, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::scim::{
     SCIM_CURSOR_NONCE_LEN, SCIM_CURSOR_TAG_LEN, SCIM_ERROR_SCHEMA, SCIM_LIST_SCHEMA,
     SCIM_PATCH_SCHEMA, SCIM_USER_SCHEMA, ScimCursorContext, ScimCursorError, ScimCursorSubject,
@@ -19,9 +19,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 fn fixture_user() -> PublicAccount {
-    let timestamp = Utc
-        .with_ymd_and_hms(2025, 1, 2, 3, 4, 5)
-        .single()
+    let timestamp = "2025-01-02T03:04:05Z"
+        .parse::<jiff::Timestamp>()
         .expect("fixture timestamp is valid");
     PublicAccount {
         principal: Principal {
@@ -45,7 +44,7 @@ fn fixture_user() -> PublicAccount {
             ..UserProfile::default()
         },
         created_at: timestamp,
-        updated_at: timestamp + Duration::minutes(1),
+        updated_at: timestamp + SignedDuration::from_mins(1),
     }
 }
 
@@ -272,15 +271,14 @@ fn patch_schema_and_operations_preserve_scim_error_semantics() {
 
 #[test]
 fn cursor_core_binds_tenant_actor_filter_count_and_lifetime() {
-    let now = Utc
-        .with_ymd_and_hms(2025, 2, 3, 4, 5, 6)
-        .single()
+    let now = "2025-02-03T04:05:06Z"
+        .parse::<jiff::Timestamp>()
         .expect("fixture timestamp is valid");
     let subject = ScimCursorSubject {
         tenant_id: Uuid::from_u128(0x22222222222222222222222222222222),
         actor: "database:33333333-3333-3333-3333-333333333333".to_owned(),
     };
-    let position_time = now - Duration::seconds(30);
+    let position_time = now - SignedDuration::from_secs(30);
     let position_id = Uuid::from_u128(0x44444444444444444444444444444444);
     let plaintext = build_scim_cursor_plaintext(
         &ScimCursorContext {
@@ -324,7 +322,7 @@ fn cursor_core_binds_tenant_actor_filter_count_and_lifetime() {
             &subject,
             Some(r#"userName eq "alice@example.test""#),
             25,
-            now + Duration::seconds(600),
+            now + SignedDuration::from_secs(600),
         ),
         Err(ScimCursorError::Expired)
     );
@@ -462,7 +460,7 @@ fn malformed_cursor_plaintext_is_rejected_without_panicking() {
         tenant_id: Uuid::from_u128(1),
         actor: "actor".to_owned(),
     };
-    let now = Utc::now();
+    let now = Timestamp::now();
     for plaintext in [
         Vec::new(),
         b"not-json".to_vec(),

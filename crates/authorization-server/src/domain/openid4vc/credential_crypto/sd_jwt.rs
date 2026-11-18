@@ -4,7 +4,7 @@ use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_crypto::jwt::{
     Algorithm, Validation, VerificationKey as JwtVerificationKey, decode, decode_header,
 };
@@ -54,9 +54,9 @@ pub(super) async fn sign(
     }
     let mut credential = Map::from_iter([
         ("iss".to_owned(), json!(input.payload.issuer)),
-        ("iat".to_owned(), json!(input.issued_at.timestamp())),
-        ("nbf".to_owned(), json!(input.issued_at.timestamp())),
-        ("exp".to_owned(), json!(input.expires_at.timestamp())),
+        ("iat".to_owned(), json!(input.issued_at.as_second())),
+        ("nbf".to_owned(), json!(input.issued_at.as_second())),
+        ("exp".to_owned(), json!(input.expires_at.as_second())),
         ("vct".to_owned(), json!(input.payload.credential_type)),
         ("_sd_alg".to_owned(), json!("sha-256")),
     ]);
@@ -77,7 +77,7 @@ pub(super) async fn sign(
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
     header.typ = Some("dc+sd-jwt".to_owned());
-    header.x5c = Some(material.x5c);
+    header.x5c = Some(material.x5c());
     let mut jwt = material
         .lease
         .encode_jwt(nazo_auth::SigningPurpose::Credential, &header, &credential)
@@ -178,7 +178,7 @@ pub(super) fn verify(
     // seconds and default leeway, but apply it only after nonce authentication.
     // Missing/malformed/expired issuer exp remains an invalid credential.
     let expiration = numeric_date(&credential, "exp")?;
-    let now = Utc::now().timestamp() as u64;
+    let now = Timestamp::now().as_second() as u64;
     if expiration < now.saturating_sub(validation.leeway) {
         return Err(CredentialTrustError::InvalidSignature);
     }
@@ -195,19 +195,19 @@ pub(super) fn verify(
         .check_chain_with_scoped_trust(
             Some(issuer),
             &certificates,
-            Utc::now(),
+            Timestamp::now(),
             scoped_anchor_authenticated,
         )?;
     let audience_matches =
         binding.get("aud").and_then(Value::as_str) == Some(&presentation.expected_audience);
-    let now = Utc::now();
+    let now = Timestamp::now();
     if !audience_matches
         || binding
             .get("iat")
             .and_then(Value::as_i64)
             .is_none_or(|issued_at| {
-                issued_at < (now - Duration::minutes(5)).timestamp()
-                    || issued_at > (now + Duration::seconds(60)).timestamp()
+                issued_at < (now - SignedDuration::from_mins(5)).as_second()
+                    || issued_at > (now + SignedDuration::from_secs(60)).as_second()
             })
     {
         return Err(CredentialTrustError::InvalidHolderBinding);
@@ -432,10 +432,10 @@ pub(super) fn validate_sd_jwt_chain(
     let leaf_der = certificates
         .first()
         .ok_or(CredentialTrustError::UntrustedIssuer)?;
-    let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
+    let trust_material = crypto.credential_trust_material(additional_trust_anchors)?;
     let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(
         &certificates,
-        &anchors,
+        trust_material.trust_anchors_der(),
         additional_trust_anchors,
     )
     .map_err(|_| CredentialTrustError::UntrustedIssuer)?;

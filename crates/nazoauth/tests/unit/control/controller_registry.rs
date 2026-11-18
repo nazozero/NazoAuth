@@ -3,7 +3,7 @@
 //! Storage invariants live in `nazo-postgres` tests.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_operator_protocol::validate_controller_id;
 use sha2::{Digest as _, Sha256};
 
@@ -22,10 +22,8 @@ fn kid_text(seed: u8) -> String {
 
 const CONTROLLER_ID: &str = "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90";
 
-fn at(seconds: i64) -> chrono::DateTime<Utc> {
-    Utc.timestamp_opt(1_800_000_000 + seconds, 0)
-        .single()
-        .expect("valid timestamp")
+fn at(seconds: i64) -> jiff::Timestamp {
+    Timestamp::new(1_800_000_000 + seconds, 0).expect("valid timestamp")
 }
 
 fn slot_request(deployment: &str, label: &str, seed: u8) -> SlotChangeRequest {
@@ -165,27 +163,33 @@ fn action_digests_are_deterministic_and_discriminate_every_field() {
 #[test]
 fn expiry_warnings_fire_at_seven_days_and_twenty_four_hours() {
     // A freshly issued slot sits a full 30-day TTL away from its deadline.
-    let expires = at(0) + Duration::seconds(2_592_000);
+    let expires = at(0) + SignedDuration::from_secs(2_592_000);
     assert_eq!(expiry_warning(at(0), expires), None);
     // Exactly 7 days remaining: the expiring warning starts.
     assert_eq!(
-        expiry_warning(expires - Duration::days(7), expires),
+        expiry_warning(expires - SignedDuration::from_hours((7) * 24), expires),
         Some(ControllerKeyWarning::Expiring)
     );
     // One second more remaining time than the warning window means no warning
     // yet: the 7-day band starts inclusively at exactly seven days.
     assert_eq!(
-        expiry_warning(expires - Duration::days(7) - Duration::seconds(1), expires),
+        expiry_warning(
+            expires - SignedDuration::from_hours((7) * 24) - SignedDuration::from_secs(1),
+            expires
+        ),
         None
     );
     // Exactly 24 hours remaining: urgent.
     assert_eq!(
-        expiry_warning(expires - Duration::hours(24), expires),
+        expiry_warning(expires - SignedDuration::from_hours(24), expires),
         Some(ControllerKeyWarning::Urgent)
     );
     // Expired keys must not be described as approaching expiry.
     assert_eq!(expiry_warning(expires, expires), None);
-    assert_eq!(expiry_warning(expires + Duration::hours(1), expires), None);
+    assert_eq!(
+        expiry_warning(expires + SignedDuration::from_hours(1), expires),
+        None
+    );
 }
 
 #[test]

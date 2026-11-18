@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_digital_credentials::{
     CredentialPayload, CredentialSignInput, CredentialSignerPort, HolderBinding,
 };
@@ -41,7 +41,7 @@ where
         &'a self,
         tenant_id: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<
         'a,
         Result<Option<crate::StoredCredentialOffer>, crate::CredentialStoreError>,
@@ -55,7 +55,7 @@ where
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<
         'a,
         Result<Option<crate::PreparedPreAuthorizedOffer>, crate::CredentialStoreError>,
@@ -75,7 +75,7 @@ where
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
         self.as_ref().claim_nonce(nonce_hash, claim_id, now)
     }
@@ -84,7 +84,7 @@ where
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
         self.as_ref().release_nonce(nonce_hash, claim_id, now)
     }
@@ -94,7 +94,7 @@ where
         issuance_id: Uuid,
         token_id: Uuid,
         request_digest: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<
         'a,
         Result<Option<StoredCredentialResponse>, crate::CredentialStoreError>,
@@ -109,7 +109,7 @@ where
         claim_id: &'a str,
         handle: &'a crate::NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
         self.as_ref().finalize_nonce_with_notification_and_response(
             nonce_hash, claim_id, handle, response, now,
@@ -120,7 +120,7 @@ where
         &'a self,
         handle: &'a crate::NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
         self.as_ref()
             .store_response_with_notification(handle, response, now)
@@ -129,7 +129,7 @@ where
     fn resolve_access<'a>(
         &'a self,
         token_hash: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<
         'a,
         Result<Option<CredentialAccess>, crate::CredentialStoreError>,
@@ -143,7 +143,7 @@ where
         nonce_hash: &'a str,
         claim_id: &'a str,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
         self.as_ref()
             .store_deferred_and_finalize_nonce_with_response(
@@ -155,7 +155,7 @@ where
         &'a self,
         credential: &'a crate::DeferredCredential,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
         self.as_ref()
             .store_deferred_with_response(credential, response, now)
@@ -166,7 +166,7 @@ where
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<
         'a,
         Result<crate::DeferredClaimOutcome, crate::CredentialStoreError>,
@@ -180,7 +180,7 @@ where
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
         self.as_ref()
             .release_deferred(transaction_hash, token_id, claim_id, now)
@@ -193,7 +193,7 @@ where
         claim_id: &'a str,
         handle: &'a crate::NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
         self.as_ref()
             .finalize_deferred_with_notification_and_response(
@@ -225,7 +225,7 @@ pub trait CredentialDatasetPort: Send + Sync {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IssuanceDisposition {
     Immediate,
-    Deferred { ready_at: DateTime<Utc> },
+    Deferred { ready_at: Timestamp },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -233,7 +233,7 @@ pub struct CredentialIssuance {
     pub configuration_id: String,
     pub disposition: IssuanceDisposition,
     pub status: Option<Value>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -306,7 +306,7 @@ where
         issuance: CredentialIssuance,
         configuration: &CredentialConfiguration,
         expected_nonce: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<PendingCredentialIssuance, CredentialIssuanceError> {
         request.validate_identifier()?;
         let selection = crate::CredentialSelection {
@@ -384,7 +384,7 @@ where
             let claim_id = Uuid::now_v7().to_string();
             // Proof validation is asynchronous; use a fresh clock value for
             // the expiry check rather than the request-start timestamp.
-            let claim_now = std::cmp::max(now, Utc::now());
+            let claim_now = std::cmp::max(now, Timestamp::now());
             if claim_now >= access.expires_at {
                 return Err(CredentialIssuanceError::Unauthorized);
             }
@@ -436,7 +436,7 @@ where
         &self,
         commit: &IssuanceCommit,
         response: &StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CredentialIssuanceError> {
         match commit {
             IssuanceCommit::Immediate {
@@ -492,7 +492,7 @@ where
     pub async fn rollback_pending(
         &self,
         commit: &IssuanceCommit,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CredentialIssuanceError> {
         let claim = match commit {
             IssuanceCommit::Immediate { nonce_claim, .. }
@@ -515,7 +515,7 @@ where
         selection: crate::CredentialSelection,
         holder_bindings: Vec<Option<HolderBinding>>,
         nonce_claim: &mut Option<IssuanceClaim>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(CredentialResponse, IssuanceCommit), CredentialIssuanceError> {
         let dataset = self
             .datasets
@@ -605,18 +605,18 @@ where
     }
 }
 
-fn batch_privacy_claim_time(value: DateTime<Utc>) -> DateTime<Utc> {
-    let timestamp = value.timestamp();
-    let rounded = timestamp - timestamp.rem_euclid(86_400);
-    DateTime::<Utc>::from_timestamp(rounded, 0).unwrap_or(value)
+fn batch_privacy_claim_time(value: Timestamp) -> Timestamp {
+    // Divide before narrowing so a pre-epoch fraction stays in its UTC day.
+    let rounded = value.as_nanosecond().div_euclid(86_400_000_000_000) * 86_400;
+    Timestamp::from_second(rounded as i64).unwrap_or(value)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DeferredPayload {
     pub dataset: Value,
     pub status: Option<Value>,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -649,3 +649,7 @@ impl From<nazo_digital_credentials::CredentialTrustError> for CredentialIssuance
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/service.rs"]
+mod tests;

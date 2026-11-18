@@ -50,9 +50,6 @@ pub(crate) fn application_capabilities(
                 settings.endpoint.issuer.clone(),
             ),
         )),
-        mdoc_signer: Some(Arc::new(
-            crate::adapters::mdoc_signer::TokioMdocDocumentSigner,
-        )),
         certificate_verifier: None,
     })
 }

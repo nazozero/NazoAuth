@@ -60,7 +60,8 @@ atomicwrites = "0.4.4"
 aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
 blake3 = "1.8.7"
-chrono = "0.4.45"
+jiff = { version = "0.2.42", default-features = false, features = ["std", "serde", "js"] }
+jiff-diesel = { version = "0.1.4", features = ["postgres"] }
 der = { version = "0.8.2", features = ["derive"] }
 diesel = "2.3.14"
 diesel-async = "0.9.2"
@@ -75,13 +76,14 @@ hmac = "0.13.0"
 hkdf = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+iri-string = { version = "0.7.14", default-features = false }
 jsonwebtoken = { version = "12.0.0", default-features = false }
-mdoc-rs = { version = "0.2.0", default-features = false, features = ["issue"] }
+nazo-mdoc = { version = "0.3.0", git = "https://github.com/nazozero/nazo-mdoc", rev = "920b717f9916a7dda1ecacd6bacf3bde84d75495", default-features = false }
 lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
 ciborium = "0.2.2"
-lettre = { version = "0.11.23", default-features = false }
+lettre = { version = "0.11.24", default-features = false }
 nazo-auth = { version = "0.3.9", path = "crates/authorization-server-core" }
 nazo-crypto = { version = "0.3.9", path = "crates/crypto", default-features = false }
 nazo-digital-credentials = { version = "0.3.9", path = "crates/digital-credentials" }
@@ -105,7 +107,7 @@ nazo-valkey = { version = "0.3.9", path = "crates/state-store-valkey" }
 pem = "4.0.0"
 pkcs8 = { version = "0.11.0", features = ["alloc"] }
 p256 = "0.14.0"
-passkey-auth = "0.1.3"
+nazo-passkey = { version = "0.2.0", git = "https://github.com/nazozero/nazo-passkey", rev = "092f672175e5facdd24062536df34a75c6145f98", features = ["aws-lc"] }
 process-wrap = { version = "10.0.1", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
 proptest = "1.12.0"
 rand = "0.10.3"
@@ -152,14 +154,3 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
-[patch.crates-io]
-# TODO: replace this fork when a maintained release uses patched crypto-bigint
-# and preserves the coset 0.4 and borrowed-transcript contracts.
-mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }
-# TODO: replace this fork when a maintained release uses patched crypto-bigint
-# and passes the existing passkey and attestation tests.
-passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "d59b317998e56f4a16a69133d7a854c5c34f795b" }
-
-# Direct mTLS shares the immutable peer chain across the TLS/HTTP boundary.
-# Retire when upstream provides shared ownership or a measured per-connection copy is acceptable.
-rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

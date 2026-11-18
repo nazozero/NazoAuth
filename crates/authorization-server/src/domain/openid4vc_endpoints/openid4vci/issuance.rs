@@ -42,7 +42,12 @@ impl ServerCredentialIssuerOperations {
             );
             if let Some(response) = self
                 .store
-                .find_response(issuance_id, access.token_id, &request_digest, Utc::now())
+                .find_response(
+                    issuance_id,
+                    access.token_id,
+                    &request_digest,
+                    jiff::Timestamp::now(),
+                )
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -71,11 +76,11 @@ impl ServerCredentialIssuerOperations {
                     vci_error(400, "invalid_proof", "Credential proof is missing.")
                 })?)
             };
-            let now = Utc::now();
-            let intent_expires_at = now + Duration::days(365);
+            let now = jiff::Timestamp::now();
+            let intent_expires_at = now + jiff::SignedDuration::from_hours((365) * 24);
             let disposition = if self.deferred_configurations.contains(&configuration_id) {
                 IssuanceDisposition::Deferred {
-                    ready_at: now + Duration::seconds(1),
+                    ready_at: now + jiff::SignedDuration::from_secs(1),
                 }
             } else {
                 IssuanceDisposition::Immediate
@@ -106,7 +111,7 @@ impl ServerCredentialIssuerOperations {
                 Err(error) => {
                     let _ = self
                         .service
-                        .rollback_pending(&pending.commit, Utc::now())
+                        .rollback_pending(&pending.commit, jiff::Timestamp::now())
                         .await;
                     return Err(error);
                 }
@@ -123,12 +128,12 @@ impl ServerCredentialIssuerOperations {
             response_record.selection = selection;
             if let Err(error) = self
                 .service
-                .commit_pending(&pending.commit, &response_record, Utc::now())
+                .commit_pending(&pending.commit, &response_record, jiff::Timestamp::now())
                 .await
             {
                 let _ = self
                     .service
-                    .rollback_pending(&pending.commit, Utc::now())
+                    .rollback_pending(&pending.commit, jiff::Timestamp::now())
                     .await;
                 return Err(map_issuance_error(error));
             }
@@ -177,7 +182,12 @@ impl ServerCredentialIssuerOperations {
             );
             if let Some(response) = self
                 .store
-                .find_response(issuance_id, access.token_id, &request_digest, Utc::now())
+                .find_response(
+                    issuance_id,
+                    access.token_id,
+                    &request_digest,
+                    jiff::Timestamp::now(),
+                )
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -196,7 +206,12 @@ impl ServerCredentialIssuerOperations {
             let claim_id = Uuid::now_v7().to_string();
             let outcome = self
                 .store
-                .claim_ready_deferred(&transaction_hash, access.token_id, &claim_id, Utc::now())
+                .claim_ready_deferred(
+                    &transaction_hash,
+                    access.token_id,
+                    &claim_id,
+                    jiff::Timestamp::now(),
+                )
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -209,9 +224,10 @@ impl ServerCredentialIssuerOperations {
                 nazo_openid4vci::DeferredClaimOutcome::Claimed(credential) => *credential,
                 nazo_openid4vci::DeferredClaimOutcome::Pending { retry_at }
                 | nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at } => {
-                    let interval = u64::try_from((retry_at - Utc::now()).num_seconds())
-                        .unwrap_or(0)
-                        .saturating_add(1);
+                    let interval =
+                        u64::try_from(retry_at.duration_since(jiff::Timestamp::now()).as_secs())
+                            .unwrap_or(0)
+                            .saturating_add(1);
                     let body = finish_response(
                         CredentialResponse {
                             credentials: None,
@@ -318,7 +334,7 @@ impl ServerCredentialIssuerOperations {
                         &claim_id,
                         &notification_handle,
                         &response_record,
-                        Utc::now(),
+                        jiff::Timestamp::now(),
                     )
                     .await
                     .map_err(|_| {
@@ -345,7 +361,12 @@ impl ServerCredentialIssuerOperations {
             if result.is_err() {
                 let _ = self
                     .store
-                    .release_deferred(&transaction_hash, access.token_id, &claim_id, Utc::now())
+                    .release_deferred(
+                        &transaction_hash,
+                        access.token_id,
+                        &claim_id,
+                        jiff::Timestamp::now(),
+                    )
                     .await;
             }
             result
@@ -379,7 +400,7 @@ impl ServerCredentialIssuerOperations {
                     token_id: access.token_id,
                     event: request.event,
                     description: request.event_description,
-                    occurred_at: Utc::now(),
+                    occurred_at: jiff::Timestamp::now(),
                 })
                 .await
                 .map_err(|_| {

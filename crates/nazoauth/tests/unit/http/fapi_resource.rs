@@ -286,7 +286,7 @@ fn request_signature_fields(method: &str, body: &[u8], dpop: Option<&str>) -> Si
             body,
         },
         nazo_http_signatures::RequestPolicy {
-            created: Utc::now().timestamp(),
+            created: jiff::Timestamp::now().as_second(),
             keyid: "client-key",
             algorithm: "ed25519",
             covered_headers: &[],

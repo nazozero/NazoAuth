@@ -422,10 +422,13 @@ impl nazo_persistence::RuntimeModuleStore for ModuleSnapshot {
     }
 }
 
+#[cfg(test)]
 #[path = "facade_rate_limit.rs"]
 mod rate_limit;
+#[cfg(test)]
 pub(crate) use rate_limit::with_rate_limits;
 
+#[cfg(test)]
 pub(crate) async fn enable_credential_issuer(
     state: &mut TestInfrastructure,
 ) -> std::collections::BTreeSet<nazo_runtime_modules::ModuleId> {

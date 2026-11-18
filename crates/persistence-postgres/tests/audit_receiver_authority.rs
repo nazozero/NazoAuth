@@ -45,7 +45,7 @@ async fn exporter_ack_is_denied_until_independent_receiver_confirms() {
                 event_type: "security_fixture".into(),
                 event_category: "test".into(),
                 payload: serde_json::json!({"case":"receiver-authority"}),
-                occurred_at: chrono::Utc::now(),
+                occurred_at: jiff::Timestamp::now(),
             })
             .await
             .unwrap();

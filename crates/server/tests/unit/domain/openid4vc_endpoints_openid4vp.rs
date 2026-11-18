@@ -68,9 +68,9 @@ pub(crate) async fn fixture_crypto_with_dns(
     include_dns: bool,
 ) -> (Openid4vcCredentialCrypto, KeyManager) {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(30),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((30) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let key_manager = nazo_key_management::test_support::key_manager(settings)
         .await
@@ -127,7 +127,6 @@ pub(crate) async fn fixture_crypto_with_dns(
         key_manager.clone(),
         VcIssuerTrustPolicy::san_bound(),
         nazo_oauth_server::policy::Openid4vcRevocationPolicy::Disabled,
-        Arc::new(crate::adapters::mdoc_signer::TokioMdocDocumentSigner),
     )
     .expect("fixture OpenID4VC crypto should load");
     (crypto, key_manager)
@@ -676,7 +675,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
         .expect("active ordinary trust policy should authorize its wallet");
     let frozen = operations
         .store
-        .request(dynamic.transaction_id, chrono::Utc::now())
+        .request(dynamic.transaction_id, jiff::Timestamp::now())
         .await
         .expect("frozen transaction lookup")
         .expect("frozen transaction should exist");
@@ -732,7 +731,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
     assert!(
         operations
             .store
-            .request(dynamic.transaction_id, chrono::Utc::now())
+            .request(dynamic.transaction_id, jiff::Timestamp::now())
             .await
             .expect("revoked transaction lookup")
             .is_none(),
@@ -791,7 +790,7 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     ));
     let stored = operations
         .store
-        .request(supported.transaction_id, chrono::Utc::now())
+        .request(supported.transaction_id, jiff::Timestamp::now())
         .await
         .unwrap()
         .unwrap();
@@ -830,8 +829,8 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     historical.request_uri = historical
         .request_uri
         .map(|uri| uri.replace(&original_id.to_string(), &historical.id.to_string()));
-    historical.created_at = chrono::Utc::now();
-    historical.expires_at = historical.created_at + chrono::Duration::seconds(300);
+    historical.created_at = jiff::Timestamp::now();
+    historical.expires_at = historical.created_at + jiff::SignedDuration::from_secs(300);
     let original_object = historical.request_object.as_ref().unwrap();
     let header = nazo_crypto::jwt::decode_header(original_object).unwrap();
     let mut claims =
@@ -841,8 +840,8 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     claims["dcql_query"] = serde_json::to_value(&historical.request.dcql_query).unwrap();
     claims["state"] = json!(historical.request.state);
     claims["jti"] = json!(Uuid::now_v7());
-    claims["iat"] = json!(historical.created_at.timestamp());
-    claims["exp"] = json!(historical.expires_at.timestamp());
+    claims["iat"] = json!(historical.created_at.as_second());
+    claims["exp"] = json!(historical.expires_at.as_second());
     let signed = keyset
         .prepare_openid4vc_signing()
         .unwrap()

@@ -175,7 +175,7 @@ impl FederationAuditPort for CompletionPorts {
 }
 
 fn completion_ports(existing: bool, active: bool) -> std::sync::Arc<CompletionPorts> {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     std::sync::Arc::new(CompletionPorts {
         existing,
         account: PublicAccount {

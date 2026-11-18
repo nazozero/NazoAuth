@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use diesel::{Queryable, QueryableByName, Selectable};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -51,8 +51,10 @@ pub(crate) struct DatabaseUserFixture {
     pub(crate) mfa_enabled: bool,
     pub(crate) password_hash: String,
     pub(crate) is_active: bool,
-    pub(crate) created_at: DateTime<Utc>,
-    pub(crate) updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) created_at: Timestamp,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) updated_at: Timestamp,
 }
 
 impl DatabaseUserFixture {
@@ -134,9 +136,12 @@ pub(crate) struct DatabasePasskeyFixture {
     pub(crate) credential: Value,
     pub(crate) label: String,
     pub(crate) sign_count: i64,
-    pub(crate) last_used_at: Option<DateTime<Utc>>,
-    pub(crate) created_at: DateTime<Utc>,
-    pub(crate) updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    pub(crate) last_used_at: Option<Timestamp>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) created_at: Timestamp,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) updated_at: Timestamp,
 }
 
 #[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
@@ -150,9 +155,12 @@ pub(crate) struct DatabaseExternalIdentityFixture {
     pub(crate) subject: String,
     pub(crate) email: String,
     pub(crate) claims: Value,
-    pub(crate) created_at: DateTime<Utc>,
-    pub(crate) updated_at: DateTime<Utc>,
-    pub(crate) last_login_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) created_at: Timestamp,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) updated_at: Timestamp,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    pub(crate) last_login_at: Option<Timestamp>,
 }
 
 impl DatabaseExternalIdentityFixture {

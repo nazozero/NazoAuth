@@ -147,9 +147,9 @@ async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
     let ring = SigningKeyWrappingKeyRing::new("current", [0x62; 32], None).unwrap();
     KeyManager::load_or_create_database(
         KeySettings {
-            rotation_interval: chrono::Duration::days(90),
-            prepublish_window: chrono::Duration::days(1),
-            verification_grace: chrono::Duration::minutes(10),
+            rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+            prepublish_window: jiff::SignedDuration::from_hours(24),
+            verification_grace: jiff::SignedDuration::from_mins(10),
         },
         None,
         tenant,
@@ -202,9 +202,9 @@ async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
 #[tokio::test]
 async fn database_diagnostics_leave_due_old_wrapping_generation_unchanged_and_reject_tampering() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let inner = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
@@ -220,8 +220,9 @@ async fn database_diagnostics_leave_due_old_wrapping_generation_unchanged_and_re
         .iter_mut()
         .find(|entry| entry["kid"].as_str() == Some(active.as_str()))
         .unwrap();
-    entry["created_at"] =
-        serde_json::json!((chrono::Utc::now() - chrono::Duration::days(180)).to_rfc3339());
+    entry["created_at"] = serde_json::json!(
+        (jiff::Timestamp::now() - jiff::SignedDuration::from_hours((180) * 24)).to_string()
+    );
     replace_payload(&inner, tenant, &old, payload);
     let before = inner.snapshot().unwrap();
     let rollover =
@@ -347,9 +348,9 @@ fn replace_payload(
 #[tokio::test]
 async fn two_managers_share_database_keyset_without_writing_key_files() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let ring = SigningKeyWrappingKeyRing::new("current", [3_u8; 32], None).unwrap();
@@ -373,9 +374,9 @@ async fn two_managers_share_database_keyset_without_writing_key_files() {
 #[tokio::test]
 async fn database_registration_converges_and_survives_restart_without_files() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let ring = SigningKeyWrappingKeyRing::new("current", [4_u8; 32], None).unwrap();
@@ -436,9 +437,9 @@ async fn database_registration_converges_and_survives_restart_without_files() {
 #[tokio::test]
 async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
@@ -460,10 +461,10 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
         .unwrap()
         .iter_mut()
         .find(|key| key["kid"] == active_kid)
-        .unwrap()["created_at"] = serde_json::json!(
-        (chrono::Utc::now() - chrono::Duration::days(91))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    );
+        .unwrap()["created_at"] = serde_json::json!(format!(
+        "{:.0}",
+        (jiff::Timestamp::now() - jiff::SignedDuration::from_hours((91) * 24))
+    ));
     replace_payload(&repository, tenant, &ring, payload);
 
     let restarted =
@@ -490,9 +491,9 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
 #[tokio::test]
 async fn expired_database_key_discards_private_material_but_preserves_public_provenance() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::seconds(-1),
-        prepublish_window: chrono::Duration::zero(),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_secs(-1),
+        prepublish_window: jiff::SignedDuration::ZERO,
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
@@ -514,10 +515,10 @@ async fn expired_database_key_discards_private_material_but_preserves_public_pro
         .unwrap()
         .iter_mut()
         .find(|key| key["kid"] == retired_kid)
-        .unwrap()["retire_at"] = serde_json::json!(
-        (chrono::Utc::now() - chrono::Duration::seconds(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    );
+        .unwrap()["retire_at"] = serde_json::json!(format!(
+        "{:.0}",
+        (jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1))
+    ));
     replace_payload(&repository, tenant, &ring, payload);
 
     let restarted = KeyManager::load_or_create_database(
@@ -574,9 +575,9 @@ async fn expired_database_key_discards_private_material_but_preserves_public_pro
 #[tokio::test]
 async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_removed() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
@@ -615,9 +616,9 @@ async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_remov
 #[tokio::test]
 async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(ConflictRepository::with_conflicts(2));
     let manager = KeyManager::load_or_create_database(
@@ -646,9 +647,9 @@ async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
 #[tokio::test]
 async fn database_update_stops_after_the_cas_conflict_budget() {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(ConflictRepository::with_conflicts(8));
     let manager = KeyManager::load_or_create_database(

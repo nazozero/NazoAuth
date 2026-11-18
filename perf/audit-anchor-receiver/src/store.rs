@@ -20,7 +20,7 @@ pub struct Checkpoint {
     pub batch_digest: String,
     pub accepted_batches: i64,
     pub accepted_events: i64,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: jiff::Timestamp,
 }
 
 pub struct Store {

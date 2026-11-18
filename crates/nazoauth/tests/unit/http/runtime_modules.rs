@@ -23,11 +23,17 @@ use super::*;
 #[test]
 fn timestamp_preserves_time_on_both_sides_of_epoch() {
     assert_eq!(
-        timestamp(UNIX_EPOCH + std::time::Duration::from_millis(1500)),
+        serde_json::to_value(RuntimeTimestamp(
+            UNIX_EPOCH + std::time::Duration::from_millis(1500)
+        ))
+        .unwrap(),
         "1970-01-01T00:00:01.500+00:00"
     );
     assert_eq!(
-        timestamp(UNIX_EPOCH - std::time::Duration::from_millis(1500)),
+        serde_json::to_value(RuntimeTimestamp(
+            UNIX_EPOCH - std::time::Duration::from_millis(1500)
+        ))
+        .unwrap(),
         "1969-12-31T23:59:58.500+00:00"
     );
 }
@@ -152,8 +158,8 @@ fn account(admin_level: u32) -> PublicAccount {
             mfa_enabled: true,
         },
         profile: UserProfile::default(),
-        created_at: DateTime::<Utc>::from(UNIX_EPOCH),
-        updated_at: DateTime::<Utc>::from(UNIX_EPOCH),
+        created_at: jiff::Timestamp::UNIX_EPOCH,
+        updated_at: jiff::Timestamp::UNIX_EPOCH,
     }
 }
 
@@ -681,4 +687,28 @@ fn module_identifiers_and_event_names_are_exhaustive() {
         assert!(!event_type_name(event_type).is_empty());
     }
     assert_eq!(parse_module_id("unknown"), None);
+}
+
+#[test]
+fn runtime_timestamp_wire_preserves_precision_and_rejects_unrepresentable_instants() {
+    for (nanos, expected) in [
+        (0_i64, "1970-01-01T00:00:00+00:00"),
+        (1, "1970-01-01T00:00:00.000000001+00:00"),
+        (1_000, "1970-01-01T00:00:00.000001+00:00"),
+        (1_000_000, "1970-01-01T00:00:00.001+00:00"),
+        (-1, "1969-12-31T23:59:59.999999999+00:00"),
+    ] {
+        let duration = std::time::Duration::from_nanos(nanos.unsigned_abs());
+        let value = if nanos < 0 {
+            UNIX_EPOCH - duration
+        } else {
+            UNIX_EPOCH + duration
+        };
+        assert_eq!(
+            serde_json::to_value(RuntimeTimestamp(value)).unwrap(),
+            expected
+        );
+    }
+    let outside = UNIX_EPOCH + std::time::Duration::from_secs(253_402_300_800);
+    assert!(serde_json::to_value(RuntimeTimestamp(outside)).is_err());
 }

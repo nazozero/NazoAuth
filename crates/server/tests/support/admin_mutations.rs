@@ -8,7 +8,6 @@ use crate::{
     settings::Settings,
 };
 use actix_web::{HttpRequest, cookie::Cookie, web::Data};
-use chrono::Utc;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel::{prelude::*, sql_query};
 use diesel_async::RunQueryDsl;
@@ -18,6 +17,7 @@ use fred::{
         Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
     },
 };
+use jiff::Timestamp;
 use nazo_identity::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, ports::AdminUserRepositoryPort,
 };
@@ -141,7 +141,7 @@ impl LiveAdminUsersFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),

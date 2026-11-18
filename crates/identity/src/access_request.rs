@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{TenantId, UserId};
@@ -40,8 +40,8 @@ pub struct AccessRequest {
     pub status: AccessRequestStatus,
     pub admin_note: Option<String>,
     pub approved_client_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub resolved_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub resolved_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -18,7 +18,7 @@ use crate::settings::Settings;
 use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
@@ -52,7 +52,7 @@ fn grant_row() -> nazo_auth::AdminGrantView {
         email: "user@example.com".to_owned(),
         client_id: "client-1".to_owned(),
         client_name: "Client One".to_owned(),
-        last_authorized_at: Utc::now(),
+        last_authorized_at: Timestamp::now(),
         authorization_count: 3,
         last_scopes: vec!["openid".to_owned(), "payments".to_owned()],
         last_authorization_details: json!([{"type": "payment_initiation"}]),
@@ -394,7 +394,7 @@ impl LiveAdminGrantFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
@@ -488,7 +488,7 @@ impl LiveAdminGrantFixture {
                 "version": 1,
                 "issuer": "https://issuer.example.test",
                 "audience": client.client_id,
-                "auth_time": Utc::now().timestamp() - 1,
+                "auth_time": Timestamp::now().as_second() - 1,
                 "amr": ["pwd"],
                 "userinfo_claims": [],
                 "userinfo_claim_requests": [],

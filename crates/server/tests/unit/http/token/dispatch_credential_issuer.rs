@@ -169,7 +169,7 @@ async fn attested_token_dispatch_checks_identity_and_consumes_proof_once() {
         )
         .unwrap(),
     );
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
     header.typ = Some("oauth-client-attestation+jwt".into());
     header.kid = Some("attester-key".into());

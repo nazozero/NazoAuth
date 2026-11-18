@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::Utc;
+use jiff::Timestamp;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -602,7 +602,7 @@ async fn run_audit_persist_worker(
                 && completions.iter().all(Option::is_none)
                 && let Some(preflight) = &telemetry_preflight
             {
-                let now = Utc::now();
+                let now = Timestamp::now();
                 let previous_len = events.len();
                 let export_unavailable = readiness.is_err();
                 events.retain(|event| {
@@ -896,7 +896,7 @@ fn prepare_event_for_tenant(
         event_type: event.to_owned(),
         event_category: category.to_owned(),
         payload,
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     })
 }
 

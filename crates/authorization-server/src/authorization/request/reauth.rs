@@ -1,7 +1,7 @@
 use crate::contracts::oauth_error::OAuthEndpointError;
 use crate::crypto::random_urlsafe_token;
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 
 use std::collections::HashMap;
 
@@ -49,7 +49,7 @@ async fn issue_reauth_nonce(
     q: &HashMap<String, String>,
 ) -> Result<String, OAuthEndpointError> {
     let nonce = random_urlsafe_token();
-    let started_at = Utc::now().timestamp_micros();
+    let started_at = Timestamp::now().as_microsecond();
     context
         .service
         .store_reauth_nonce(

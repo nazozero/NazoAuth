@@ -20,7 +20,7 @@ impl ServerCredentialIssuerOperations {
             })?;
             let stored = self
                 .store
-                .offer(self.tenant_id, id, Utc::now())
+                .offer(self.tenant_id, id, Timestamp::now())
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -79,7 +79,7 @@ impl ServerCredentialIssuerOperations {
                     &blake3_hex(&request.pre_authorized_code),
                     request.tx_code.as_deref(),
                     client_id,
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await
                 .map_err(|_| {
@@ -142,7 +142,11 @@ impl ServerCredentialIssuerOperations {
                     scopes: &[],
                     authorization_details: &authorization_details,
                     userinfo_claim_requests: &[],
-                    ttl_seconds: (authorization.expires_at - Utc::now()).num_seconds().max(1),
+                    ttl_seconds: authorization
+                        .expires_at
+                        .duration_since(Timestamp::now())
+                        .as_secs()
+                        .max(1),
                     sender_constraint,
 
                     actor: None,
@@ -164,14 +168,13 @@ impl ServerCredentialIssuerOperations {
                     "Credential access token identifier is invalid.",
                 )
             })?;
-            let expires_at =
-                chrono::DateTime::from_timestamp(issued.expires_at, 0).ok_or_else(|| {
-                    vci_error(
-                        503,
-                        "server_error",
-                        "Credential access token expiry is invalid.",
-                    )
-                })?;
+            let expires_at = jiff::Timestamp::new(issued.expires_at, 0).map_err(|_| {
+                vci_error(
+                    503,
+                    "server_error",
+                    "Credential access token expiry is invalid.",
+                )
+            })?;
             let token_type = if dpop_jkt.is_some() { "DPoP" } else { "Bearer" };
             self.store
                 .persist_pre_authorized_access(
@@ -218,7 +221,7 @@ impl ServerCredentialIssuerOperations {
             Ok(PreAuthorizedTokenResponse {
                 access_token: issued.token,
                 token_type: token_type.to_owned(),
-                expires_in: (issued.expires_at - Utc::now().timestamp()).max(1) as u64,
+                expires_in: (issued.expires_at - Timestamp::now().as_second()).max(1) as u64,
                 authorization_details,
             })
         })
@@ -359,7 +362,8 @@ impl ServerCredentialIssuerOperations {
                 subject_id: Some(request.subject_id),
                 credential_configuration_ids: request.credential_configuration_ids,
                 grants,
-                expires_at: Utc::now() + Duration::seconds(request.expires_in as i64),
+                expires_at: Timestamp::now()
+                    + jiff::SignedDuration::from_secs(request.expires_in as i64),
             };
             let tx_code_hash = match request.tx_code {
                 Some(code) => Some(

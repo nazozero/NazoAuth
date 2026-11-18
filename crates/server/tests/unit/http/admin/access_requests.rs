@@ -23,8 +23,8 @@ use crate::settings::Settings;
 use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use chrono::Utc;
 use diesel::prelude::*;
+use jiff::Timestamp;
 use nazo_identity::AccessRequestStatus;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
@@ -594,7 +594,7 @@ impl LiveAdminAccessRequestFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
@@ -776,7 +776,7 @@ async fn parse_access_request_status_rejects_malformed_and_unknown_states_fail_c
 #[actix_web::test]
 async fn access_requests_response_preserves_pagination_and_rows() {
     let request_id = Uuid::now_v7();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let response = access_requests_response(
         4,
         25,

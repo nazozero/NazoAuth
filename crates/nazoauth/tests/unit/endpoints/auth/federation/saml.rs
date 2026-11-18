@@ -60,7 +60,7 @@ fn assertion(
 #[test]
 fn saml_gateway_signature_is_deterministic() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = saml_gateway_signature(
         &settings.secret,
         "iss",
@@ -85,7 +85,7 @@ fn saml_gateway_signature_is_deterministic() {
 #[test]
 fn saml_gateway_signature_differs_for_different_fields() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = saml_gateway_signature(
         &settings.secret,
         "iss",
@@ -110,7 +110,7 @@ fn saml_gateway_signature_differs_for_different_fields() {
 #[test]
 fn valid_saml_gateway_assertion_accepts_valid_assertion() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     assert!(valid_saml_gateway_assertion(
         &settings,
@@ -122,7 +122,7 @@ fn valid_saml_gateway_assertion_accepts_valid_assertion() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_expired_assertion() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = assertion(
         &settings,
         "subject",
@@ -140,7 +140,7 @@ fn valid_saml_gateway_assertion_rejects_expired_assertion() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_wrong_issuer() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     a.issuer = "other-gateway".to_owned();
     assert!(!valid_saml_gateway_assertion(
@@ -153,7 +153,7 @@ fn valid_saml_gateway_assertion_rejects_wrong_issuer() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_wrong_audience() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     a.audience = "other-audience".to_owned();
     assert!(!valid_saml_gateway_assertion(
@@ -166,7 +166,7 @@ fn valid_saml_gateway_assertion_rejects_wrong_audience() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_empty_subject() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = assertion(&settings, "  ", "user@example.com", now, now + 60);
     assert!(!valid_saml_gateway_assertion(
         &settings,
@@ -178,7 +178,7 @@ fn valid_saml_gateway_assertion_rejects_empty_subject() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_iat_too_far_in_future() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = assertion(
         &settings,
         "subject",
@@ -196,7 +196,7 @@ fn valid_saml_gateway_assertion_rejects_iat_too_far_in_future() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_exp_iat_window_too_long() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = assertion(&settings, "subject", "user@example.com", now, now + 301);
     assert!(!valid_saml_gateway_assertion(
         &settings,
@@ -208,7 +208,7 @@ fn valid_saml_gateway_assertion_rejects_exp_iat_window_too_long() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_signature_mismatch() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     a.signature = sign(
         &settings,
@@ -227,7 +227,7 @@ fn valid_saml_gateway_assertion_rejects_signature_mismatch() {
 #[test]
 fn valid_saml_gateway_assertion_rejects_normalized_email_mismatch() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     assert!(!valid_saml_gateway_assertion(
         &settings,
@@ -239,7 +239,7 @@ fn valid_saml_gateway_assertion_rejects_normalized_email_mismatch() {
 #[test]
 fn gateway_name_is_unsigned_and_must_remain_untrusted_metadata() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut value = assertion(&settings, "subject", "user@example.com", now, now + 60);
     value.name = Some("unauthenticated replacement".to_owned());
     assert!(valid_saml_gateway_assertion(
@@ -258,7 +258,7 @@ fn gateway_name_is_unsigned_and_must_remain_untrusted_metadata() {
 #[test]
 fn gateway_mac_preserves_wire_bytes_and_rejects_noncanonical_signatures() {
     let settings = settings();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut assertion = assertion(&settings, "subject", "user@example.com", now, now + 60);
     let mut reference = HmacSha256::new_from_slice(settings.secret.as_bytes()).unwrap();
     reference.update(

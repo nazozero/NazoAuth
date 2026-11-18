@@ -15,7 +15,7 @@
 //! alone is not revocation of that host administrator's controller identity.
 
 use anyhow::Context as _;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_crypto::ed25519::VerifyingKey;
 use nazo_operator_protocol::PresentedControlOperation;
 use nazo_persistence::{AdmittedController, ControllerRegistryPort};
@@ -46,7 +46,7 @@ pub(super) async fn admit_controller(
     repository: &dyn ControllerRegistryPort,
     deployment_id: &str,
     kid: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     allow_renewal: bool,
 ) -> Result<AdmittedControllerIdentity, AdmissionError> {
     let admitted = repository

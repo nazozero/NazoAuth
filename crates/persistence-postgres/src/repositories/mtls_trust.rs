@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::{
     MtlsTrustAnchorRequest, MtlsTrustAnchorRequestPage, MtlsTrustAnchorStatus,
     NewMtlsTrustAnchorRequest, TenantId, UserId, ports::RepositoryError,
@@ -39,19 +39,24 @@ struct RequestRow {
     #[diesel(sql_type = sql_types::Text)]
     subject_dn: String,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    not_before: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    not_before: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    not_after: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    not_after: Timestamp,
     #[diesel(sql_type = sql_types::SmallInt)]
     status: i16,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
     admin_note: Option<String>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    resolved_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    resolved_at: Option<Timestamp>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    revoked_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    revoked_at: Option<Timestamp>,
 }
 
 #[derive(QueryableByName)]
@@ -143,7 +148,7 @@ async fn append_admin_trust_outcome(
                 "request_id": request_id, "admin_user_id": actor.as_uuid(),
                 "outcome": "success",
             }),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         },
     )
     .await
@@ -233,8 +238,8 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::Text, _>(&request.certificate_pem)
                 .bind::<sql_types::Text, _>(&request.certificate_sha256)
                 .bind::<sql_types::Text, _>(&request.subject_dn)
-                .bind::<sql_types::Timestamptz, _>(request.not_before)
-                .bind::<sql_types::Timestamptz, _>(request.not_after)
+                .bind::<sql_types::Timestamptz, _>((request.not_before).to_diesel())
+                .bind::<sql_types::Timestamptz, _>((request.not_after).to_diesel())
                 .bind::<sql_types::BigInt, _>(MAX_PENDING_TRUST_REQUESTS_PER_CLIENT)
                 .bind::<sql_types::BigInt, _>(MAX_PENDING_TRUST_REQUESTS_PER_USER)
                 .get_result::<CreateOutcomeRow>(connection)
@@ -243,7 +248,7 @@ impl MtlsTrustAnchorRepository {
                     super::audit_ledger::append_fresh_security_audit_on_connection(connection,
                         &nazo_persistence::SecurityAuditEvent {
                             event_id: Uuid::now_v7(), event_type: "mtls_trust_anchor_requested".into(),
-                            event_category: "trust_lifecycle".into(), occurred_at: chrono::Utc::now(),
+                            event_category: "trust_lifecycle".into(), occurred_at: jiff::Timestamp::now(),
                             payload: serde_json::json!({
                                 "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
                                 "event_category": "trust_lifecycle", "tenant_id": request.tenant_id.as_uuid(),
@@ -697,8 +702,8 @@ pub struct OperatorManagedTrustAnchor<'a> {
     pub certificate_pem: &'a str,
     pub certificate_sha256: &'a str,
     pub subject_dn: &'a str,
-    pub not_before: DateTime<Utc>,
-    pub not_after: DateTime<Utc>,
+    pub not_before: Timestamp,
+    pub not_after: Timestamp,
 }
 
 /// Inserts an already-approved operator-managed trust anchor on a
@@ -789,8 +794,8 @@ pub async fn insert_operator_managed_trust_anchor_on_connection(
     .bind::<sql_types::Text, _>(certificate_pem)
     .bind::<sql_types::Text, _>(certificate_sha256)
     .bind::<sql_types::Text, _>(subject_dn)
-    .bind::<sql_types::Timestamptz, _>(not_before)
-    .bind::<sql_types::Timestamptz, _>(not_after)
+    .bind::<sql_types::Timestamptz, _>((not_before).to_diesel())
+    .bind::<sql_types::Timestamptz, _>((not_after).to_diesel())
     .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT)
     .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT)
     .get_result::<IdRow>(connection)
@@ -863,3 +868,5 @@ pub(crate) async fn acquire_tenant_trust_lock(
         .await?;
     Ok(())
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -141,7 +141,7 @@ fn source_for_issue(issue: &TokenIssue, client: &ClientRow) -> nazo_auth::Refres
         token_blake3: [4; 32],
         contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: contract.audiences.clone(),
-        expires_at: Utc::now() + chrono::Duration::hours(1),
+        expires_at: Timestamp::now() + jiff::SignedDuration::from_hours(1),
         id_token_sid: None,
         dpop_jkt: None,
         mtls_x5t_s256: None,
@@ -156,7 +156,7 @@ fn rotated_refresh_preserves_original_contract_while_selecting_current_audience(
     let mut issue = openid_issue();
     let source = source_for_issue(&issue, &client);
     let original = source.contract.clone();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let pending = PendingRefreshToken {
         raw: "replacement".to_owned(),
         member_id: Uuid::now_v7(),
@@ -164,7 +164,7 @@ fn rotated_refresh_preserves_original_contract_while_selecting_current_audience(
         rotated_from: Some(source.member_id),
         lost_response_retry: None,
         issued_at: now,
-        expires_at: now + chrono::Duration::hours(1),
+        expires_at: now + jiff::SignedDuration::from_hours(1),
     };
     issue.audiences = vec!["resource://a".to_owned()];
 
@@ -206,7 +206,7 @@ fn new_refresh_family_retains_full_code_grant_when_access_token_is_narrower() {
     issue.audiences = vec!["resource://a".to_owned()];
     issue.refresh_grant_audiences =
         Some(vec!["resource://a".to_owned(), "resource://b".to_owned()]);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let pending = PendingRefreshToken {
         raw: "initial".to_owned(),
         member_id: Uuid::now_v7(),
@@ -214,7 +214,7 @@ fn new_refresh_family_retains_full_code_grant_when_access_token_is_narrower() {
         rotated_from: None,
         lost_response_retry: None,
         issued_at: now,
-        expires_at: now + chrono::Duration::hours(1),
+        expires_at: now + jiff::SignedDuration::from_hours(1),
     };
     let token = prepare_refresh_token(&client, &issue, &pending, None);
     assert_eq!(issue.audiences, vec!["resource://a"]);
@@ -315,7 +315,7 @@ fn refresh_policy_requires_exact_source_shape_even_without_a_refresh_response() 
             original_id: Uuid::now_v7(),
             original_blake3: [5; 32],
             successor_id: source.member_id,
-            retry_started_at: Utc::now(),
+            retry_started_at: Timestamp::now(),
         },
     ] {
         issue.refresh_token_policy = policy;
@@ -367,7 +367,7 @@ fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_t
         rotated_from_id: source.member_id,
     };
     assert!(matches(&issue));
-    let now = Utc::now();
+    let now = Timestamp::now();
     let pending = PendingRefreshToken {
         raw: "replacement".to_owned(),
         member_id: Uuid::now_v7(),
@@ -375,7 +375,7 @@ fn unbound_refresh_source_can_constrain_access_token_without_rebinding_refresh_t
         rotated_from: Some(source.member_id),
         lost_response_retry: None,
         issued_at: now,
-        expires_at: now + chrono::Duration::hours(1),
+        expires_at: now + jiff::SignedDuration::from_hours(1),
     };
     let replacement = prepare_refresh_token(&client, &issue, &pending, None);
     assert!(replacement.dpop_jkt.is_none());

@@ -1,5 +1,4 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use coset::{CoseKeyBuilder, iana};
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use nazo_digital_credentials::CredentialTrustError;
@@ -30,8 +29,8 @@ pub(super) fn decoding_key_trust(
     }
 }
 
-pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<chrono::DateTime<Utc>> {
-    chrono::DateTime::from_timestamp(value.get(name)?.as_i64()?, 0)
+pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<jiff::Timestamp> {
+    jiff::Timestamp::from_second(value.get(name)?.as_i64()?).ok()
 }
 
 pub(crate) fn jwk_to_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> {
@@ -89,39 +88,79 @@ pub(super) fn json_to_cbor(value: &Value) -> Result<ciborium::Value, CredentialT
     }
 }
 
-pub(super) fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTrustError> {
-    match value {
-        ciborium::Value::Null => Ok(Value::Null),
-        ciborium::Value::Bool(value) => Ok(Value::Bool(value)),
-        ciborium::Value::Integer(value) => {
-            let value: i128 = value.into();
+/// Date tags supported by the mdoc JSON adapter use ISO full-date or whole UTC
+/// seconds. Keep issuance and authenticated-claim projection on the same rule.
+pub(super) fn validate_mdoc_date_tag(tag: u64, text: &str) -> Result<(), CredentialTrustError> {
+    let valid = match tag {
+        1004 => nazo_mdoc::cbor::FullDate::new(text).is_ok(),
+        0 => {
+            text.len() == 20
+                && text.as_bytes().get(10) == Some(&b'T')
+                && text.ends_with('Z')
+                && nazo_mdoc::Timestamp::parse_rfc3339(text)
+                    .is_ok_and(|date| date.is_whole_second())
+        }
+        _ => false,
+    };
+    valid
+        .then_some(())
+        .ok_or(CredentialTrustError::InvalidEncoding)
+}
+
+/// Project the already validated, authenticated CBOR directly into the owned
+/// JSON result. Signed envelopes, digest maps and binary claim input stay borrowed.
+pub(super) fn cbor_to_json(
+    value: nazo_mdoc::model::borrowed::CborValueRef<'_>,
+) -> Result<Value, CredentialTrustError> {
+    const INVALID: CredentialTrustError = CredentialTrustError::InvalidEncoding;
+    match value.encoded()[0] >> 5 {
+        0 | 1 => {
+            let value = value.as_integer().ok_or(INVALID)?;
             i64::try_from(value)
                 .map(|value| json!(value))
                 .or_else(|_| u64::try_from(value).map(|value| json!(value)))
-                .map_err(|_| CredentialTrustError::InvalidEncoding)
+                .map_err(|_| INVALID)
         }
-        ciborium::Value::Float(value) => serde_json::Number::from_f64(value)
-            .map(Value::Number)
-            .ok_or(CredentialTrustError::InvalidEncoding),
-        ciborium::Value::Bytes(value) => Ok(Value::String(URL_SAFE_NO_PAD.encode(value))),
-        ciborium::Value::Text(value) => Ok(Value::String(value)),
-        ciborium::Value::Array(values) => values
-            .into_iter()
-            .map(cbor_to_json)
+        2 => Ok(Value::String(
+            URL_SAFE_NO_PAD.encode(value.as_bytes().ok_or(INVALID)?),
+        )),
+        3 => Ok(Value::String(value.as_text().ok_or(INVALID)?.to_owned())),
+        4 => value
+            .array()
+            .map_err(|_| INVALID)?
+            .map(|value| cbor_to_json(value.map_err(|_| INVALID)?))
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
-        ciborium::Value::Map(values) => values
-            .into_iter()
-            .map(|(key, value)| {
-                let ciborium::Value::Text(key) = key else {
-                    return Err(CredentialTrustError::InvalidEncoding);
-                };
-                Ok((key, cbor_to_json(value)?))
+        5 => value
+            .map()
+            .map_err(|_| INVALID)?
+            .map(|entry| {
+                let (key, value) = entry.map_err(|_| INVALID)?;
+                Ok((
+                    key.as_text().ok_or(INVALID)?.to_owned(),
+                    cbor_to_json(value)?,
+                ))
             })
             .collect::<Result<Map<_, _>, _>>()
             .map(Value::Object),
-        ciborium::Value::Tag(_, value) => cbor_to_json(*value),
-        _ => Err(CredentialTrustError::InvalidEncoding),
+        6 => {
+            let (tag, value) = value.tagged().map_err(|_| INVALID)?;
+            let text = value.as_text().ok_or(INVALID)?;
+            validate_mdoc_date_tag(tag, text)?;
+            Ok(Value::String(text.to_owned()))
+        }
+        7 if value.is_null() => Ok(Value::Null),
+        7 => {
+            if let Some(value) = value.as_bool() {
+                return Ok(Value::Bool(value));
+            }
+            value
+                .as_float()
+                .and_then(serde_json::Number::from_f64)
+                .map(Value::Number)
+                .ok_or(INVALID)
+        }
+        _ => Err(INVALID),
     }
 }
 
@@ -170,7 +209,7 @@ pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
         .filter(|(index, der)| *index == 0 || (!anchors.contains(der) && !scoped.contains(der)))
         .map(|(_, der)| CertificateDer::from(der.as_slice()))
         .collect::<Vec<_>>();
-    let now = u64::try_from(chrono::Utc::now().timestamp())?;
+    let now = u64::try_from(jiff::Timestamp::now().as_second())?;
     let anchored = scoped
         .iter()
         .chain(anchors.iter().filter(|anchor| !scoped.contains(anchor)))

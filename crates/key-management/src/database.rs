@@ -2,9 +2,9 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::{RoundMode, Timestamp, TimestampRound, Unit};
 use nazo_auth::SigningPurpose;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -75,7 +75,7 @@ pub(crate) async fn refresh(
         && prepared.fingerprint == record_fingerprint(&record)?
         && prepared
             .next_lifecycle_check
-            .is_none_or(|deadline| Utc::now() < deadline)
+            .is_none_or(|deadline| Timestamp::now() < deadline)
     {
         return Ok(None);
     }
@@ -89,7 +89,7 @@ pub(crate) async fn refresh(
 #[derive(Clone)]
 pub(crate) struct PreparedDatabaseSource {
     fingerprint: [u8; 32],
-    next_lifecycle_check: Option<DateTime<Utc>>,
+    next_lifecycle_check: Option<Timestamp>,
 }
 
 fn record_fingerprint(record: &PersistedSigningKeyset) -> anyhow::Result<[u8; 32]> {
@@ -112,7 +112,7 @@ fn prepared_source(
     let Some(settings) = settings else {
         return Ok(None);
     };
-    let now = Utc::now();
+    let now = Timestamp::now();
     let keys = payload["keys"]
         .as_array()
         .ok_or_else(|| anyhow!("keyset missing keys"))?;
@@ -234,7 +234,7 @@ pub(crate) async fn register_local(
         }
         let entry = local_entry(
             registration.algorithm,
-            timestamp(Utc::now()),
+            timestamp(Timestamp::now()),
             Some(registration.purposes.iter().copied()),
         )?;
         registered_kid = Some(
@@ -275,7 +275,7 @@ pub(crate) async fn register_external(
                 && existing.get("public_jwk") == Some(&registration.public_jwk) { return Ok(false); }
             anyhow::bail!("external key kid already exists with different material");
         }
-        keys.push(json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Utc::now()),"retire_at":null}));
+        keys.push(json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Timestamp::now()),"retire_at":null}));
         Ok(true)
     }).await.map(|(loaded, _)| loaded)
 }
@@ -292,42 +292,159 @@ pub(crate) async fn openid4vc_state(
     })
 }
 
+/// The surrounding authenticated keyset revision is the durable sequence source.
+/// Keep this metadata outside `openid4vc`: normal authority replacement must not
+/// erase publication history. Only public certificates/status enter source_hash.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct MdocCrlPublication {
+    revision: i64,
+    source_hash: [u8; 32],
+    this_update: jiff::Timestamp,
+    next_update: jiff::Timestamp,
+}
+
 pub(crate) async fn mdoc_crl_material(
     binding: &DatabaseKeysetBinding,
     issuer_id: &str,
 ) -> anyhow::Result<Option<crate::model::MdocCrlMaterial>> {
+    use sha2::{Digest as _, Sha256};
+
     let mut record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
-    if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
-        anyhow::bail!("database keyset has unsupported schema version");
+    for _ in 0..MAX_CAS_ATTEMPTS {
+        // Observe again after a CAS conflict: another publisher may have won
+        // across a second boundary while this request was awaiting storage.
+        // X.509 times are whole seconds; a reused publication retains them.
+        // Jiff timestamps are POSIX instants and cannot carry a leap second.
+        let now = Timestamp::now()
+            .round(
+                TimestampRound::new()
+                    .smallest(Unit::Second)
+                    .mode(RoundMode::Floor),
+            )
+            .context("CRL publication time is out of range")?;
+        let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
+        if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
+            anyhow::bail!("database keyset has unsupported schema version");
+        }
+        let Some(material) = payload.get("openid4vc") else {
+            return Ok(None);
+        };
+        let issuers = material
+            .get("iaca_private_materials")
+            .and_then(Value::as_object)
+            .context("managed mdoc material has no IACA private map")?;
+        let Some(private) = issuers.get(issuer_id) else {
+            return Ok(None);
+        };
+        let issuer_private_material = private
+            .as_str()
+            .context("managed IACA private material is not PEM text")?
+            .to_owned();
+        // This authority bundle includes a private-key PEM block, unlike a
+        // public chain. Extract its certificates once; the host owns all DER,
+        // profile and key-matching checks. No private signer is prepared here.
+        let certificate_chain_der: Vec<_> = pem::parse_many(issuer_private_material.as_bytes())?
+            .into_iter()
+            .filter(|block| block.tag() == "CERTIFICATE")
+            .map(pem::Pem::into_contents)
+            .collect();
+        let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::deserialize(
+            material
+                .pointer("/public/revocation_snapshot")
+                .filter(|value| !value.is_null())
+                .context("mdoc authority has no revocation state")?,
+        )?;
+        snapshot
+            .validate_structure()
+            .map_err(|error| anyhow!("invalid managed revocation state: {error}"))?;
+        let source_hash: [u8; 32] = Sha256::digest(serde_json::to_vec(&(
+            issuer_id,
+            &certificate_chain_der,
+            &snapshot,
+        ))?)
+        .into();
+        let publications = payload
+            .get("mdoc_crl_publications")
+            .map(|value| value.as_object().context("invalid CRL publication map"))
+            .transpose()?;
+        let previous = publications
+            .and_then(|entries| entries.get(issuer_id))
+            .map(MdocCrlPublication::deserialize)
+            .transpose()?;
+        if let Some(previous) = previous.as_ref() {
+            if previous.revision < 1
+                || previous.revision > record.revision
+                || previous.this_update.subsec_nanosecond() != 0
+                || previous.next_update.subsec_nanosecond() != 0
+                || previous.this_update.duration_until(previous.next_update)
+                    != jiff::SignedDuration::from_hours(24)
+            {
+                anyhow::bail!("invalid persisted CRL publication");
+            }
+            // A changed revocation snapshot does not authorize moving the
+            // publication clock backwards either. Fail until the clock recovers.
+            if now < previous.this_update {
+                anyhow::bail!("CRL publication clock precedes the previous publication");
+            }
+        }
+        let publication = match previous {
+            Some(previous) if previous.source_hash == source_hash && now < previous.next_update => {
+                previous
+            }
+            _ => {
+                let revision = record
+                    .revision
+                    .checked_add(1)
+                    .context("signing keyset revision overflow")?;
+                let publication = MdocCrlPublication {
+                    revision,
+                    source_hash,
+                    this_update: now,
+                    next_update: now
+                        .checked_add(jiff::SignedDuration::from_hours(24))
+                        .context("CRL publication deadline is out of range")?,
+                };
+                payload
+                    .as_object_mut()
+                    .expect("decrypted keyset is an object")
+                    .entry("mdoc_crl_publications")
+                    .or_insert_with(|| json!({}))
+                    .as_object_mut()
+                    .expect("publication map was checked above")
+                    .insert(issuer_id.to_owned(), serde_json::to_value(&publication)?);
+                let candidate =
+                    persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys)?;
+                match binding
+                    .repository
+                    .compare_and_swap(record.revision, candidate)
+                    .await?
+                {
+                    SigningKeysetCompareAndSwapResult::Applied(_) => publication,
+                    SigningKeysetCompareAndSwapResult::Conflict(winner) => {
+                        // Never attach a new number to stale facts after a lost
+                        // race with revocation, rotation or another publisher.
+                        record = winner;
+                        continue;
+                    }
+                }
+            }
+        };
+        return Ok(Some(crate::model::MdocCrlMaterial {
+            issuer_private_material,
+            certificate_chain_der,
+            revocation_snapshot: snapshot,
+            // Old publishers emitted u64 microsecond clocks. This namespace
+            // starts above every such value, then follows the persisted CAS order.
+            crl_number: (1_u128 << 64) + publication.revision as u128,
+            this_update: publication.this_update,
+            next_update: publication.next_update,
+        }));
     }
-    let Some(material) = payload.get("openid4vc") else {
-        return Ok(None);
-    };
-    let issuers = material
-        .get("iaca_private_materials")
-        .and_then(Value::as_object)
-        .context("managed mdoc material has no IACA private map")?;
-    let Some(private) = issuers.get(issuer_id) else {
-        return Ok(None);
-    };
-    let issuer_private_material = private
-        .as_str()
-        .context("managed IACA private material is not PEM text")?
-        .to_owned();
-    let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::deserialize(
-        material
-            .pointer("/public/revocation_snapshot")
-            .filter(|value| !value.is_null())
-            .context("mdoc authority has no revocation state")?,
-    )?;
-    snapshot
-        .validate_structure()
-        .map_err(|error| anyhow!("invalid managed revocation state: {error}"))?;
-    Ok(Some(crate::model::MdocCrlMaterial {
-        issuer_private_material,
-        revocation_snapshot: snapshot,
-    }))
+    Err(crate::SigningKeyRepositoryUnavailable(anyhow!(
+        "CRL publication did not converge after {MAX_CAS_ATTEMPTS} conflicts"
+    ))
+    .into())
 }
 
 pub(crate) async fn commit_openid4vc(
@@ -377,7 +494,7 @@ pub(crate) async fn commit_openid4vc(
                 key.as_object_mut()
                     .expect("validated key object")
                     .remove("purposes");
-                key["retire_at"] = json!(timestamp(Utc::now() + settings.verification_grace));
+                key["retire_at"] = json!(timestamp(Timestamp::now() + settings.verification_grace));
             } else {
                 key["purposes"] = json!(
                     purposes
@@ -390,7 +507,7 @@ pub(crate) async fn commit_openid4vc(
         keys.push(json!({
             "kid":kid, "alg":"ES256", "backend":"local-db", "public_jwk":public,
             "private_pkcs8_der":URL_SAFE_NO_PAD.encode(private),
-            "created_at":timestamp(Utc::now()), "retire_at":null,
+            "created_at":timestamp(Timestamp::now()), "retire_at":null,
             "purposes":["credential", "presentation_request"],
         }));
     }
@@ -553,7 +670,7 @@ fn initial_payload() -> anyhow::Result<Value> {
 pub(crate) fn initial_payload_with_active(
     active_algorithm: nazo_crypto::jwt::Algorithm,
 ) -> anyhow::Result<Value> {
-    let now = timestamp(Utc::now());
+    let now = timestamp(Timestamp::now());
     let active = local_entry(active_algorithm, now.clone(), None::<Vec<SigningPurpose>>)?;
     let mut keys = vec![active];
     for algorithm in [
@@ -620,7 +737,7 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
         }
         let active_algorithm = key_entry_algorithm(active)?;
         let active_is_local = active.get("backend").and_then(Value::as_str) == Some("local-db");
-        let now = Utc::now();
+        let now = Timestamp::now();
         let rotation_due = key_entry_created_at(active)? + settings.rotation_interval;
         let candidate =
             prepublished_candidate(keys, &active_kid, active_algorithm, active_is_local)?;
@@ -735,7 +852,7 @@ fn protocol_rotation_check(
     keys: &[Value],
     algorithm: nazo_crypto::jwt::Algorithm,
     settings: &KeySettings,
-) -> anyhow::Result<Option<DateTime<Utc>>> {
+) -> anyhow::Result<Option<Timestamp>> {
     let (current, pending) = protocol_key_indices(keys, algorithm)?;
     let Some(current) = current else {
         return Ok(None);
@@ -754,7 +871,7 @@ fn maintain_protocol_keys(
     active_algorithm: nazo_crypto::jwt::Algorithm,
     active_is_local: bool,
     settings: &KeySettings,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> anyhow::Result<bool> {
     let mut changed = false;
     for algorithm in [
@@ -805,7 +922,7 @@ fn prepublished_candidate(
     algorithm: nazo_crypto::jwt::Algorithm,
     allow_local: bool,
 ) -> anyhow::Result<Option<usize>> {
-    let mut selected: Option<(usize, bool, DateTime<Utc>)> = None;
+    let mut selected: Option<(usize, bool, Timestamp)> = None;
     for (index, entry) in keys.iter().enumerate() {
         if entry.get("kid").and_then(Value::as_str) == Some(active_kid)
             || entry.get("purposes").is_some()
@@ -830,7 +947,7 @@ fn prepublished_candidate(
     Ok(selected.map(|(index, _, _)| index))
 }
 
-fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: DateTime<Utc>) {
+fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: Timestamp) {
     for entry in keys {
         if entry.get("kid").and_then(Value::as_str) == Some(old_kid) {
             entry["retire_at"] = json!(timestamp(retire_at));
@@ -1000,7 +1117,7 @@ fn load_payload(
             .get("backend")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("keyset key {kid} missing backend"))?;
-        if retired_at.is_some_and(|time| time <= Utc::now()) {
+        if retired_at.is_some_and(|time| time <= Timestamp::now()) {
             if kid == active_kid {
                 anyhow::bail!("active key {kid} is retired");
             }
@@ -1121,7 +1238,7 @@ fn records(payload: &Value) -> anyhow::Result<Vec<KeyRecord>> {
         .get("active_kid")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("keyset missing active_kid"))?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     payload["keys"]
         .as_array()
         .ok_or_else(|| anyhow!("keyset missing keys"))?
@@ -1205,8 +1322,8 @@ fn validate_external_registration(registration: &ExternalKeyRegistration) -> any
     Ok(())
 }
 
-fn timestamp(value: DateTime<Utc>) -> String {
-    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+fn timestamp(value: Timestamp) -> String {
+    format!("{:.0}", value)
 }
 
 #[cfg(test)]

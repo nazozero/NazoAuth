@@ -353,6 +353,9 @@ async fn execute_decision(
 ) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
     let mut rows = AuthorizationDecisionQuery {
         input,
+        valid_until: input.valid_until.into(),
+        retain_until: input.retain_until.into(),
+        occurred_at: input.occurred_at.into(),
         scopes: serde_json::json!(input.scopes),
         resources: serde_json::json!(input.resource_indicators),
     }
@@ -402,6 +405,9 @@ fn map_device_repository_error(error: RepositoryError) -> DeviceGrantPortError {
 // Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
 struct AuthorizationDecisionQuery<'a> {
     input: &'a AuthorizationDecisionCommit,
+    valid_until: jiff_diesel::Timestamp,
+    retain_until: jiff_diesel::Timestamp,
+    occurred_at: jiff_diesel::Timestamp,
     scopes: serde_json::Value,
     resources: serde_json::Value,
 }
@@ -431,15 +437,15 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthorizationDecis
             &self.input.pushed_request_uri,
         )?;
         out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.valid_until)?;
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.valid_until)?;
         out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.retain_until)?;
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.retain_until)?;
         out.push_sql(", ");
         out.push_bind_param::<diesel::sql_types::Text, _>(self.input.decision.as_str())?;
         out.push_sql(", ");
         out.push_bind_param::<diesel::sql_types::Uuid, _>(&self.input.event_id)?;
         out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.input.occurred_at)?;
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.occurred_at)?;
         out.push_sql(", ");
         out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.input.audit_fields)?;
         out.push_sql(", ");

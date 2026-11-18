@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     UserId,
     ports::{
@@ -33,7 +33,7 @@ return 'published'
 #[serde(deny_unknown_fields)]
 struct DeliveryEnvelope {
     attempt_id: Uuid,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
     secret_binding: Option<String>,
     value: serde_json::Value,
 }
@@ -60,7 +60,7 @@ fn decode(raw: &str) -> Result<DeliveryEnvelope, Error> {
 
 fn parse_delivery(raw: String) -> Result<Option<DeliveryRecord>, Error> {
     let envelope = decode(&raw)?;
-    if envelope.expires_at <= Utc::now() {
+    if envelope.expires_at <= Timestamp::now() {
         return Ok(None);
     }
     Ok(Some(envelope.record(raw)))
@@ -102,7 +102,7 @@ impl DeliveryStore {
             vec![keys::client_delivery(user, token)],
             vec![
                 raw.clone(),
-                envelope.expires_at.timestamp_millis().to_string(),
+                envelope.expires_at.as_millisecond().to_string(),
             ],
         )
         .await?
@@ -122,7 +122,7 @@ impl DeliveryStore {
         expected: &DeliveryRecord,
         approved_client_id: Uuid,
     ) -> Result<DeliveryPublish, Error> {
-        if expected.value["delivery_state"] != "staged" || expected.expires_at <= Utc::now() {
+        if expected.value["delivery_state"] != "staged" || expected.expires_at <= Timestamp::now() {
             return Ok(DeliveryPublish::MissingOrChanged);
         }
         let mut envelope = DeliveryEnvelope {
@@ -200,7 +200,9 @@ impl DeliveryStore {
         token: &str,
         expected: &DeliveryRecord,
     ) -> Result<DeliveryConsume, Error> {
-        if expected.value["delivery_state"] != "committed" || expected.expires_at <= Utc::now() {
+        if expected.value["delivery_state"] != "committed"
+            || expected.expires_at <= Timestamp::now()
+        {
             return Ok(DeliveryConsume::MissingOrChanged);
         }
         if !self.retire_record(user, token, expected).await? {

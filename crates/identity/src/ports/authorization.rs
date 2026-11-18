@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -20,7 +20,7 @@ pub struct AuthorizedApplication {
     pub client_id: String,
     pub client_name: String,
     pub last_scopes: Value,
-    pub last_authorized_at: DateTime<Utc>,
+    pub last_authorized_at: Timestamp,
     pub authorization_count: i32,
 }
 
@@ -59,7 +59,7 @@ pub trait AccessRequestRepositoryPort: Send + Sync {
 #[derive(Clone, PartialEq)]
 pub struct DeliveryStage {
     pub attempt_id: Uuid,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     pub secret_binding: Option<String>,
     pub value: Value,
 }
@@ -71,7 +71,7 @@ pub struct DeliveryRecord {
     pub value: Value,
     pub opaque_version: String,
     pub attempt_id: Uuid,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     pub secret_binding: Option<String>,
 }
 

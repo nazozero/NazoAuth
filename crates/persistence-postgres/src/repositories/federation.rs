@@ -90,7 +90,7 @@ impl FederationRepository {
                 super::audit_ledger::append_fresh_security_audit_on_connection(connection,
                     &nazo_persistence::SecurityAuditEvent {
                         event_id: uuid::Uuid::now_v7(), event_type: "external_identity_unlinked".into(),
-                        event_category: "identity_lifecycle".into(), occurred_at: chrono::Utc::now(),
+                        event_category: "identity_lifecycle".into(), occurred_at: jiff::Timestamp::now(),
                         payload: serde_json::json!({
                             "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
                             "event_category": "identity_lifecycle", "tenant_id": tenant_id.as_uuid(),
@@ -223,7 +223,7 @@ impl FederationRepository {
                             "provider_type": &borrowed_login.provider_type,
                             "provider_id": &borrowed_login.provider_id,
                         }),
-                        occurred_at: chrono::Utc::now(),
+                        occurred_at: jiff::Timestamp::now(),
                     },
                 )
                 .await?;

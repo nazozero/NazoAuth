@@ -4,7 +4,7 @@ use response_body::oauth_error_code;
 use actix_web::HttpRequest;
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::JwtBearerAssertionClaims;
 use nazo_auth::JwtBearerGrantPolicy;
 use nazo_auth::ValidatedClientAssertion;
@@ -185,7 +185,7 @@ fn signed_jwt_bearer_assertion_with_typ(
     extra: Value,
     typ: Option<&str>,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let mut claims = json!({
         "iss": client_id,
         "sub": client_id,
@@ -356,7 +356,7 @@ fn jwt_bearer_assertion_validation_binds_client_issuer_audience_and_times() {
 
 #[test]
 fn jwt_bearer_time_jti_and_replay_ttl_boundaries_are_enforced() {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
 
     let mut expired = jwt_bearer_claims(now);
     expired.exp = now;
@@ -445,7 +445,7 @@ async fn jwt_bearer_assertion_jti_replay_is_rejected() {
     let assertion = ValidatedJwtBearerAssertion {
         subject: "client-a".to_owned(),
         jti: format!("jwt-bearer-replay-{}", Uuid::now_v7()),
-        expires_at: chrono::Utc::now() + chrono::Duration::seconds(120),
+        expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_secs(120),
         replay_ttl_seconds: 120,
     };
 

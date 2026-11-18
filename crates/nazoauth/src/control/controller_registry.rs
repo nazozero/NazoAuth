@@ -9,7 +9,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
@@ -35,16 +35,13 @@ pub enum ControllerKeyWarning {
 
 /// Pure policy predicate shared by status surfaces (D09 consumes the render).
 #[must_use]
-pub fn expiry_warning(
-    now: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-) -> Option<ControllerKeyWarning> {
-    let remaining = expires_at - now;
-    if remaining <= Duration::zero() {
+pub fn expiry_warning(now: Timestamp, expires_at: Timestamp) -> Option<ControllerKeyWarning> {
+    let remaining = expires_at.duration_since(now);
+    if remaining <= SignedDuration::ZERO {
         None
-    } else if remaining <= Duration::hours(EXPIRY_URGENT_HOURS) {
+    } else if remaining <= SignedDuration::from_hours(EXPIRY_URGENT_HOURS) {
         Some(ControllerKeyWarning::Urgent)
-    } else if remaining <= Duration::days(EXPIRY_WARNING_DAYS) {
+    } else if remaining <= SignedDuration::from_hours((EXPIRY_WARNING_DAYS) * 24) {
         Some(ControllerKeyWarning::Expiring)
     } else {
         None
@@ -367,7 +364,7 @@ impl ControllerRegistryService {
         &self,
         audit: nazo_persistence::control_plane::AdminIdentityAudit,
         change: &IdentityChange,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IssuedIdentityApproval, ControllerRegistryServiceError> {
         self.ensure_local_deployment(change.deployment_id())?;
         change.validate()?;
@@ -391,7 +388,7 @@ impl ControllerRegistryService {
         &self,
         approval_token: String,
         change: IdentityChange,
-        now: DateTime<Utc>,
+        now: Timestamp,
         audit: nazo_persistence::control_plane::AdminIdentityAudit,
     ) -> Result<StoredControllerSlot, ControllerRegistryServiceError> {
         self.ensure_local_deployment(change.deployment_id())?;

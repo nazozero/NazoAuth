@@ -4,7 +4,7 @@ use cookie::Cookie;
 use http::{StatusCode, header};
 use std::sync::Mutex;
 
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nazo_identity::{AuthorizedApplicationsView, SessionId};
 use nazo_oauth_server::contracts::profile_account::ProfileAccountFuture;
 use serde_json::{Value, json};
@@ -90,7 +90,7 @@ fn fake(
                 client_id: "client".to_owned(),
                 client_name: "Client".to_owned(),
                 last_scopes: vec!["openid".to_owned()],
-                last_authorized_at: Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
+                last_authorized_at: Timestamp::new(1_700_000_000, 0).unwrap(),
                 authorization_count: 3,
             }],
         })),

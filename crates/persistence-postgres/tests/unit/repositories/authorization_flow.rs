@@ -76,7 +76,7 @@ async fn fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_
     let user_id = Uuid::now_v7();
     let client_id = Uuid::now_v7();
 
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     assert_eq!(
         AuthorizationRepositoryPort::commit_decision(
             &repository,
@@ -86,8 +86,8 @@ async fn fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_
                 client_id: "public-client".to_owned(),
                 request_id: "request".to_owned(),
                 pushed_request_uri: None,
-                valid_until: now + chrono::Duration::minutes(5),
-                retain_until: now + chrono::Duration::minutes(10),
+                valid_until: now + jiff::SignedDuration::from_mins(5),
+                retain_until: now + jiff::SignedDuration::from_mins(10),
                 decision: AuthorizationDecisionKind::Deny,
                 event_id: Uuid::now_v7(),
                 occurred_at: now,
@@ -105,7 +105,7 @@ async fn fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_
             &repository,
             DeviceGrantWrite {
                 device_code_hash: "test-device-hash",
-                expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+                expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
                 tenant_id: Uuid::now_v7(),
                 user_id,
                 client_id,

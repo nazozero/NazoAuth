@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{TimeZone as _, Utc};
+use jiff::Timestamp;
 use nazo_auth::{
     BackchannelLogoutOutboxPort, IdTokenHintClaims, IdempotentBackchannelLogoutDelivery,
     LogoutClientRepositoryPort, LogoutFuture, LogoutInput, LogoutService, LogoutServiceError,
@@ -104,7 +104,7 @@ impl LogoutTokenSignerPort for Signer {
         client: &'a RegisteredLogoutClient,
         _subject: Option<&'a str>,
         sid: &'a str,
-        _issued_at: chrono::DateTime<Utc>,
+        _issued_at: jiff::Timestamp,
         _ttl_seconds: i64,
     ) -> LogoutFuture<'a, String> {
         Box::pin(async move { Ok(format!("logout-token:{}:{sid}", client.client_id)) })
@@ -447,7 +447,7 @@ fn input(tenant_id: Uuid, client_id: Option<&str>) -> LogoutInput {
         csrf_authorized: true,
         user_confirmed: true,
         frontchannel_enabled: true,
-        now: Utc.timestamp_opt(2_000_000_000, 0).unwrap(),
+        now: Timestamp::new(2_000_000_000, 0).unwrap(),
     }
 }
 

@@ -14,11 +14,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use chrono::{Duration as ChronoDuration, Utc};
 use diesel::{sql_query, sql_types::Bool};
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
+use jiff::{SignedDuration, Timestamp};
 use nazo_crypto::ed25519::SigningKey;
 use nazo_operator_protocol::{
     CONTROL_OPERATION_SCHEMA, ControlOperation, ControlOperationPayload, ControlOutcome,
@@ -269,7 +269,7 @@ async fn expired_controller_renews_during_migration_and_recovers_after_commit() 
                 kid: kid.clone(),
                 public_key: old.verifying_key().to_bytes(),
             },
-            Utc::now() - ChronoDuration::days(35),
+            Timestamp::now() - SignedDuration::from_hours((35) * 24),
         )
         .await
         .unwrap();
@@ -344,7 +344,7 @@ async fn expired_controller_renews_during_migration_and_recovers_after_commit() 
     assert_success(&replay);
     assert_eq!(first.stdout, replay.stdout);
     registry
-        .revoke_slot(DEPLOYMENT, &slot.controller_id, Utc::now())
+        .revoke_slot(DEPLOYMENT, &slot.controller_id, Timestamp::now())
         .await
         .unwrap();
     let mut revoked = operation(
@@ -381,7 +381,7 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
                 kid: kid.clone(),
                 public_key,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .expect("controller slot should enroll");
@@ -461,7 +461,7 @@ async fn killed_before_side_effect_resumes_without_duplicating_the_mutation() {
                 kid: kid.clone(),
                 public_key,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .expect("controller slot should enroll");
@@ -534,7 +534,7 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
                 kid: kid.clone(),
                 public_key: primary_public_key,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .expect("controller slot should enroll");
@@ -551,7 +551,7 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
                 kid: expired_kid.clone(),
                 public_key: expired_public_key,
             },
-            Utc::now() - ChronoDuration::days(31),
+            Timestamp::now() - SignedDuration::from_hours((31) * 24),
         )
         .await
         .expect("expired-slot fixture should enroll");
@@ -568,7 +568,7 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
                 kid: revoked_kid.clone(),
                 public_key: revoked_public_key,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .expect("revoked-slot fixture should enroll");
@@ -581,7 +581,7 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
         .map(|slot| slot.controller_id)
         .expect("revoked fixture slot");
     registry
-        .revoke_slot(DEPLOYMENT, &revoked_controller_id, Utc::now())
+        .revoke_slot(DEPLOYMENT, &revoked_controller_id, Timestamp::now())
         .await
         .expect("revocation should succeed");
 
@@ -743,7 +743,7 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
                 kid: kid.clone(),
                 public_key,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .expect("controller slot should enroll");

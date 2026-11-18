@@ -1,9 +1,9 @@
-use chrono::Utc;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, Queryable, Selectable, SelectableHelper,
     sql_query, sql_types::BigInt,
 };
 use diesel_async::{AsyncConnection as _, RunQueryDsl as _};
+use jiff::Timestamp;
 use nazo_identity::email::normalize_email_address;
 pub use nazo_persistence::{AdminProvisionReceipt, AdminProvisionRequest};
 use sha2::Digest as _;
@@ -108,7 +108,7 @@ impl AdminProvisionRepository {
                     }
 
                     let user_id = Uuid::now_v7();
-                    let now = Utc::now();
+                    let now = Timestamp::now();
                     let username = format!("admin_{}", user_id.simple());
                     diesel::insert_into(users::table)
                         .values((
@@ -144,7 +144,7 @@ impl AdminProvisionRepository {
                             identity_security_events::actor_id.eq::<Option<Uuid>>(None),
                             identity_security_events::target_user_id.eq(Some(user_id)),
                             identity_security_events::reason_code.eq(ADMIN_PROVISION_REASON),
-                            identity_security_events::occurred_at.eq(now),
+                            identity_security_events::occurred_at.eq((now).to_diesel()),
                             identity_security_events::request_id.eq(Some(&operation_id)),
                         ))
                         .execute(connection)
@@ -247,3 +247,5 @@ async fn lock_operation(
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/admin_provision.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

@@ -421,7 +421,7 @@ fn par_attestation_requires_valid_proof_and_available_single_use_replay_state() 
         let signature: Signature = key.sign(input.as_bytes());
         format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()))
     };
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let attestation = sign(
         "oauth-client-attestation+jwt",
         json!({"iss":"https://attester.example","sub":"client-1","exp":now+600,"cnf":{"jwk":jwk}}),
@@ -547,7 +547,7 @@ fn protocol_par_dpop_header_requires_pkce_even_for_confidential_oidc_compatibili
     let key = SigningKey::from_slice(&[17; 32]).unwrap();
     let point = key.verifying_key().to_sec1_point(false);
     let jwk = json!({"kty":"EC","crv":"P-256","x":URL_SAFE_NO_PAD.encode(point.x().unwrap()),"y":URL_SAFE_NO_PAD.encode(point.y().unwrap())});
-    let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"ES256","typ":"dpop+jwt","jwk":jwk})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"htu":"https://issuer.example/par","htm":"POST","iat":chrono::Utc::now().timestamp(),"jti":"par-header-pkce"})).unwrap()));
+    let input = format!("{}.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg":"ES256","typ":"dpop+jwt","jwk":jwk})).unwrap()), URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"htu":"https://issuer.example/par","htm":"POST","iat":jiff::Timestamp::now().as_second(),"jti":"par-header-pkce"})).unwrap()));
     let signature: Signature = key.sign(input.as_bytes());
     let proof = format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()));
     block_on(async {

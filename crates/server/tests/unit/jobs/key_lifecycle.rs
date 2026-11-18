@@ -17,24 +17,24 @@ use super::{KeyLifecycleTask, managed_refresh_interval, next_failure_backoff, re
 
 fn settings() -> KeySettings {
     KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::seconds(20),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_secs(20),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
 #[test]
 fn refresh_interval_is_bounded_by_prepublish_window() {
     assert_eq!(
-        refresh_interval(chrono::Duration::seconds(86_400)),
+        refresh_interval(jiff::SignedDuration::from_secs(86_400)),
         Duration::from_secs(3_600)
     );
     assert_eq!(
-        refresh_interval(chrono::Duration::seconds(30)),
+        refresh_interval(jiff::SignedDuration::from_secs(30)),
         Duration::from_secs(15)
     );
     assert_eq!(
-        refresh_interval(chrono::Duration::seconds(1)),
+        refresh_interval(jiff::SignedDuration::from_secs(1)),
         Duration::from_secs(1)
     );
 }
@@ -42,15 +42,15 @@ fn refresh_interval_is_bounded_by_prepublish_window() {
 #[test]
 fn managed_openid4vc_refresh_is_capped_at_thirty_seconds() {
     assert_eq!(
-        managed_refresh_interval(chrono::Duration::days(1), true),
+        managed_refresh_interval(jiff::SignedDuration::from_hours(24), true),
         Duration::from_secs(30)
     );
     assert_eq!(
-        managed_refresh_interval(chrono::Duration::seconds(20), true),
+        managed_refresh_interval(jiff::SignedDuration::from_secs(20), true),
         Duration::from_secs(10)
     );
     assert_eq!(
-        managed_refresh_interval(chrono::Duration::days(1), false),
+        managed_refresh_interval(jiff::SignedDuration::from_hours(24), false),
         Duration::from_secs(3_600)
     );
 }

@@ -197,7 +197,7 @@ pub(super) fn stored_response(
     body: &CredentialResponseBody,
     status: CredentialResponseStatus,
     dpop_nonce: Option<String>,
-    expires_at: chrono::DateTime<chrono::Utc>,
+    expires_at: jiff::Timestamp,
 ) -> StoredCredentialResponse {
     let (encoding, body) = match body {
         CredentialResponseBody::Json(value) => (CredentialResponseEncoding::Json, value.clone()),

@@ -7,15 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-passkey-auth.workspace = true
+jiff-diesel.workspace = true
+nazo-passkey.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 rand.workspace = true
 rustls.workspace = true
 blake3.workspace = true
 bytes = "1.12.1"
-chrono = { workspace = true, features = ["serde"] }
-diesel = { workspace = true, features = ["postgres_backend", "uuid", "chrono", "serde_json", "64-column-tables"] }
+jiff.workspace = true
+diesel = { workspace = true, features = ["postgres_backend", "uuid", "serde_json", "64-column-tables"] }
 diesel-async = { workspace = true, features = ["postgres", "deadpool", "migrations"] }
 diesel_migrations.workspace = true
 futures-util.workspace = true
@@ -45,6 +46,7 @@ uuid = { workspace = true, features = ["v7", "serde"] }
 aes-gcm.workspace = true
 argon2.workspace = true
 ed25519-dalek.workspace = true
+p256 = { workspace = true, features = ["ecdsa"] }
 jsonwebtoken.workspace = true
 rcgen.workspace = true
 syn = { version = "3.0.9", features = ["full", "visit"] }

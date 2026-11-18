@@ -19,6 +19,8 @@ pub(super) async fn create(
     // of the transaction and confirms COMMIT before returning success.
     let rows = CreateFamily {
         token,
+        issued_at: token.issued_at.into(),
+        expires_at: token.expires_at.into(),
         contract,
         issuance_id,
         native_source: native_source.map(|source| source.family_id),
@@ -57,6 +59,8 @@ pub(super) async fn create(
 
 struct CreateFamily<'a> {
     token: &'a nazo_auth::NewRefreshToken,
+    issued_at: jiff_diesel::Timestamp,
+    expires_at: jiff_diesel::Timestamp,
     contract: &'a PreparedRefreshContract,
     issuance_id: Uuid,
     native_source: Option<Uuid>,
@@ -96,9 +100,9 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for CreateFamily<'_> {
         out.push_sql(", ");
         out.push_bind_param::<sql_types::Jsonb, _>(&self.audiences)?;
         out.push_sql(", ");
-        out.push_bind_param::<sql_types::Timestamptz, _>(&self.token.issued_at)?;
+        out.push_bind_param::<sql_types::Timestamptz, _>(&self.issued_at)?;
         out.push_sql(", ");
-        out.push_bind_param::<sql_types::Timestamptz, _>(&self.token.expires_at)?;
+        out.push_bind_param::<sql_types::Timestamptz, _>(&self.expires_at)?;
         out.push_sql(", ");
         out.push_bind_param::<sql_types::Nullable<sql_types::Text>, _>(&self.token.id_token_sid)?;
         out.push_sql(", ");

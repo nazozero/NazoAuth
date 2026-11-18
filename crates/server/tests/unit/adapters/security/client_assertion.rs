@@ -216,7 +216,7 @@ fn private_key_jwt_decode_accepts_small_future_nbf_and_iat() {
     let client = private_key_jwt_client(json!({"keys": [public_jwk]}));
     let settings = test_settings();
     let req = TestRequest::post().uri("/par").to_http_request();
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some("client-kid".to_owned());
     let assertion = private_key.encode_jwt(

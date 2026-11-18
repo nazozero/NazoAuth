@@ -384,7 +384,7 @@ impl Settings {
         }
         let email_code_dev_response_enabled =
             config.bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?;
-        let passkey = passkey::from_config(config, &issuer, &issuer_url)?;
+        let passkey = passkey::from_config(config, &issuer_url)?;
         let email = EmailSettings::from_config(config, issuer_is_loopback_http)?;
         let federation = federation::from_config(config)?;
         let task_key_settings = key_settings_from_config(config)?;
@@ -539,8 +539,8 @@ impl Settings {
                 signing_external_timeout_ms: config.parse("SIGNING_EXTERNAL_TIMEOUT_MS", 2_000)?,
                 signing_key_rotation_interval_seconds: task_key_settings
                     .rotation_interval
-                    .num_seconds(),
-                signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),
+                    .as_secs(),
+                signing_key_prepublish_seconds: task_key_settings.prepublish_window.as_secs(),
             },
             modules: ModuleSettings {
                 enable_openid4vci_issuer,

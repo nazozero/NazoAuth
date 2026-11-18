@@ -56,9 +56,9 @@ use slots::{
 };
 pub(crate) use slots::{insert_slot_on_connection, validate_deployment_id};
 
-use chrono::{DateTime, Utc};
 use diesel::result::Error as QueryError;
 use diesel_async::AsyncConnection as _;
+use jiff::Timestamp;
 
 use nazo_persistence::control_plane as contract;
 
@@ -354,7 +354,7 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         controller_id: String,
         previous_kid: String,
         public_key: [u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> futures_util::future::BoxFuture<
         '_,
         Result<Option<String>, contract::ControllerRegistryError>,
@@ -451,7 +451,7 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
     fn admitted_controllers<'a>(
         &'a self,
         deployment_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> futures_util::future::BoxFuture<
         'a,
         Result<Vec<contract::AdmittedController>, contract::ControllerRegistryError>,
@@ -467,7 +467,7 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         &'a self,
         deployment_id: &'a str,
         kid: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> futures_util::future::BoxFuture<
         'a,
         Result<Option<contract::AdmittedController>, contract::ControllerRegistryError>,

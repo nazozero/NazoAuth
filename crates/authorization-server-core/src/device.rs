@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -20,8 +20,8 @@ pub struct DeviceAuthorizationPayload {
     )]
     pub authorization_details: Value,
     pub interval_seconds: u64,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -40,7 +40,7 @@ pub enum DeviceAuthorizationState {
     Pending {
         payload: DeviceAuthorizationPayload,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        last_poll_at: Option<DateTime<Utc>>,
+        last_poll_at: Option<Timestamp>,
         #[serde(default)]
         slow_down_count: u32,
     },
@@ -49,19 +49,19 @@ pub enum DeviceAuthorizationState {
         approval: DeviceAuthorizationApproval,
         claim_id: Uuid,
         grant_recorded: bool,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     },
     Approved {
         payload: DeviceAuthorizationPayload,
         approval: DeviceAuthorizationApproval,
-        approved_at: DateTime<Utc>,
+        approved_at: Timestamp,
     },
     Denied {
         payload: DeviceAuthorizationPayload,
-        denied_at: DateTime<Utc>,
+        denied_at: Timestamp,
     },
     Consumed {
-        consumed_at: DateTime<Utc>,
+        consumed_at: Timestamp,
     },
 }
 
@@ -78,7 +78,7 @@ pub struct DeviceAuthorizationRequestPolicy<'a> {
     pub default_resource: &'a str,
     pub interval_seconds: u64,
     pub ttl_seconds: u64,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -119,8 +119,8 @@ pub fn device_authorization_request_payload(
     let ttl = i64::try_from(input.ttl_seconds).unwrap_or(i64::MAX / 1_000);
     let expires_at = input
         .now
-        .checked_add_signed(chrono::Duration::seconds(ttl))
-        .unwrap_or(DateTime::<Utc>::MAX_UTC);
+        .checked_add(jiff::SignedDuration::from_secs(ttl))
+        .unwrap_or(Timestamp::MAX);
     Ok(DeviceAuthorizationPayload {
         client_id: input.client_id.to_owned(),
         client_name: input.client_name.to_owned(),
@@ -201,7 +201,7 @@ pub struct DeviceGrantWrite<'a> {
     /// Stable across worker claims: a committed approval cannot recreate a
     /// subsequently revoked grant. The persistence owner enforces its deadline.
     pub device_code_hash: &'a str,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     pub tenant_id: Uuid,
     pub user_id: Uuid,
     pub client_id: Uuid,
@@ -566,7 +566,7 @@ where
         mut current_time: F,
     ) -> Result<DevicePollCommit, DevicePollFailure>
     where
-        F: FnMut() -> DateTime<Utc>,
+        F: FnMut() -> Timestamp,
     {
         for _ in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
             let stored = self
@@ -638,7 +638,7 @@ where
         current_time: F,
     ) -> Result<Option<DeviceAuthorizationPayload>, DeviceStatePortError>
     where
-        F: FnMut() -> DateTime<Utc>,
+        F: FnMut() -> Timestamp,
     {
         Ok(self
             .prepare_decision(user_code, current_time)
@@ -656,7 +656,7 @@ where
         mut current_time: F,
     ) -> Result<Option<PreparedDeviceDecision<S::Version>>, DeviceStatePortError>
     where
-        F: FnMut() -> DateTime<Utc>,
+        F: FnMut() -> Timestamp,
     {
         let Some(device_hash) = self.store.resolve_user_code(user_code).await? else {
             return Ok(None);
@@ -695,7 +695,7 @@ where
         mut current_time: F,
     ) -> Result<(), DeviceDecisionFailure>
     where
-        F: FnMut() -> DateTime<Utc>,
+        F: FnMut() -> Timestamp,
     {
         let PreparedDeviceDecision {
             user_code,
@@ -765,7 +765,7 @@ where
     ) -> Result<(), DeviceDecisionFailure>
     where
         R: DeviceGrantRepositoryPort + ?Sized,
-        F: FnMut() -> DateTime<Utc>,
+        F: FnMut() -> Timestamp,
     {
         let claim_id = Uuid::now_v7();
         let PreparedDeviceDecision {
@@ -963,14 +963,14 @@ where
 /// Returns whether an in-flight device approval claim has exceeded its
 /// bounded crash-recovery window.
 #[must_use]
-fn device_approval_claim_is_stale(started_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
-    now.signed_duration_since(started_at).num_seconds() >= DEVICE_APPROVAL_CLAIM_TIMEOUT_SECONDS
+fn device_approval_claim_is_stale(started_at: Timestamp, now: Timestamp) -> bool {
+    now.duration_since(started_at).as_secs() >= DEVICE_APPROVAL_CLAIM_TIMEOUT_SECONDS
 }
 
 #[must_use]
 pub fn evaluate_device_poll(
     state: DeviceAuthorizationState,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> DevicePollTransition {
     if device_authorization_payload(&state).is_some_and(|payload| now >= payload.expires_at) {
         return DevicePollTransition::Expired;
@@ -985,7 +985,7 @@ pub fn evaluate_device_poll(
                 u64::from(slow_down_count).saturating_mul(DEVICE_SLOW_DOWN_INCREMENT_SECONDS),
             );
             let too_early = last_poll_at.is_some_and(|last| {
-                let elapsed = now.signed_duration_since(last).num_seconds();
+                let elapsed = now.duration_since(last).as_secs();
                 elapsed < 0 || u64::try_from(elapsed).is_ok_and(|elapsed| elapsed < required_wait)
             });
             let next = DeviceAuthorizationState::Pending {

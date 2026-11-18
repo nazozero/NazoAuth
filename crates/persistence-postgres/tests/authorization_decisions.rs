@@ -2,9 +2,9 @@
 //! Requires an isolated test PostgreSQL with CREATE DATABASE permission.
 //! Run serially; no deployment database or state store is used.
 
-use chrono::{Duration, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     AuthorizationDecisionCommit, AuthorizationDecisionCommitResult as Outcome,
     AuthorizationDecisionKind as Kind, AuthorizationRepositoryPort,
@@ -74,7 +74,7 @@ async fn fixture(connection: &mut AsyncPgConnection) -> Fixture {
 }
 
 fn decision(fixture: &Fixture, kind: Kind) -> AuthorizationDecisionCommit {
-    let now = Utc::now();
+    let now = Timestamp::now();
     AuthorizationDecisionCommit {
         tenant_id: fixture.tenant_id,
         user_id: fixture.user_id,
@@ -84,8 +84,8 @@ fn decision(fixture: &Fixture, kind: Kind) -> AuthorizationDecisionCommit {
             "urn:ietf:params:oauth:request_uri:{}",
             Uuid::now_v7()
         )),
-        valid_until: now + Duration::minutes(5),
-        retain_until: now + Duration::minutes(10),
+        valid_until: now + SignedDuration::from_mins(5),
+        retain_until: now + SignedDuration::from_mins(10),
         decision: kind,
         event_id: Uuid::now_v7(),
         occurred_at: now,
@@ -197,7 +197,7 @@ async fn verify_runtime_privileges(url: &str, connection: &mut AsyncPgConnection
             event_type: "decision_upgrade_test".to_owned(),
             event_category: "authorization".to_owned(),
             payload: json!({"schema_version": "nazo.audit.v1"}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         })
         .await
         .unwrap();
@@ -396,7 +396,7 @@ async fn verify_atomicity(connection: &mut AsyncPgConnection, pool: &DbPool, fix
     assert_eq!(grant_count(connection, fixture).await, before);
 
     let mut expired = decision(fixture, Kind::Approve);
-    expired.valid_until = Utc::now() - Duration::seconds(1);
+    expired.valid_until = Timestamp::now() - SignedDuration::from_secs(1);
     assert_eq!(
         repository.commit_decision(expired.clone()).await.unwrap(),
         Outcome::Expired
@@ -462,7 +462,7 @@ async fn verify_lock_expiry_and_cancellation(
     sql_query("SELECT authorization_count::bigint AS count FROM user_client_grants WHERE user_id = $1 FOR UPDATE")
         .bind::<sql_types::Uuid, _>(fixture.user_id).get_result::<CountRow>(&mut blocker).await.unwrap();
     let mut expiring = decision(fixture, Kind::Approve);
-    expiring.valid_until = Utc::now() + Duration::milliseconds(800);
+    expiring.valid_until = Timestamp::now() + SignedDuration::from_millis(800);
     let event_id = expiring.event_id;
     let writer = repository.clone();
     let pending = tokio::spawn(async move { writer.commit_decision(expiring).await });
@@ -476,7 +476,7 @@ async fn verify_lock_expiry_and_cancellation(
     // The blocking fact rolls back, so the candidate really inserts and mutates
     // the grant before its final PZA01 branch must roll both changes back.
     let mut late = decision(fixture, Kind::Approve);
-    late.valid_until = Utc::now() + Duration::milliseconds(800);
+    late.valid_until = Timestamp::now() + SignedDuration::from_millis(800);
     let event_id = late.event_id;
     let before = grant_count(connection, fixture).await;
     blocker.batch_execute("BEGIN").await.unwrap();
@@ -700,7 +700,7 @@ async fn verify_audit_lifetime(
     let repository = AuthorizationFlowRepository::new(pool.clone(), fixture.tenant_id);
     let audit = AuditLedgerRepository::new(pool.clone());
     let mut retained = decision(fixture, Kind::Deny);
-    retained.valid_until = Utc::now() + Duration::seconds(2);
+    retained.valid_until = Timestamp::now() + SignedDuration::from_secs(2);
     retained.audit_fields = json!({
         "request_id": "must-not-export-raw-handle",
         "authorization_details": {"private": "must-not-export"},
@@ -710,7 +710,7 @@ async fn verify_audit_lifetime(
         Outcome::Committed
     );
     let mut short = decision(fixture, Kind::Deny);
-    short.valid_until = Utc::now() + Duration::seconds(2);
+    short.valid_until = Timestamp::now() + SignedDuration::from_secs(2);
     short.retain_until = short.valid_until;
     assert_eq!(
         repository.commit_decision(short.clone()).await.unwrap(),
@@ -729,7 +729,7 @@ async fn verify_audit_lifetime(
         event_type: "authorization_decision_committed".to_owned(),
         event_category: "authorization".to_owned(),
         payload: json!({}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     };
     assert!(audit.append(reserved.clone()).await.is_err());
     let ordinary = SecurityAuditEvent {
@@ -1101,7 +1101,8 @@ async fn authorization_decision_waits_for_implicit_commit_ack() {
 #[derive(QueryableByName)]
 struct AuditClockRow {
     #[diesel(sql_type = sql_types::Timestamptz)]
-    timestamp: chrono::DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    timestamp: jiff::Timestamp,
 }
 
 #[derive(Debug, Eq, PartialEq, QueryableByName)]
@@ -1144,7 +1145,7 @@ async fn retained_decision_contents(
 async fn wait_for_audit_ack_barrier(
     connection: &mut AsyncPgConnection,
     application: &str,
-) -> chrono::DateTime<Utc> {
+) -> jiff::Timestamp {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             connection
@@ -1211,7 +1212,7 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
             event_type: "decision_ack_clock_test".to_owned(),
             event_category: "authorization".to_owned(),
             payload: json!({"schema_version": "nazo.audit.v1"}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         };
         audit.append(ordinary.clone()).await.unwrap();
         let batch = match audit

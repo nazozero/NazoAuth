@@ -42,7 +42,7 @@ fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
         dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
         mtls_x5t_s256: None,
 
-        expires_at: Utc::now() + Duration::minutes(5),
+        expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     }
 }
 
@@ -58,7 +58,7 @@ fn fixture_mtls_thumbprint(label: &str) -> String {
 }
 
 fn parseable_invalid_client_assertion(client_id: &str) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
     let payload = URL_SAFE_NO_PAD.encode(
         json!({
@@ -213,7 +213,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
         serde_json::to_string(&SessionPayload {
             authorization_epoch: 0,
             user_id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: jiff::Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{session_id}")),
@@ -454,7 +454,7 @@ async fn token_endpoint_ignores_non_pending_code_state_during_missing_client_hol
         &state,
         &code,
         &AuthorizationCodeState::Failed {
-            failed_at: Utc::now(),
+            failed_at: jiff::Timestamp::now(),
             error: "invalid_grant".to_owned(),
         },
     )
@@ -825,7 +825,7 @@ async fn token_endpoint_private_key_jwt_without_kid_obeys_jwks_uri() {
     let body = |key: &ClientSigningFixture, kid: Option<&str>| {
         let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
         header.kid = kid.map(str::to_owned);
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let assertion = key.encode_jwt(
             &header,
             &json!({
@@ -1151,7 +1151,7 @@ fn non_dpop_or_non_pending_authorization_code_is_not_holder_bound() {
     })
     .expect("pending code should serialize");
     let failed = serde_json::to_string(&AuthorizationCodeState::Failed {
-        failed_at: Utc::now(),
+        failed_at: jiff::Timestamp::now(),
         error: "invalid_grant".to_owned(),
     })
     .expect("failed code should serialize");

@@ -1,13 +1,13 @@
 //! Controller slot registry lifecycle (D01/D02): admission, rotation,
 //! revocation, and the per-deployment advisory lock that serializes them.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::QueryableByName;
 use diesel::result::Error as QueryError;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Binary, Nullable, SmallInt, Timestamptz, Varchar};
 use diesel::{ExpressionMethods as _, OptionalExtension, QueryDsl as _};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
+use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 
 use nazo_persistence::control_plane as contract;
@@ -102,17 +102,22 @@ struct SlotRow {
     #[diesel(sql_type = SmallInt)]
     slot_index: i16,
     #[diesel(sql_type = Timestamptz)]
-    issued_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    issued_at: Timestamp,
     #[diesel(sql_type = Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
     #[diesel(sql_type = Varchar)]
     status: String,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    revoked_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    revoked_at: Option<Timestamp>,
     #[diesel(sql_type = Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
     #[diesel(sql_type = Timestamptz)]
-    updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    updated_at: Timestamp,
 }
 
 impl TryFrom<SlotRow> for StoredControllerSlot {
@@ -146,7 +151,8 @@ struct AdmittedRow {
     #[diesel(sql_type = Binary)]
     public_key: Vec<u8>,
     #[diesel(sql_type = Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
 }
 
 impl From<AdmittedRow> for AdmittedController {
@@ -242,7 +248,7 @@ fn lowest_free_slot_index(active: &[StoredControllerSlot]) -> Option<i16> {
 pub(crate) async fn insert_slot_on_connection(
     connection: &mut AsyncPgConnection,
     slot: &NewControllerSlot,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
     let active = active_slots_on_connection(connection, &slot.deployment_id).await?;
     let Some(slot_index) = lowest_free_slot_index(&active) else {
@@ -265,8 +271,10 @@ pub(crate) async fn insert_slot_on_connection(
     .bind::<Varchar, _>(&slot.kid)
     .bind::<Binary, _>(&slot.public_key[..])
     .bind::<SmallInt, _>(slot_index)
-    .bind::<Timestamptz, _>(now)
-    .bind::<Timestamptz, _>(now + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS))
+    .bind::<Timestamptz, _>((now).to_diesel())
+    .bind::<Timestamptz, _>(
+        (now + SignedDuration::from_secs(CONTROLLER_KEY_TTL_SECONDS)).to_diesel(),
+    )
     .load::<SlotRow>(connection)
     .await
     .map_err(map_slot_conflict)?;
@@ -316,7 +324,7 @@ fn map_slot_conflict(error: QueryError) -> ControllerRegistryError {
 pub(super) async fn rotate_slot_on_connection(
     connection: &mut AsyncPgConnection,
     rotation: &RotateControllerKey,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
     let rows = sql_query(format!(
         "UPDATE controller_registry_slots
@@ -332,8 +340,10 @@ pub(super) async fn rotate_slot_on_connection(
     .bind::<Varchar, _>(&rotation.label)
     .bind::<Varchar, _>(&rotation.kid)
     .bind::<Binary, _>(&rotation.public_key[..])
-    .bind::<Timestamptz, _>(now)
-    .bind::<Timestamptz, _>(now + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS))
+    .bind::<Timestamptz, _>((now).to_diesel())
+    .bind::<Timestamptz, _>(
+        (now + SignedDuration::from_secs(CONTROLLER_KEY_TTL_SECONDS)).to_diesel(),
+    )
     .load::<SlotRow>(connection)
     .await
     .map_err(map_slot_conflict)?;
@@ -350,7 +360,7 @@ pub(super) async fn revoke_slot_on_connection(
     connection: &mut AsyncPgConnection,
     deployment_id: &str,
     controller_id: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
     let rows = sql_query(format!(
         "UPDATE controller_registry_slots
@@ -361,7 +371,7 @@ pub(super) async fn revoke_slot_on_connection(
     ))
     .bind::<Varchar, _>(deployment_id)
     .bind::<Varchar, _>(controller_id)
-    .bind::<Timestamptz, _>(now)
+    .bind::<Timestamptz, _>((now).to_diesel())
     .load::<SlotRow>(connection)
     .await?;
     written_slot_or_rejection(connection, rows, deployment_id, controller_id).await
@@ -374,7 +384,7 @@ impl ControllerRegistryRepository {
         controller_id: String,
         previous_kid: String,
         public_key: [u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<String>, ControllerRegistryError> {
         validate_deployment_id(&deployment_id)?;
         validate_kid(&previous_kid)?;
@@ -401,7 +411,9 @@ impl ControllerRegistryRepository {
                 if slot.kid == kid {
                     return Ok(Some(kid));
                 }
-                if slot.kid != previous_kid || slot.expires_at > now + Duration::days(7) {
+                if slot.kid != previous_kid
+                    || slot.expires_at > now + SignedDuration::from_hours((7) * 24)
+                {
                     return Ok(None);
                 }
                 let rotation = RotateControllerKey {
@@ -465,7 +477,7 @@ impl ControllerRegistryRepository {
     pub async fn admitted_controllers(
         &self,
         deployment_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<AdmittedController>, ControllerRegistryError> {
         validate_deployment_id(deployment_id)?;
         let mut connection = get_conn(&self.pool).await.map_err(transport)?;
@@ -476,7 +488,7 @@ impl ControllerRegistryRepository {
              ORDER BY slot_index",
         )
         .bind::<Varchar, _>(deployment_id)
-        .bind::<Timestamptz, _>(now)
+        .bind::<Timestamptz, _>((now).to_diesel())
         .load::<AdmittedRow>(&mut connection)
         .await
         .map_err(transport)?;
@@ -490,7 +502,7 @@ impl ControllerRegistryRepository {
         &self,
         deployment_id: &str,
         kid: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<AdmittedController>, ControllerRegistryError> {
         validate_deployment_id(deployment_id)?;
         validate_kid(kid)?;
@@ -503,7 +515,7 @@ impl ControllerRegistryRepository {
         )
         .bind::<Varchar, _>(deployment_id)
         .bind::<Varchar, _>(kid)
-        .bind::<Timestamptz, _>(now)
+        .bind::<Timestamptz, _>((now).to_diesel())
         .get_result::<AdmittedRow>(&mut connection)
         .await
         .optional()
@@ -538,3 +550,5 @@ pub(super) fn contract_registry_error(
 #[cfg(test)]
 #[path = "../../../tests/unit/repositories/controller_registry/slots.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

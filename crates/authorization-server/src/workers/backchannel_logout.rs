@@ -1,7 +1,7 @@
 //! One batch of back-channel logout deliveries and their retry policy.
 use anyhow::Context as _;
-use chrono::{DateTime, Duration, Utc};
 use futures_util::{StreamExt as _, stream};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{BackchannelLogoutDelivery, MAX_CIBA_LOGOUT_URI_BYTES};
 use nazo_persistence::BackchannelLogoutDeliveryStore;
 use std::sync::Arc;
@@ -65,7 +65,7 @@ impl BackchannelLogoutWorker {
                     .context("failed to complete back-channel logout delivery")
             }
             outcome => {
-                let now = Utc::now();
+                let now = Timestamp::now();
                 let (next_attempt_at, delivery_error) =
                     delivery_failure_state(outcome, delivery.attempts, now, delivery.expires_at);
                 let last_error = truncate_error(delivery_error.to_string());
@@ -89,9 +89,9 @@ impl BackchannelLogoutWorker {
 fn delivery_failure_state(
     outcome: anyhow::Result<http::StatusCode>,
     attempts: i32,
-    now: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-) -> (Option<DateTime<Utc>>, anyhow::Error) {
+    now: Timestamp,
+    expires_at: Timestamp,
+) -> (Option<Timestamp>, anyhow::Error) {
     match outcome {
         Ok(status) => match classify_backchannel_status(status.as_u16()) {
             BackchannelResponseAction::TerminalFailure => (
@@ -145,18 +145,14 @@ fn classify_backchannel_status(status: u16) -> BackchannelResponseAction {
     }
 }
 
-fn next_retry_at(
-    attempt_index: i32,
-    now: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-) -> Option<DateTime<Utc>> {
+fn next_retry_at(attempt_index: i32, now: Timestamp, expires_at: Timestamp) -> Option<Timestamp> {
     let delay_seconds = match attempt_index {
         0 => 5,
         1 => 15,
         2 => 45,
         _ => return None,
     };
-    let next_attempt_at = now + Duration::seconds(delay_seconds);
+    let next_attempt_at = now + SignedDuration::from_secs(delay_seconds);
     (next_attempt_at < expires_at).then_some(next_attempt_at)
 }
 

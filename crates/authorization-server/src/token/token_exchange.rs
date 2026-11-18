@@ -25,7 +25,7 @@ use http::StatusCode;
 use crate::contracts::request_facts::DpopErrorContext;
 use crate::domain::oauth::{RefreshTokenPolicy, TokenIssue};
 use crate::domain::rows::ClientRow;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::DpopError;
 
 use nazo_auth::{
@@ -393,7 +393,7 @@ pub async fn token_exchange(
         .await;
     }
     let request = token_exchange_request(form);
-    let policy = token_exchange_policy(issuance, client, Utc::now().timestamp());
+    let policy = token_exchange_policy(issuance, client, Timestamp::now().as_second());
     if let Err(error) = validate_token_exchange_grant_prerequisites(&request, policy) {
         return Err(token_exchange_error_response(error));
     }

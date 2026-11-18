@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use chrono::Utc;
 use diesel::{QueryableByName, sql_query, sql_types::Uuid as SqlUuid};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{
     SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter,
@@ -103,7 +103,7 @@ async fn audit_ledger_append_is_chained_and_pending() {
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({"subject_hash": "first"}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         })
         .await
         .expect("first audit event should append");
@@ -113,7 +113,7 @@ async fn audit_ledger_append_is_chained_and_pending() {
             event_type: "token_revoked".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({"subject_hash": "second"}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         })
         .await
         .expect("second audit event should append");
@@ -202,7 +202,7 @@ async fn audit_ledger_append_is_chained_and_pending() {
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({"subject_hash": "third"}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         })
         .await
         .expect("third audit event should append");
@@ -223,7 +223,8 @@ struct AnchorHeartbeatRow {
     #[diesel(sql_type = diesel::sql_types::Text)]
     row_version: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    observed_at: Option<chrono::DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    observed_at: Option<jiff::Timestamp>,
 }
 
 async fn anchor_heartbeat(connection: &mut AsyncPgConnection) -> AnchorHeartbeatRow {
@@ -263,7 +264,7 @@ async fn each_successful_observation_refreshes_time_without_acknowledging_backlo
                 event_type: "token_issued".to_owned(),
                 event_category: "token_lifecycle".to_owned(),
                 payload: json!({"subject_hash": subject}),
-                occurred_at: Utc::now(),
+                occurred_at: Timestamp::now(),
             })
             .await
             .expect("heartbeat fixture event should append");
@@ -354,21 +355,21 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         },
         SecurityAuditEvent {
             event_id: uuid::Uuid::now_v7(),
             event_type: "Token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         },
         SecurityAuditEvent {
             event_id: uuid::Uuid::now_v7(),
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!("not-an-object"),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         },
     ] {
         assert!(matches!(
@@ -383,7 +384,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
                 event_type: "a".repeat(65),
                 event_category: "token_lifecycle".to_owned(),
                 payload: json!({}),
-                occurred_at: Utc::now(),
+                occurred_at: Timestamp::now(),
             })
             .await,
         Err(RepositoryError::Unexpected(_))
@@ -395,7 +396,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
                 event_type: "token_issued".to_owned(),
                 event_category: "token_lifecycle".to_owned(),
                 payload: json!({"body": "x".repeat(MAX_SECURITY_AUDIT_PAYLOAD_BYTES)}),
-                occurred_at: Utc::now(),
+                occurred_at: Timestamp::now(),
             })
             .await,
         Err(RepositoryError::Unexpected(_))
@@ -422,7 +423,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload: json!({"subject_hash": "idempotent"}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     };
     let event_id = event.event_id;
     repository
@@ -465,7 +466,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
     repository
         .fail_batch(
             first.generation,
-            Utc::now() - chrono::Duration::seconds(1),
+            Timestamp::now() - jiff::SignedDuration::from_secs(1),
             "temporary exporter failure",
             false,
         )
@@ -502,7 +503,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
         repository
             .fail_batch(
                 second.generation,
-                Utc::now(),
+                Timestamp::now(),
                 "late exporter failure",
                 false,
             )
@@ -553,7 +554,7 @@ async fn audit_ledger_append_batch_commits_atomically() {
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload: json!({"subject_hash": "single"}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     };
     repository
         .append_batch(std::slice::from_ref(&single))
@@ -569,7 +570,7 @@ async fn audit_ledger_append_batch_commits_atomically() {
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload: json!({"subject_hash": format!("batch-{index}")}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     });
     repository
         .append_batch(&batch)
@@ -613,14 +614,14 @@ async fn audit_ledger_append_batch_commits_atomically() {
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload: json!({"subject_hash": format!("failing-{index}")}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     });
     failing.push(SecurityAuditEvent {
         event_id: collided_id,
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload: json!({"subject_hash": "different-payload"}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     });
     let failing_ids: Vec<Uuid> = failing.iter().take(8).map(|event| event.event_id).collect();
     assert!(
@@ -1164,7 +1165,7 @@ async fn audit_claim_survives_dead_prefix_and_autovacuum_recovers() {
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({"fixture": "dead_prefix", "round": round, "i": i}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         });
         repository
             .append_batch(&events)
@@ -1192,7 +1193,7 @@ async fn audit_claim_survives_dead_prefix_and_autovacuum_recovers() {
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload: json!({"fixture": "dead_prefix_live", "i": i}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     });
     repository
         .append_batch(&live)
@@ -1297,7 +1298,7 @@ async fn new_claim_budget_counts_escaped_json_wire_bytes_and_keeps_legal_singlet
                 event_type: "wire_budget_fixture".into(),
                 event_category: "security".into(),
                 payload: json!({"text":"\\".repeat(length)}),
-                occurred_at: Utc::now(),
+                occurred_at: Timestamp::now(),
             })
             .await
             .unwrap();
@@ -1344,7 +1345,8 @@ struct BudgetEventRow {
     #[diesel(sql_type = diesel::sql_types::Text)]
     payload_canonical: String,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    occurred_at: chrono::DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    occurred_at: jiff::Timestamp,
 }
 #[derive(QueryableByName)]
 struct BudgetChainCount {
@@ -1401,8 +1403,7 @@ async fn new_claim_budget_exact_multi_event_fit_and_one_byte_overflow_have_no_ch
                     event_type: "wire_budget_fixture".into(),
                     event_category: "security".into(),
                     payload: json!({"text": "\\".repeat(if index < 2 {27000} else {1000})}),
-                    occurred_at: chrono::DateTime::from_timestamp(1700000000 + index as i64, 0)
-                        .unwrap(),
+                    occurred_at: jiff::Timestamp::new(1700000000 + index as i64, 0).unwrap(),
                 })
                 .await
                 .unwrap();
@@ -1825,8 +1826,7 @@ async fn fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes() {
                 event_type: "fresh_claim_fixture".into(),
                 event_category: "security".into(),
                 payload: json!({}),
-                occurred_at: chrono::DateTime::from_timestamp(1700000000 + offset as i64, 0)
-                    .unwrap(),
+                occurred_at: jiff::Timestamp::new(1700000000 + offset as i64, 0).unwrap(),
             })
             .await
             .unwrap();
@@ -1908,7 +1908,7 @@ async fn fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes() {
     repository
         .fail_batch(
             first.generation,
-            Utc::now() - chrono::Duration::seconds(1),
+            Timestamp::now() - jiff::SignedDuration::from_secs(1),
             "reclaim fixture",
             false,
         )
@@ -1934,7 +1934,7 @@ async fn fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes() {
     assert!(repository.ack_batch(batch_ack(&first)).await.is_err());
     assert!(
         repository
-            .fail_batch(first.generation, Utc::now(), "stale", false)
+            .fail_batch(first.generation, Timestamp::now(), "stale", false)
             .await
             .is_err()
     );
@@ -1967,7 +1967,7 @@ async fn audit_health_distinguishes_absent_retryable_and_blocked_batch() {
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({"fixture":"batch-health-projection"}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         })
         .await
         .unwrap();
@@ -1985,7 +1985,7 @@ async fn audit_health_distinguishes_absent_retryable_and_blocked_batch() {
     repository
         .fail_batch(
             batch.generation,
-            Utc::now(),
+            Timestamp::now(),
             "permanent-test-rejection",
             true,
         )

@@ -5,7 +5,6 @@ pub(crate) mod email;
 mod email_templates;
 pub(crate) mod external_signer;
 pub(crate) mod jwks_cache;
-pub(crate) mod mdoc_signer;
 pub(crate) mod remote_client_documents;
 pub(crate) mod scim_events;
 pub(crate) mod sector_identifier;

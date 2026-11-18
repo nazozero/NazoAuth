@@ -11,13 +11,13 @@ use actix_web::{
     http::{StatusCode, header},
     web::{Bytes, Data},
 };
-use chrono::{Duration, Utc};
 use fred::{
     interfaces::ClientLike,
     prelude::{
         Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
     },
 };
+use jiff::Timestamp;
 use nazo_identity::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionId};
 use nazo_oauth_server::{
     authorization::{AuthorizationOutcome, AuthorizationRequestFacts},
@@ -162,7 +162,7 @@ async fn reauth_nonce_is_single_use_in_live_authorization_state() {
     let dependencies =
         crate::http::authorization::test_support::TestAuthorizationDependencies::new(&state);
     let nonce = format!("live-reauth-{}", Uuid::now_v7());
-    let started_at = Utc::now().timestamp();
+    let started_at = Timestamp::now().as_second();
     dependencies
         .fixture
         .service

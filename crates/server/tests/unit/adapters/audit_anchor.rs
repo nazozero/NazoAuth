@@ -12,8 +12,8 @@ use super::{
         AuditAnchorRepository, IterationOutcome, batch_lag_seconds, retry_delay, run_iteration,
     },
 };
-use chrono::{Duration as ChronoDuration, Utc};
 use ed25519_dalek::{Signer as _, SigningKey};
+use jiff::{SignedDuration, Timestamp};
 use nazo_crypto::ed25519::VerifyingKey;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_persistence::{
@@ -65,10 +65,10 @@ fn health_snapshot() -> SecurityAuditAnchorHealth {
         oldest_pending_occurred_at: None,
         last_exported_sequence: Some(7),
         last_exported_hash: Some(vec![2; 32]),
-        last_exported_occurred_at: Some(Utc::now() - ChronoDuration::seconds(2)),
-        last_exported_at: Some(Utc::now() - ChronoDuration::seconds(1)),
+        last_exported_occurred_at: Some(Timestamp::now() - SignedDuration::from_secs(2)),
+        last_exported_at: Some(Timestamp::now() - SignedDuration::from_secs(1)),
         deployment_id: Some("deployment-1".to_owned()),
-        observed_at: Some(Utc::now()),
+        observed_at: Some(Timestamp::now()),
         batch_blocked: None,
     }
 }
@@ -80,7 +80,7 @@ fn delivery(sequence: i64) -> SecurityAuditPendingDelivery {
         event_type: "admin_user_updated".to_owned(),
         event_category: "administration".to_owned(),
         payload_canonical: "{\"user_id\":\"user-1\"}".to_owned(),
-        occurred_at: Utc::now() - ChronoDuration::seconds(4),
+        occurred_at: Timestamp::now() - SignedDuration::from_secs(4),
         previous_hash: vec![sequence as u8; 32],
         event_hash: vec![(sequence + 1) as u8; 32],
     }
@@ -139,7 +139,7 @@ fn signed_receipt(
         event_count,
         last_hash,
         batch_digest,
-        received_at: Utc::now(),
+        received_at: Timestamp::now(),
         reject_reason: reject_reason.map(str::to_owned),
         permanent,
         signature: String::new(),
@@ -343,7 +343,7 @@ impl AuditAnchorRepository for ScriptedRepository {
     fn fail_batch<'a>(
         &'a self,
         generation: i64,
-        _available_at: chrono::DateTime<Utc>,
+        _available_at: jiff::Timestamp,
         last_error: &'a str,
         blocked: bool,
     ) -> RepositoryFuture<'a, ()> {
@@ -1512,13 +1512,13 @@ fn genesis_body_is_stable_and_has_explicit_kind() {
 
 #[test]
 fn preflight_accepts_shared_health_and_rejects_stale_or_unanchored_state() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let config = required_config();
     let current = health_snapshot();
     assert!(validate_health(&config, &current, now).is_ok());
 
     let mut stale = current.clone();
-    stale.observed_at = Some(now - ChronoDuration::seconds(121));
+    stale.observed_at = Some(now - SignedDuration::from_secs(121));
     assert!(validate_health(&config, &stale, now).is_err());
 
     let mut wrong_deployment = current.clone();
@@ -1529,14 +1529,14 @@ fn preflight_accepts_shared_health_and_rejects_stale_or_unanchored_state() {
     pending.pending_exists = true;
     assert!(validate_health(&config, &pending, now).is_err());
 
-    pending.oldest_pending_occurred_at = Some(now - ChronoDuration::seconds(300));
+    pending.oldest_pending_occurred_at = Some(now - SignedDuration::from_secs(300));
     assert!(validate_health(&config, &pending, now).is_ok());
-    pending.oldest_pending_occurred_at = Some(now - ChronoDuration::seconds(301));
+    pending.oldest_pending_occurred_at = Some(now - SignedDuration::from_secs(301));
     assert!(validate_health(&config, &pending, now).is_err());
 
     let mut recovered = current.clone();
-    recovered.last_exported_occurred_at = Some(now - ChronoDuration::hours(1));
-    recovered.last_exported_at = Some(now - ChronoDuration::minutes(10));
+    recovered.last_exported_occurred_at = Some(now - SignedDuration::from_hours(1));
+    recovered.last_exported_at = Some(now - SignedDuration::from_mins(10));
     assert!(
         validate_health(&config, &recovered, now).is_ok(),
         "historical delivery lag must not prevent recovery after the backlog is drained"
@@ -1583,12 +1583,12 @@ fn preflight_mode_controls_the_shared_database_gate() {
 
 #[test]
 fn health_time_helpers_reject_future_timestamps_and_bound_durations() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     assert_eq!(
-        age_seconds(now, now - ChronoDuration::seconds(4)).unwrap(),
+        age_seconds(now, now - SignedDuration::from_secs(4)).unwrap(),
         4
     );
-    assert!(age_seconds(now, now + ChronoDuration::seconds(1)).is_err());
+    assert!(age_seconds(now, now + SignedDuration::from_secs(1)).is_err());
     assert_eq!(duration_seconds(Duration::from_secs(17)), 17);
     assert_eq!(duration_seconds(Duration::from_secs(u64::MAX)), i64::MAX);
 }
@@ -1785,9 +1785,9 @@ fn retry_delay_and_batch_lag_are_monotonic_and_bounded() {
     assert_eq!(retry_delay(i32::MAX), Duration::from_secs(300));
 
     let mut recent = delivery(7);
-    recent.occurred_at = Utc::now() - ChronoDuration::seconds(3);
+    recent.occurred_at = Timestamp::now() - SignedDuration::from_secs(3);
     assert!(batch_lag_seconds(&batch(vec![recent.clone()])) >= 2);
-    recent.occurred_at = Utc::now() + ChronoDuration::seconds(30);
+    recent.occurred_at = Timestamp::now() + SignedDuration::from_secs(30);
     assert_eq!(batch_lag_seconds(&batch(vec![recent])), 0);
 }
 
@@ -1836,7 +1836,7 @@ async fn repository_adapter_forwards_connection_failures_without_panicking() {
         <AuditLedgerRepository as AuditAnchorRepository>::fail_batch(
             &repository,
             1,
-            Utc::now(),
+            Timestamp::now(),
             "typed-test-error",
             false,
         )
@@ -2242,8 +2242,12 @@ async fn iteration_observes_missing_stale_future_and_foreign_bindings_before_eve
             let mut health = health_snapshot();
             match age {
                 "missing" => health.observed_at = None,
-                "stale" => health.observed_at = Some(Utc::now() - ChronoDuration::seconds(5)),
-                "future" => health.observed_at = Some(Utc::now() + ChronoDuration::seconds(5)),
+                "stale" => {
+                    health.observed_at = Some(Timestamp::now() - SignedDuration::from_secs(5))
+                }
+                "future" => {
+                    health.observed_at = Some(Timestamp::now() + SignedDuration::from_secs(5))
+                }
                 "foreign" => health.deployment_id = Some("other".into()),
                 _ => unreachable!(),
             }
@@ -2292,5 +2296,49 @@ fn local_checkpoint_identity_requires_complete_committed_timestamps() {
             _ => partial.last_exported_at = None,
         }
         assert!(AnchorCheckpoint::from_snapshot(&partial).is_none());
+    }
+}
+
+#[test]
+fn legacy_receipt_signing_bytes_preserve_fractional_precision() {
+    let batch = batch(vec![delivery(1)]);
+    let expectation = batch_expectation("deployment-1", &batch);
+    for (input, canonical) in [
+        ("2026-11-17T00:00:00Z", "2026-11-17T00:00:00Z"),
+        ("2026-11-17T00:00:00.1Z", "2026-11-17T00:00:00.100Z"),
+        ("2026-11-17T00:00:00.1234Z", "2026-11-17T00:00:00.123400Z"),
+        (
+            "2026-11-17T00:00:00.1234567Z",
+            "2026-11-17T00:00:00.123456700Z",
+        ),
+        (
+            "1969-12-31T23:59:59.999999999Z",
+            "1969-12-31T23:59:59.999999999Z",
+        ),
+        ("2026-11-17T01:00:00.12+01:00", "2026-11-17T00:00:00.120Z"),
+    ] {
+        let frozen = format!(
+            r#"{{"schema_version":"nazo.audit.anchor.receipt.v1","checkpoint_kind":"batch","status":"accepted","deployment_id":"deployment-1","first_sequence":1,"last_sequence":1,"event_count":1,"last_hash":"{}","batch_digest":"{}","received_at":"{}","reject_reason":null,"permanent":false}}"#,
+            expectation.last_hash, expectation.batch_digest, canonical,
+        );
+        // Sign the frozen pre-migration bytes, not receipt_signing_body's output.
+        let signature = test_signing_key().sign(frozen.as_bytes());
+        let mut wire: Value = serde_json::from_str(&frozen).unwrap();
+        wire["received_at"] = json!(input);
+        wire["signature"] = json!(encode_hash(&signature.to_bytes()));
+        let receipt: AnchorReceipt = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(receipt_signing_body(&receipt).unwrap(), frozen.as_bytes());
+        assert_eq!(
+            serde_json::to_value(&receipt).unwrap()["received_at"],
+            canonical
+        );
+        assert_eq!(
+            verify_receipt(
+                &serde_json::to_vec(&wire).unwrap(),
+                &test_verify_key(),
+                &expectation
+            ),
+            Ok(ReceiptVerdict::Accepted { duplicate: false }),
+        );
     }
 }

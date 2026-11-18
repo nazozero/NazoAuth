@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::app::services::{ServerAuthorizationService, ServerTokenService};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_auth::*;
 use serde_json::Value;
 use std::sync::Arc;
@@ -75,7 +75,7 @@ impl TokenRepositoryPort for HolderFixture {
         _tenant_id: Uuid,
         _raw_token: &'a str,
         _client_id: Uuid,
-        _retry_started_at: chrono::DateTime<chrono::Utc>,
+        _retry_started_at: jiff::Timestamp,
         _prepare_oidc_subject: bool,
     ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         panic!("unexpected refresh snapshot lookup")
@@ -104,7 +104,7 @@ impl TokenRepositoryPort for HolderFixture {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &'a str,
-        access_token_expires_at: Option<DateTime<Utc>>,
+        access_token_expires_at: Option<Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()> {
         panic!("unexpected TokenRepositoryPort::revoke_issued_tokens call")
@@ -150,7 +150,7 @@ impl TokenStateStorePort for HolderFixture {
     fn begin_authorization_code<'a>(
         &'a self,
         code_hash: &'a str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> TokenFuture<'a, AuthorizationCodeBeginResult> {
         panic!("unexpected TokenStateStorePort::begin_authorization_code call")
     }

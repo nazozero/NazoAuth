@@ -13,7 +13,7 @@ use web_time::Instant;
 use crate::ExternalKeySigner;
 use arc_swap::ArcSwap;
 use base64::{Engine, encoded_len, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -151,7 +151,7 @@ pub(crate) enum ActiveSigningKey {
 pub(crate) struct StoredVerificationKey {
     pub(crate) public_jwk: Value,
     pub(crate) managed: ManagedKey,
-    pub(crate) retire_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) retire_at: Option<jiff::Timestamp>,
 }
 
 #[derive(Clone)]
@@ -186,7 +186,7 @@ pub struct VerificationKey {
     pub public_jwk: Value,
     pub(crate) prepared: PreparedVerification,
     pub(crate) signing_purposes: BTreeSet<SigningPurpose>,
-    pub(crate) retire_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) retire_at: Option<jiff::Timestamp>,
 }
 
 impl VerificationKey {
@@ -197,10 +197,10 @@ impl VerificationKey {
 
     #[must_use]
     pub fn can_verify(&self) -> bool {
-        self.can_verify_at(Utc::now())
+        self.can_verify_at(Timestamp::now())
     }
 
-    pub(crate) fn can_verify_at(&self, now: chrono::DateTime<Utc>) -> bool {
+    pub(crate) fn can_verify_at(&self, now: jiff::Timestamp) -> bool {
         self.retire_at.is_none_or(|retire_at| retire_at > now)
     }
 }
@@ -259,12 +259,12 @@ impl KeySnapshot {
 
     #[must_use]
     pub fn jwks(&self) -> Value {
-        self.jwks_at(Utc::now())
+        self.jwks_at(Timestamp::now())
     }
 
     /// Builds the public projection and its cache deadline from one captured time.
     #[must_use]
-    pub fn jwks_at(&self, now: chrono::DateTime<Utc>) -> Value {
+    pub fn jwks_at(&self, now: jiff::Timestamp) -> Value {
         crate::jwks::public_jwks(
             &self.verification_keys,
             &self.request_object_encryption_jwk,
@@ -274,10 +274,7 @@ impl KeySnapshot {
 
     /// Earliest future change to verification eligibility in this generation.
     #[must_use]
-    pub fn next_verification_retirement(
-        &self,
-        now: chrono::DateTime<Utc>,
-    ) -> Option<chrono::DateTime<Utc>> {
+    pub fn next_verification_retirement(&self, now: jiff::Timestamp) -> Option<jiff::Timestamp> {
         self.verification_keys
             .iter()
             .filter_map(|key| key.retire_at)
@@ -288,9 +285,9 @@ impl KeySnapshot {
 
 #[derive(Clone, Debug)]
 pub struct KeySettings {
-    pub rotation_interval: chrono::Duration,
-    pub prepublish_window: chrono::Duration,
-    pub verification_grace: chrono::Duration,
+    pub rotation_interval: jiff::SignedDuration,
+    pub prepublish_window: jiff::SignedDuration,
+    pub verification_grace: jiff::SignedDuration,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -359,6 +356,47 @@ pub struct Openid4vcPublicMaterial {
     pub revocation_snapshot: Option<nazo_digital_credentials::CertificateRevocationSnapshot>,
 }
 
+/// Decoded public certificates owned by one immutable key generation.
+/// Path selection, certificate validity and revocation remain request decisions.
+#[derive(Debug)]
+pub struct Openid4vcCertificates {
+    certificate_chain_der: Vec<Vec<u8>>,
+    trust_anchors_der: Vec<Vec<u8>>,
+}
+
+impl Openid4vcCertificates {
+    fn from_material(material: &Openid4vcPublicMaterial) -> anyhow::Result<Self> {
+        let certificate_chain_der = decode_openid4vc_certificate_sequence(
+            &material.certificate_chain_pem,
+            "certificate chain",
+        )?;
+        let mut trust_anchors_der = Vec::new();
+        for der in
+            decode_openid4vc_certificate_sequence(&material.trust_anchors_pem, "trust anchors")?
+        {
+            let (_, certificate) = x509_parser::parse_x509_certificate(&der)
+                .expect("certificate sequence decoder checked complete X.509 DER");
+            if certificate.is_ca() && !trust_anchors_der.contains(&der) {
+                trust_anchors_der.push(der);
+            }
+        }
+        Ok(Self {
+            certificate_chain_der,
+            trust_anchors_der,
+        })
+    }
+
+    #[must_use]
+    pub fn certificate_chain_der(&self) -> &[Vec<u8>] {
+        &self.certificate_chain_der
+    }
+
+    #[must_use]
+    pub fn trust_anchors_der(&self) -> &[Vec<u8>] {
+        &self.trust_anchors_der
+    }
+}
+
 /// Atomically managed OpenID4VC material for one tenant.
 ///
 /// `iaca_private_materials` is encrypted with the rest of the database-backed
@@ -389,11 +427,17 @@ impl From<Openid4vcPublicMaterial> for Openid4vcMaterial {
     }
 }
 
-/// One issuer's private certificate bundle and fresh revocation facts for CRL issuance.
-/// Unrelated JWT and request-object private keys are not prepared by this read.
+/// One issuer's certificate bundle, revocation facts and persisted CRL publication.
+/// The publication number/time are allocated atomically with those facts. Repeated
+/// reads may return the same publication; they never allocate an in-memory counter.
+/// Unrelated JWT and request-object private keys are not prepared by this operation.
 pub struct MdocCrlMaterial {
     pub issuer_private_material: String,
+    pub certificate_chain_der: Vec<Vec<u8>>,
     pub revocation_snapshot: nazo_digital_credentials::CertificateRevocationSnapshot,
+    pub crl_number: u128,
+    pub this_update: jiff::Timestamp,
+    pub next_update: jiff::Timestamp,
 }
 
 impl fmt::Debug for MdocCrlMaterial {
@@ -402,6 +446,9 @@ impl fmt::Debug for MdocCrlMaterial {
             .debug_struct("MdocCrlMaterial")
             .field("issuer_private_material", &"<redacted>")
             .field("revocation_snapshot", &self.revocation_snapshot)
+            .field("crl_number", &self.crl_number)
+            .field("this_update", &self.this_update)
+            .field("next_update", &self.next_update)
             .finish()
     }
 }
@@ -417,6 +464,7 @@ pub(crate) struct KeyGeneration {
     pub(crate) loaded: LoadedKeyset,
     pub(crate) snapshot: Arc<KeySnapshot>,
     openid4vc_public: Option<Arc<Openid4vcPublicMaterial>>,
+    openid4vc_certificates: Option<Arc<Openid4vcCertificates>>,
     openid4vc_revocation:
         Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>,
     openid4vc_signing_revoked: bool,
@@ -498,6 +546,14 @@ impl Openid4vcSigningLease {
             .as_ref()
             .expect("OpenID4VC signing lease always has managed material")
             .public
+    }
+
+    #[must_use]
+    pub fn certificates(&self) -> &Openid4vcCertificates {
+        self.generation
+            .openid4vc_certificates
+            .as_deref()
+            .expect("OpenID4VC signing lease always has managed certificates")
     }
 
     pub async fn encode_jwt<T: Serialize>(
@@ -617,9 +673,22 @@ pub(crate) fn parse_openid4vc_certificate_chain(
     pem_text: &str,
     description: &str,
 ) -> anyhow::Result<Vec<Vec<u8>>> {
+    let certificates = decode_openid4vc_certificate_sequence(pem_text, description)?;
+    if certificates.is_empty() {
+        anyhow::bail!("OpenID4VC {description} must contain a certificate");
+    }
+    Ok(certificates)
+}
+
+// Decoding preserves an empty sequence. The persisted-material validator and
+// certificate consumers enforce their existing nonempty-chain requirements.
+fn decode_openid4vc_certificate_sequence(
+    pem_text: &str,
+    description: &str,
+) -> anyhow::Result<Vec<Vec<u8>>> {
     let blocks = pem::parse_many(pem_text.as_bytes())
         .map_err(|error| anyhow::anyhow!("failed to parse {description}: {error}"))?;
-    if blocks.is_empty() {
+    if blocks.is_empty() && !pem_text.trim().is_empty() {
         anyhow::bail!("OpenID4VC {description} must contain a certificate");
     }
     blocks
@@ -768,9 +837,11 @@ impl KeyManager {
         crate::database::openid4vc_state(&self.inner.database).await
     }
 
-    /// Read one fresh authoritative generation for the selected CRL issuer.
+    /// Read one authoritative generation and prepare its persisted CRL publication.
     /// Sealing, tenant/revision/public binding and revocation structure remain
-    /// validated; the caller owns selected certificate/profile validation.
+    /// validated. A first publication, changed facts or expiration performs a CAS;
+    /// unchanged current publications are read-only. The caller owns the selected
+    /// certificate/profile validation and signs with these exact facts and times.
     pub async fn database_mdoc_crl_material(
         &self,
         issuer_id: &str,
@@ -808,6 +879,13 @@ impl KeyManager {
     #[must_use]
     pub fn openid4vc_public_material(&self) -> Option<Arc<Openid4vcPublicMaterial>> {
         self.inner.generation.load().openid4vc_public.clone()
+    }
+
+    /// Share decoded certificates from one published generation. An outstanding
+    /// view remains valid across refresh and rotation without copying DER.
+    #[must_use]
+    pub fn openid4vc_certificates(&self) -> Option<Arc<Openid4vcCertificates>> {
+        self.inner.generation.load().openid4vc_certificates.clone()
     }
 
     /// Share the generation's structurally validated, indexed revocation view.
@@ -958,9 +1036,9 @@ impl KeyManager {
             inner: Arc::new(KeyManagerInner {
                 generation: ArcSwap::from_pointee(generation),
                 settings: KeySettings {
-                    rotation_interval: chrono::Duration::days(90),
-                    prepublish_window: chrono::Duration::days(1),
-                    verification_grace: chrono::Duration::minutes(10),
+                    rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+                    prepublish_window: jiff::SignedDuration::from_hours(24),
+                    verification_grace: jiff::SignedDuration::from_mins(10),
                 },
                 health: Arc::new(LifecycleHealth::new()),
                 database: crate::database::DatabaseKeysetBinding {
@@ -1331,10 +1409,10 @@ impl KeyGeneration {
             .and_then(|material| material.public.revocation_snapshot.as_mut())
         {
             // Only the observation window is local. Revocation facts remain unchanged.
-            let now = Utc::now();
+            let now = Timestamp::now();
             snapshot.this_update = now;
             snapshot.next_update = now
-                + chrono::Duration::seconds(
+                + jiff::SignedDuration::from_secs(
                     crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS,
                 );
         }
@@ -1358,6 +1436,11 @@ impl KeyGeneration {
             .openid4vc_material
             .as_ref()
             .map(|material| Arc::new(material.public.clone()));
+        let openid4vc_certificates = openid4vc_public
+            .as_deref()
+            .map(Openid4vcCertificates::from_material)
+            .transpose()?
+            .map(Arc::new);
         let openid4vc_revocation = openid4vc_public
             .as_ref()
             .and_then(|material| material.revocation_snapshot.as_ref())
@@ -1378,6 +1461,7 @@ impl KeyGeneration {
             loaded,
             snapshot,
             openid4vc_public,
+            openid4vc_certificates,
             openid4vc_revocation,
             openid4vc_signing_revoked,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),

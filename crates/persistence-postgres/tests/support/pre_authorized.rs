@@ -1,5 +1,5 @@
 //! Real-adapter fixtures: preparation and commit both use the production port.
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_openid4vci::{
     CredentialAccess, CredentialAuthorization, CredentialOfferGrants, CredentialStoreError,
     CredentialStorePort, PreAuthorizedCodeGrant, StoredCredentialOffer,
@@ -26,14 +26,20 @@ pub async fn prepared_offer(
                 authorization_server: None,
             }),
         ),
-        expires_at: access.expires_at + Duration::seconds(1),
+        expires_at: access.expires_at + SignedDuration::from_secs(1),
     };
     repository
         .insert_offer(&offer, None, Some(&hash), None)
         .await
         .unwrap();
     repository
-        .prepare_pre_authorized_offer(access.tenant_id, &hash, None, &access.client_id, Utc::now())
+        .prepare_pre_authorized_offer(
+            access.tenant_id,
+            &hash,
+            None,
+            &access.client_id,
+            Timestamp::now(),
+        )
         .await
         .unwrap()
         .unwrap()
@@ -53,7 +59,7 @@ pub trait PreAuthorizedFixture {
         hash: &str,
         tx: Option<&str>,
         client: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<CredentialAuthorization>, CredentialStoreError>;
 }
 
@@ -75,7 +81,7 @@ impl PreAuthorizedFixture for Openid4vciRepository {
         hash: &str,
         tx: Option<&str>,
         client: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<CredentialAuthorization>, CredentialStoreError> {
         let Some(prepared) = self
             .prepare_pre_authorized_offer(tenant, hash, tx, client, now)

@@ -74,7 +74,7 @@ pub(crate) async fn append_outcome(
         event_type: event_type.to_owned(),
         event_category: "administration".to_owned(),
         payload: fields,
-        occurred_at: chrono::Utc::now(),
+        occurred_at: jiff::Timestamp::now(),
     };
     crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
         connection, &event,
@@ -95,7 +95,7 @@ pub(super) async fn append_slot(
         audit,
         serde_json::json!({
             "deployment_id":slot.deployment_id,"controller_id":slot.controller_id,"kid":slot.kid,
-            "slot_index":slot.slot_index,"expires_at":slot.expires_at.to_rfc3339(),
+            "slot_index":slot.slot_index,"expires_at":slot.expires_at,
         }),
     )
     .await

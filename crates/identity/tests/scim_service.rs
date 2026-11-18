@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::ports::{
     NewScimUser, PasswordHashInput, RepositoryError, RepositoryFuture, ScimCredentialPort,
     ScimListQuery, ScimRepositoryPort, UserPage,
@@ -239,8 +239,8 @@ fn public_account(tenant: TenantContext, user_id: UserId) -> PublicAccount {
             mfa_enabled: false,
         },
         profile: UserProfile::default(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Timestamp::now(),
+        updated_at: Timestamp::now(),
     }
 }
 

@@ -11,7 +11,7 @@ fn authorization() -> AvatarUploadAuthorization {
         expected_avatar_url: None,
         expected_avatar_revision: 0,
         staging_object_id: Uuid::now_v7().to_string(),
-        expires_at: Utc::now() + chrono::Duration::minutes(1),
+        expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(1),
     }
 }
 
@@ -49,7 +49,7 @@ async fn malformed_upload_state_cannot_be_claimed_or_published() {
     command::set_ex(&connection, key.clone(), "not-json".to_owned(), 60)
         .await
         .unwrap();
-    let lease = Utc::now() + chrono::Duration::seconds(30);
+    let lease = Timestamp::now() + jiff::SignedDuration::from_secs(30);
     assert_eq!(
         store
             .claim(authorization.user_id, &authorization.upload_id, lease)
@@ -111,7 +111,7 @@ async fn upload_authorization_is_create_once_and_expiry_is_authoritative() {
         .expect("configured Valkey must be available");
     let store = AvatarUploadStateStore::new(&connection);
     let mut authorization = authorization();
-    authorization.expires_at = Utc::now() - chrono::Duration::seconds(1);
+    authorization.expires_at = Timestamp::now() - jiff::SignedDuration::from_secs(1);
     AvatarUploadStatePort::create(&store, &authorization, 60)
         .await
         .unwrap();
@@ -121,7 +121,11 @@ async fn upload_authorization_is_create_once_and_expiry_is_authoritative() {
     ));
     assert_eq!(
         store
-            .claim(authorization.user_id, &authorization.upload_id, Utc::now())
+            .claim(
+                authorization.user_id,
+                &authorization.upload_id,
+                Timestamp::now()
+            )
             .await
             .unwrap(),
         AvatarUploadClaim::Missing
@@ -179,7 +183,7 @@ async fn generation_is_the_only_owner_state_and_completion_discards_preparation(
         )
         .await
         .unwrap();
-    let lease = Utc::now() + chrono::Duration::seconds(30);
+    let lease = Timestamp::now() + jiff::SignedDuration::from_secs(30);
     let AvatarUploadClaim::Pending {
         ownership_token: first,
         ..
@@ -276,7 +280,7 @@ async fn generation_is_the_only_owner_state_and_completion_discards_preparation(
         serde_json::json!({
             "status": "completed",
             "user_id": authorization.user_id.as_uuid(),
-            "expires_at": authorization.expires_at.timestamp(),
+            "expires_at": authorization.expires_at.as_second(),
             "final_object_id": "final",
         })
     );

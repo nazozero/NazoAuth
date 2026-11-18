@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface, LuaInterface};
 use fred::prelude::{Builder, Config, Expiration};
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
     AuthorizationPortError, AuthorizationStateStorePort, CodePayload, ConsentPayload,
@@ -51,7 +51,7 @@ fn code_payload(code_id: &str) -> CodePayload {
         dpop_jkt: None,
         mtls_x5t_s256: None,
 
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     }
 }
 
@@ -84,7 +84,7 @@ fn consent_payload(request_id: &str, user_id: uuid::Uuid) -> ConsentPayload {
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
 
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     }
 }
 
@@ -94,8 +94,8 @@ fn par_payload() -> PushedAuthorizationRequest {
         params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     }
 }
 
@@ -449,8 +449,8 @@ async fn par_preserves_exact_hashed_key_json_ttl_and_conditional_cleanup() {
         params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     };
 
     assert_eq!(
@@ -498,7 +498,7 @@ async fn authorization_code_transition_preserves_approved_json() {
         .await
         .unwrap();
     let AuthorizationCodeBeginResult::Consuming(actual) = store
-        .begin_authorization_code(&code_hash, Utc::now())
+        .begin_authorization_code(&code_hash, Timestamp::now())
         .await
         .unwrap()
     else {
@@ -535,8 +535,8 @@ async fn concurrent_authorization_code_begin_has_one_consuming_winner() {
         .unwrap();
 
     let (first, second) = tokio::join!(
-        store.begin_authorization_code(&code_hash, Utc.timestamp_opt(1_001, 0).unwrap()),
-        store.begin_authorization_code(&code_hash, Utc.timestamp_opt(1_001, 0).unwrap())
+        store.begin_authorization_code(&code_hash, Timestamp::new(1_001, 0).unwrap()),
+        store.begin_authorization_code(&code_hash, Timestamp::new(1_001, 0).unwrap())
     );
     let results = [first.unwrap(), second.unwrap()];
     assert_eq!(
@@ -587,7 +587,7 @@ async fn consent_rejects_replacement_and_retry_after_preview_without_refreshing_
     let key = nazo_valkey::test_support::state_storage_key(format!("oauth:consent:{request_id}"));
     let observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
     let mut replacement = consent_payload(&request_id, uuid::Uuid::from_u128(2));
-    replacement.expires_at = Utc.timestamp_opt(1_300, 0).unwrap();
+    replacement.expires_at = Timestamp::new(1_300, 0).unwrap();
     assert_eq!(
         store
             .store_consent(&request_id, &observed, 30)
@@ -694,12 +694,12 @@ async fn par_rejects_replacement_and_retry_after_preview_without_refreshing_ttl(
         params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     };
     let mut replacement = observed.clone();
     replacement.client_id = "client-b".to_owned();
-    replacement.expires_at = Utc.timestamp_opt(1_300, 0).unwrap();
+    replacement.expires_at = Timestamp::new(1_300, 0).unwrap();
     assert_eq!(
         store.store_par(&request_uri, &observed, 30).await.unwrap(),
         AuthorizationPreparationWrite::Stored
@@ -768,8 +768,8 @@ async fn par_snapshot_cleanup_accepts_legacy_wire_with_reordered_multi_parameter
         ]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     };
     let key = nazo_valkey::test_support::par_storage_key(&request_uri);
     let reordered = format!(
@@ -991,8 +991,8 @@ async fn concurrent_preparation_writes_have_one_initial_winner() {
         params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     };
     let mut par_b = par_a.clone();
     par_b.client_id = "client-b".to_owned();
@@ -1089,8 +1089,8 @@ async fn preparation_conflicts_and_cleanup_are_tenant_scoped() {
         params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     };
     let mut par_b = par_a.clone();
     par_b.client_id = "client-b".to_owned();
@@ -1169,7 +1169,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
     assert!((1..=30_000).contains(&original_ttl));
     assert!(matches!(
         store
-            .begin_authorization_code(&code_hash, Utc.timestamp_opt(1_001, 0).unwrap())
+            .begin_authorization_code(&code_hash, Timestamp::new(1_001, 0).unwrap())
             .await
             .unwrap(),
         AuthorizationCodeBeginResult::Consuming(_)
@@ -1185,7 +1185,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
     ));
     assert!(matches!(
         store
-            .begin_authorization_code(&code_hash, Utc.timestamp_opt(1_002, 0).unwrap())
+            .begin_authorization_code(&code_hash, Timestamp::new(1_002, 0).unwrap())
             .await
             .unwrap(),
         AuthorizationCodeBeginResult::Busy
@@ -1199,7 +1199,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
     );
     assert!((31..=60).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
     let replay = store
-        .begin_authorization_code(&code_hash, Utc.timestamp_opt(1_003, 0).unwrap())
+        .begin_authorization_code(&code_hash, Timestamp::new(1_003, 0).unwrap())
         .await
         .unwrap();
     match replay {
@@ -1207,7 +1207,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
         unexpected => panic!("expected terminal consumed marker, got {unexpected:?}"),
     }
     let failed = AuthorizationCodeState::Failed {
-        failed_at: Utc.timestamp_opt(1_004, 0).unwrap(),
+        failed_at: Timestamp::new(1_004, 0).unwrap(),
         error: "test failure".to_owned(),
     };
     assert_eq!(
@@ -1255,8 +1255,8 @@ async fn invalid_preparation_ttl_remains_an_unexpected_dependency_error() {
         params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
-        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+        issued_at: Timestamp::new(1_000, 0).unwrap(),
+        expires_at: Timestamp::new(1_030, 0).unwrap(),
     };
     assert_eq!(
         store.store_par(&request_uri, &par, 0).await,
@@ -1284,14 +1284,14 @@ async fn authorization_code_begin_and_busy_retry_preserve_the_original_ttl() {
     assert!((1..=2_000).contains(&original_ttl));
     assert!(matches!(
         store
-            .begin_authorization_code(&code_hash, Utc::now())
+            .begin_authorization_code(&code_hash, Timestamp::now())
             .await
             .unwrap(),
         AuthorizationCodeBeginResult::Consuming(_)
     ));
     assert!(matches!(
         store
-            .begin_authorization_code(&code_hash, Utc::now())
+            .begin_authorization_code(&code_hash, Timestamp::now())
             .await
             .unwrap(),
         AuthorizationCodeBeginResult::Busy
@@ -1308,7 +1308,7 @@ async fn authorization_code_begin_and_busy_retry_preserve_the_original_ttl() {
     );
     assert!(matches!(
         store
-            .begin_authorization_code(&code_hash, Utc::now())
+            .begin_authorization_code(&code_hash, Timestamp::now())
             .await
             .unwrap(),
         AuthorizationCodeBeginResult::Missing

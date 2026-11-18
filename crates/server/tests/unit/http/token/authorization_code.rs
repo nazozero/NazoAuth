@@ -9,7 +9,7 @@ use crate::test_support::TestInfrastructure;
 use actix_web::HttpRequest;
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::DpopError;
 use nazo_auth::ValidatedClientAssertion;
 use nazo_oauth_server::contracts::token_forms::TokenForm;
@@ -72,8 +72,6 @@ use actix_web::http::header::HeaderValue;
 use actix_web::web::Data;
 
 use base64::Engine;
-
-use chrono::{DateTime, Duration};
 
 use nazo_auth::OidcClaimRequest;
 
@@ -540,7 +538,7 @@ impl LiveAuthorizationCodeFixture {
         &self,
         client: &ClientRow,
         family_id: Uuid,
-    ) -> Option<DateTime<Utc>> {
+    ) -> Option<Timestamp> {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -549,9 +547,10 @@ impl LiveAuthorizationCodeFixture {
             .filter(oauth_refresh_families::client_id.eq(client.id))
             .filter(oauth_refresh_families::token_family_id.eq(family_id))
             .select(oauth_refresh_families::revoked_at)
-            .first::<Option<DateTime<Utc>>>(&mut conn)
+            .first::<Option<jiff_diesel::Timestamp>>(&mut conn)
             .await
             .expect("refresh token row should load")
+            .map(Into::into)
     }
 }
 

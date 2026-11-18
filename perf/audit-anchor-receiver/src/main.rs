@@ -414,7 +414,7 @@ async fn handle_genesis(receiver: &Arc<Receiver>, body: &[u8]) -> Result<wire::A
         || envelope.deployment_id != receiver.deployment_id
         || envelope.sequence != 0
         || envelope.previous_hash != envelope.event_hash
-        || envelope.occurred_at != chrono::DateTime::<chrono::Utc>::UNIX_EPOCH
+        || envelope.occurred_at != jiff::Timestamp::UNIX_EPOCH
     {
         bail!("genesis envelope is malformed");
     }
@@ -475,7 +475,7 @@ async fn handle_genesis(receiver: &Arc<Receiver>, body: &[u8]) -> Result<wire::A
                     batch_digest: digest.clone(),
                     accepted_batches: 0,
                     accepted_events: 0,
-                    updated_at: chrono::Utc::now(),
+                    updated_at: jiff::Timestamp::now(),
                 },
             )?;
             receiver.accepted.fetch_add(1, Ordering::Relaxed);
@@ -559,7 +559,7 @@ async fn handle_batch(receiver: &Arc<Receiver>, body: &[u8]) -> Result<wire::Anc
             batch_digest: envelope.batch_digest.clone(),
             accepted_batches: checkpoint.accepted_batches + 1,
             accepted_events: checkpoint.accepted_events + envelope.event_count,
-            updated_at: chrono::Utc::now(),
+            updated_at: jiff::Timestamp::now(),
         },
     )?;
     receiver.accepted.fetch_add(1, Ordering::Relaxed);

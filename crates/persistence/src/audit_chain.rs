@@ -13,7 +13,7 @@ pub fn security_audit_event_hash(
     event_id: uuid::Uuid,
     event_type: &str,
     event_category: &str,
-    occurred_at: chrono::DateTime<chrono::Utc>,
+    occurred_at: jiff::Timestamp,
     payload_canonical: &[u8],
 ) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
@@ -23,7 +23,11 @@ pub fn security_audit_event_hash(
     hasher.update(event_id.as_bytes());
     update_len_prefixed(&mut hasher, event_type.as_bytes());
     update_len_prefixed(&mut hasher, event_category.as_bytes());
-    hasher.update(&occurred_at.timestamp_micros().to_be_bytes());
+    // The v1 chain uses floor-rounded Unix microseconds, including dates
+    // before 1970. Jiff as_microsecond() truncates toward zero instead.
+    // Every Jiff timestamp fits in i64 when expressed in microseconds.
+    let micros = occurred_at.as_nanosecond().div_euclid(1_000) as i64;
+    hasher.update(&micros.to_be_bytes());
     update_len_prefixed(&mut hasher, payload_canonical);
     *hasher.finalize().as_bytes()
 }
@@ -58,3 +62,7 @@ fn update_len_prefixed(hasher: &mut blake3::Hasher, value: &[u8]) {
     hasher.update(&(value.len() as u64).to_be_bytes());
     hasher.update(value);
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/audit_chain.rs"]
+mod timestamp_regressions;

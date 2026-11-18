@@ -93,6 +93,142 @@ midnight, one second later, midday, the last second and the next day's boundary;
 keyctl lifecycle tests retain generation reuse, concurrent initialization,
 rotation, historical CRLs and import preservation. Store external conformance results with their tested version outside the source tree.
 
+## mdoc protocol and trust responsibilities
+
+`nazo-mdoc` owns the mdoc/CBOR/COSE boundary. Its presentation verifier returns
+`PendingTrustDocumentRef` only after issuer signature, disclosed-item digests,
+MSO validity and holder authentication succeed. The type is not a final trust
+decision. NazoAuth completes its existing certificate path, revocation and MSO
+status checks before `CredentialVerifierPort` returns `VerifiedCredential`.
+Authenticated claims are projected from borrowed CBOR directly into the final
+owned JSON result. Signed envelopes, item salts and MSO digest maps remain in
+the decoded presentation buffer. The holder key is materialized for the result;
+certificate DER stays borrowed through path, profile and revocation checks and
+is copied only when an MSO status reference requires retention across the
+asynchronous status boundary.
+There is no assessment override or second device-signature calculation.
+
+| Responsibility | Authority | Regression contract |
+| --- | --- | --- |
+| Bounded CBOR, duplicate keys, exact received Tag24 envelopes, COSE headers and algorithm/key binding | `nazo-mdoc` parser and protocol verifier | Core raw-CBOR/COSE regression corpus; NazoAuth signed credential fixtures |
+| Final Redirect Handover request context | `nazo-openid4vp::PresentationService` passes the retained full client ID, nonce, optional encryption-key thumbprint and response URI to the core constructor | `final_mdoc_handover_binds_verifier_key_and_request_context` checks the official vector and changed request fields |
+| Actual response-encryption key | Presentation endpoint compares the advertised JWK public members with the key used for JWE decryption | `encrypted_response_key_matches_the_key_bound_by_the_handover` |
+| Holder authentication and current-session failure | Core consumes the validated borrowed transcript and original namespace bytes; NazoAuth treats holder or unsupported document-count failures as whole-response rejection | `signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing` |
+| One document per DeviceResponse | NazoAuth selects the HAIP `max_documents = 1` profile at the parsing boundary | Multi-document response cannot hide a session mismatch or be accepted as an optional credential |
+| Issuer X.509 trust and time | Core checks MSO `signed` within the DS validity interval; NazoAuth's AWS-LC-backed path owner uses the same current time as MSO validity and certificate revocation | `mdoc_verification_rejects_expired_ds_even_when_mso_is_current`, certificate-path and historical whole-leap-second regressions |
+| Document Signer certificate profile | Shared `nazo-digital-credentials::mdoc_certificate` checks additional Annex B fields at signing, verification and native material admission; the existing path engine and core retain their own checks | `mdoc_verification_requires_document_signer_profile`, `mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding` and keyctl material regressions |
+| IACA root profile | Signing and verification check the actual authenticated root through the same shared profile; material admission also checks self-signature, current time, tenant and publication address | `mdoc_issuance_and_verification_require_authenticated_iaca_profile`, `mdoc_verification_checks_root_profile_beyond_an_iaca_link`, `mdoc_import_binds_the_active_root_and_enforces_its_profile` |
+| IACA rollover link profile | Every intermediate in the authenticated ordered path uses the Annex B.1.3 profile, including issuer-key binding and the changed-DN directory name | `mdoc_issuance_and_verification_require_iaca_link_profiles`, `mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link` |
+| mDL issuer attributes | Disclosed `issuing_country` matches DS country; disclosed `issuing_jurisdiction` matches DS state when that state exists | `authenticated_mdl_disclosures_match_the_document_signer_country`, `mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state` |
+| Certificate revocation | Existing `CertificateRevocationPolicy` and authenticated path anchor | Missing/stale snapshots, known revocation and scoped-unknown status regressions |
+| MSO status presence and mechanism policy | Core preserves the complete authenticated CBOR status; NazoAuth accepts only the exact supported `status_list` shape | Unsupported, tagged, duplicate or additional mechanisms fail closed; status presence is never inferred from a lossy JSON conversion |
+| Credential status verification | Existing bounded HTTPS resolver and draft-21 JWT/CWT validator | Revoked, suspended, unknown, unreachable, wrong-signature and wrong-IACA regressions |
+| External signing and certificate chain | Core prepare/finish plus one NazoAuth key-generation lease; the complete authenticated non-root chain is retained | `credential_execution_uses_completed_builder_and_pinned_lease_without_native_runtime` |
+| mDL date and binary element encoding | NazoAuth applies ISO field types only to `org.iso.18013.5.1` within `org.iso.18013.5.1.mDL` | `mdoc_date_tags_are_scoped_to_the_iso_mdl_schema`, `mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values` and binary-element tests |
+
+The issuer delegates digest-ID generation to the pinned `nazo-mdoc` builder,
+which selects random identifiers below `2^31`. The core verifier enforces this
+bound in every authenticated MSO digest map and disclosed item, as required by
+[ISO/IEC 18013-5:2021 §9.1.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf).
+NazoAuth does not generate a second set of IDs or relax the verifier's bound.
+An already signed credential with an out-of-range ID requires new authorized
+issuance: changing the identifier changes an item's digest and the signed MSO.
+Omitting a disclosure does not remove its authenticated MSO digest entry.
+
+The mDL JSON adapter encodes `birth_date` as Tag 1004; `issue_date` and
+`expiry_date` accept either a full calendar date with Tag 1004 or a complete
+UTC timestamp with Tag 0. `portrait_capture_date` requires Tag 0. Dates inside
+`driving_privileges` require Tag 1004. Dates are validated before signing;
+timestamps use whole seconds and the `Z` UTC suffix. This follows
+[ISO/IEC 18013-5:2021 §§7.2.1 and 7.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
+and [RFC 8943](https://www.rfc-editor.org/rfc/rfc8943.html).
+Custom namespaces and document types retain their supplied JSON value types.
+When projecting authenticated CBOR claims to JSON, the adapter accepts only
+validated date tags 0 and 1004. Unknown tags, nested tags and malformed tagged
+dates are rejected instead of losing their meaning during conversion. Other
+CBOR extensions need an explicit application mapping before they can be used
+as JSON claims.
+The core keeps its own protocol `Timestamp` representation, including
+authenticated whole-leap-second wire values. NazoAuth uses POSIX Jiff
+`Timestamp` values and converts them only at the mdoc boundary. Conversion into
+an application timestamp requires the protocol value's `unix_nanos()`; a value
+without a POSIX representation is rejected as invalid validity. No signed
+instant is rounded into a neighboring instant. Certificate-path validation
+uses the current POSIX presentation time, independently of the MSO's historical
+signing time. Fractional leap seconds are outside the supported time profile.
+See [native Jiff time boundaries](../integration/jiff-migration.md).
+Configuration owners remain responsible for complete credential schemas,
+required elements and the authority to issue their claims.
+
+The shared DS profile requires a positive nonzero serial of at most 20 octets,
+an ECDSA certificate signature, a validity interval of at most 457 days, a
+non-CA subject with CN and correctly encoded country, critical
+`digitalSignature`-only KU and critical mDL DS EKU. It checks SHA-1-derived SKI,
+AKI binding to the actual issuing CA, noncritical issuer contact and CRL URI
+extensions, and the profile's prohibited extensions. Extra noncritical
+extensions remain supported; unknown critical or duplicate extensions fail
+closed. These checks do not establish serial-generation entropy or contact URI
+reachability. The existing X.509 path engine checks version, matching signature
+identifiers and exact issuer/subject names; the core checks SPKI encoding and
+algorithm/key compatibility. There is no second path validator.
+
+IACA roots used for issuance, verification or material admission share the
+serial, name, identifier, contact and extension checks.
+[ISO/IEC 18013-5:2021 Annex B.1.1 and B.1.2](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
+apply the certificate profiles to readers and issuing infrastructures and
+specify the IACA root profile. These field checks complement the existing
+RFC 5280 path validation; they do not repeat it or establish trust. The root profile
+additionally requires version 3, equal issuer/subject
+DER names and signature identifiers, critical CA constraints with path length
+zero, and critical KU containing only `keyCertSign` and `cRLSign`. Supported
+root keys use uncompressed P-256/P-384/P-521 with named-curve parameters;
+Brainpool is outside this implementation. Root validity is bounded to 20
+calendar years, with February 29 clamped to the target month's last day.
+Issuance uses the root selected by the captured signing lease's authenticated
+path. Verification uses the root returned by the current presentation's path
+validation, including for client-scoped trust. A different valid configured
+root cannot satisfy this check. A missing root CRL distribution point or issuer
+contact rejects issuance and verification, even when the DS signature and path
+are otherwise valid. The common direct-issuer/root certificate is parsed once
+for these profile and binding checks. The native material owner separately
+authenticates the self-signature and binds the material to its tenant and actual
+publication route. See
+[managed mdoc state](../operations/mdoc-shared-state.md) for historical CRL
+address retention and explicit rotation.
+
+IACA rollover links share the CA key, serial, contact, CRL and extension rules.
+Each link requires critical `keyCertSign`/`cRLSign`-only KU, critical CA constraints
+with path length zero, and a noncritical AKI matching its actual issuer's SKI.
+A link whose subject DN differs from its issuer DN also carries that new subject
+DN as a `directoryName` in its noncritical SAN. A link signed directly by the
+authenticated root cannot expire after that root. An intermediate link's expiry
+does not establish the lifetime of its corresponding self-signed root.
+These checks reuse the existing path result and parsed CA certificates; they do
+not repeat signature verification. The current certificate backend accepts
+direct-root paths and paths with one IACA link; its path-length calculation
+rejects multiple self-issued CA links. For later rollovers, configure the newer
+independently authenticated IACA root as a trust anchor and present the chain
+ending at that root.
+
+The issuer omits configured trust anchors from the emitted `x5chain` by exact
+certificate identity. For interoperability, the receiving path owner still
+accepts an otherwise valid chain that explicitly ends in its authenticated
+configured anchor; that compatibility does not authorize using an IACA as the
+Document Signer. Country and state comparisons use the actual authenticated
+issuer, including an IACA link when present. Selective disclosure does not
+require revealing country or jurisdiction. A DS without a state attribute may
+sign a jurisdiction, as permitted by ISO 18013-5 §7.2.1.
+
+The mdoc core also defines the separate Final DC API Handover. NazoAuth exposes
+`direct_post` and `direct_post.jwt`; it does not advertise DC API, proximity
+transport, wallet, DeviceMAC or transaction-data support. The redirect binding
+follows [OpenID4VP 1.0 Final B.2.6.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html#section-b.2.6.1).
+The one-document constraint belongs to
+[HAIP 1.0 Final 5.3.1](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#section-5.3.1),
+not to every possible ISO mdoc profile. Retained certification records describe
+their tested implementation versions; they do not certify this dependency
+migration or unsupported profiles.
+
 ## Regression coverage
 
 SD-JWT VC issuance with no subject claims omits `_sd` and emits exactly one
@@ -310,13 +446,33 @@ the same public key as the credential issuer. mdoc uses an ES256/ESP256
 COSE_Sign1 CWT with protected `application/statuslist+cwt` type and `x5chain`;
 its signer must be issued directly by the credential's authenticated IACA.
 Embedded JWKs do not create trust. Certificate revocation remains a separate check.
+The CWT decoder retains the received protected-header byte string for signature
+verification and preserves CBOR tags when validating labels and integer fields.
+Bignum tags cannot become ordinary header labels, list bit widths or TTL values.
+Unsupported critical headers and duplicate labels across header buckets are
+rejected before trust evaluation.
 
 The verifier binds `sub` to the exact status URI, validates required `iat`,
 optional `exp`/`nbf` and positive `ttl` (mdoc requires `exp`), and accepts only
 status zero. Revoked, suspended, unknown, missing, out-of-range and malformed
 states fail closed. Lists use zlib and 1/2/4/8 bits per entry, least significant
 bits first. Unsupported status mechanisms and explicit delegated-certificate
-references remain rejected; status-list publication is not implemented.
+references remain rejected; status-list allocation and publication are not implemented
+by the shipped NazoAuth endpoints.
+
+mdoc issuance defaults to `MdocStatusIssuancePolicy::Disabled`. A nonempty
+`CredentialSignInput.status` is rejected under that policy instead of being
+silently omitted. An embedding with its own durable allocator and publisher may
+explicitly select `PublishedTokenStatusList` and configure the existing resolver.
+The signer first retrieves a real list, then selects its signing lease and
+verifies that list against the exact credential signer/IACA, URI, time and index.
+Only a valid status-zero entry is embedded in the signed MSO. Missing lists,
+unsupported mechanisms, invalid signatures and out-of-range entries
+reject issuance. The embedding remains responsible for assigning that index to
+the credential, maintaining publication availability and updating status; list
+retrieval does not allocate or reserve an entry. The ordinary endpoints supply
+`status: None` and do not enable this policy. Credentials without status do not
+trigger a fetch.
 
 Fetching uses the existing bounded HTTPS resolver: validated TLS and DNS-pinned
 addresses, no redirects or ambient proxy, 10-second deadline, shared 16-request

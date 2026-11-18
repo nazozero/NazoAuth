@@ -1,5 +1,5 @@
 use super::*;
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -29,7 +29,7 @@ async fn target(provider: &dyn ServerAvatarObjectStoreProvider, id: TenantId) ->
         .authorize_upload(
             "same-object",
             100,
-            Utc::now() + chrono::Duration::minutes(5),
+            Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )
         .await
         .unwrap()

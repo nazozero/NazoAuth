@@ -49,7 +49,7 @@ impl SecurityAudit for Audit {
 }
 
 fn consent() -> ConsentPayload {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     ConsentPayload {
         request_id: "payload-display-id".into(),
         user_id: authorization_fixture::account().id(),
@@ -63,7 +63,7 @@ fn consent() -> ConsentPayload {
         state: None,
         response_mode: Some("query".into()),
         nonce: None,
-        auth_time: now.timestamp(),
+        auth_time: now.as_second(),
         amr: vec!["pwd".into()],
         oidc_sid: Some("oidc-session".into()),
         acr: None,
@@ -78,7 +78,7 @@ fn consent() -> ConsentPayload {
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
 
-        expires_at: now + chrono::Duration::minutes(5),
+        expires_at: now + jiff::SignedDuration::from_mins(5),
     }
 }
 
@@ -115,13 +115,13 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                     .store(true, std::sync::atomic::Ordering::SeqCst);
                 let mut payload = consent();
                 let valid_until = payload.expires_at;
-                let retain_until = payload.expires_at + chrono::Duration::minutes(5);
+                let retain_until = payload.expires_at + jiff::SignedDuration::from_mins(5);
                 let par = nazo_auth::PushedAuthorizationRequest {
                     client_id: payload.client_id.clone(),
                     params: HashMap::new(),
                     dpop_jkt: None,
                     mtls_x5t_s256: None,
-                    issued_at: chrono::Utc::now(),
+                    issued_at: jiff::Timestamp::now(),
                     expires_at: retain_until,
                 };
                 payload.pushed_request_uri = Some("par".into());

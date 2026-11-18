@@ -162,7 +162,7 @@ pub struct AuthorizedApplicationView {
     pub client_id: String,
     pub client_name: String,
     pub last_scopes: Vec<String>,
-    pub last_authorized_at: chrono::DateTime<chrono::Utc>,
+    pub last_authorized_at: jiff::Timestamp,
     pub authorization_count: i32,
 }
 
@@ -352,7 +352,7 @@ fn valid_birthdate(value: &str) -> bool {
                 byte.is_ascii_digit()
             }
         })
-        && chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
+        && (value).parse::<jiff::civil::Date>().is_ok()
 }
 
 pub(crate) fn trim_text(mut value: String) -> String {

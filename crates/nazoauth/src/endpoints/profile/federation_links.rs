@@ -86,9 +86,9 @@ pub struct PublicFederationLink {
     pub provider_id: String,
     pub subject: String,
     pub email: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub last_login_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: jiff::Timestamp,
+    pub updated_at: jiff::Timestamp,
+    pub last_login_at: Option<jiff::Timestamp>,
 }
 
 impl From<FederationLinkSummary> for PublicFederationLink {

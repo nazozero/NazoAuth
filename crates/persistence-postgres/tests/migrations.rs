@@ -1,9 +1,9 @@
-use chrono::{Duration, Utc};
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Bool, Text},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::{SignedDuration, Timestamp};
 use nazo_postgres::get_conn;
 use uuid::Uuid;
 
@@ -114,7 +114,7 @@ async fn issuance_cleanup_uses_expiry_as_an_index_bound() {
         .await
         .expect("small fixtures should still expose usable index conditions");
     let plan = sql_query(format!("EXPLAIN (COSTS OFF) {candidate}"))
-        .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+        .bind::<diesel::sql_types::Timestamptz, _>((Timestamp::now()).to_diesel())
         .load::<ExplainRow>(&mut connection)
         .await
         .expect("installed expiry candidate should explain")
@@ -374,7 +374,8 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
     #[derive(QueryableByName)]
     struct ExpiryDeadline {
         #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-        expires_at: chrono::DateTime<chrono::Utc>,
+        #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+        expires_at: jiff::Timestamp,
     }
 
     // Prove the session really runs as the non-superuser runtime role.
@@ -421,8 +422,8 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
     let repository = nazo_postgres::AuthorizationRepository::new(runtime_pool.clone());
     let tenant_id = Uuid::from_u128(1);
     let jti = format!("rv09-jti-{}", Uuid::now_v7());
-    let first_exp = Utc::now() + Duration::minutes(30);
-    let second_exp = Utc::now() + Duration::minutes(90);
+    let first_exp = Timestamp::now() + SignedDuration::from_mins(30);
+    let second_exp = Timestamp::now() + SignedDuration::from_mins(90);
     repository
         .revoke_issued_tokens(tenant_id, client_id, &jti, Some(first_exp), None)
         .await
@@ -444,10 +445,11 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
     assert_eq!(rows.len(), 1, "one authority key must hold exactly one row");
     // timestamptz stores microseconds; the bound value truncates the
     // sub-microsecond part of `second_exp`.
-    let skew = Duration::seconds(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
-    let stored_delta = rows[0].expires_at.signed_duration_since(second_exp);
+    let skew = SignedDuration::from_secs(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+    let stored_delta = rows[0].expires_at.duration_since(second_exp);
     assert!(
-        stored_delta >= skew - Duration::seconds(1) && stored_delta < skew + Duration::seconds(1),
+        stored_delta >= skew - SignedDuration::from_secs(1)
+            && stored_delta < skew + SignedDuration::from_secs(1),
         "the conflicting write must extend the deadline to the later exp + skew, got {stored_delta:?}"
     );
 
@@ -462,3 +464,5 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
         .expect("runtime-role fixtures should clean up");
     support::database::drop(&database_url).await;
 }
+
+use jiff_diesel::ToDiesel as _;

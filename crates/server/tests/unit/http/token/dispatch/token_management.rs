@@ -208,7 +208,7 @@ async fn inactive_token_management_requesters_are_rejected_before_keys_or_token_
         sql_query("UPDATE oauth_clients SET jwks=$1, jwks_uri='https://client.example/management-keys', tls_client_auth_cert_sha256=$2, tls_client_auth_subject_dn=$3 WHERE tenant_id=$4 AND client_id=$5")
             .bind::<Jsonb,_>(json!({"keys":[key.public_jwk("management-kid")]})).bind::<Text,_>(&certificate.thumbprint).bind::<Nullable<Text>,_>(certificate_facts.subject_dn.as_deref()).bind::<SqlUuid,_>(DEFAULT_TENANT_ID).bind::<Text,_>(&id).execute(&mut conn).await.unwrap();
         drop(conn);
-        let assertion=key.encode_jwt(&{let mut h=jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);h.kid=Some("management-kid".to_owned());h},&json!({"iss":id,"sub":id,"aud":format!("{}/oauth/introspect",state.settings.endpoint.issuer.trim_end_matches('/')),"iat":Utc::now().timestamp(),"exp":Utc::now().timestamp()+60,"jti":Uuid::now_v7().to_string()}));
+        let assertion=key.encode_jwt(&{let mut h=jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);h.kid=Some("management-kid".to_owned());h},&json!({"iss":id,"sub":id,"aud":format!("{}/oauth/introspect",state.settings.endpoint.issuer.trim_end_matches('/')),"iat":jiff::Timestamp::now().as_second(),"exp":jiff::Timestamp::now().as_second()+60,"jti":Uuid::now_v7().to_string()}));
         for revoke in [false, true] {
             let mut request = actix_web::test::TestRequest::post();
             if method == "client_secret_basic" {
@@ -287,7 +287,7 @@ async fn inactive_token_management_requesters_are_rejected_before_keys_or_token_
                 &state.settings.endpoint.issuer,
                 &access_token,
                 &issuer,
-                Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap(),

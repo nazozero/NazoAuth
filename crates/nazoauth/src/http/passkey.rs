@@ -10,12 +10,12 @@ use nazo_oauth_server::contracts::passkey::{
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     LoginSuccess, PasskeyError, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
-use passkey_auth::{AuthenticationResponse, RegistrationResponse};
+use nazo_passkey::{AuthenticationResponse, RegistrationResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -176,13 +176,22 @@ pub async fn passkey_login_finish(
     if let Err(error) = endpoint.rate_limit.enforce(&source_ip).await {
         return rate_limit_error_response(error);
     }
+    let previous_session_id = cookie_value(request, &endpoint.config.session_cookie_name);
+    let csrf_verified = previous_session_id.is_some()
+        && has_valid_csrf_token_for_cookies(
+            request,
+            None,
+            &endpoint.config.session_cookie_name,
+            &endpoint.config.csrf_cookie_name,
+        );
     let command = PasskeyLoginFinishCommand {
         ceremony_id: payload.ceremony_id,
         response: payload.response,
         source_ip,
         remembered_mfa: remembered_mfa_proof(request, &endpoint.config),
-        previous_session_id: cookie_value(request, &endpoint.config.session_cookie_name),
-        now: Utc::now(),
+        previous_session_id,
+        csrf_verified,
+        now: Timestamp::now(),
     };
     match endpoint.operations.login_finish(command).await {
         Ok(success) => passkey_session_response(&endpoint.config, success),
@@ -292,7 +301,7 @@ fn profile_context(
     };
     Ok(PasskeyProfileContext {
         session_id,
-        now: Utc::now().timestamp(),
+        now: Timestamp::now().as_second(),
     })
 }
 
@@ -362,11 +371,6 @@ fn passkey_login_error(error: PasskeyEndpointError) -> Response {
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "invalid ceremony id.",
-        ),
-        PasskeyError::InvalidCredentialId => authorization_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "invalid passkey credential id.",
         ),
         PasskeyError::CeremonyExpired => authorization_error_response(
             StatusCode::BAD_REQUEST,
@@ -542,9 +546,9 @@ struct PublicPasskey<'a> {
     label: &'a str,
     credential_id: &'a str,
     sign_count: i64,
-    last_used_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    last_used_at: Option<Timestamp>,
+    created_at: Timestamp,
+    updated_at: Timestamp,
 }
 
 impl<'a> From<&'a PasskeyCredentialSummary> for PublicPasskey<'a> {

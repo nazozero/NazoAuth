@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use nazo_oauth_server::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
 use p256::{ecdsa::SigningKey, pkcs8::EncodePrivateKey};
@@ -41,7 +41,7 @@ fn valid_client_attestation_fixture() -> (
     EncodingKey,
     i64,
 ) {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let (mut attester_jwk, attester_key) = es256_test_key(83);
     attester_jwk["kid"] = json!("attester-key");
     attester_jwk["alg"] = json!("ES256");
@@ -105,7 +105,7 @@ async fn client_attestation_trust_policy_constructor_and_lookup_fail_closed_with
         uuid::Uuid::nil(),
     )
     .expect("static trust plus ordinary policy repository should configure");
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let instance_jwk = es256_test_key(101).0;
     let instance_key = es256_test_key(101).1;
     let attestation = signed_client_attestation_jwt(

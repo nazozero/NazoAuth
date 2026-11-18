@@ -3,7 +3,6 @@
 pub mod audit;
 pub mod credential_status;
 pub mod fapi_replay;
-pub mod mdoc;
 pub mod persistence;
 pub mod remote_request_object;
 pub mod transient_state;

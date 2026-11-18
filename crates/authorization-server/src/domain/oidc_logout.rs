@@ -3,7 +3,7 @@ use std::{future::Future, sync::Arc};
 use crate::contracts::oidc_logout::{
     OidcLogoutCommand, OidcLogoutError, OidcLogoutFuture, OidcLogoutOperations, OidcLogoutSuccess,
 };
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_auth::{
     BackchannelLogoutClaimsInput, BackchannelLogoutOutboxPort, LogoutClientRepositoryPort,
     LogoutDependencyError, LogoutInput, LogoutService, LogoutServiceError, LogoutSession,
@@ -75,7 +75,7 @@ impl OidcLogoutHandles {
     fn decode_id_token_hint_with_expiry(
         &self,
         token: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Option<DecodedIdTokenHint> {
         let (claims, expires_at) = self.keys.decode_id_token_hint(self.issuer(), token)?;
         Some(DecodedIdTokenHint {
@@ -103,7 +103,7 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
         client: &'a nazo_auth::RegisteredLogoutClient,
         subject: Option<&'a str>,
         sid: &'a str,
-        issued_at: DateTime<Utc>,
+        issued_at: Timestamp,
         ttl_seconds: i64,
     ) -> nazo_auth::LogoutFuture<'a, String> {
         Box::pin(async move {
@@ -115,7 +115,7 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
                     sid: Some(sid),
                     ttl: ttl_seconds,
                 },
-                issued_at.timestamp(),
+                issued_at.as_second(),
             );
             self.keys
                 .encode_response_jwt(
@@ -143,7 +143,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
     fn logout(&self, command: OidcLogoutCommand) -> OidcLogoutFuture<'_> {
         Box::pin(async move {
             let modules = self.snapshots.request();
-            let now = Utc::now();
+            let now = Timestamp::now();
             let current_session = match command.session_id.as_deref() {
                 Some(session_id) => self
                     .sessions
@@ -248,8 +248,8 @@ impl OidcLogoutOperations for OidcLogoutHandles {
     }
 }
 
-fn id_token_hint_expired(exp: i64, now: DateTime<Utc>) -> bool {
-    exp <= now.timestamp()
+fn id_token_hint_expired(exp: i64, now: Timestamp) -> bool {
+    exp <= now.as_second()
 }
 
 async fn finalize_logout_execution<F, Fut>(

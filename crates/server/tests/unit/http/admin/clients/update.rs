@@ -12,7 +12,6 @@ use actix_web::cookie::Cookie;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
-use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -20,6 +19,7 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use jiff::Timestamp;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
@@ -280,7 +280,7 @@ impl LiveAdminClientUpdateFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),

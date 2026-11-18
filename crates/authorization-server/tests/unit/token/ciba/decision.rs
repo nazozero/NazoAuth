@@ -34,7 +34,7 @@ impl SecurityAudit for Audit {
     }
 }
 fn committed_decision_fixture(decision: CibaDecision) -> CibaCommittedDecision {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let (status, authentication_context) = match &decision {
         CibaDecision::Approve(authentication_context) => {
             (CibaStatus::Approved, Some(authentication_context.clone()))
@@ -92,7 +92,7 @@ fn ciba_decision_audit_is_emitted_only_for_committed_outcome() {
         &audit,
         Ok(committed_decision_fixture(CibaDecision::Approve(
             CibaAuthenticationContext {
-                auth_time: Utc::now().timestamp(),
+                auth_time: jiff::Timestamp::now().as_second(),
                 amr: vec!["pwd".into()],
                 oidc_sid: Some("audit-session".into()),
             },

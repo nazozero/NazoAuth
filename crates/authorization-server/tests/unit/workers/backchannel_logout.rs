@@ -1,21 +1,27 @@
 use super::*;
 #[test]
 fn retries_are_bounded_and_never_scheduled_after_expiry() {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     assert_eq!(
-        next_retry_at(0, now, now + Duration::seconds(60)),
-        Some(now + Duration::seconds(5))
+        next_retry_at(0, now, now + jiff::SignedDuration::from_secs(60)),
+        Some(now + jiff::SignedDuration::from_secs(5))
     );
     assert_eq!(
-        next_retry_at(1, now, now + Duration::seconds(60)),
-        Some(now + Duration::seconds(15))
+        next_retry_at(1, now, now + jiff::SignedDuration::from_secs(60)),
+        Some(now + jiff::SignedDuration::from_secs(15))
     );
     assert_eq!(
-        next_retry_at(2, now, now + Duration::seconds(60)),
-        Some(now + Duration::seconds(45))
+        next_retry_at(2, now, now + jiff::SignedDuration::from_secs(60)),
+        Some(now + jiff::SignedDuration::from_secs(45))
     );
-    assert_eq!(next_retry_at(3, now, now + Duration::seconds(60)), None);
-    assert_eq!(next_retry_at(2, now, now + Duration::seconds(45)), None);
+    assert_eq!(
+        next_retry_at(3, now, now + jiff::SignedDuration::from_secs(60)),
+        None
+    );
+    assert_eq!(
+        next_retry_at(2, now, now + jiff::SignedDuration::from_secs(45)),
+        None
+    );
 }
 
 #[test]
@@ -54,8 +60,8 @@ fn backchannel_response_classification_retries_only_recoverable_statuses() {
 
 #[test]
 fn delivery_failure_state_distinguishes_terminal_and_retryable_outcomes() {
-    let now = Utc::now();
-    let expires_at = now + Duration::seconds(60);
+    let now = jiff::Timestamp::now();
+    let expires_at = now + jiff::SignedDuration::from_secs(60);
     let (next_attempt_at, terminal) =
         delivery_failure_state(Ok(http::StatusCode::BAD_REQUEST), 1, now, expires_at);
     assert_eq!(next_attempt_at, None);
@@ -67,7 +73,10 @@ fn delivery_failure_state_distinguishes_terminal_and_retryable_outcomes() {
         now,
         expires_at,
     );
-    assert_eq!(next_attempt_at, Some(now + Duration::seconds(15)));
+    assert_eq!(
+        next_attempt_at,
+        Some(now + jiff::SignedDuration::from_secs(15))
+    );
     assert_eq!(retryable.to_string(), "network unavailable");
 
     let (next_attempt_at, retryable) = delivery_failure_state(
@@ -76,6 +85,9 @@ fn delivery_failure_state_distinguishes_terminal_and_retryable_outcomes() {
         now,
         expires_at,
     );
-    assert_eq!(next_attempt_at, Some(now + Duration::seconds(5)));
+    assert_eq!(
+        next_attempt_at,
+        Some(now + jiff::SignedDuration::from_secs(5))
+    );
     assert!(retryable.to_string().contains("retryable status 503"));
 }

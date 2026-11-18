@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::CredentialConfiguration;
 use serde_json::{Value, json};
@@ -111,20 +111,20 @@ fn managed_mdoc_dataset_requires_nonempty_namespace_objects() {
 #[test]
 fn managed_dataset_validity_must_end_after_start_and_now() {
     let configuration = dataset_configuration(CredentialFormat::SdJwtVc);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let claims = json!({"given_name":"Ada"});
 
     let expired = PutCredentialDatasetRequest {
         claims: claims.clone(),
         valid_from: None,
-        valid_until: Some(now - Duration::seconds(1)),
+        valid_until: Some(now - SignedDuration::from_secs(1)),
     };
     assert!(validate_managed_dataset(&configuration, &expired).is_err());
 
     let reversed = PutCredentialDatasetRequest {
         claims,
-        valid_from: Some(now + Duration::hours(2)),
-        valid_until: Some(now + Duration::hours(1)),
+        valid_from: Some(now + SignedDuration::from_hours(2)),
+        valid_until: Some(now + SignedDuration::from_hours(1)),
     };
     assert!(validate_managed_dataset(&configuration, &reversed).is_err());
 
@@ -132,8 +132,8 @@ fn managed_dataset_validity_must_end_after_start_and_now() {
         &configuration,
         &PutCredentialDatasetRequest {
             claims: json!({"given_name":"Ada"}),
-            valid_from: Some(now + Duration::hours(1)),
-            valid_until: Some(now + Duration::hours(2)),
+            valid_from: Some(now + SignedDuration::from_hours(1)),
+            valid_until: Some(now + SignedDuration::from_hours(2)),
         },
     )
     .expect("a future validity interval must be accepted");
@@ -142,7 +142,7 @@ fn managed_dataset_validity_must_end_after_start_and_now() {
         &PutCredentialDatasetRequest {
             claims: json!({"given_name":"Ada"}),
             valid_from: None,
-            valid_until: Some(now + Duration::hours(1)),
+            valid_until: Some(now + SignedDuration::from_hours(1)),
         },
     )
     .expect("a future expiry without an explicit start must be accepted");

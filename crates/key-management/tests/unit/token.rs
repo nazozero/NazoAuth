@@ -205,7 +205,7 @@ async fn logout_hint_prepared_key_preserves_signature_issuer_type_and_expired_po
     for typ in [Some("JWT"), None, Some("at+jwt")] {
         let mut header = nazo_crypto::jwt::Header::new(jsonwebtoken::Algorithm::EdDSA);
         header.typ = typ.map(str::to_owned);
-        let expiry = chrono::Utc::now().timestamp() - 600;
+        let expiry = jiff::Timestamp::now().as_second() - 600;
         let token = manager.encode_jwt(nazo_auth::SigningPurpose::IdToken, &header,
             &json!({"iss": issuer, "sub": "subject", "aud": ["client"], "sid": "session", "exp": expiry}),
         ).await.unwrap();
@@ -277,7 +277,7 @@ async fn logout_hint_prepared_key_still_observes_retirement_and_algorithm() {
             snapshot.verification_keys[0].prepared.algorithm = jsonwebtoken::Algorithm::RS256;
         } else {
             snapshot.verification_keys[0].retire_at =
-                Some(chrono::Utc::now() - chrono::Duration::seconds(1));
+                Some(jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1));
         }
         manager
             .inner

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_persistence::SecurityAuditAnchorHealth;
 
 use super::{
@@ -24,11 +24,7 @@ impl AuditAnchorPreflight {
     /// Applies only before the first persistence attempt of explicit Telemetry.
     /// Share the Required admission clock/threshold instead of inventing a TTL
     /// or rewriting event time. Unknown/future clock state is not an expiry.
-    pub(crate) fn telemetry_event_expired(
-        &self,
-        occurred_at: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> bool {
+    pub(crate) fn telemetry_event_expired(&self, occurred_at: Timestamp, now: Timestamp) -> bool {
         self.is_required()
             && age_seconds(now, occurred_at)
                 .is_ok_and(|age| age > duration_seconds(self.config.max_lag))
@@ -38,14 +34,14 @@ impl AuditAnchorPreflight {
         if !self.is_required() {
             return Ok(());
         }
-        validate_health(&self.config, status, Utc::now())
+        validate_health(&self.config, status, Timestamp::now())
     }
 }
 
 pub(super) fn validate_health(
     config: &AuditAnchorPreflightConfig,
     status: &SecurityAuditAnchorHealth,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> anyhow::Result<()> {
     if status.deployment_id.as_deref() != Some(config.deployment_id.as_str()) {
         anyhow::bail!("audit anchor deployment identity does not match this runtime");

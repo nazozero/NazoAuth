@@ -32,7 +32,7 @@ fn dpop_nonce_generation_fails_closed_when_nonce_state_is_unavailable() {
             configuration_ids: vec!["unit-config".to_owned()],
             credential_identifiers: Vec::new(),
             dpop_jkt: Some("unit-dpop-thumbprint".to_owned()),
-            expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         };
         assert_eq!(
             next_dpop_nonce(&UnavailableDpopState, &access, DpopNoncePolicy::Optional)
@@ -201,7 +201,7 @@ fn deferred_response_status_survives_real_encryption_and_stored_replay() {
             &body,
             status,
             Some("next-nonce".to_owned()),
-            Utc::now() + Duration::minutes(5),
+            Timestamp::now() + jiff::SignedDuration::from_mins(5),
         );
         assert_eq!(stored.status, 202);
         let replay = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required).unwrap();

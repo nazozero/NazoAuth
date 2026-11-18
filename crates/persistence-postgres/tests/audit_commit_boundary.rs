@@ -2,13 +2,13 @@
 //! The configured audit fixture must be an isolated database with CREATEDB.
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Integer, Text},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use futures_util::TryStreamExt;
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim};
 use nazo_postgres::{
@@ -149,7 +149,7 @@ fn event() -> SecurityAuditEvent {
         event_type: "mtls_trust_bundle_exported".into(),
         event_category: "trust_lifecycle".into(),
         payload: json!({"test":"commit-boundary"}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     }
 }
 fn ack(batch: &SecurityAuditBatch) -> SecurityAuditBatchAck {
@@ -188,8 +188,13 @@ async fn invoke(
         Operation::Batch => repo.append_batch(events).await,
         Operation::Ack => repo.ack_batch(ack(batch.unwrap())).await,
         Operation::Fail => {
-            repo.fail_batch(batch.unwrap().generation, Utc::now(), "fixture", false)
-                .await
+            repo.fail_batch(
+                batch.unwrap().generation,
+                Timestamp::now(),
+                "fixture",
+                false,
+            )
+            .await
         }
     }
 }
@@ -613,12 +618,17 @@ async fn identity_mutations_and_required_audit_share_the_commit_boundary() {
         .unwrap();
     let before = f.snapshot().await;
     let passkeys = nazo_postgres::PasskeyRepository::new(f.pool.clone());
-    let credential = passkey_auth::PasskeyCredential {
-        id: passkey_auth::CredentialId(vec![1, 2, 3]),
+    let credential = nazo_passkey::PasskeyCredential {
+        id: nazo_passkey::CredentialId(vec![1, 2, 3]),
         counter: 0,
-        public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
+        public_key_cose: nazo_passkey::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
         transports: vec!["internal".into()],
         aaguid: [0; 16],
+        user_handle: None,
+        uv_initialized: None,
+        backup_eligible: None,
+        backup_state: None,
+        attestation: nazo_passkey::AttestationEvidence::Unknown,
     };
     f.mode("raise").await;
     assert!(

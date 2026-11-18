@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl, upsert::excluded};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_auth::{
     AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation, AdminGrantRevokeError,
     AdminGrantView, AuthorizationPortError,
@@ -30,7 +30,8 @@ struct GrantRecord {
     email: String,
     client_id: String,
     client_name: String,
-    last_authorized_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    last_authorized_at: Timestamp,
     authorization_count: i32,
     last_scopes: Value,
     last_authorization_details: Value,
@@ -210,7 +211,7 @@ impl GrantRepository {
                 // this deadline passes, deleting the receipt cannot reopen it.
                 let valid = diesel::select(
                     diesel::dsl::sql::<diesel::sql_types::Bool>("clock_timestamp() < ")
-                        .bind::<diesel::sql_types::Timestamptz, _>(write.expires_at),
+                        .bind::<diesel::sql_types::Timestamptz, _>((write.expires_at).to_diesel()),
                 ).get_result::<bool>(connection).await?;
                 if !valid {
                     return Err(diesel::result::Error::RollbackTransaction);
@@ -220,7 +221,7 @@ impl GrantRepository {
                      VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
                 ).bind::<diesel::sql_types::Uuid, _>(write.tenant_id)
                     .bind::<diesel::sql_types::Text, _>(write.device_code_hash)
-                    .bind::<diesel::sql_types::Timestamptz, _>(write.expires_at)
+                    .bind::<diesel::sql_types::Timestamptz, _>((write.expires_at).to_diesel())
                     .execute(connection).await?;
                 if inserted == 0 {
                     return Ok(());
@@ -351,7 +352,7 @@ impl GrantRepository {
                                 "revoked_refresh_tokens": revoked_refresh_tokens,
                                 "removed_grants": removed_grants,
                             }),
-                            occurred_at: Utc::now(),
+                            occurred_at: Timestamp::now(),
                         },
                     )
                     .await
@@ -460,14 +461,14 @@ async fn ensure_on_connection(
     authorization_details: &Value,
     new_authorization: bool,
 ) -> Result<(), diesel::result::Error> {
-    let now = Utc::now();
+    let now = Timestamp::now();
     diesel::insert_into(user_client_grants::table)
         .values((
             user_client_grants::tenant_id.eq(tenant_id),
             user_client_grants::user_id.eq(user_id),
             user_client_grants::client_id.eq(client_id),
-            user_client_grants::first_authorized_at.eq(now),
-            user_client_grants::last_authorized_at.eq(now),
+            user_client_grants::first_authorized_at.eq((now).to_diesel()),
+            user_client_grants::last_authorized_at.eq((now).to_diesel()),
             user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
             user_client_grants::last_resource_indicators.eq(serde_json::json!(resource_indicators)),
             user_client_grants::last_authorization_details.eq(authorization_details),
@@ -494,3 +495,5 @@ async fn ensure_on_connection(
         .await?;
     Ok(())
 }
+
+use jiff_diesel::ToDiesel as _;

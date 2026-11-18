@@ -302,7 +302,7 @@ fn handles(
     (application, ports)
 }
 fn pending(ports: &Ports) {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     *ports.state.lock().unwrap() = Some(DeviceAuthorizationState::Pending {
         payload: DeviceAuthorizationPayload {
             client_id: "device-client".into(),
@@ -312,7 +312,7 @@ fn pending(ports: &Ports) {
             authorization_details: json!([]),
             interval_seconds: 5,
             issued_at: now,
-            expires_at: now + Duration::minutes(10),
+            expires_at: now + jiff::SignedDuration::from_mins(10),
         },
         last_poll_at: None,
         slow_down_count: 0,
@@ -322,7 +322,7 @@ fn session() -> CurrentSession {
     CurrentSession {
         pending_mfa: false,
         user: crate::test_support::authorization::account().principal,
-        auth_time: Utc::now().timestamp(),
+        auth_time: jiff::Timestamp::now().as_second(),
         auth_time_micros: None,
         amr: vec!["pwd".into()],
         oidc_sid: "device-session".into(),
@@ -676,7 +676,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
             let prepared = service
-                .prepare_decision("ABCD", Utc::now)
+                .prepare_decision("ABCD", jiff::Timestamp::now)
                 .await
                 .unwrap()
                 .unwrap();
@@ -688,7 +688,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
                         device_approval(),
                         &ports.client,
                         ports.as_ref(),
-                        Utc::now
+                        jiff::Timestamp::now
                     )
                     .await,
                 Err(nazo_auth::DeviceDecisionFailure::Contended)
@@ -703,7 +703,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();
@@ -733,7 +733,7 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
             let prepared = service
-                .prepare_decision("ABCD", Utc::now)
+                .prepare_decision("ABCD", jiff::Timestamp::now)
                 .await
                 .unwrap()
                 .unwrap();
@@ -743,7 +743,7 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
                 ..
             }) = ports.state.lock().unwrap().as_mut()
             {
-                *last_poll_at = Some(Utc::now());
+                *last_poll_at = Some(jiff::Timestamp::now());
                 if retarget {
                     payload.scopes.push("changed-after-audit".into());
                 }
@@ -755,11 +755,11 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
                         device_approval(),
                         &ports.client,
                         ports.as_ref(),
-                        Utc::now,
+                        jiff::Timestamp::now,
                     )
                     .await
             } else {
-                service.deny(&prepared, Utc::now).await
+                service.deny(&prepared, jiff::Timestamp::now).await
             };
             if retarget {
                 assert!(matches!(
@@ -796,7 +796,7 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();
@@ -804,7 +804,7 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
         *ports.after_claim.lock().unwrap() = Some(DeviceAuthorizationState::Approved {
             payload: prepared.payload().clone(),
             approval: device_approval(),
-            approved_at: Utc::now(),
+            approved_at: jiff::Timestamp::now(),
         });
         assert!(matches!(
             service
@@ -813,7 +813,7 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
-                    Utc::now
+                    jiff::Timestamp::now
                 )
                 .await,
             Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
@@ -851,14 +851,14 @@ fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance(
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();
         *ports.after_recorded.lock().unwrap() = Some(DeviceAuthorizationState::Approved {
             payload: prepared.payload().clone(),
             approval: device_approval(),
-            approved_at: Utc::now(),
+            approved_at: jiff::Timestamp::now(),
         });
         assert!(matches!(
             service
@@ -867,7 +867,7 @@ fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance(
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
-                    Utc::now
+                    jiff::Timestamp::now
                 )
                 .await,
             Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
@@ -888,7 +888,7 @@ fn device_recorded_snapshot_rechecks_expiry_before_final_cas() {
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();

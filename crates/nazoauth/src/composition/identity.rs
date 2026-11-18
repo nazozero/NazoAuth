@@ -356,7 +356,6 @@ pub(super) async fn build(
                 origin: passkey.origin.to_owned(),
                 require_user_verification: passkey.require_user_verification,
                 require_user_handle: passkey.require_user_handle,
-                strict_base64: passkey.strict_base64,
                 ceremony_ttl_seconds: PASSKEY_CEREMONY_TTL_SECONDS,
                 session_ttl_seconds: session.session_ttl_seconds,
                 pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,

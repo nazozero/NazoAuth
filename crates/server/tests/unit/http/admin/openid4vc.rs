@@ -11,7 +11,6 @@ use actix_web::{
     cookie::Cookie,
     web::{Data, Json, Path},
 };
-use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -19,6 +18,7 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use jiff::Timestamp;
 use nazo_digital_credentials::{CredentialFormat, VcIssuerTrustPolicy};
 use nazo_key_management::{
     KeyManager, KeySettings, LocalKeyRegistration, Openid4vcMaterial, Openid4vcPublicMaterial,
@@ -150,7 +150,6 @@ impl LiveOpenid4vcAdminFixture {
             key_manager.clone(),
             VcIssuerTrustPolicy::san_bound(),
             nazo_oauth_server::policy::Openid4vcRevocationPolicy::Disabled,
-            Arc::new(crate::adapters::mdoc_signer::TokioMdocDocumentSigner),
         )
         .expect("credential crypto should validate the generated chain");
 
@@ -269,7 +268,7 @@ impl LiveOpenid4vcAdminFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr,
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
@@ -417,9 +416,9 @@ mod managed_dataset_unknown;
 
 async fn credential_key_material() -> (KeyManager, String, String, String) {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(1),
-        prepublish_window: chrono::Duration::hours(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours(24),
+        prepublish_window: jiff::SignedDuration::from_hours(1),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let key_manager = nazo_key_management::test_support::key_manager(settings)
         .await

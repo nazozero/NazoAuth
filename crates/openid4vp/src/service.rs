@@ -1,8 +1,9 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_digital_credentials::{
     CredentialFormat, CredentialTrustError, CredentialVerifierPort, PresentedCredential,
     VerifiedCredential,
 };
+use nazo_mdoc::session::{RedirectHandover, SessionTranscript};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -40,7 +41,7 @@ where
     fn request<'a>(
         &'a self,
         transaction_id: uuid::Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<
         'a,
         Result<Option<PresentationTransaction>, PresentationStoreError>,
@@ -52,7 +53,7 @@ where
         &'a self,
         transaction_id: uuid::Uuid,
         wallet_nonce: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         self.as_ref()
             .bind_wallet_nonce(transaction_id, wallet_nonce, now)
@@ -63,7 +64,7 @@ where
         transaction_id: uuid::Uuid,
         state_hash: &'a str,
         result: &'a PresentationResult,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         self.as_ref()
             .complete(transaction_id, state_hash, result, now)
@@ -72,7 +73,7 @@ where
     fn result<'a>(
         &'a self,
         transaction_id: uuid::Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<
         'a,
         Result<Option<PresentationResult>, PresentationStoreError>,
@@ -100,7 +101,7 @@ where
         transaction: &PresentationTransaction,
         response: &AuthorizationResponse,
         additional_trust_anchors: &[Vec<u8>],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<PresentationResult, PresentationServiceError> {
         if now >= transaction.expires_at
             || response.state.as_deref() != Some(transaction.request.state.as_str())
@@ -242,40 +243,30 @@ fn mdoc_session_transcript(
     }
     let verifier_key_thumbprint =
         if transaction.request.response_mode == ResponseMode::DirectPostJwt {
-            transaction
+            let jwks = transaction
                 .request
                 .client_metadata
                 .as_ref()
                 .and_then(|metadata| metadata.jwks.as_ref())
-                .map(jwk_set_thumbprint)
-                .transpose()?
+                .ok_or(PresentationError::InvalidRequest)?;
+            Some(jwk_set_thumbprint(jwks)?)
         } else {
             None
         };
-    let handover_info = (
-        &transaction.request.client_id,
-        &transaction.request.nonce,
-        verifier_key_thumbprint.map(ciborium::Value::Bytes),
-        &transaction.request.response_uri,
-    );
-    let mut encoded_handover_info = Vec::new();
-    ciborium::into_writer(&handover_info, &mut encoded_handover_info)
-        .map_err(|_| PresentationError::InvalidRequest)?;
-    let transcript = (
-        (),
-        (),
-        (
-            "OpenID4VPHandover",
-            ciborium::Value::Bytes(Sha256::digest(encoded_handover_info).to_vec()),
-        ),
-    );
-    let mut encoded = Vec::new();
-    ciborium::into_writer(&transcript, &mut encoded)
-        .map_err(|_| PresentationError::InvalidRequest)?;
-    Ok(Some(encoded))
+    // The request transaction is the authority for these values. The credential
+    // verifier borrows this exact transcript; it cannot recover request context
+    // from a received handover hash.
+    SessionTranscript::redirect(RedirectHandover {
+        client_id: &transaction.request.client_id,
+        nonce: &transaction.request.nonce,
+        jwk_thumbprint: verifier_key_thumbprint.as_ref(),
+        response_uri: &transaction.request.response_uri,
+    })
+    .map(|transcript| Some(transcript.into_bytes()))
+    .map_err(|_| PresentationError::InvalidRequest.into())
 }
 
-fn jwk_set_thumbprint(jwks: &Value) -> Result<Vec<u8>, PresentationServiceError> {
+fn jwk_set_thumbprint(jwks: &Value) -> Result<[u8; 32], PresentationServiceError> {
     let keys = jwks
         .get("keys")
         .and_then(Value::as_array)
@@ -293,7 +284,7 @@ fn jwk_set_thumbprint(jwks: &Value) -> Result<Vec<u8>, PresentationServiceError>
         _ => return Err(PresentationError::InvalidRequest.into()),
     };
     let encoded = serde_json::to_vec(&canonical).map_err(|_| PresentationError::InvalidRequest)?;
-    Ok(Sha256::digest(encoded).to_vec())
+    Ok(Sha256::digest(encoded).into())
 }
 
 fn credential_matches_query(

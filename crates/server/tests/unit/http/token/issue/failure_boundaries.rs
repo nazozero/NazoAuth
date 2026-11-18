@@ -339,7 +339,7 @@ async fn assert_expired_commit_response(grant_type: GrantType, expected_error: &
     let mut issue = token_issue_without_openid();
     issue.include_refresh = false;
     issue.subject = client.client_id.clone();
-    let deadline = Utc::now() + chrono::Duration::minutes(5);
+    let deadline = Timestamp::now() + jiff::SignedDuration::from_mins(5);
     // Identical opaque keys prove that the application grant, rather than a
     // storage-key prefix, chooses the protocol error.
     let key = format!("opaque-{}", Uuid::now_v7());

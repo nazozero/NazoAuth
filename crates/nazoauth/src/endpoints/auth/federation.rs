@@ -7,8 +7,8 @@ use crate::http::{
     with_cookie_headers,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_identity::{FederationError, LoginSuccess, VerifiedExternalIdentity};
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -151,7 +151,7 @@ pub async fn federation_provider_start(
                 .start_oidc(
                     provider.provider_id.clone(),
                     &browser_binding_seed,
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await
             {
@@ -170,7 +170,7 @@ pub async fn federation_provider_start(
         }
         ExternalLoginProviderAdapter::Social(provider) => {
             match service
-                .start_social(provider_id, &browser_binding_seed, Utc::now())
+                .start_social(provider_id, &browser_binding_seed, Timestamp::now())
                 .await
             {
                 Ok(start) => federation_start_response(
@@ -283,7 +283,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             input.state_token,
             &provider.provider_id,
             &browser_binding_seed,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
     {
@@ -397,7 +397,7 @@ pub async fn social_callback_after_rate_limit(
             input.state_token,
             &provider_id,
             &browser_binding_seed,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
     {
@@ -479,7 +479,7 @@ pub async fn federation_saml_acs(
         );
     }
     if let Err(error) = service
-        .consume_saml_assertion(&payload.signature, payload.exp, Utc::now())
+        .consume_saml_assertion(&payload.signature, payload.exp, Timestamp::now())
         .await
     {
         return federation_saml_replay_error(error);

@@ -73,7 +73,7 @@ pub(crate) fn token(
     claim_overrides: Value,
     header_overrides: Option<Header>,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut claims = json!({
         "iss": "https://issuer.example",
         "sub": "subject-1",
@@ -113,7 +113,7 @@ pub(crate) fn dpop_proof(
     let mut claims = json!({
         "htu": htu,
         "htm": method,
-        "iat": Utc::now().timestamp(),
+        "iat": jiff::Timestamp::now().as_second(),
         "jti": jti,
         "ath": ath_override
             .map(ToOwned::to_owned)

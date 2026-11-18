@@ -79,7 +79,7 @@ fn jwt_bearer_claims_require_exact_party_audience_time_and_replay_values() {
     assert_eq!(assertion.replay_ttl_seconds, 120);
     assert_eq!(
         assertion.expires_at,
-        chrono::DateTime::from_timestamp(policy.now + 120, 0)
+        jiff::Timestamp::new(policy.now + 120, 0)
             .expect("assertion expiry should be representable"),
         "the validated grant deadline is the assertion's verified exp"
     );

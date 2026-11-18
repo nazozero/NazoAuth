@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use chrono::{Duration as ChronoDuration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::{
     AvatarUploadAuthorization, AvatarUploadClaim, TenantId, UserId, ports::AvatarUploadStatePort,
 };
@@ -31,7 +31,7 @@ fn authorization(upload_id: String, user_id: UserId) -> AvatarUploadAuthorizatio
         expected_avatar_url: Some(format!("https://images.example.test/{upload_id}")),
         expected_avatar_revision: 9_007_199_254_740_993,
         staging_object_id: format!("staging/{upload_id}"),
-        expires_at: Utc::now() + ChronoDuration::seconds(60),
+        expires_at: Timestamp::now() + SignedDuration::from_secs(60),
     }
 }
 
@@ -53,7 +53,7 @@ async fn avatar_upload_claims_are_leased_and_owner_fenced() {
         &store,
         user_id,
         &authorization.upload_id,
-        Utc::now() + ChronoDuration::seconds(60),
+        Timestamp::now() + SignedDuration::from_secs(60),
     )
     .await
     .expect("claim upload authorization")
@@ -69,8 +69,8 @@ async fn avatar_upload_claims_are_leased_and_owner_fenced() {
     );
     assert_eq!(claimed.staging_object_id, authorization.staging_object_id);
     assert_eq!(
-        claimed.expires_at.timestamp(),
-        authorization.expires_at.timestamp(),
+        claimed.expires_at.as_second(),
+        authorization.expires_at.as_second(),
         "Valkey TTL and the wire format have whole-second precision"
     );
     assert!(!ownership_token.is_empty());
@@ -80,7 +80,7 @@ async fn avatar_upload_claims_are_leased_and_owner_fenced() {
             &store,
             user_id,
             &authorization.upload_id,
-            Utc::now() + ChronoDuration::seconds(60),
+            Timestamp::now() + SignedDuration::from_secs(60),
         )
         .await
         .expect("concurrent claim"),
@@ -129,7 +129,7 @@ async fn avatar_upload_claims_are_leased_and_owner_fenced() {
         &store,
         user_id,
         &authorization.upload_id,
-        Utc::now() + ChronoDuration::seconds(60),
+        Timestamp::now() + SignedDuration::from_secs(60),
     )
     .await
     .expect("reclaim publishing candidate")
@@ -169,7 +169,7 @@ async fn avatar_upload_claims_are_leased_and_owner_fenced() {
             &store,
             user_id,
             &authorization.upload_id,
-            Utc::now() + ChronoDuration::seconds(60),
+            Timestamp::now() + SignedDuration::from_secs(60),
         )
         .await
         .expect("completed claim"),
@@ -219,7 +219,7 @@ async fn avatar_upload_release_and_expired_lease_allow_a_new_owner() {
         &store,
         user_id,
         &authorization.upload_id,
-        Utc::now() - ChronoDuration::seconds(1),
+        Timestamp::now() - SignedDuration::from_secs(1),
     )
     .await
     .expect("first claim")
@@ -233,7 +233,7 @@ async fn avatar_upload_release_and_expired_lease_allow_a_new_owner() {
         &store,
         user_id,
         &authorization.upload_id,
-        Utc::now() + ChronoDuration::seconds(60),
+        Timestamp::now() + SignedDuration::from_secs(60),
     )
     .await
     .expect("expired lease claim")
@@ -256,7 +256,7 @@ async fn avatar_upload_release_and_expired_lease_allow_a_new_owner() {
             &store,
             user(4),
             &authorization.upload_id,
-            Utc::now() + ChronoDuration::seconds(60),
+            Timestamp::now() + SignedDuration::from_secs(60),
         )
         .await
         .expect("other user claim"),

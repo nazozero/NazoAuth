@@ -163,7 +163,7 @@ async fn enumerate_and_revoke_commit_without_apply_preparation() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn revoke_checks_surviving_children_only_for_targeted_parents() {
-    use chrono::{Duration, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use nazo_operator_protocol::{TenantResourceIdentity, TenantResourceKind};
     use nazo_persistence::tenant_resources::PreparedTenantResource;
     use nazo_postgres::{
@@ -232,7 +232,7 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
     )
     .await
     .unwrap();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let anchor_id = insert_operator_managed_trust_anchor_on_connection(
         &mut connection,
         OperatorManagedTrustAnchor {
@@ -241,8 +241,8 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
             certificate_pem: "-----BEGIN CERTIFICATE-----\ncHVibGlj\n-----END CERTIFICATE-----\n",
             certificate_sha256: &digest,
             subject_dn: "CN=dependency",
-            not_before: now - Duration::minutes(1),
-            not_after: now + Duration::hours(1),
+            not_before: now - SignedDuration::from_mins(1),
+            not_after: now + SignedDuration::from_hours(1),
         },
     )
     .await

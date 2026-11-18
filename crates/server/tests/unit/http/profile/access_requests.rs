@@ -14,7 +14,7 @@ use crate::test_support::valkey::valkey_set_ex;
 
 use actix_web::http::header;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::{Value, json};
 
 use nazo_identity::AccessRequestStatus;
@@ -166,7 +166,7 @@ impl LiveProfileAccessRequestFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
@@ -215,7 +215,7 @@ fn sample_access_request_payload() -> CreateAccessRequest {
 }
 
 fn access_request_row(status: AccessRequestStatus) -> nazo_identity::AccessRequest {
-    let now = Utc::now();
+    let now = Timestamp::now();
     nazo_identity::AccessRequest {
         id: Uuid::now_v7(),
         tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),

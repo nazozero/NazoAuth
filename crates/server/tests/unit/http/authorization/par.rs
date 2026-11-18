@@ -2,7 +2,7 @@ use super::*;
 use crate::config::ConfigSource;
 use crate::http::authorization::test_support::AuthorizationTestFixture;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     ExpandedParAdmissionPolicy, ParAdmissionError, RawParAdmissionPolicy,
     validate_expanded_par_admission, validate_raw_par_admission,
@@ -241,7 +241,7 @@ fn pushed_authorization_request_resources_reject_unregistered_target() {
 }
 
 fn signed_request_object(client_id: &str, fixture: &ClientSigningFixture, extra: Value) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let mut claims = json!({
         "client_id": client_id,
         "iss": client_id,
@@ -268,7 +268,7 @@ fn private_key_client_assertion(
     audience: &str,
     fixture: &ClientSigningFixture,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let claims = json!({
         "iss": client_id,
         "sub": client_id,
@@ -283,7 +283,7 @@ fn private_key_client_assertion(
 }
 
 fn unsigned_request_object(client_id: &str) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let header = json!({"alg": "none"});
     let claims = json!({
         "client_id": client_id,

@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     DpopError, DpopNoncePolicy, DpopProofRequest, DpopStateStorePort,
     issue_authorization_server_dpop_nonce, token_audience_contains,
@@ -160,9 +160,9 @@ async fn next_dpop_nonce<S: DpopStateStorePort + ?Sized>(
 pub struct PutCredentialDatasetRequest {
     pub claims: Value,
     #[serde(default)]
-    pub valid_from: Option<chrono::DateTime<chrono::Utc>>,
+    pub valid_from: Option<jiff::Timestamp>,
     #[serde(default)]
-    pub valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    pub valid_until: Option<jiff::Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -170,9 +170,9 @@ pub struct CredentialDatasetResponse {
     pub subject_id: Uuid,
     pub credential_configuration_id: String,
     pub claims: Value,
-    pub valid_from: Option<chrono::DateTime<chrono::Utc>>,
-    pub valid_until: Option<chrono::DateTime<chrono::Utc>>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub valid_from: Option<jiff::Timestamp>,
+    pub valid_until: Option<jiff::Timestamp>,
+    pub updated_at: jiff::Timestamp,
 }
 
 pub struct ServerCredentialIssuerOperations {
@@ -476,7 +476,7 @@ impl ServerCredentialIssuerOperations {
         let token_hash = blake3_hex(&context.bearer_token);
         let retained_access = self
             .store
-            .resolve_access(&token_hash, Utc::now())
+            .resolve_access(&token_hash, Timestamp::now())
             .await
             .map_err(|_| {
                 vci_error(
@@ -527,9 +527,8 @@ impl ServerCredentialIssuerOperations {
             configuration_ids,
             credential_identifiers,
             dpop_jkt,
-            expires_at: chrono::DateTime::from_timestamp(claims.exp, 0).ok_or_else(|| {
-                vci_error(401, "invalid_token", "Access token expiry is invalid.")
-            })?,
+            expires_at: jiff::Timestamp::new(claims.exp, 0)
+                .map_err(|_| vci_error(401, "invalid_token", "Access token expiry is invalid."))?,
         };
         // The live retained projection already proves an identical grant exists.
         // Only a missing or changed projection needs the persistence transition.
@@ -564,7 +563,7 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 ));
             };
             let mut metadata = self.metadata_document();
-            let now = Utc::now().timestamp();
+            let now = Timestamp::now().as_second();
             let mut signed = serde_json::to_value(&metadata)
                 .map_err(|_| vci_error(500, "server_error", "Metadata encoding failed."))?;
             signed["iss"] = json!(self.issuer);
@@ -605,7 +604,7 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
             self.store
                 .issue_nonce(&NonceRecord {
                     nonce_hash: blake3_hex(&nonce),
-                    expires_at: Utc::now() + Duration::minutes(5),
+                    expires_at: Timestamp::now() + SignedDuration::from_mins(5),
                 })
                 .await
                 .map_err(|_| {

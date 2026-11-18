@@ -3,7 +3,7 @@ use super::helpers::*;
 use std::sync::Arc;
 
 use base64::Engine as _;
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_digital_credentials::EphemeralEncryptionKey;
 use nazo_openid4vp::application::{
     CreatePresentationRequest, CreatePresentationResponse, PresentationFuture,
@@ -105,8 +105,8 @@ impl ServerPresentationOperations {
             authorization_url: url.into(),
             expires_in: transaction
                 .expires_at
-                .signed_duration_since(transaction.created_at)
-                .num_seconds()
+                .duration_since(transaction.created_at)
+                .as_secs()
                 .max(0) as u64,
         })
     }
@@ -145,7 +145,7 @@ impl ServerPresentationOperations {
         request: &AuthorizationRequest,
         material: Openid4vcSigningMaterial,
     ) -> Result<String, PresentationHttpError> {
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         let mut claims = serde_json::to_value(request)
             .map_err(|_| vp_error(500, "server_error", "Presentation request encoding failed."))?;
         claims["iss"] = json!(request.client_id);
@@ -519,7 +519,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 })?;
                 Some(self.request_object(&request, material).await?)
             };
-            let now = Utc::now();
+            let now = Timestamp::now();
             let transaction = PresentationTransaction {
                 id,
                 client_id_prefix: prefix,
@@ -538,7 +538,7 @@ impl PresentationOperations for ServerPresentationOperations {
                     .map(|policy| policy.resource_digest.clone()),
                 response_encryption_private_key: response_key.map(|key| key.secret_bytes()),
                 created_at: now,
-                expires_at: now + Duration::seconds(self.transaction_ttl_seconds as i64),
+                expires_at: now + SignedDuration::from_secs(self.transaction_ttl_seconds as i64),
             };
             match self.store.create(&transaction, idempotency).await {
                 Ok(PresentationCreateOutcome::Created) => {
@@ -581,7 +581,7 @@ impl PresentationOperations for ServerPresentationOperations {
             };
             let mut transaction = self
                 .store
-                .request(transaction_id, Utc::now())
+                .request(transaction_id, Timestamp::now())
                 .await
                 .map_err(|_| {
                     vp_error(
@@ -612,7 +612,7 @@ impl PresentationOperations for ServerPresentationOperations {
                     }
                     let bound = self
                         .store
-                        .bind_wallet_nonce(transaction_id, nonce, Utc::now())
+                        .bind_wallet_nonce(transaction_id, nonce, Timestamp::now())
                         .await
                         .map_err(|_| {
                             vp_error(
@@ -693,7 +693,7 @@ impl PresentationOperations for ServerPresentationOperations {
             };
             let transaction = self
                 .store
-                .request(transaction_id, Utc::now())
+                .request(transaction_id, Timestamp::now())
                 .await
                 .map_err(|_| {
                     vp_error(
@@ -729,15 +729,22 @@ impl PresentationOperations for ServerPresentationOperations {
                                 "Presentation response key is unavailable.",
                             )
                         })?;
-                    let plaintext = EphemeralEncryptionKey::from_secret_bytes(key)
-                        .and_then(|key| key.decrypt(&encoded))
-                        .map_err(|_| {
+                    let response_key =
+                        EphemeralEncryptionKey::from_secret_bytes(key).map_err(|_| {
                             vp_error(
                                 400,
                                 "invalid_request",
                                 "Encrypted presentation response is invalid.",
                             )
                         })?;
+                    validate_response_encryption_key(&transaction.request, &response_key)?;
+                    let plaintext = response_key.decrypt(&encoded).map_err(|_| {
+                        vp_error(
+                            400,
+                            "invalid_request",
+                            "Encrypted presentation response is invalid.",
+                        )
+                    })?;
                     serde_json::from_slice(&plaintext).map_err(|_| {
                         vp_error(
                             400,
@@ -760,7 +767,7 @@ impl PresentationOperations for ServerPresentationOperations {
                     &transaction,
                     &response,
                     &additional_trust_anchors,
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await
                 .map_err(|error| {
@@ -794,7 +801,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 ));
             };
             self.store
-                .result(transaction_id, Utc::now())
+                .result(transaction_id, Timestamp::now())
                 .await
                 .map_err(|_| {
                     vp_error(
@@ -857,6 +864,35 @@ fn validate_retained_request_profile(
             "Stored presentation request profile is unsupported.",
         )
     })
+}
+
+/// The Final handover thumbprint identifies the key that actually decrypted the
+/// response. A retained request's advertised key cannot override that fact.
+fn validate_response_encryption_key(
+    request: &AuthorizationRequest,
+    key: &EphemeralEncryptionKey,
+) -> Result<(), PresentationHttpError> {
+    let advertised = request
+        .client_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.jwks.as_ref())
+        .and_then(|jwks| jwks.get("keys"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|keys| keys.len() == 1)
+        .and_then(|keys| keys.first());
+    let actual = key.public_jwk();
+    if advertised.is_none_or(|advertised| {
+        ["kty", "crv", "x", "y"]
+            .iter()
+            .any(|name| advertised.get(*name) != actual.get(*name))
+    }) {
+        return Err(vp_error(
+            400,
+            "invalid_request",
+            "Presentation response key does not match the retained request.",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

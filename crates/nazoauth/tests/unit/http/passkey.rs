@@ -17,6 +17,7 @@ struct CapturedLoginFinish {
     ceremony_id: String,
     source_ip: String,
     previous_session_id: Option<String>,
+    csrf_verified: bool,
     remembered_mfa: Option<RememberedMfaProof>,
 }
 
@@ -35,6 +36,7 @@ impl PasskeyLoginOperations for LoginOperations {
             ceremony_id: command.ceremony_id,
             source_ip: command.source_ip,
             previous_session_id: command.previous_session_id,
+            csrf_verified: command.csrf_verified,
             remembered_mfa: command.remembered_mfa,
         });
         let result = self.result.lock().unwrap().take().unwrap();
@@ -141,7 +143,7 @@ fn login_success() -> LoginSuccess {
         session: SessionRecord::new(
             UserId::new(Uuid::from_u128(1)).unwrap(),
             0,
-            Utc::now().timestamp(),
+            jiff::Timestamp::now().as_second(),
             vec!["passkey".to_owned()],
             false,
             Some("oidc-session".to_owned()),
@@ -151,12 +153,87 @@ fn login_success() -> LoginSuccess {
 
 fn authentication_response() -> AuthenticationResponse {
     AuthenticationResponse {
-        id: "credential".to_owned(),
-        authenticator_data: "authenticator-data".to_owned(),
-        signature: "signature".to_owned(),
-        client_data_json: "client-data".to_owned(),
-        user_handle: None,
+        id: nazo_passkey::CredentialId(b"credential".to_vec()),
+        response: nazo_passkey::AssertionResponse {
+            authenticator_data: "authenticator-data".to_owned(),
+            signature: "signature".to_owned(),
+            client_data_json: "client-data".to_owned(),
+            user_handle: None,
+        },
     }
+}
+
+#[test]
+fn browser_credential_json_is_validated_before_login_operations() {
+    futures_executor::block_on(async {
+        let wire = json!({
+            "ceremony_id": "ceremony",
+            "response": {
+                "id": "AQID", "rawId": "AQID", "type": "public-key",
+                "response": {
+                    "authenticatorData": "AA", "signature": "AA",
+                    "clientDataJSON": "AA", "userHandle": "BAUG",
+                },
+                "clientExtensionResults": {},
+            },
+        });
+        let parsed: PasskeyLoginFinishRequest = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(parsed.response.id.as_bytes(), &[1, 2, 3]);
+        assert_eq!(
+            parsed.response.response.user_handle.as_deref(),
+            Some(&[4, 5, 6][..])
+        );
+
+        let mut invalid = Vec::new();
+        for id in [
+            "".to_owned(),
+            "A".repeat(1365),
+            "AQID=".into(),
+            "+/8".into(),
+            "AB".into(),
+        ] {
+            let mut value = wire.clone();
+            value["response"]["id"] = json!(id);
+            value["response"]["rawId"] = value["response"]["id"].clone();
+            invalid.push(value);
+        }
+        let mut mismatch = wire.clone();
+        mismatch["response"]["rawId"] = json!("BAUG");
+        invalid.push(mismatch);
+        let mut wrong_type = wire.clone();
+        wrong_type["response"]["type"] = json!("password");
+        invalid.push(wrong_type);
+        let mut noncanonical_handle = wire.clone();
+        noncanonical_handle["response"]["response"]["userHandle"] = json!("BAUG=");
+        invalid.push(noncanonical_handle);
+        let mut legacy = wire;
+        legacy["response"] = json!({
+            "id": "AQID", "authenticator_data": "AA", "signature": "AA",
+            "client_data_json": "AA", "user_handle": "BAUG",
+        });
+        invalid.push(legacy);
+
+        for value in invalid {
+            let (endpoint, operations, rate_limit) = login_endpoint(Ok(login_success()), Ok(()));
+            let payload =
+                serde_json::from_value::<PasskeyLoginFinishRequest>(value).map_err(|_| ());
+            assert!(payload.is_err());
+            let response = passkey_login_finish(
+                &endpoint,
+                &http::Request::builder()
+                    .method("POST")
+                    .body(Bytes::new())
+                    .unwrap(),
+                payload,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert!(!response.headers().contains_key(header::SET_COOKIE));
+            assert_no_store(response.headers());
+            assert!(operations.finishes.lock().unwrap().is_empty());
+            assert!(rate_limit.subjects.lock().unwrap().is_empty());
+        }
+    });
 }
 
 async fn response_json(response: Response) -> Value {
@@ -238,12 +315,63 @@ fn login_finish_extracts_security_context_and_sets_only_bound_session_material()
                 ceremony_id: "ceremony".to_owned(),
                 source_ip: "203.0.113.9".to_owned(),
                 previous_session_id: Some("old-session".to_owned()),
+                csrf_verified: false,
                 remembered_mfa: Some(RememberedMfaProof {
                     token_hash: blake3_hex("remembered-secret"),
                     user_agent_hash: Some(blake3_hex("passkey-test-agent")),
                 }),
             }]
         );
+    });
+}
+
+#[test]
+fn login_only_allows_uv_initialization_with_the_existing_session_csrf_proof() {
+    futures_executor::block_on(async {
+        for (cookies, token, expected_session, expected_verified) in [
+            (None, None, None, false),
+            (Some("csrf=proof"), Some("proof"), None, false),
+            (
+                Some("session=old-session; csrf=proof"),
+                None,
+                Some("old-session"),
+                false,
+            ),
+            (
+                Some("session=old-session; csrf=proof"),
+                Some("wrong"),
+                Some("old-session"),
+                false,
+            ),
+            (
+                Some("session=old-session; csrf=proof"),
+                Some("proof"),
+                Some("old-session"),
+                true,
+            ),
+        ] {
+            let (endpoint, operations, _) = login_endpoint(Ok(login_success()), Ok(()));
+            let mut request = http::Request::builder().method("POST");
+            if let Some(cookies) = cookies {
+                request = request.header(header::COOKIE, cookies);
+            }
+            if let Some(token) = token {
+                request = request.header("x-csrf-token", token);
+            }
+            let response = passkey_login_finish(
+                &endpoint,
+                &request.body(Bytes::new()).unwrap(),
+                Ok(PasskeyLoginFinishRequest {
+                    ceremony_id: "ceremony".to_owned(),
+                    response: authentication_response(),
+                }),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let finishes = operations.finishes.lock().unwrap();
+            assert_eq!(finishes[0].csrf_verified, expected_verified);
+            assert_eq!(finishes[0].previous_session_id.as_deref(), expected_session);
+        }
     });
 }
 
@@ -349,7 +477,7 @@ fn write_rejects_invalid_csrf_before_session_or_core_lookup() {
 #[test]
 fn public_passkey_projection_excludes_tenant_user_and_credential_material() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let credential = PasskeyCredential {
             id: Uuid::from_u128(1),
             tenant_id: TenantId::new(Uuid::from_u128(2)).unwrap(),

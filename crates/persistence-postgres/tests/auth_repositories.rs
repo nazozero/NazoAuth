@@ -104,13 +104,13 @@ fn family_lock_key(family_id: Uuid) -> i64 {
 
 fn refresh_authentication_context(
     client_public_id: &str,
-    issued_at: chrono::DateTime<chrono::Utc>,
+    issued_at: jiff::Timestamp,
 ) -> RefreshTokenAuthenticationContext {
     RefreshTokenAuthenticationContext {
         version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
         issuer: "https://issuer.example".to_owned(),
         audience: client_public_id.to_owned(),
-        auth_time: issued_at.timestamp() - 1,
+        auth_time: issued_at.as_second() - 1,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
 
@@ -121,10 +121,7 @@ fn refresh_authentication_context(
     }
 }
 
-fn refresh_context_json(
-    client_public_id: &str,
-    issued_at: chrono::DateTime<chrono::Utc>,
-) -> String {
+fn refresh_context_json(client_public_id: &str, issued_at: jiff::Timestamp) -> String {
     serde_json::to_string(&refresh_authentication_context(client_public_id, issued_at))
         .expect("refresh authentication context should serialize")
 }
@@ -265,9 +262,9 @@ fn refresh_token_fixture(
     raw_token: String,
     rotated_from_id: Option<Uuid>,
 ) -> RefreshFixture {
-    let issued_at = chrono::Utc::now();
-    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0)
-        .expect("fixed authentication time should be valid");
+    let issued_at = jiff::Timestamp::now();
+    let authentication_time =
+        jiff::Timestamp::new(1_700_000_000, 0).expect("fixed authentication time should be valid");
     RefreshFixture {
         token: NewRefreshToken {
             raw_token,
@@ -280,7 +277,7 @@ fn refresh_token_fixture(
             user_id: Some(fixture.user_id),
             audiences: vec!["resource://default".to_owned()],
             issued_at,
-            expires_at: issued_at + chrono::Duration::hours(1),
+            expires_at: issued_at + jiff::SignedDuration::from_hours(1),
             id_token_sid: None,
             dpop_jkt: None,
             mtls_x5t_s256: None,
@@ -382,7 +379,7 @@ async fn refresh_issuance(database_url: &str, fixture: RefreshFixture) -> Commit
         user_id: token.user_id,
         mode: TokenIssuanceMode::Fresh,
         access_token_jti: issuance_id.to_string(),
-        access_token_expires_at: (token.issued_at + chrono::Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (token.issued_at + jiff::SignedDuration::from_mins(5)).as_second(),
         audit_fields: TokenIssuedAuditFields {
             client_id: contract.authentication_context.audience.clone(),
             subject_hash: blake3::hash(contract.subject.as_bytes())
@@ -664,7 +661,7 @@ async fn single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_aud
     let mut input = refresh_issuance(&database_url, token).await;
     input.mode = TokenIssuanceMode::SingleUse {
         grant_key: format!("grant-{}", input.issuance_id),
-        grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     };
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     assert_eq!(
@@ -1634,7 +1631,7 @@ async fn grants_ensure_updates_authorization_idempotently_and_revokes_tokens_ato
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
         .expect("test database should connect");
-    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&fixture.client_public_id, jiff::Timestamp::now());
     insert_refresh_row(
         &mut connection,
         &raw_refresh_row(
@@ -1671,7 +1668,7 @@ async fn delayed_device_approver_cannot_recreate_a_revoked_grant() {
     let hash = blake3::hash(Uuid::now_v7().as_bytes()).to_hex().to_string();
     let scopes = vec!["openid".to_owned()];
     let details = json!([]);
-    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(5);
+    let expires_at = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5);
     let write = || nazo_auth::DeviceGrantWrite {
         tenant_id,
         user_id: fixture.user_id,
@@ -1703,7 +1700,7 @@ async fn delayed_device_approver_cannot_recreate_a_revoked_grant() {
         repository
             .commit_device_approval(nazo_auth::DeviceGrantWrite {
                 device_code_hash: &expired_hash,
-                expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+                expires_at: jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1),
                 ..write()
             })
             .await
@@ -1988,7 +1985,7 @@ async fn authorization_code_replay_compensation_revokes_both_token_kinds() {
     let family_id = Uuid::now_v7();
     let access_jti = format!("authorization-replay-{}", Uuid::now_v7());
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&fixture.client_public_id, jiff::Timestamp::now());
     insert_refresh_row(
         &mut connection,
         &raw_refresh_row(
@@ -2006,7 +2003,7 @@ async fn authorization_code_replay_compensation_revokes_both_token_kinds() {
             tenant_id,
             fixture.client_id,
             &access_jti,
-            Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+            Some(jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1)),
             Some(family_id),
         )
         .await
@@ -2038,7 +2035,7 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let first = format!("revocation-first-{}", Uuid::now_v7());
     let second = format!("revocation-second-{}", Uuid::now_v7());
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    let context = refresh_context_json(&owner.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&owner.client_public_id, jiff::Timestamp::now());
     let first_id = insert_refresh_row(
         &mut connection,
         &raw_refresh_row(&owner, tenant_id, family_id, &first, &context),
@@ -2122,7 +2119,7 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
                     raw_token: "opaque-access-token",
                     access_token: Some(AccessTokenRevocation {
                         jti: access_jti.clone(),
-                        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                        expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
                     }),
                 },
                 "revocation-test-client",
@@ -2237,7 +2234,7 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
                 tenant_id,
                 client_id,
                 &access_jti_for_task,
-                Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+                Some(jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1)),
                 Some(family_id),
             )
             .await
@@ -2348,7 +2345,7 @@ async fn audit_repository_reads_active_scim_credentials_and_drives_logout_outbox
             logout_uri: "https://client.example/backchannel-logout".to_owned(),
             logout_token: logout_token.clone(),
             operation_key: format!("test-{}", Uuid::now_v7()),
-            expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(2),
         }])
         .await
         .expect("backchannel delivery should enqueue");
@@ -2383,7 +2380,7 @@ async fn backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid() {
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let repository = AuditRepository::new(create_pool(&database_url, 4).unwrap());
     let marker = format!("logout-atomic-{}", Uuid::now_v7());
-    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(2);
+    let expires_at = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(2);
     let result = repository
         .enqueue_idempotent_backchannel_logout_batch(&[
             IdempotentBackchannelLogoutDelivery {
@@ -2486,7 +2483,7 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
             logout_uri: "https://client.example/backchannel-logout".to_owned(),
             logout_token: logout_token.clone(),
             operation_key: format!("test-{}", Uuid::now_v7()),
-            expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(2),
         }])
         .await
         .expect("delivery should enqueue");
@@ -2531,7 +2528,7 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
         .fail_backchannel_logout(
             first.id,
             first.attempts,
-            Some(chrono::Utc::now() + chrono::Duration::seconds(5)),
+            Some(jiff::Timestamp::now() + jiff::SignedDuration::from_secs(5)),
             "stale failure",
         )
         .await;
@@ -3001,7 +2998,7 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     // under test pays a real commit (raw inserts simply wait out queued DDL
     // instead of expiring on the transaction lock_timeout).
     let missing_family = Uuid::now_v7();
-    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&fixture.client_public_id, jiff::Timestamp::now());
     insert_refresh_row(
         &mut connection,
         &raw_refresh_row(
@@ -3198,7 +3195,7 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     // tenant-scoped compromise cannot touch the foreign row.
     let (foreign_tenant, foreign_client, foreign_public_id) =
         insert_foreign_tenant_client(&mut connection).await;
-    let foreign_context = refresh_context_json(&foreign_public_id, chrono::Utc::now());
+    let foreign_context = refresh_context_json(&foreign_public_id, jiff::Timestamp::now());
     let foreign_family = Uuid::now_v7();
     let foreign_raw = format!("foreign-parent-{}", Uuid::now_v7());
     let foreign_parent_id = insert_refresh_row(
@@ -3315,7 +3312,7 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    let authentication_time = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
 
     // Helper: build the stored context JSON for a claim-request `value`.
     let context_with_claim = |value: serde_json::Value| {
@@ -3680,7 +3677,7 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     let tokens = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
 
     // Outer snapshot: the unconsumed successor of the revoked original.
-    let retry_started_at = chrono::Utc::now();
+    let retry_started_at = jiff::Timestamp::now();
     let inspected = tokens
         .refresh_token_snapshot(
             tenant_id,
@@ -3787,7 +3784,7 @@ async fn stage_lost_response(
     successor_reuse_detected: bool,
     successor_count: usize,
 ) -> (String, Vec<Uuid>) {
-    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&fixture.client_public_id, jiff::Timestamp::now());
     let family_id = Uuid::now_v7();
     let original_raw = format!("{label}-original-{}", Uuid::now_v7());
     let mut connection = AsyncPgConnection::establish(database_url)
@@ -3823,7 +3820,7 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     let jkt = "lost-successor-jkt";
     // The retry timestamp must follow the staged `revoked_at` for the
     // sixty-second recovery window to be entered at all.
-    let now = || chrono::Utc::now();
+    let now = || jiff::Timestamp::now();
 
     // Zero successors → nothing to recover.
     let (original_raw, _) = stage_lost_response(
@@ -4182,7 +4179,7 @@ async fn family_active_exists_semantics_cover_cardinality_and_predicates() {
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&fixture.client_public_id, jiff::Timestamp::now());
 
     // No rows at all.
     assert!(
@@ -4305,7 +4302,7 @@ async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
                 access_token: Some(AccessTokenRevocation {
                     jti: jti.clone(),
                     // Already past even after the verifier clock-skew deadline.
-                    expires_at: chrono::Utc::now() - chrono::Duration::hours(2),
+                    expires_at: jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2),
                 }),
             },
             "revocation-test-client",
@@ -4382,7 +4379,7 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
     .unwrap();
     input.mode = TokenIssuanceMode::AuthorizationCode {
         code_identity: grant_key.clone(),
-        grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         holder: holder.clone(),
     };
     assert_eq!(
@@ -4402,7 +4399,7 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
     assert_eq!(redemption.access_token_jti, input.access_token_jti);
     assert_eq!(redemption.refresh_token_family_id, Some(family_id));
     assert_eq!(
-        redemption.access_token_expires_at.timestamp(),
+        redemption.access_token_expires_at.as_second(),
         input.access_token_expires_at
     );
 
@@ -4450,8 +4447,8 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
 /// subject: the same serialized body and BLAKE3 digest the runtime path
 /// computes inside `persist_refresh_token`.
 fn contract_parts(fixture: &FixtureIds) -> (Vec<u8>, serde_json::Value) {
-    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0)
-        .expect("fixed authentication time should be valid");
+    let authentication_time =
+        jiff::Timestamp::new(1_700_000_000, 0).expect("fixed authentication time should be valid");
     let contract = nazo_auth::RefreshContract {
         subject: fixture.user_id.to_string(),
         scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
@@ -4941,9 +4938,9 @@ async fn required_revocation_event_failure_rolls_back_access_and_refresh_effects
     let family_id = Uuid::now_v7();
     let raw = format!("required-revoke-{}", Uuid::now_v7());
     let jti = format!("required-access-{}", Uuid::now_v7());
-    let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
+    let expires_at = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1);
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    let context = refresh_context_json(&owner.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&owner.client_public_id, jiff::Timestamp::now());
     insert_refresh_row(
         &mut connection,
         &raw_refresh_row(&owner, tenant_id, family_id, &raw, &context),

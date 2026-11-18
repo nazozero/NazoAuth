@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use nazo_auth::SigningPurpose;
+use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CertificateRevocationEntry, CertificateRevocationSnapshot, CertificateRevocationStatus,
     certificate_identity,
@@ -20,6 +20,399 @@ use crate::{
 };
 
 use super::*;
+
+async fn mdoc_publication_fixture() -> (
+    KeyManager,
+    Arc<MemorySigningKeyRepository>,
+    String,
+    jiff::Timestamp,
+) {
+    let (manager, repository, _, _) = database_fixture().await;
+    let fixture = openid4vc_fixture(Some(CertificateRevocationStatus::Good), false);
+    let issuer = fixture
+        .material
+        .iaca_private_materials
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let revision = manager.database_openid4vc_state().await.unwrap().revision;
+    manager
+        .database_commit_openid4vc(revision, fixture.material, Some(fixture.private_key_pem))
+        .await
+        .unwrap();
+    let now = Timestamp::from_second(Timestamp::now().as_second()).unwrap();
+    (manager, repository, issuer, now)
+}
+
+#[tokio::test]
+async fn mdoc_publication_is_durable_across_reload_material_commit_and_reseal() {
+    let (manager, repository, issuer, now) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    let before = repository.snapshot().unwrap().revision;
+    let first = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    let published = repository.snapshot().unwrap();
+    assert_eq!(published.revision, before + 1);
+    assert_eq!(
+        first.crl_number,
+        (1_u128 << 64) + published.revision as u128
+    );
+    assert!(first.crl_number > u128::from(u64::MAX));
+    assert_eq!(first.certificate_chain_der.len(), 2);
+    assert!(first.this_update >= now);
+    assert_eq!(
+        first.next_update,
+        first.this_update + jiff::SignedDuration::from_hours(24)
+    );
+    assert!(
+        !published
+            .public_metadata
+            .to_string()
+            .contains("PRIVATE KEY")
+    );
+    assert!(!format!("{first:?}").contains("PRIVATE KEY"));
+
+    let reloaded = KeyManager::load_or_create_database(
+        settings(),
+        None,
+        binding.tenant_id,
+        repository.clone(),
+        binding.wrapping_keys.clone(),
+    )
+    .await
+    .unwrap();
+    let again = mdoc_crl_material(&reloaded.inner.database, &issuer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.crl_number, first.crl_number);
+    assert_eq!(
+        (again.this_update, again.next_update),
+        (first.this_update, first.next_update)
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, published.revision);
+
+    // An ordinary authority update reserializes `openid4vc`, but must preserve
+    // the publication history outside that object.
+    let state = manager.database_openid4vc_state().await.unwrap();
+    manager
+        .database_commit_openid4vc(state.revision, state.material.unwrap(), None)
+        .await
+        .unwrap();
+    let after_commit = repository.snapshot().unwrap();
+    let same = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    assert_eq!(same.crl_number, first.crl_number);
+    assert_eq!(
+        repository.snapshot().unwrap().revision,
+        after_commit.revision
+    );
+
+    let new_ring =
+        SigningKeyWrappingKeyRing::new("publication-rotated", rand::random::<[u8; 32]>(), None)
+            .unwrap();
+    let payload = decrypt_payload(
+        binding.tenant_id,
+        &binding.wrapping_keys,
+        &mut after_commit.clone(),
+    )
+    .unwrap();
+    let resealed = persist_payload(
+        binding.tenant_id,
+        after_commit.revision + 1,
+        payload,
+        &new_ring,
+    )
+    .unwrap();
+    assert!(matches!(
+        repository
+            .compare_and_swap(after_commit.revision, resealed)
+            .await
+            .unwrap(),
+        SigningKeysetCompareAndSwapResult::Applied(_)
+    ));
+    let rotated_binding = DatabaseKeysetBinding {
+        wrapping_keys: new_ring,
+        ..binding.clone()
+    };
+    let same = mdoc_crl_material(&rotated_binding, &issuer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(same.crl_number, first.crl_number);
+    let mut before_expiry = repository.snapshot().unwrap();
+    let mut expired_payload = decrypt_payload(
+        binding.tenant_id,
+        &rotated_binding.wrapping_keys,
+        &mut before_expiry,
+    )
+    .unwrap();
+    expired_payload["mdoc_crl_publications"][&issuer]["this_update"] =
+        json!(now - jiff::SignedDuration::from_hours(25));
+    expired_payload["mdoc_crl_publications"][&issuer]["next_update"] =
+        json!(now - jiff::SignedDuration::from_hours(1));
+    repository.replace(Some(
+        persist_payload(
+            binding.tenant_id,
+            before_expiry.revision + 1,
+            expired_payload,
+            &rotated_binding.wrapping_keys,
+        )
+        .unwrap(),
+    ));
+    let expired = mdoc_crl_material(&rotated_binding, &issuer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(expired.crl_number > first.crl_number);
+    assert!(expired.this_update >= first.this_update);
+    assert_eq!(expired.revocation_snapshot, first.revocation_snapshot);
+}
+
+#[tokio::test]
+async fn mdoc_publication_reuses_pre_migration_snapshot_digest() {
+    let (manager, repository, issuer, _) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    let first = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    let mut saved = repository.snapshot().unwrap();
+    let mut payload =
+        decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut saved).unwrap();
+    // Frozen snapshot bytes used by the previous publisher, independent of
+    // the current Timestamp serializer. Publication freshness is retained below.
+    let frozen_snapshot = r#"{"version":1,"this_update":"2023-11-14T22:13:20.100Z","next_update":"2023-11-15T22:13:20.123400Z","entries":[]}"#;
+    let frozen_source = format!(
+        "[{},{},{}]",
+        serde_json::to_string(&issuer).unwrap(),
+        serde_json::to_string(&first.certificate_chain_der).unwrap(),
+        frozen_snapshot,
+    );
+    let source_hash: [u8; 32] = Sha256::digest(frozen_source.as_bytes()).into();
+    payload["openid4vc"]["public"]["revocation_snapshot"] =
+        serde_json::from_str(frozen_snapshot).unwrap();
+    payload["mdoc_crl_publications"][&issuer]["source_hash"] = json!(source_hash);
+    let revision = saved.revision + 1;
+    repository.replace(Some(
+        persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys).unwrap(),
+    ));
+
+    let again = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    assert_eq!(again.crl_number, first.crl_number);
+    assert_eq!(
+        (again.this_update, again.next_update),
+        (first.this_update, first.next_update)
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, revision);
+    assert_eq!(
+        again.revocation_snapshot,
+        serde_json::from_str::<CertificateRevocationSnapshot>(frozen_snapshot).unwrap()
+    );
+}
+
+#[tokio::test]
+async fn mdoc_publication_concurrent_publishers_share_one_persisted_version() {
+    struct SimultaneousReads {
+        inner: Arc<MemorySigningKeyRepository>,
+        captured: std::sync::Barrier,
+    }
+    impl SigningKeyRepository for SimultaneousReads {
+        fn load(&self) -> crate::SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+            Box::pin(async move {
+                let captured = self.inner.load().await?;
+                self.captured.wait();
+                Ok(captured)
+            })
+        }
+        fn create_if_absent(
+            &self,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+            self.inner.create_if_absent(value)
+        }
+        fn compare_and_swap(
+            &self,
+            expected: i64,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+            self.inner.compare_and_swap(expected, value)
+        }
+    }
+    let (manager, repository, issuer, _) = mdoc_publication_fixture().await;
+    let before = repository.snapshot().unwrap().revision;
+    let binding = DatabaseKeysetBinding {
+        repository: Arc::new(SimultaneousReads {
+            inner: repository.clone(),
+            captured: std::sync::Barrier::new(2),
+        }),
+        ..manager.inner.database.clone()
+    };
+    let (first, second) = std::thread::scope(|scope| {
+        let first =
+            scope.spawn(|| futures_executor::block_on(mdoc_crl_material(&binding, &issuer)));
+        let second =
+            scope.spawn(|| futures_executor::block_on(mdoc_crl_material(&binding, &issuer)));
+        (first.join().unwrap(), second.join().unwrap())
+    });
+    let first = first.unwrap().unwrap();
+    let second = second.unwrap().unwrap();
+    assert_eq!(first.crl_number, second.crl_number);
+    assert_eq!(
+        (first.this_update, first.next_update),
+        (second.this_update, second.next_update)
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, before + 1);
+}
+
+#[tokio::test]
+async fn mdoc_publication_lost_cas_reloads_the_winning_revocation_facts() {
+    struct RevokeBeforePublication {
+        inner: Arc<MemorySigningKeyRepository>,
+        winner: std::sync::Mutex<Option<PersistedSigningKeyset>>,
+    }
+    impl SigningKeyRepository for RevokeBeforePublication {
+        fn load(&self) -> crate::SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+            self.inner.load()
+        }
+        fn create_if_absent(
+            &self,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+            self.inner.create_if_absent(value)
+        }
+        fn compare_and_swap(
+            &self,
+            expected: i64,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+            Box::pin(async move {
+                let winner = self.winner.lock().unwrap().take();
+                if let Some(winner) = winner {
+                    assert!(matches!(
+                        self.inner
+                            .compare_and_swap(expected, winner.clone())
+                            .await?,
+                        SigningKeysetCompareAndSwapResult::Applied(_)
+                    ));
+                    Ok(SigningKeysetCompareAndSwapResult::Conflict(winner))
+                } else {
+                    self.inner.compare_and_swap(expected, value).await
+                }
+            })
+        }
+    }
+    let (manager, repository, issuer, now) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    let mut before = repository.snapshot().unwrap();
+    let mut payload =
+        decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut before).unwrap();
+    let snapshot = &mut payload["openid4vc"]["public"]["revocation_snapshot"];
+    let mut facts: CertificateRevocationSnapshot =
+        serde_json::from_value(snapshot.clone()).unwrap();
+    facts.this_update = now;
+    facts.next_update = now + jiff::SignedDuration::from_hours(24);
+    facts.entries[0].status = CertificateRevocationStatus::Revoked;
+    facts.entries[0].revoked_at = Some(now);
+    *snapshot = serde_json::to_value(&facts).unwrap();
+    let winner = persist_payload(
+        binding.tenant_id,
+        before.revision + 1,
+        payload,
+        &binding.wrapping_keys,
+    )
+    .unwrap();
+    let racing = DatabaseKeysetBinding {
+        repository: Arc::new(RevokeBeforePublication {
+            inner: repository.clone(),
+            winner: std::sync::Mutex::new(Some(winner)),
+        }),
+        ..binding.clone()
+    };
+    let result = mdoc_crl_material(&racing, &issuer).await.unwrap().unwrap();
+    assert_eq!(result.revocation_snapshot, facts);
+    assert_eq!(
+        result.crl_number,
+        (1_u128 << 64) + (before.revision + 2) as u128
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, before.revision + 2);
+}
+
+#[tokio::test]
+async fn mdoc_publication_rejects_clock_rollback_invalid_metadata_and_sequence_overflow() {
+    let (manager, repository, issuer, now) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    let saved = repository.snapshot().unwrap();
+    let base = decrypt_payload(
+        binding.tenant_id,
+        &binding.wrapping_keys,
+        &mut saved.clone(),
+    )
+    .unwrap();
+    for changed_facts in [false, true] {
+        let mut payload = base.clone();
+        // A valid previously published interval now lies ahead of the clock.
+        payload["mdoc_crl_publications"][&issuer]["this_update"] =
+            json!(now + jiff::SignedDuration::from_hours(1));
+        payload["mdoc_crl_publications"][&issuer]["next_update"] =
+            json!(now + jiff::SignedDuration::from_hours(25));
+        if changed_facts {
+            payload["openid4vc"]["public"]["revocation_snapshot"]["next_update"] =
+                json!(now + jiff::SignedDuration::from_hours(12));
+        }
+        let record = persist_payload(
+            binding.tenant_id,
+            saved.revision + 1,
+            payload,
+            &binding.wrapping_keys,
+        )
+        .unwrap();
+        repository.replace(Some(record));
+        assert!(mdoc_crl_material(binding, &issuer).await.is_err());
+        assert_eq!(repository.snapshot().unwrap().revision, saved.revision + 1);
+    }
+    for (field, value) in [
+        ("revision", json!(0)),
+        ("revision", json!(saved.revision + 2)),
+        ("revision", json!(1.5)),
+        ("source_hash", json!([0])),
+        (
+            "this_update",
+            json!(now + jiff::SignedDuration::from_nanos(1)),
+        ),
+        ("next_update", json!(now)),
+    ] {
+        let mut payload = base.clone();
+        payload["mdoc_crl_publications"][&issuer][field] = value;
+        repository.replace(Some(
+            persist_payload(
+                binding.tenant_id,
+                saved.revision + 1,
+                payload,
+                &binding.wrapping_keys,
+            )
+            .unwrap(),
+        ));
+        assert!(
+            mdoc_crl_material(binding, &issuer).await.is_err(),
+            "invalid publication field {field}"
+        );
+        assert_eq!(repository.snapshot().unwrap().revision, saved.revision + 1);
+    }
+    let mut exhausted = base;
+    exhausted["mdoc_crl_publications"][&issuer]["this_update"] =
+        json!(now - jiff::SignedDuration::from_hours(25));
+    exhausted["mdoc_crl_publications"][&issuer]["next_update"] =
+        json!(now - jiff::SignedDuration::from_hours(1));
+    repository.replace(Some(
+        persist_payload(
+            binding.tenant_id,
+            i64::MAX,
+            exhausted,
+            &binding.wrapping_keys,
+        )
+        .unwrap(),
+    ));
+    assert!(mdoc_crl_material(binding, &issuer).await.is_err());
+    assert_eq!(repository.snapshot().unwrap().revision, i64::MAX);
+}
 
 async fn database_fixture() -> (
     KeyManager,
@@ -59,7 +452,7 @@ async fn unchanged_database_generation_reuses_prepared_keys_but_checks_source_an
         &renewed.loaded.request_object_decryption_key,
     ));
     let mut prepared = renewed.loaded.database_source.clone().unwrap();
-    prepared.next_lifecycle_check = Some(Utc::now() - chrono::Duration::seconds(1));
+    prepared.next_lifecycle_check = Some(Timestamp::now() - jiff::SignedDuration::from_secs(1));
     assert!(
         refresh(
             &manager.inner.settings,
@@ -311,21 +704,21 @@ fn openid4vc_fixture(status: Option<CertificateRevocationStatus>, stale: bool) -
     let leaf_der = leaf.der().to_vec();
     let snapshot = status.map(|status| CertificateRevocationSnapshot {
         version: CertificateRevocationSnapshot::VERSION,
-        this_update: chrono::Utc::now() - chrono::Duration::hours(1),
-        next_update: chrono::Utc::now() + chrono::Duration::hours(1),
+        this_update: jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1),
+        next_update: jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
         entries: vec![CertificateRevocationEntry {
             issuer: "https://issuer.test".to_owned(),
             certificate: certificate_identity(&leaf_der),
             status,
             revoked_at: (status == CertificateRevocationStatus::Revoked)
-                .then_some(chrono::Utc::now()),
+                .then_some(jiff::Timestamp::now()),
         }],
     });
     let snapshot = if stale {
         Some(CertificateRevocationSnapshot {
             version: CertificateRevocationSnapshot::VERSION,
-            this_update: chrono::Utc::now() - chrono::Duration::hours(2),
-            next_update: chrono::Utc::now() - chrono::Duration::minutes(1),
+            this_update: jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2),
+            next_update: jiff::Timestamp::now() - jiff::SignedDuration::from_mins(1),
             entries: Vec::new(),
         })
     } else {
@@ -362,9 +755,9 @@ fn hex_sha256(bytes: &[u8]) -> String {
 
 fn settings() -> KeySettings {
     KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
@@ -507,10 +900,10 @@ fn load_payload_rejects_tampered_local_and_generation_metadata() {
     assert!(load_payload(None, &active_purpose).is_err());
 
     let mut active_retired = base.clone();
-    active_entry_mut(&mut active_retired)["retire_at"] = json!(
-        (chrono::Utc::now() + chrono::Duration::hours(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    );
+    active_entry_mut(&mut active_retired)["retire_at"] = json!(format!(
+        "{:.0}",
+        (jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1))
+    ));
     assert!(load_payload(None, &active_retired).is_err());
 }
 
@@ -658,8 +1051,8 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     let mut candidate = valid_payload();
     let due = settings();
     let mut due = KeySettings {
-        rotation_interval: chrono::Duration::seconds(-1),
-        prepublish_window: chrono::Duration::days(1),
+        rotation_interval: jiff::SignedDuration::from_secs(-1),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         ..due
     };
     assert!(maintain_payload(&mut candidate, &due).unwrap());
@@ -667,7 +1060,7 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
 
     let mut activate_now = valid_payload();
     let original_kid = activate_now["active_kid"].clone();
-    due.prepublish_window = chrono::Duration::zero();
+    due.prepublish_window = jiff::SignedDuration::ZERO;
     assert!(maintain_payload(&mut activate_now, &due).unwrap());
     let candidate_kid = activate_now["keys"]
         .as_array()
@@ -711,21 +1104,21 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
 #[test]
 fn database_rotation_selects_registered_external_successor_over_automatic_local_candidates() {
     let mut payload = valid_payload();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     active_entry_mut(&mut payload)["created_at"] =
-        json!(timestamp(now - chrono::Duration::seconds(11)));
+        json!(timestamp(now - jiff::SignedDuration::from_secs(11)));
     let mut external = external_entry_from_active(&payload, "external-earliest");
-    external["created_at"] = json!(timestamp(now - chrono::Duration::seconds(6)));
+    external["created_at"] = json!(timestamp(now - jiff::SignedDuration::from_secs(6)));
     let oldest_local = local_entry(
         jsonwebtoken::Algorithm::RS256,
-        timestamp(now - chrono::Duration::seconds(5)),
+        timestamp(now - jiff::SignedDuration::from_secs(5)),
         None::<Vec<SigningPurpose>>,
     )
     .expect("oldest local candidate should generate");
 
     let newer_local = local_entry(
         jsonwebtoken::Algorithm::RS256,
-        timestamp(now - chrono::Duration::seconds(4)),
+        timestamp(now - jiff::SignedDuration::from_secs(4)),
         None::<Vec<SigningPurpose>>,
     )
     .expect("newer local candidate should generate");
@@ -735,8 +1128,8 @@ fn database_rotation_selects_registered_external_successor_over_automatic_local_
         .extend([external, oldest_local, newer_local]);
 
     let rotation_settings = KeySettings {
-        rotation_interval: chrono::Duration::seconds(10),
-        prepublish_window: chrono::Duration::seconds(3),
+        rotation_interval: jiff::SignedDuration::from_secs(10),
+        prepublish_window: jiff::SignedDuration::from_secs(3),
         ..settings()
     };
     assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
@@ -744,10 +1137,10 @@ fn database_rotation_selects_registered_external_successor_over_automatic_local_
     assert!(!maintain_payload(&mut payload, &rotation_settings).unwrap());
     let mut successor = external_entry_from_active(&payload, "external-next");
     successor["retire_at"] = Value::Null;
-    successor["created_at"] = json!(timestamp(now - chrono::Duration::seconds(4)));
+    successor["created_at"] = json!(timestamp(now - jiff::SignedDuration::from_secs(4)));
     payload["keys"].as_array_mut().unwrap().push(successor);
     active_entry_mut(&mut payload)["created_at"] =
-        json!(timestamp(now - chrono::Duration::seconds(11)));
+        json!(timestamp(now - jiff::SignedDuration::from_secs(11)));
     assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
     assert_eq!(payload["active_kid"], "external-next");
 }
@@ -755,26 +1148,26 @@ fn database_rotation_selects_registered_external_successor_over_automatic_local_
 #[test]
 fn records_report_each_persisted_key_lifecycle_state() {
     let mut payload = valid_payload();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let keys = payload["keys"].as_array_mut().unwrap();
     keys.extend([
         json!({
             "kid":"future-grace", "alg":"RS256", "backend":"local-db",
-            "created_at":now.to_rfc3339(),
-            "retire_at":(now + chrono::Duration::hours(1)).to_rfc3339()
+            "created_at":now.to_string(),
+            "retire_at":(now + jiff::SignedDuration::from_hours(1)).to_string()
         }),
         json!({
             "kid":"expired", "alg":"RS256", "backend":"local-db",
-            "created_at":now.to_rfc3339(),
-            "retire_at":(now - chrono::Duration::hours(1)).to_rfc3339()
+            "created_at":now.to_string(),
+            "retire_at":(now - jiff::SignedDuration::from_hours(1)).to_string()
         }),
         json!({
             "kid":"purpose", "alg":"ES256", "backend":"local-db",
-            "purposes":["credential"], "created_at":now.to_rfc3339(), "retire_at":null
+            "purposes":["credential"], "created_at":now.to_string(), "retire_at":null
         }),
         json!({
             "kid":"next", "alg":"RS256", "backend":"local-db",
-            "created_at":now.to_rfc3339(), "retire_at":null
+            "created_at":now.to_string(), "retire_at":null
         }),
     ]);
     let records = records(&payload).unwrap();
@@ -864,6 +1257,77 @@ fn local_private_key_export_requires_a_local_database_key() {
     with_external["keys"].as_array_mut().unwrap().push(external);
     let loaded = load_payload(None, &with_external).unwrap();
     assert!(local_private_key_pem(&loaded, "external").is_err());
+}
+
+#[tokio::test]
+async fn openid4vc_certificate_projection_and_signing_lease_stay_on_their_generation() {
+    let (manager, _, _, _) = database_fixture().await;
+    let revision = manager.database_openid4vc_state().await.unwrap().revision;
+    let first = openid4vc_fixture(None, false);
+    let first_kid = first.material.public.signing_kid.clone();
+    let committed = manager
+        .database_commit_openid4vc(revision, first.material, Some(first.private_key_pem))
+        .await
+        .unwrap();
+    let original = manager.openid4vc_certificates().unwrap();
+    let lease = manager.prepare_openid4vc_signing().unwrap();
+    assert!(Arc::ptr_eq(
+        &original,
+        &manager.openid4vc_certificates().unwrap()
+    ));
+    assert!(std::ptr::eq(lease.certificates(), original.as_ref()));
+
+    let replacement = openid4vc_fixture(None, false);
+    let replacement_kid = replacement.material.public.signing_kid.clone();
+    manager
+        .database_commit_openid4vc(
+            committed.revision,
+            replacement.material,
+            Some(replacement.private_key_pem),
+        )
+        .await
+        .unwrap();
+    let current = manager.openid4vc_certificates().unwrap();
+    assert!(!Arc::ptr_eq(&original, &current));
+    assert_ne!(
+        original.certificate_chain_der(),
+        current.certificate_chain_der()
+    );
+    assert_eq!(lease.kid(), first_kid);
+    assert_eq!(
+        manager.prepare_openid4vc_signing().unwrap().kid(),
+        replacement_kid
+    );
+    assert!(std::ptr::eq(lease.certificates(), original.as_ref()));
+
+    // A lease retained across a real rotation must still sign with the key
+    // authenticated by its own certificate, never the newly published one.
+    let signing_input = b"OpenID4VC generation-bound certificate";
+    let signature = lease
+        .sign(SignRequest {
+            purpose: SigningPurpose::Credential,
+            algorithm: "ES256",
+            signing_input,
+        })
+        .await
+        .unwrap();
+    for (certificates, accepted) in [(original.as_ref(), true), (current.as_ref(), false)] {
+        let (_, leaf) =
+            x509_parser::parse_x509_certificate(&certificates.certificate_chain_der()[0]).unwrap();
+        let key = nazo_crypto::jwt::VerificationKey::from_ec_sec1(
+            leaf.public_key().subject_public_key.data.as_ref(),
+        );
+        assert_eq!(
+            nazo_crypto::signature::verify(
+                nazo_crypto::jwt::Algorithm::ES256,
+                &key,
+                signing_input,
+                signature.as_bytes(),
+            )
+            .is_ok(),
+            accepted,
+        );
+    }
 }
 
 #[tokio::test]
@@ -983,18 +1447,20 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         .as_ref()
         .unwrap()
         .next_update;
-    assert!(persisted_next_update < chrono::Utc::now());
+    assert!(persisted_next_update < jiff::Timestamp::now());
     let loaded_snapshot = manager
         .openid4vc_public_material()
         .unwrap()
         .revocation_snapshot
         .clone()
         .unwrap();
-    assert!(loaded_snapshot.this_update <= chrono::Utc::now());
-    assert!(loaded_snapshot.next_update > chrono::Utc::now());
+    assert!(loaded_snapshot.this_update <= jiff::Timestamp::now());
+    assert!(loaded_snapshot.next_update > jiff::Timestamp::now());
     assert_eq!(
-        loaded_snapshot.next_update - loaded_snapshot.this_update,
-        chrono::Duration::seconds(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
+        loaded_snapshot
+            .next_update
+            .duration_since(loaded_snapshot.this_update),
+        jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
     );
 
     let reloaded = KeyManager::load_or_create_database(
@@ -1012,10 +1478,12 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         .revocation_snapshot
         .clone()
         .unwrap();
-    assert!(reloaded_snapshot.next_update > chrono::Utc::now());
+    assert!(reloaded_snapshot.next_update > jiff::Timestamp::now());
     assert_eq!(
-        reloaded_snapshot.next_update - reloaded_snapshot.this_update,
-        chrono::Duration::seconds(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
+        reloaded_snapshot
+            .next_update
+            .duration_since(reloaded_snapshot.this_update),
+        jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
     );
 }
 
@@ -1040,7 +1508,7 @@ async fn openid4vc_revoked_active_leaf_cannot_prepare_signing() {
     revoked.public.revocation_snapshot.as_mut().unwrap().entries[0].status =
         CertificateRevocationStatus::Revoked;
     revoked.public.revocation_snapshot.as_mut().unwrap().entries[0].revoked_at =
-        Some(chrono::Utc::now());
+        Some(jiff::Timestamp::now());
     manager
         .database_commit_openid4vc(expected.revision, revoked, None)
         .await
@@ -1206,7 +1674,9 @@ fn purpose_scoped_grace_and_retirement_do_not_retain_signing_capability() {
         .find(|key| key.get("purposes").is_some())
         .unwrap();
     let kid = entry["kid"].as_str().unwrap().to_owned();
-    entry["retire_at"] = json!(timestamp(Utc::now() + chrono::Duration::minutes(10)));
+    entry["retire_at"] = json!(timestamp(
+        Timestamp::now() + jiff::SignedDuration::from_mins(10)
+    ));
     let loaded = load_payload(None, &payload).unwrap();
     let key = loaded
         .verification_keys
@@ -1220,7 +1690,9 @@ fn purpose_scoped_grace_and_retirement_do_not_retain_signing_capability() {
         .iter_mut()
         .find(|key| key["kid"] == kid)
         .unwrap();
-    entry["retire_at"] = json!(timestamp(Utc::now() - chrono::Duration::seconds(1)));
+    entry["retire_at"] = json!(timestamp(
+        Timestamp::now() - jiff::SignedDuration::from_secs(1)
+    ));
     entry["private_pkcs8_der"] = json!("not-decoded-after-retirement");
     assert!(
         load_payload(None, &payload)

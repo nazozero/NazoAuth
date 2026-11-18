@@ -20,7 +20,7 @@ use nazo_auth::DpopError;
 
 use http::StatusCode;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{SingleUseRedemption, TokenIssuanceMode};
 
 use serde_json::json;
@@ -379,7 +379,7 @@ pub async fn begin_authorization_code_consumption_with_service(
     code_hash: &str,
 ) -> Result<AuthorizationCodeConsumption, OAuthEndpointError> {
     match service
-        .begin_authorization_code(code_hash, Utc::now())
+        .begin_authorization_code(code_hash, Timestamp::now())
         .await
     {
         Ok(nazo_auth::AuthorizationCodeBeginResult::Consuming(payload)) => {
@@ -445,7 +445,7 @@ pub async fn token_authorization_code_with_service(
     // Their original receipt must still be considered after fresh holder auth.
     let expired_pending = expected_payload
         .as_ref()
-        .is_some_and(|payload| payload.expires_at <= Utc::now());
+        .is_some_and(|payload| payload.expires_at <= Timestamp::now());
     let expected_payload = expected_payload.filter(|_| !expired_pending);
     // Pure parameter validation runs before any sender proof, client
     // assertion, or state transition so that an erroneous redemption never
@@ -541,7 +541,7 @@ pub async fn token_authorization_code_with_service(
     if expired_pending
         || expected_payload
             .as_ref()
-            .is_some_and(|payload| payload.expires_at <= Utc::now())
+            .is_some_and(|payload| payload.expires_at <= Timestamp::now())
     {
         if let Some(redemption) = committed_single_use_redemption(
             token_service,
@@ -678,7 +678,7 @@ pub async fn token_authorization_code_with_service(
             Err(response) => return Err(response),
         };
     let payload = *payload;
-    if payload.expires_at <= Utc::now() {
+    if payload.expires_at <= Timestamp::now() {
         if let Some(redemption) = committed_single_use_redemption(
             token_service,
             client,
@@ -792,7 +792,7 @@ pub fn validate_pending_authorization_code_request(
             false,
         ));
     }
-    if payload.expires_at <= Utc::now() {
+    if payload.expires_at <= Timestamp::now() {
         return Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",

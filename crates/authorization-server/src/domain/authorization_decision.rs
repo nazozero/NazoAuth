@@ -4,7 +4,7 @@ use crate::contracts::authorization_decision::{
     AuthorizationDecisionCommand, AuthorizationDecisionError, AuthorizationDecisionFuture,
     AuthorizationDecisionOperations, AuthorizationDecisionResponse,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
     AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationResponsePlan,
@@ -70,7 +70,7 @@ impl ServerAuthorizationDecisionOperations {
     ) -> Result<AuthorizationDecisionResponse, AuthorizationDecisionError> {
         let session = match self
             .sessions
-            .current(&command.session_id, Utc::now().timestamp())
+            .current(&command.session_id, Timestamp::now().as_second())
             .await
             .map_err(|error| {
                 tracing::warn!(%error, "failed to resolve authorization decision session");
@@ -154,7 +154,7 @@ impl ServerAuthorizationDecisionOperations {
         let valid_until = preview.valid_until();
         let retain_until = preview.retain_until();
         let payload = preview.consent();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let event_id = Uuid::now_v7();
         let code =
             (command.decision == UserAuthorizationDecision::Approve).then(random_urlsafe_token);

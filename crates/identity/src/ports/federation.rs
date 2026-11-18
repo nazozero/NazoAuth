@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -16,9 +16,9 @@ pub struct FederationLink {
     pub subject: String,
     pub email: String,
     pub claims: Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub last_login_at: Option<Timestamp>,
 }
 
 /// Display metadata scoped to one tenant and user; contains no provider claims.
@@ -31,9 +31,9 @@ pub struct FederationLinkSummary {
     pub provider_id: String,
     pub subject: String,
     pub email: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub last_login_at: Option<Timestamp>,
 }
 
 impl From<FederationLink> for FederationLinkSummary {

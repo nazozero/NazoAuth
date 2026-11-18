@@ -5,11 +5,11 @@ use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use chrono::Utc;
 use ciborium::Value as Cbor;
 use coset::AsCborValue;
+use jiff::Timestamp;
 use nazo_crypto::jwt::{Algorithm, Validation, VerificationKey, decode, decode_header};
-use nazo_digital_credentials::{CredentialFormat, CredentialTrustError, PresentedCredential};
+use nazo_digital_credentials::{CredentialFormat, CredentialTrustError};
 use serde_json::Value;
 
 use super::super::crypto_helpers::{parse_x509, verify_openid4vc_chain_with_scoped};
@@ -19,13 +19,56 @@ const INVALID: CredentialTrustError = CredentialTrustError::InvalidStatus;
 const MAX_TOKEN_BYTES: usize = 128 * 1024;
 const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
 
-pub(super) async fn verify(
+/// Project only the supported authenticated MSO mechanism. General claim
+/// projection must never decide whether an authenticated status field exists.
+pub(super) fn mdoc_reference_to_json(
+    raw: nazo_mdoc::model::borrowed::CborValueRef<'_>,
+) -> Result<Value, CredentialTrustError> {
+    // Map uniqueness and CBOR wire types have already been checked by the core.
+    let mut mechanisms = raw.map().map_err(|_| INVALID)?;
+    if mechanisms.len() != 1 {
+        return Err(INVALID);
+    }
+    let (mechanism, reference) = mechanisms.next().ok_or(INVALID)?.map_err(|_| INVALID)?;
+    if mechanism.as_text() != Some("status_list") {
+        return Err(INVALID);
+    }
+    let reference = reference.map().map_err(|_| INVALID)?;
+    if reference.len() != 2 {
+        return Err(INVALID);
+    }
+    let mut index = None;
+    let mut uri = None;
+    for entry in reference {
+        let (name, value) = entry.map_err(|_| INVALID)?;
+        match name.as_text() {
+            Some("idx") => {
+                index =
+                    Some(u64::try_from(value.as_integer().ok_or(INVALID)?).map_err(|_| INVALID)?)
+            }
+            Some("uri") => uri = Some(value.as_text().ok_or(INVALID)?),
+            _ => return Err(INVALID),
+        }
+    }
+    Ok(serde_json::json!({
+        "status_list": {"idx": index.ok_or(INVALID)?, "uri": uri.ok_or(INVALID)?}
+    }))
+}
+
+/// Bounded response bytes associated with one validated reference. Signature and
+/// trust checks remain pending until `verify` receives the credential's chain.
+pub(super) struct ResolvedStatusList<'a> {
+    format: CredentialFormat,
+    uri: &'a str,
+    index: u64,
+    token: Vec<u8>,
+}
+
+pub(super) async fn resolve<'a>(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
-    status: &Value,
-    issuer: &str,
-    issuer_chain: &[Vec<u8>],
-) -> Result<(), CredentialTrustError> {
+    format: CredentialFormat,
+    status: &'a Value,
+) -> Result<ResolvedStatusList<'a>, CredentialTrustError> {
     let reference = status
         .get("status_list")
         .and_then(Value::as_object)
@@ -58,30 +101,52 @@ pub(super) async fn verify(
         .status_resolver
         .as_ref()
         .ok_or(INVALID)?
-        .fetch(uri, presentation.format)
+        .fetch(uri, format)
         .await?;
     if token.is_empty() || token.len() > MAX_TOKEN_BYTES {
         return Err(INVALID);
     }
-    match presentation.format {
-        CredentialFormat::SdJwtVc => verify_jwt(
-            crypto,
-            presentation,
-            issuer_chain,
-            issuer,
-            uri,
-            index,
-            &token,
-        ),
-        CredentialFormat::MsoMdoc => {
-            verify_cwt(crypto, presentation, issuer_chain, uri, index, &token)
+    Ok(ResolvedStatusList {
+        format,
+        uri,
+        index,
+        token,
+    })
+}
+
+impl ResolvedStatusList<'_> {
+    pub(super) fn verify(
+        self,
+        crypto: &Openid4vcCredentialCrypto,
+        additional_trust_anchors: &[Vec<u8>],
+        issuer: &str,
+        issuer_chain: &[Vec<u8>],
+    ) -> Result<(), CredentialTrustError> {
+        match self.format {
+            CredentialFormat::SdJwtVc => verify_jwt(
+                crypto,
+                additional_trust_anchors,
+                issuer_chain,
+                issuer,
+                self.uri,
+                self.index,
+                &self.token,
+            ),
+            CredentialFormat::MsoMdoc => verify_cwt(
+                crypto,
+                additional_trust_anchors,
+                issuer_chain,
+                self.uri,
+                self.index,
+                &self.token,
+            ),
         }
     }
 }
 
 fn verify_jwt(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
+    additional_trust_anchors: &[Vec<u8>],
     issuer_chain: &[Vec<u8>],
     issuer: &str,
     uri: &str,
@@ -112,7 +177,14 @@ fn verify_jwt(
         .iter()
         .map(|der| STANDARD.decode(der).map_err(|_| INVALID))
         .collect::<Result<Vec<_>, _>>()?;
-    let key = status_key(crypto, presentation, issuer_chain, &chain, Some(issuer))?;
+    let key = status_key(
+        crypto,
+        CredentialFormat::SdJwtVc,
+        additional_trust_anchors,
+        issuer_chain,
+        &chain,
+        Some(issuer),
+    )?;
     let mut validation = Validation::new(Algorithm::ES256);
     validation.required_spec_claims = ["sub", "iat"].into_iter().map(str::to_owned).collect();
     validation.validate_exp = false;
@@ -128,7 +200,7 @@ fn verify_jwt(
         optional_number(claims.get("exp"))?,
         optional_number(claims.get("nbf"))?,
         optional_number(claims.get("ttl"))?,
-        Utc::now().timestamp() as f64,
+        Timestamp::now().as_second() as f64,
     )?;
     // There is no audience for this public list retrieval operation.
     if claims.get("aud").is_some() {
@@ -151,36 +223,20 @@ fn verify_jwt(
 
 fn verify_cwt(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
+    additional_trust_anchors: &[Vec<u8>],
     issuer_chain: &[Vec<u8>],
     uri: &str,
     index: u64,
     token: &[u8],
 ) -> Result<(), CredentialTrustError> {
-    let mut input = token;
-    let value: Cbor = ciborium::from_reader(&mut input).map_err(|_| INVALID)?;
-    if !input.is_empty() {
-        return Err(INVALID);
-    }
-    let sign1 = match value {
-        Cbor::Tag(18, inner) => coset::CoseSign1::from_cbor_value(*inner),
-        _ => return Err(INVALID),
-    }
-    .map_err(|_| INVALID)?;
+    let sign1 = parse_cwt_sign1(token)?;
     let protected = &sign1.protected.header;
     if !matches!(
         protected.alg,
         Some(coset::RegisteredLabelWithPrivate::Assigned(
             coset::iana::Algorithm::ES256 | coset::iana::Algorithm::ESP256
         ))
-    ) || !protected.crit.is_empty()
-        || sign1.unprotected.alg.is_some()
-        || sign1
-            .unprotected
-            .rest
-            .iter()
-            .any(|(key, _)| matches!(key, coset::Label::Int(16 | 33)))
-    {
+    ) {
         return Err(INVALID);
     }
     let typ = protected
@@ -207,7 +263,14 @@ fn verify_cwt(
             .collect::<Result<Vec<_>, _>>()?,
         _ => return Err(INVALID),
     };
-    let key = status_key(crypto, presentation, issuer_chain, &chain, None)?;
+    let key = status_key(
+        crypto,
+        CredentialFormat::MsoMdoc,
+        additional_trust_anchors,
+        issuer_chain,
+        &chain,
+        None,
+    )?;
     nazo_crypto::signature::verify(
         Algorithm::ES256,
         &key,
@@ -215,12 +278,9 @@ fn verify_cwt(
         &sign1.signature,
     )
     .map_err(|_| INVALID)?;
-    let mut payload = sign1.payload.as_deref().ok_or(INVALID)?;
-    let claims: Cbor = ciborium::from_reader(&mut payload).map_err(|_| INVALID)?;
-    if !payload.is_empty() {
-        return Err(INVALID);
-    }
-    let claims = unique_map(&claims)?;
+    let claims = nazo_mdoc::cbor::data_item::decode_cbor(sign1.payload.as_deref().ok_or(INVALID)?)
+        .map_err(|_| INVALID)?;
+    let claims = bounded_map(&claims)?;
     let get = |n: i64| {
         claims
             .iter()
@@ -246,9 +306,9 @@ fn verify_cwt(
                     .ok_or(INVALID)
             })
             .transpose()?,
-        Utc::now().timestamp() as f64,
+        Timestamp::now().as_second() as f64,
     )?;
-    let list = unique_map(get(65533).ok_or(INVALID)?)?;
+    let list = bounded_map(get(65533).ok_or(INVALID)?)?;
     let get = |name: &str| {
         list.iter()
             .find(|(key, _)| key.as_text() == Some(name))
@@ -268,12 +328,59 @@ fn verify_cwt(
     )
 }
 
+fn parse_cwt_sign1(token: &[u8]) -> Result<coset::CoseSign1, CredentialTrustError> {
+    use nazo_mdoc::cbor::data_item::decode_cbor;
+
+    let Cbor::Tag(18, tagged) = decode_cbor(token).map_err(|_| INVALID)? else {
+        return Err(INVALID);
+    };
+    let Cbor::Array(fields) = *tagged else {
+        return Err(INVALID);
+    };
+    let [protected, unprotected, payload, signature]: [Cbor; 4] =
+        fields.try_into().map_err(|_| INVALID)?;
+    let (Cbor::Bytes(protected_bytes), Cbor::Bytes(payload), Cbor::Bytes(signature)) =
+        (protected, payload, signature)
+    else {
+        return Err(INVALID);
+    };
+    // Decode protected headers separately without coset's generic bstr decoder:
+    // it otherwise normalizes small Tag 2/3 values into native integer labels.
+    let protected = decode_cbor(&protected_bytes).map_err(|_| INVALID)?;
+    // The bounded raw decoder has already rejected duplicate map keys.
+    let protected_fields = bounded_map(&protected)?;
+    let unprotected_fields = bounded_map(&unprotected)?;
+    if protected_fields
+        .iter()
+        .any(|(key, _)| !matches!(key.as_integer().map(i128::from), Some(1 | 4 | 16 | 33)))
+        || unprotected_fields.iter().any(|(key, _)| {
+            key.as_integer().map(i128::from) != Some(4)
+                || protected_fields
+                    .iter()
+                    .any(|(protected_key, _)| protected_key == key)
+        })
+    {
+        return Err(INVALID);
+    }
+    Ok(coset::CoseSign1 {
+        protected: coset::ProtectedHeader {
+            // Verification uses this exact received bstr, not a re-encoded map.
+            original_data: Some(protected_bytes),
+            header: coset::Header::from_cbor_value(protected).map_err(|_| INVALID)?,
+        },
+        unprotected: coset::Header::from_cbor_value(unprotected).map_err(|_| INVALID)?,
+        payload: Some(payload),
+        signature,
+    })
+}
+
 /// Lists are authorized by the credential's issuer, not by arbitrary keys found
 /// in a signed list. Same-key JWTs reuse the authenticated issuer chain. mdoc's
 /// separate MSO-list signer must be issued directly by that same IACA.
 fn status_key(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential<'_>,
+    format: CredentialFormat,
+    additional_trust_anchors: &[Vec<u8>],
     issuer_chain: &[Vec<u8>],
     chain: &[Vec<u8>],
     issuer: Option<&str>,
@@ -288,19 +395,19 @@ fn status_key(
     let issuer_leaf = issuer_chain.first().ok_or(INVALID)?;
     let (_, credential_signer) =
         parse_x509(issuer_leaf, "credential signer").map_err(|_| INVALID)?;
-    if presentation.format == CredentialFormat::SdJwtVc {
+    if format == CredentialFormat::SdJwtVc {
         // HAIP excludes trust anchors from x5c. Authenticate the presented chain,
         // then bind its signing key to the already authenticated credential key.
-        let anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
-        if chain.iter().any(|der| anchors.contains(der)) {
+        let trust_material = crypto.credential_trust_material(additional_trust_anchors)?;
+        let anchors = trust_material.trust_anchors_der();
+        if chain
+            .iter()
+            .any(|der| anchors.contains(der) || additional_trust_anchors.contains(der))
+        {
             return Err(INVALID);
         }
-        let anchor = verify_openid4vc_chain_with_scoped(
-            chain,
-            &anchors,
-            &presentation.additional_trust_anchors,
-        )
-        .map_err(|_| INVALID)?;
+        let anchor = verify_openid4vc_chain_with_scoped(chain, anchors, additional_trust_anchors)
+            .map_err(|_| INVALID)?;
         if leaf.public_key().raw != credential_signer.public_key().raw {
             return Err(INVALID);
         }
@@ -309,18 +416,23 @@ fn status_key(
             .check_chain_with_scoped_trust(
                 issuer,
                 chain,
-                Utc::now(),
-                presentation
-                    .additional_trust_anchors
+                Timestamp::now(),
+                additional_trust_anchors
                     .iter()
                     .any(|der| der.as_slice() == anchor),
             )?;
     } else {
-        let anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
+        let trust_material = crypto.credential_trust_material(additional_trust_anchors)?;
+        let anchors = trust_material.trust_anchors_der();
         let issuer = issuer_chain
             .iter()
             .skip(1)
             .chain(anchors.iter())
+            .chain(
+                additional_trust_anchors
+                    .iter()
+                    .filter(|anchor| !anchors.contains(anchor)),
+            )
             .find(|der| {
                 parse_x509(der, "IACA").is_ok_and(|(_, ca)| {
                     ca.is_ca()
@@ -351,7 +463,7 @@ fn status_key(
         nazo_crypto::certificate::verify_document_signing_chain_at(
             &path,
             &nazo_crypto::certificate::CertificateDer::from(issuer.as_slice()),
-            Utc::now().timestamp() as u64,
+            Timestamp::now().as_second() as u64,
         )
         .map_err(|_| INVALID)?;
         crypto
@@ -359,8 +471,8 @@ fn status_key(
             .check_chain_with_scoped_trust(
                 None,
                 chain,
-                Utc::now(),
-                presentation.additional_trust_anchors.contains(issuer),
+                Timestamp::now(),
+                additional_trust_anchors.contains(issuer),
             )?;
     }
     Ok(VerificationKey::from_ec_sec1(
@@ -406,14 +518,9 @@ fn validate_aggregation(value: Option<&Value>) -> Result<(), CredentialTrustErro
     }
     Ok(())
 }
-fn unique_map(value: &Cbor) -> Result<&[(Cbor, Cbor)], CredentialTrustError> {
+fn bounded_map(value: &Cbor) -> Result<&[(Cbor, Cbor)], CredentialTrustError> {
     let map = value.as_map().ok_or(INVALID)?;
-    if map.len() > 64
-        || map
-            .iter()
-            .enumerate()
-            .any(|(i, (key, _))| map[..i].iter().any(|(previous, _)| previous == key))
-    {
+    if map.len() > 64 {
         return Err(INVALID);
     }
     Ok(map)

@@ -28,8 +28,8 @@ use nazo_oauth_server::policy::AuthorizationServerProfile;
 
 use actix_web::http::header;
 
-use chrono::Duration;
-use chrono::{DateTime, Utc};
+use jiff::SignedDuration;
+use jiff::Timestamp;
 
 use serde_json::Value;
 use serde_json::json;
@@ -122,9 +122,11 @@ struct RefreshFamilyTokenRow {
     #[diesel(sql_type = Nullable<SqlUuid>)]
     rotated_from_id: Option<Uuid>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    revoked_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    revoked_at: Option<Timestamp>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    reuse_detected_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    reuse_detected_at: Option<Timestamp>,
     #[diesel(sql_type = Nullable<Text>)]
     mtls_x5t_s256: Option<String>,
 }
@@ -256,8 +258,8 @@ fn live_trusted_proxy_refresh_state(
 struct SpentEdge {
     member_id: Uuid,
     raw_token: String,
-    spent_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    spent_at: Timestamp,
+    expires_at: Timestamp,
 }
 
 /// Build the spent-proof edge a successor leaves behind: the predecessor's
@@ -279,7 +281,7 @@ async fn insert_refresh_token_row(
     raw_refresh_token: &str,
     token: &TokenRow,
     predecessor: Option<SpentEdge>,
-    reuse_detected_at: Option<DateTime<Utc>>,
+    reuse_detected_at: Option<Timestamp>,
 ) {
     let authentication_context = &token.contract.authentication_context;
     assert!(
@@ -363,14 +365,14 @@ async fn insert_refresh_token_row(
     .bind::<Nullable<SqlUuid>, _>(token.user_id)
     .bind::<diesel::sql_types::Binary, _>(&token_blake3)
     .bind::<Jsonb, _>(json!(token.audience))
-    .bind::<Timestamptz, _>(token.issued_at)
-    .bind::<Timestamptz, _>(token.expires_at)
+    .bind::<Timestamptz, _>((token.issued_at).to_diesel())
+    .bind::<Timestamptz, _>((token.expires_at).to_diesel())
     .bind::<Nullable<Text>, _>(token.id_token_sid.as_deref())
     .bind::<Nullable<Text>, _>(token.dpop_jkt.as_deref())
     .bind::<Nullable<Text>, _>(token.mtls_x5t_s256.as_deref())
     .bind::<Nullable<Text>, _>(token.client_attestation_jkt.as_deref())
-    .bind::<Nullable<Timestamptz>, _>(token.revoked_at)
-    .bind::<Nullable<Timestamptz>, _>(reuse_detected_at)
+    .bind::<Nullable<Timestamptz>, _>((token.revoked_at).to_diesel())
+    .bind::<Nullable<Timestamptz>, _>((reuse_detected_at).to_diesel())
     .execute(&mut conn)
     .await
     .expect("refresh family insert should succeed");
@@ -391,8 +393,8 @@ async fn insert_refresh_token_row(
         .bind::<SqlUuid, _>(token.token_family_id)
         .bind::<SqlUuid, _>(edge.member_id)
         .bind::<SqlUuid, _>(token.id)
-        .bind::<Timestamptz, _>(edge.spent_at)
-        .bind::<Timestamptz, _>(edge.expires_at)
+        .bind::<Timestamptz, _>((edge.spent_at).to_diesel())
+        .bind::<Timestamptz, _>((edge.expires_at).to_diesel())
         .execute(&mut conn)
         .await
         .expect("spent proof insert should succeed");
@@ -669,13 +671,13 @@ fn client_row() -> ClientRow {
 fn refresh_authentication_context(
     issuer: &str,
     audience: &str,
-    issued_at: DateTime<Utc>,
+    issued_at: Timestamp,
 ) -> RefreshTokenAuthenticationContext {
     RefreshTokenAuthenticationContext {
         version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
         issuer: issuer.to_owned(),
         audience: audience.to_owned(),
-        auth_time: issued_at.timestamp().saturating_sub(1).max(1),
+        auth_time: issued_at.as_second().saturating_sub(1).max(1),
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
 
@@ -691,7 +693,7 @@ fn token_row_with_refresh_context(
     client_id: Uuid,
     client_audience: &str,
 ) -> TokenRow {
-    let issued_at = Utc::now();
+    let issued_at = Timestamp::now();
     TokenRow {
         id_token_sid: None,
         id: Uuid::now_v7(),
@@ -717,7 +719,7 @@ fn token_row_with_refresh_context(
         },
         audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
         issued_at,
-        expires_at: issued_at + Duration::days(30),
+        expires_at: issued_at + SignedDuration::from_hours((30) * 24),
         revoked_at: None,
         dpop_jkt: Some("dpop-jkt".to_owned()),
         mtls_x5t_s256: None,
@@ -1111,8 +1113,8 @@ async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
         serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
     expired.contract.subject = client.client_id.clone();
     expired.user_id = None;
-    expired.issued_at = Utc::now() - Duration::minutes(5);
-    expired.expires_at = Utc::now() - Duration::seconds(5);
+    expired.issued_at = Timestamp::now() - SignedDuration::from_mins(5);
+    expired.expires_at = Timestamp::now() - SignedDuration::from_secs(5);
     expired.dpop_jkt = None;
     let expired_raw = "refresh-token-expired";
     insert_refresh_token_row(&state, expired_raw, &expired, None, None).await;
@@ -1146,7 +1148,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     reused.contract.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
-    reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
+    reused.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(65));
     let reused_raw = format!("refresh-token-reused-{suffix}");
 
     let mut active_sibling = token_row_for_client(&state, &client);
@@ -1228,7 +1230,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     reused.contract.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
-    reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
+    reused.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(65));
     let reused_raw = "refresh-token-reuse-marker-failure";
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
@@ -1319,7 +1321,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     revoked.contract.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
+    revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(35));
     let revoked_raw = format!("refresh-token-retry-original-{suffix}");
     revoked.token_blake3 = *blake3::hash(revoked_raw.as_bytes()).as_bytes();
 
@@ -1347,7 +1349,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
                 revoked.tenant_id,
                 &revoked_raw,
                 client.id,
-                Utc::now(),
+                Timestamp::now(),
                 false
             )
             .await
@@ -1404,7 +1406,7 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
+    revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(35));
     let revoked_raw = format!("refresh-token-mtls-retry-original-{suffix}");
 
     let mut successor = token_row_for_client(&state, &client);
@@ -1481,7 +1483,7 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
     original.user_id = None;
     original.dpop_jkt = None;
     original.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
-    original.revoked_at = Some(Utc::now() - Duration::seconds(2));
+    original.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(2));
     let original_raw = format!("refresh-candidate-original-{suffix}");
     let mut child = token_row_for_client(&state, &client);
     child.token_family_id = family_id;
@@ -1681,9 +1683,9 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     )
     .await;
 
-    let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
-        .expect("fixed test timestamp should parse")
-        .with_timezone(&Utc);
+    let now = ("2026-07-13T12:00:00Z")
+        .parse::<jiff::Timestamp>()
+        .expect("fixed test timestamp should parse");
     let client_id = Uuid::now_v7();
     let family_id = Uuid::now_v7();
     let mut revoked = token_row_for_client_id(&state, client_id, "refresh-fixed-window-client");
@@ -1691,8 +1693,8 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     revoked.token_family_id = family_id;
     revoked.user_id = None;
     revoked.dpop_jkt = Some("fixed-window-dpop-jkt".to_owned());
-    revoked.issued_at = now - Duration::hours(1);
-    revoked.expires_at = now + Duration::hours(1);
+    revoked.issued_at = now - SignedDuration::from_hours(1);
+    revoked.expires_at = now + SignedDuration::from_hours(1);
     // The member rotated out at `now`, which is the spent proof's spent_at.
     revoked.revoked_at = Some(now);
     revoked.contract.authentication_context = refresh_authentication_context(
@@ -1709,7 +1711,7 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     successor.user_id = None;
     successor.dpop_jkt = revoked.dpop_jkt.clone();
     successor.issued_at = now;
-    successor.expires_at = now + Duration::hours(1);
+    successor.expires_at = now + SignedDuration::from_hours(1);
     successor.contract.authentication_context = revoked.contract.authentication_context.clone();
     insert_refresh_token_row(
         &state,
@@ -1725,12 +1727,12 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     let repository = nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone());
     for (at, expected) in [
         (now, Some(successor.id)),
-        (now + Duration::seconds(60), Some(successor.id)),
+        (now + SignedDuration::from_secs(60), Some(successor.id)),
         (
-            now + Duration::seconds(60) + Duration::milliseconds(1),
+            now + SignedDuration::from_secs(60) + SignedDuration::from_millis(1),
             None,
         ),
-        (now - Duration::milliseconds(1), None),
+        (now - SignedDuration::from_millis(1), None),
     ] {
         let snapshot = repository
             .refresh_token_snapshot(revoked.tenant_id, &revoked_raw, client_id, at, false)
@@ -1769,7 +1771,7 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
         revoked.contract.subject = client.client_id.clone();
         revoked.user_id = None;
         revoked.dpop_jkt = Some(format!("lost-shape-{shape}-dpop-jkt"));
-        revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
+        revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(10));
         let revoked_raw = format!("refresh-lost-shape-{shape}-{}", Uuid::now_v7());
 
         if shape == "none" {
@@ -1787,11 +1789,11 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
             successor.contract.authentication_context =
                 revoked.contract.authentication_context.clone();
             if shape == "expired" {
-                successor.issued_at = Utc::now() - Duration::seconds(30);
-                successor.expires_at = Utc::now() - Duration::seconds(1);
+                successor.issued_at = Timestamp::now() - SignedDuration::from_secs(30);
+                successor.expires_at = Timestamp::now() - SignedDuration::from_secs(1);
             }
             if shape == "revoked" {
-                successor.revoked_at = Some(Utc::now() - Duration::seconds(1));
+                successor.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(1));
             }
             insert_refresh_token_row(
                 &state,
@@ -1872,7 +1874,7 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     revoked.user_id = None;
     revoked.dpop_jkt = Some("expected-jkt".to_owned());
     revoked.mtls_x5t_s256 = Some("expected-x5t".to_owned());
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
+    revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(10));
     let revoked_raw = format!("refresh-lost-wrong-constraints-{}", Uuid::now_v7());
 
     // Sender constraints and client ownership are family-level authority in
@@ -1913,7 +1915,7 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
         Some(SpentEdge {
             member_id: revoked.id,
             raw_token: format!("refresh-lost-foreign-proof-{}", Uuid::now_v7()),
-            spent_at: Utc::now() - Duration::seconds(10),
+            spent_at: Timestamp::now() - SignedDuration::from_secs(10),
             expires_at: revoked.expires_at,
         }),
         None,
@@ -1983,7 +1985,7 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     revoked.token_family_id = family_id;
     revoked.user_id = None;
     revoked.dpop_jkt = Some("same-tenant-dpop-jkt".to_owned());
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
+    revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(10));
     let revoked_raw = "refresh-lost-tenant-original";
     revoked.token_blake3 = *blake3::hash(revoked_raw.as_bytes()).as_bytes();
 
@@ -2006,7 +2008,13 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     let repository = nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone());
     assert!(
         repository
-            .refresh_token_snapshot(Uuid::now_v7(), revoked_raw, client_id, Utc::now(), false)
+            .refresh_token_snapshot(
+                Uuid::now_v7(),
+                revoked_raw,
+                client_id,
+                Timestamp::now(),
+                false
+            )
             .await
             .expect("successor lookup should succeed")
             .is_none(),
@@ -2014,7 +2022,13 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     );
     assert_eq!(
         repository
-            .refresh_token_snapshot(revoked.tenant_id, revoked_raw, client_id, Utc::now(), false)
+            .refresh_token_snapshot(
+                revoked.tenant_id,
+                revoked_raw,
+                client_id,
+                Timestamp::now(),
+                false
+            )
             .await
             .expect("same-tenant lookup should succeed")
             .expect("presentation exists")
@@ -2072,7 +2086,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
+    revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(10));
     let revoked_raw = "refresh-lost-insert-failure-original";
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
@@ -2155,11 +2169,15 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
     insert_refresh_client(&state, &client).await;
 
     for (label, revoked_at, reuse_detected_at) in [
-        ("future", Utc::now() + Duration::seconds(10), None),
+        (
+            "future",
+            Timestamp::now() + SignedDuration::from_secs(10),
+            None,
+        ),
         (
             "reused",
-            Utc::now() - Duration::seconds(10),
-            Some(Utc::now() - Duration::seconds(1)),
+            Timestamp::now() - SignedDuration::from_secs(10),
+            Some(Timestamp::now() - SignedDuration::from_secs(1)),
         ),
     ] {
         let family_id = Uuid::now_v7();
@@ -2234,7 +2252,7 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
     revoked.user_id = None;
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
+    revoked.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(10));
     let revoked_raw = format!("refresh-concurrent-lost-original-{}", Uuid::now_v7());
 
     let mut successor = token_row_for_client(&state, &client);
@@ -3099,7 +3117,7 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
         }
         let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
         let source = inner
-            .refresh_token_snapshot(client.tenant_id, &raw, client.id, Utc::now(), true)
+            .refresh_token_snapshot(client.tenant_id, &raw, client.id, Timestamp::now(), true)
             .await
             .unwrap()
             .unwrap();
@@ -3225,7 +3243,7 @@ async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
     let (client, mut predecessor, predecessor_raw) = oidc_refresh_fixture(&state).await;
     let certificate = crate::test_support::rfc9440_certificate_fixture("oidc-lost-response");
     predecessor.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
-    predecessor.revoked_at = Some(Utc::now() - Duration::seconds(35));
+    predecessor.revoked_at = Some(Timestamp::now() - SignedDuration::from_secs(35));
     let mut successor = predecessor.clone();
     successor.id = Uuid::now_v7();
     successor.revoked_at = None;
@@ -3244,7 +3262,7 @@ async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
             client.tenant_id,
             &predecessor_raw,
             client.id,
-            Utc::now(),
+            Timestamp::now(),
             true,
         )
         .await
@@ -3406,3 +3424,5 @@ async fn native_sso_refresh_secret_lifecycle(preserve: bool) {
         }
     }
 }
+
+use jiff_diesel::ToDiesel as _;

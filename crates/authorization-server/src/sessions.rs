@@ -1,5 +1,5 @@
 //! Session resolution and administrator authentication policy.
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::{
     Principal, PublicAccount, SessionId, TenantId,
     ports::{RepositoryError, SessionAccountPort, SessionStorePort},
@@ -53,7 +53,7 @@ impl SessionResolver {
     ) -> anyhow::Result<Option<CurrentSession>> {
         Ok(resolved_session(
             self.service
-                .current_principal(&SessionId::new(session_id), Utc::now().timestamp())
+                .current_principal(&SessionId::new(session_id), Timestamp::now().as_second())
                 .await?,
         ))
     }
@@ -64,7 +64,7 @@ impl SessionResolver {
     ) -> anyhow::Result<Option<CurrentSession<PublicAccount>>> {
         Ok(resolved_session(
             self.service
-                .current(&SessionId::new(session_id), Utc::now().timestamp())
+                .current(&SessionId::new(session_id), Timestamp::now().as_second())
                 .await?,
         ))
     }

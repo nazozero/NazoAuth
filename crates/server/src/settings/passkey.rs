@@ -6,7 +6,6 @@ pub(crate) use nazoauth::config::PasskeySettings;
 
 pub(super) fn from_config(
     config: &ConfigSource,
-    issuer: &str,
     issuer_url: &url::Url,
 ) -> anyhow::Result<PasskeySettings> {
     let configured_origin_url;
@@ -15,7 +14,7 @@ pub(super) fn from_config(
             configured_origin_url = validate_issuer_url(&origin)?;
             (origin, &configured_origin_url)
         }
-        None => (issuer.to_owned(), issuer_url),
+        None => (issuer_url.origin().ascii_serialization(), issuer_url),
     };
     let rp_id = match config.optional_string("PASSKEY_RP_ID") {
         Some(value) => value,
@@ -24,12 +23,13 @@ pub(super) fn from_config(
             .expect("validated origin has a host")
             .to_owned(),
     };
+    let rp_name = config.string("PASSKEY_RP_NAME", "Nazo OAuth");
+    nazo_passkey::Webauthn::try_new(&rp_id, &rp_name, &origin)?;
     Ok(PasskeySettings {
         rp_id,
-        rp_name: config.string("PASSKEY_RP_NAME", "Nazo OAuth"),
+        rp_name,
         origin,
         require_user_verification: config.bool("PASSKEY_REQUIRE_USER_VERIFICATION", true)?,
         require_user_handle: config.bool("PASSKEY_REQUIRE_USER_HANDLE", true)?,
-        strict_base64: config.bool("PASSKEY_STRICT_BASE64", true)?,
     })
 }

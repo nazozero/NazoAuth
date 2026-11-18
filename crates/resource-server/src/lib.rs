@@ -6,7 +6,7 @@
 //! before falling back to introspection or application policy hooks.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_crypto::jwt::{Algorithm, Validation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -217,7 +217,7 @@ impl ResourceServerVerifier {
     }
 
     pub fn verify(&self, token: &str) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
-        self.verify_at(token, Utc::now().timestamp())
+        self.verify_at(token, Timestamp::now().as_second())
     }
 
     fn verify_at(

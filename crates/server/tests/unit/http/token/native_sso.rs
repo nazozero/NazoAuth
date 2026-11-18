@@ -2,7 +2,7 @@ use crate::test_support::token_response_body as response_body;
 use response_body::oauth_error_code;
 
 use actix_web::http::StatusCode;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_oauth_server::contracts::token_forms::TokenForm;
 use nazo_oauth_server::crypto::blake3_hex;
 use nazo_oauth_server::domain::rows::ClientRow;
@@ -65,7 +65,7 @@ async fn signed_native_sso_id_token_with_claims(
     auth_time: Option<Value>,
     amr: Option<Value>,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);
     let mut claims = json!({
         "iss": issuer,
@@ -93,7 +93,7 @@ async fn signed_native_sso_id_token_with_claims(
 }
 
 async fn signed_native_sso_id_token(state: &TestInfrastructure, issuer: &str) -> String {
-    let auth_time = Utc::now().timestamp() - 1;
+    let auth_time = Timestamp::now().as_second() - 1;
     signed_native_sso_id_token_with_claims(
         state,
         issuer,

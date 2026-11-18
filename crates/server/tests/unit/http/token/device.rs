@@ -10,8 +10,6 @@ use crate::http::token::device_config::DeviceHttpConfig;
 use crate::settings::Settings;
 use crate::test_support::TestInfrastructure;
 use actix_web::test::TestRequest;
-use chrono::Duration;
-use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -19,6 +17,8 @@ use fred::interfaces::ClientLike as _;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use jiff::SignedDuration;
+use jiff::Timestamp;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
@@ -252,7 +252,7 @@ async fn store_device_session(state: &TestInfrastructure, session_id: &str, user
     let payload = crate::test_support::SessionPayload {
         authorization_epoch: 0,
         user_id,
-        auth_time: Utc::now().timestamp(),
+        auth_time: Timestamp::now().as_second(),
         amr: vec!["pwd".to_owned()],
         pending_mfa: false,
         oidc_sid: Some(format!("device-oidc-{session_id}")),
@@ -455,7 +455,7 @@ async fn device_denial_consumes_pending_request_after_audited_user_decision() {
     let session_id = format!("device-session-{}", Uuid::now_v7());
     store_device_session(&state, &session_id, user_id).await;
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     let payload = DeviceAuthorizationPayload {
         client_id: "device-client".to_owned(),
         client_name: "Device Client".to_owned(),
@@ -464,7 +464,7 @@ async fn device_denial_consumes_pending_request_after_audited_user_decision() {
         authorization_details: json!([]),
         interval_seconds: 5,
         issued_at: now,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     };
     let device_service = ServerDeviceGrantService::new(std::sync::Arc::new(
         nazo_valkey::DeviceStore::new(&state.valkey_connection()),
@@ -520,7 +520,7 @@ async fn device_denial_consumes_pending_request_after_audited_user_decision() {
     ));
     assert!(
         state_after
-            .pending_request_for_user_code(&stored_user_code, Utc::now)
+            .pending_request_for_user_code(&stored_user_code, Timestamp::now)
             .await
             .expect("device decision state should be readable")
             .is_none()
@@ -759,7 +759,7 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
     let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
     for concurrent in [false, true] {
         let code = format!("device-sender-{}", Uuid::now_v7());
-        let now = Utc::now();
+        let now = Timestamp::now();
         let approved = DeviceAuthorizationState::Approved {
             payload: DeviceAuthorizationPayload {
                 client_id: client.client_id.clone(),
@@ -769,12 +769,12 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
                 authorization_details: json!([]),
                 interval_seconds: 5,
                 issued_at: now,
-                expires_at: now + Duration::minutes(10),
+                expires_at: now + SignedDuration::from_mins(10),
             },
             approval: DeviceAuthorizationApproval {
                 user_id,
                 subject: user_id.to_string(),
-                auth_time: now.timestamp(),
+                auth_time: now.as_second(),
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: None,
             },
@@ -936,7 +936,7 @@ async fn device_authorization_resolves_basic_identity_without_form_client_id() {
                 .unwrap();
             let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
             let pending = device_grant_service(&state)
-                .pending_request_for_user_code(body["user_code"].as_str().unwrap(), Utc::now)
+                .pending_request_for_user_code(body["user_code"].as_str().unwrap(), Timestamp::now)
                 .await
                 .unwrap()
                 .unwrap();
@@ -968,7 +968,7 @@ async fn protocol_grant_expired_dispatch_device_after_approved_poll() {
     let user_id = Uuid::now_v7();
     insert_device_user(&state, user_id).await;
     let code = format!("device-commit-{}", Uuid::now_v7());
-    let now = Utc::now();
+    let now = Timestamp::now();
     let approved = DeviceAuthorizationState::Approved {
         payload: DeviceAuthorizationPayload {
             client_id: client.client_id.clone(),
@@ -978,12 +978,12 @@ async fn protocol_grant_expired_dispatch_device_after_approved_poll() {
             authorization_details: json!([]),
             interval_seconds: 5,
             issued_at: now,
-            expires_at: now + Duration::minutes(10),
+            expires_at: now + SignedDuration::from_mins(10),
         },
         approval: DeviceAuthorizationApproval {
             user_id,
             subject: user_id.to_string(),
-            auth_time: now.timestamp(),
+            auth_time: now.as_second(),
             amr: vec!["pwd".to_owned()],
             oidc_sid: None,
         },

@@ -7,7 +7,7 @@ fn signed_ciba_request_object_for_client_with_alg(
     fixture: &ClientSigningFixture,
     extra_claims: Value,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut claims = json!({
         "iss": client_id,
         "aud": "https://issuer.example",
@@ -55,7 +55,7 @@ pub(super) fn signed_ciba_client_assertion(
     kid: &str,
     fixture: &ClientSigningFixture,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let claims = json!({
         "iss": client_id,
         "sub": client_id,

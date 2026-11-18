@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{ClientPresentation, OAuthClient};
@@ -231,7 +230,7 @@ impl OAuthClientRepository {
                 user_client_grants::authorization_count,
             ))
             .order(user_client_grants::last_authorized_at.desc())
-            .load::<(String, String, Value, DateTime<Utc>, i32)>(&mut connection)
+            .load::<(String, String, Value, jiff_diesel::Timestamp, i32)>(&mut connection)
             .await
             .map_err(map_error)?;
         Ok(rows
@@ -242,7 +241,7 @@ impl OAuthClientRepository {
                         client_id,
                         client_name,
                         last_scopes,
-                        last_authorized_at,
+                        last_authorized_at: last_authorized_at.into(),
                         authorization_count,
                     }
                 },

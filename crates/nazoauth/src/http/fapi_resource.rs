@@ -8,7 +8,7 @@ use nazo_oauth_server::contracts::fapi_resource::{
     FapiSignatureOperationError, FapiSignatureVerificationError,
 };
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_http_signatures::{
     BodyDigest, OriginalRequest, ParsedSignatureInput, RequestInput, ResponseInput, ResponsePolicy,
     SignatureFields, VerificationPolicy, parse_request_for_verification_with_digest,
@@ -428,7 +428,7 @@ impl<'body> CapturedRequest<'body> {
             signature_input: CapturedHeader::capture(request, "signature-input"),
             signature: CapturedHeader::capture(request, "signature"),
             safe_headers,
-            captured_at: Utc::now().timestamp(),
+            captured_at: Timestamp::now().as_second(),
         }
     }
 
@@ -554,7 +554,7 @@ async fn sign_response(
             signature_fields: request_fields.as_ref(),
         },
         ResponsePolicy {
-            created: Utc::now().timestamp(),
+            created: Timestamp::now().as_second(),
             keyid: signer.kid(),
             algorithm: signer.algorithm(),
             covered_headers: &covered_headers,

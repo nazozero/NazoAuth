@@ -57,11 +57,11 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
         acr: None,
         authentication_context: None,
         binding_message: None,
-        issued_at: Utc::now().timestamp(),
+        issued_at: jiff::Timestamp::now().as_second(),
         status: CibaStatus::Pending,
         interval_seconds: 5,
-        expires_at: Utc::now().timestamp() + 600,
-        retention_expires_at: Utc::now().timestamp() + 720,
+        expires_at: jiff::Timestamp::now().as_second() + 600,
+        retention_expires_at: jiff::Timestamp::now().as_second() + 720,
         last_poll_at: None,
         ping_notification: None,
     };
@@ -81,7 +81,7 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
 #[test]
 fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
     let authentication_context = CibaAuthenticationContext {
-        auth_time: Utc::now().timestamp(),
+        auth_time: jiff::Timestamp::now().as_second(),
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("sid-approved".to_owned()),
     };
@@ -93,11 +93,11 @@ fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
         acr: Some("1".to_owned()),
         authentication_context: None,
         binding_message: None,
-        issued_at: Utc::now().timestamp(),
+        issued_at: jiff::Timestamp::now().as_second(),
         status: CibaStatus::Approved,
         interval_seconds: 5,
-        expires_at: Utc::now().timestamp() + 600,
-        retention_expires_at: Utc::now().timestamp() + 720,
+        expires_at: jiff::Timestamp::now().as_second() + 600,
+        retention_expires_at: jiff::Timestamp::now().as_second() + 720,
         last_poll_at: None,
         ping_notification: None,
     };

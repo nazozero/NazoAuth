@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -196,7 +196,7 @@ where
         &self,
         provider_id: String,
         browser_binding_seed: &[u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<OidcFederationStart, FederationError> {
         let state = random_urlsafe_token();
         let stored = OidcFederationState {
@@ -207,7 +207,7 @@ where
             provider_id: Some(provider_id),
             nonce: random_urlsafe_token(),
             pkce_verifier: random_urlsafe_token(),
-            created_at: now.timestamp(),
+            created_at: now.as_second(),
         };
         self.states
             .store_oidc(&state, &stored, self.config.state_ttl_seconds)
@@ -225,7 +225,7 @@ where
         state: &str,
         expected_provider_id: &str,
         browser_binding_seed: &[u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<OidcFederationState, FederationError> {
         let state = normalize_federation_token(state).ok_or(FederationError::InvalidState)?;
         let expected_browser_binding_hash =
@@ -258,7 +258,7 @@ where
         &self,
         provider_id: String,
         browser_binding_seed: &[u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SocialFederationStart, FederationError> {
         let state = random_urlsafe_token();
         let stored = SocialFederationState {
@@ -268,7 +268,7 @@ where
             )),
             provider_id,
             pkce_verifier: random_urlsafe_token(),
-            created_at: now.timestamp(),
+            created_at: now.as_second(),
         };
         self.states
             .store_social(&state, &stored, self.config.state_ttl_seconds)
@@ -285,7 +285,7 @@ where
         state: &str,
         expected_provider_id: &str,
         browser_binding_seed: &[u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SocialFederationState, FederationError> {
         let state = normalize_federation_token(state).ok_or(FederationError::InvalidState)?;
         let expected_browser_binding_hash =
@@ -314,10 +314,10 @@ where
         &self,
         signature: &str,
         expires_at: i64,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), FederationError> {
         let ttl = expires_at
-            .saturating_sub(now.timestamp())
+            .saturating_sub(now.as_second())
             .clamp(1, self.config.saml_replay_ttl_seconds as i64) as u64;
         if self
             .states
@@ -445,11 +445,11 @@ where
         method: String,
         source_ip: String,
     ) -> Result<LoginSuccess, FederationError> {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut session = SessionRecord::new(
             account.user_id(),
             account.principal.authorization_epoch,
-            now.timestamp(),
+            now.as_second(),
             vec![method.clone(), "federated".to_owned()],
             account.account.mfa_enabled,
             Some(random_urlsafe_token()),
@@ -484,8 +484,8 @@ where
         })
     }
 
-    fn ensure_fresh(&self, created_at: i64, now: DateTime<Utc>) -> Result<(), FederationError> {
-        if now.timestamp().saturating_sub(created_at) > self.config.state_ttl_seconds as i64 {
+    fn ensure_fresh(&self, created_at: i64, now: Timestamp) -> Result<(), FederationError> {
+        if now.as_second().saturating_sub(created_at) > self.config.state_ttl_seconds as i64 {
             Err(FederationError::StateExpired)
         } else {
             Ok(())

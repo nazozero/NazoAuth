@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_digital_credentials::{DcqlQuery, VerifiedCredential};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -204,8 +204,8 @@ pub struct PresentationTransaction {
     pub openid4vc_trust_policy_resource_id: Option<String>,
     pub openid4vc_trust_policy_digest: Option<String>,
     pub response_encryption_private_key: Option<[u8; 32]>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for PresentationTransaction {
@@ -218,7 +218,7 @@ impl std::fmt::Debug for PresentationTransaction {
 pub struct PresentationResult {
     pub transaction_id: Uuid,
     pub credentials: Vec<VerifiedCredential>,
-    pub completed_at: DateTime<Utc>,
+    pub completed_at: Timestamp,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

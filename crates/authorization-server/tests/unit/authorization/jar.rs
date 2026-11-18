@@ -52,7 +52,7 @@ fn encrypt_request_object(keys: &nazo_key_management::KeyManager, signed: &str) 
 }
 
 fn request_claims() -> Value {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     json!({
         "client_id": "client-1", "iss": "client-1", "aud": "https://issuer.example",
         "exp": now + 120, "nbf": now, "response_type": "code", "scope": "openid",
@@ -78,7 +78,7 @@ fn prepared_encrypted_jar_still_requires_registered_algorithms_signature_and_cla
             let mut claims = request_claims();
             match failure {
                 Some("audience") => claims["aud"] = json!("https://other.example"),
-                Some("expiry") => claims["exp"] = json!(Utc::now().timestamp() - 1),
+                Some("expiry") => claims["exp"] = json!(jiff::Timestamp::now().as_second() - 1),
                 _ => {}
             }
             let (mut signed, mut client) = nested_request_object(&claims);

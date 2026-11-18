@@ -3,12 +3,12 @@
 //! transaction that performs the approved mutation.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, Utc};
 use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Nullable, Timestamptz, Uuid as DieselUuid, Varchar};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
+use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 
 use nazo_persistence::control_plane as contract;
@@ -66,15 +66,18 @@ where
 #[derive(QueryableByName)]
 struct IssuedApprovalRow {
     #[diesel(sql_type = Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
 struct ApprovalRow {
     #[diesel(sql_type = Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
     #[diesel(sql_type = Nullable<Timestamptz>)]
-    consumed_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    consumed_at: Option<Timestamp>,
     #[diesel(sql_type = Varchar)]
     deployment_id: String,
     #[diesel(sql_type = Varchar)]
@@ -100,7 +103,7 @@ pub(crate) async fn consume_approval_on_connection(
     expected_deployment_id: &str,
     expected_action: ControllerIdentityAction,
     expected_action_sha256: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), IdentityApprovalError> {
     let row = sql_query(
         "SELECT expires_at, consumed_at, deployment_id, action, action_sha256
@@ -130,7 +133,7 @@ pub(crate) async fn consume_approval_on_connection(
     }
     sql_query("UPDATE controller_identity_approvals SET consumed_at = $2 WHERE token_hash = $1")
         .bind::<Varchar, _>(token_hash)
-        .bind::<Timestamptz, _>(now)
+        .bind::<Timestamptz, _>((now).to_diesel())
         .execute(connection)
         .await
         .map_err(approval_transport)?;
@@ -143,13 +146,13 @@ impl ControllerRegistryRepository {
         deployment_id: &str,
         action: ControllerIdentityAction,
         action_sha256: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
         audit: contract::AdminIdentityAudit,
     ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
         let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
         let token_hash = approval_token_digest(&token);
         let approval_id = Uuid::now_v7();
-        let expires_at = now + Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
+        let expires_at = now + SignedDuration::from_secs(IDENTITY_APPROVAL_TTL_SECONDS);
         let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool).await.map_err(approval_transport)?,
         );
@@ -176,8 +179,8 @@ impl ControllerRegistryRepository {
                 .bind::<Varchar, _>(action_sha256)
                 .bind::<DieselUuid, _>(audit.actor_user_id)
                 .bind::<Varchar, _>(&token_hash)
-                .bind::<Timestamptz, _>(expires_at)
-                .bind::<Timestamptz, _>(now)
+                .bind::<Timestamptz, _>((expires_at).to_diesel())
+                .bind::<Timestamptz, _>((now).to_diesel())
                 .load::<IssuedApprovalRow>(connection)
                 .await
                 .map_err(approval_transport)?;
@@ -206,7 +209,7 @@ impl ControllerRegistryRepository {
                         "deployment_id": deployment_id,
                         "action": issued.action.as_str(),
                         "action_sha256": issued.action_sha256,
-                        "expires_at": issued.expires_at.to_rfc3339(),
+                        "expires_at": issued.expires_at,
                     }),
                 )
                 .await
@@ -237,3 +240,5 @@ pub(crate) fn contract_approval_error(
 #[cfg(test)]
 #[path = "../../../tests/unit/repositories/controller_registry/approvals.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

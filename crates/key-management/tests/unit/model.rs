@@ -38,13 +38,13 @@ fn prepared_test_verification() -> PreparedVerification {
 
 fn database_settings(
     _name: &str,
-    rotation_interval: chrono::Duration,
-    prepublish_window: chrono::Duration,
+    rotation_interval: jiff::SignedDuration,
+    prepublish_window: jiff::SignedDuration,
 ) -> KeySettings {
     KeySettings {
         rotation_interval,
         prepublish_window,
-        verification_grace: chrono::Duration::minutes(10),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
@@ -175,7 +175,7 @@ fn captured_snapshot_stops_exposing_a_key_after_its_retirement_deadline() {
             public_jwk: serde_json::json!({"kid":"expired","alg":"EdDSA"}),
             prepared: prepared_test_verification(),
             signing_purposes: BTreeSet::new(),
-            retire_at: Some(chrono::Utc::now() - chrono::Duration::seconds(1)),
+            retire_at: Some(jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1)),
         }],
         id_token_signing_algorithms: Vec::new(),
         response_signing_algorithms: Vec::new(),
@@ -194,7 +194,7 @@ fn captured_snapshot_stops_exposing_a_key_after_its_retirement_deadline() {
 
 #[test]
 fn captured_jwks_uses_the_same_retirement_boundary_as_its_cache_deadline() {
-    let deadline = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    let deadline = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
     let snapshot = super::KeySnapshot {
         active_kid: "active".to_owned(),
         active_alg: jsonwebtoken::Algorithm::EdDSA,
@@ -209,13 +209,13 @@ fn captured_jwks_uses_the_same_retirement_boundary_as_its_cache_deadline() {
         response_signing_algorithms: Vec::new(),
         request_object_encryption_jwk: serde_json::Value::Null,
     };
-    let before = deadline - chrono::Duration::nanoseconds(1);
+    let before = deadline - jiff::SignedDuration::from_nanos(1);
     assert_eq!(
         snapshot.next_verification_retirement(before),
         Some(deadline)
     );
     assert_eq!(snapshot.jwks_at(before)["keys"][0]["kid"], "retiring");
-    for now in [deadline, deadline + chrono::Duration::seconds(1)] {
+    for now in [deadline, deadline + jiff::SignedDuration::from_secs(1)] {
         assert_eq!(snapshot.next_verification_retirement(now), None);
         assert_eq!(snapshot.jwks_at(now)["keys"], serde_json::json!([null]));
     }
@@ -314,7 +314,7 @@ async fn jwt_encoding_rejects_grace_and_retired_keys() {
 async fn response_jwt_selects_default_algorithm_and_key_from_one_generation() {
     let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
     let claims =
-        serde_json::json!({"sub": "rotation-test", "exp": chrono::Utc::now().timestamp() + 60});
+        serde_json::json!({"sub": "rotation-test", "exp": jiff::Timestamp::now().as_second() + 60});
     let pending =
         manager.encode_response_jwt(SigningPurpose::LogoutToken, None, "logout+jwt", &claims);
     let replacement = KeyManager::for_test(jsonwebtoken::Algorithm::RS256);
@@ -535,8 +535,8 @@ fn http_signing_rejects_wrong_purpose_grace_and_retired_keys() {
 async fn expired_database_generation_fails_closed_while_lifecycle_flag_is_still_healthy() {
     let manager = database_manager(database_settings(
         "expired-generation",
-        chrono::Duration::days(90),
-        chrono::Duration::days(1),
+        jiff::SignedDuration::from_hours((90) * 24),
+        jiff::SignedDuration::from_hours(24),
     ))
     .await;
     let mut expired =
@@ -567,8 +567,8 @@ async fn expired_database_generation_fails_closed_while_lifecycle_flag_is_still_
 async fn expired_http_lease_cannot_use_old_generation_after_newer_generation_is_current() {
     let manager = database_manager(database_settings(
         "expired-lease",
-        chrono::Duration::days(90),
-        chrono::Duration::days(1),
+        jiff::SignedDuration::from_hours((90) * 24),
+        jiff::SignedDuration::from_hours(24),
     ))
     .await;
     let mut lease = manager.prepare_http_signing().unwrap();
@@ -586,8 +586,8 @@ async fn expired_http_lease_cannot_use_old_generation_after_newer_generation_is_
 async fn database_rotation_retains_old_public_key_for_grace_and_snapshot_bounds() {
     let settings = database_settings(
         "retirement-bound",
-        chrono::Duration::seconds(-1),
-        chrono::Duration::zero(),
+        jiff::SignedDuration::from_secs(-1),
+        jiff::SignedDuration::ZERO,
     );
     let manager = database_manager(settings).await;
     let old_kid = manager.snapshot().active_kid.clone();
@@ -595,9 +595,9 @@ async fn database_rotation_retains_old_public_key_for_grace_and_snapshot_bounds(
     let token = manager.encode_jwt(
         SigningPurpose::AccessToken,
         &jsonwebtoken::Header::new(algorithm),
-        &serde_json::json!({"sub":"before-rotation", "exp":chrono::Utc::now().timestamp() + 600}),
+        &serde_json::json!({"sub":"before-rotation", "exp":jiff::Timestamp::now().as_second() + 600}),
     ).await.unwrap();
-    let before = chrono::Utc::now();
+    let before = jiff::Timestamp::now();
     manager.refresh().await.unwrap(); // publishes a prepublished key
     manager.refresh().await.unwrap(); // activates it
     let old = manager
@@ -619,15 +619,15 @@ async fn database_rotation_retains_old_public_key_for_grace_and_snapshot_bounds(
     )
     .unwrap();
     assert_eq!(decoded.claims["sub"], "before-rotation");
-    let retire_at = chrono::DateTime::parse_from_rfc3339(old.retire_at.as_deref().unwrap())
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let retire_at = (old.retire_at.as_deref().unwrap())
+        .parse::<jiff::Timestamp>()
+        .unwrap();
     assert!(
         retire_at
             >= before
-                + chrono::Duration::minutes(10)
+                + jiff::SignedDuration::from_mins(10)
                 + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS
-                - chrono::Duration::seconds(1)
+                - jiff::SignedDuration::from_secs(1)
     );
 }
 
@@ -795,11 +795,11 @@ fn openid4vc_public_projection_and_revocation_index_are_shared_per_generation() 
     let manager = KeyManager::for_test(jsonwebtoken::Algorithm::ES256);
     let kid = manager.snapshot().active_kid.clone();
     let mut material = public_openid4vc_material(kid);
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     material.revocation_snapshot = Some(nazo_digital_credentials::CertificateRevocationSnapshot {
         version: nazo_digital_credentials::CertificateRevocationSnapshot::VERSION,
-        this_update: now - chrono::Duration::minutes(1),
-        next_update: now + chrono::Duration::minutes(1),
+        this_update: now - jiff::SignedDuration::from_mins(1),
+        next_update: now + jiff::SignedDuration::from_mins(1),
         entries: Vec::new(),
     });
     manager.set_openid4vc_material_for_test(material.clone());
@@ -813,7 +813,8 @@ fn openid4vc_public_projection_and_revocation_index_are_shared_per_generation() 
         &first_revocation,
         &manager.openid4vc_revocation_snapshot().unwrap()
     ));
-    material.revocation_snapshot.as_mut().unwrap().next_update += chrono::Duration::minutes(1);
+    material.revocation_snapshot.as_mut().unwrap().next_update +=
+        jiff::SignedDuration::from_mins(1);
     manager.set_openid4vc_material_for_test(material);
     let second = manager.openid4vc_public_material().unwrap();
     assert!(!std::sync::Arc::ptr_eq(&first, &second));
@@ -823,10 +824,10 @@ fn openid4vc_public_projection_and_revocation_index_are_shared_per_generation() 
     ));
     assert_eq!(
         first.revocation_snapshot.as_ref().unwrap().next_update,
-        now + chrono::Duration::minutes(1)
+        now + jiff::SignedDuration::from_mins(1)
     );
     assert_eq!(
         second.revocation_snapshot.as_ref().unwrap().next_update,
-        now + chrono::Duration::minutes(2)
+        now + jiff::SignedDuration::from_mins(2)
     );
 }

@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use super::*;
@@ -150,7 +150,7 @@ impl MfaRepositoryPort for ConfirmRepository {
         _credential_id: Uuid,
         _token_hash: String,
         _user_agent_hash: Option<String>,
-        _expires_at: DateTime<Utc>,
+        _expires_at: Timestamp,
     ) -> RepositoryFuture<'_, bool> {
         unreachable!()
     }
@@ -227,7 +227,7 @@ async fn backup_code_hash_order_keeps_candidate_identity_and_single_consumption(
     );
     let account = account();
     let proof = service
-        .verify_factor(&account, "12345-67890", Utc::now().timestamp())
+        .verify_factor(&account, "12345-67890", Timestamp::now().as_second())
         .await
         .unwrap()
         .unwrap();
@@ -235,7 +235,7 @@ async fn backup_code_hash_order_keeps_candidate_identity_and_single_consumption(
     assert_eq!(proof.method, MfaVerificationMethod::BackupCode);
     assert!(
         service
-            .verify_factor(&account, "12345-67890", Utc::now().timestamp())
+            .verify_factor(&account, "12345-67890", Timestamp::now().as_second())
             .await
             .unwrap()
             .is_none()
@@ -274,7 +274,7 @@ async fn failed_or_replayed_confirmation_cannot_return_backup_code_secrets() {
 }
 
 fn account() -> PublicAccount {
-    let now = Utc::now();
+    let now = Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,

@@ -8,7 +8,7 @@ fn event(payload: Value) -> SecurityAuditEvent {
         event_type: "token_issued".to_owned(),
         event_category: "token_lifecycle".to_owned(),
         payload,
-        occurred_at: Utc::now(),
+        occurred_at: jiff::Timestamp::now(),
     }
 }
 

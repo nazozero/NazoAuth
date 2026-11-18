@@ -1,7 +1,7 @@
 //! Real PostgreSQL restore coverage and append-only receipt regressions.
-use chrono::{Duration, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::ports::RepositoryError;
 use nazo_postgres::{TokenRepository, create_pool};
 use uuid::Uuid;
@@ -116,8 +116,8 @@ async fn restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families
     let operation = Uuid::now_v7();
     let epoch = Uuid::now_v7();
     let hash = "a".repeat(64);
-    let completed = chrono::DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap();
-    let deadline = completed + Duration::minutes(10);
+    let completed = jiff::Timestamp::new(Timestamp::now().as_second(), 0).unwrap();
+    let deadline = completed + SignedDuration::from_mins(10);
     let first = repository
         .invalidate_after_restore(operation, &hash, epoch, deadline, completed)
         .await
@@ -138,8 +138,8 @@ async fn restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families
             operation,
             &hash,
             epoch,
-            deadline + Duration::hours(1),
-            completed + Duration::seconds(1),
+            deadline + SignedDuration::from_hours(1),
+            completed + SignedDuration::from_secs(1),
         )
         .await
         .unwrap();
@@ -173,8 +173,8 @@ async fn restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families
     .bind::<sql_types::Text, _>(&hash)
     .bind::<sql_types::Uuid, _>(system)
     .bind::<sql_types::Uuid, _>(old_epoch)
-    .bind::<sql_types::Timestamptz, _>(deadline)
-    .bind::<sql_types::Timestamptz, _>(completed)
+    .bind::<sql_types::Timestamptz, _>((deadline).to_diesel())
+    .bind::<sql_types::Timestamptz, _>((completed).to_diesel())
     .execute(&mut connection)
     .await
     .unwrap();
@@ -243,7 +243,7 @@ async fn one_global_epoch_has_one_operation_winner() {
         return;
     };
     let repository = TokenRepository::new(create_pool(url.clone(), 2).unwrap());
-    let now = Utc::now();
+    let now = Timestamp::now();
     let epoch = Uuid::now_v7();
     let hash = "b".repeat(64);
     let (left, right) = tokio::join!(
@@ -251,14 +251,14 @@ async fn one_global_epoch_has_one_operation_winner() {
             Uuid::now_v7(),
             &hash,
             epoch,
-            now + Duration::minutes(10),
+            now + SignedDuration::from_mins(10),
             now
         ),
         repository.invalidate_after_restore(
             Uuid::now_v7(),
             &hash,
             epoch,
-            now + Duration::minutes(10),
+            now + SignedDuration::from_mins(10),
             now
         )
     );
@@ -269,3 +269,5 @@ async fn one_global_epoch_has_one_operation_winner() {
     drop(repository);
     support::database::drop(&url).await;
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -545,7 +545,7 @@ async fn legacy_custom_control_tenant_remains_authorized() {
         &instance_key_id(&key),
         &key,
         &nonce,
-        chrono::Utc::now().timestamp(),
+        jiff::Timestamp::now().as_second(),
     )
     .unwrap();
     assert_eq!(statement.nonce, nonce);

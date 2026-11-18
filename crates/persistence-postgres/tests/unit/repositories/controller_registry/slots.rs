@@ -38,12 +38,12 @@ fn slot_index_selection_fills_lowest_free_and_stops_at_three() {
                 kid: kid_of(&[0u8; 32]),
                 public_key: vec![0u8; 32],
                 slot_index: *index,
-                issued_at: chrono::Utc::now(),
-                expires_at: chrono::Utc::now(),
+                issued_at: jiff::Timestamp::now(),
+                expires_at: jiff::Timestamp::now(),
                 status: ControllerSlotStatus::Active,
                 revoked_at: None,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
+                created_at: jiff::Timestamp::now(),
+                updated_at: jiff::Timestamp::now(),
             })
             .collect()
     };
@@ -80,12 +80,12 @@ fn summary_never_carries_public_key_bytes() {
         kid: kid_of(&[11u8; 32]),
         public_key: vec![11u8; 32],
         slot_index: 0,
-        issued_at: chrono::Utc::now(),
-        expires_at: chrono::Utc::now(),
+        issued_at: jiff::Timestamp::now(),
+        expires_at: jiff::Timestamp::now(),
         status: ControllerSlotStatus::Active,
         revoked_at: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: jiff::Timestamp::now(),
+        updated_at: jiff::Timestamp::now(),
     };
     let summary = slot.summary();
     let rendered = format!("{summary:?}");

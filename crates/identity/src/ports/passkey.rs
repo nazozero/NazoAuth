@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
-use passkey_auth::PasskeyCredential as WebauthnCredential;
+use jiff::Timestamp;
+use nazo_passkey::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
 
 use crate::{PublicAccount, TenantId, UserId};
@@ -13,9 +13,9 @@ pub struct PasskeyCredential {
     pub user_id: UserId,
     pub credential: WebauthnCredential,
     pub label: String,
-    pub last_used_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub last_used_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 /// Display metadata scoped to one tenant and user; contains no credential payload.
@@ -27,9 +27,22 @@ pub struct PasskeyCredentialSummary {
     pub credential_id: String,
     pub label: String,
     pub sign_count: i64,
-    pub last_used_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub last_used_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// Signed authentication facts committed before the replacement session is issued.
+/// The counter and the previously observed backup eligibility are compare-and-set
+/// guards. UV initialization is monotonic and needs independent authentication.
+#[derive(Clone, Copy, Debug)]
+pub struct PasskeyAuthenticationUpdate {
+    pub expected_counter: u32,
+    pub new_counter: u32,
+    pub expected_backup_eligible: Option<bool>,
+    pub backup_eligible: bool,
+    pub backup_state: bool,
+    pub initialize_user_verification: bool,
 }
 
 impl From<PasskeyCredential> for PasskeyCredentialSummary {
@@ -79,7 +92,7 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'_, Vec<passkey_auth::CredentialId>>;
+    ) -> RepositoryFuture<'_, Vec<nazo_passkey::CredentialId>>;
 
     fn by_credential_id<'a>(
         &'a self,
@@ -98,13 +111,12 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         label: String,
     ) -> RepositoryFuture<'_, PasskeyCredential>;
 
-    fn update_counter<'a>(
+    fn update_authentication<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-        expected_sign_count: u32,
-        new_sign_count: u32,
+        update: PasskeyAuthenticationUpdate,
     ) -> RepositoryFuture<'a, ()>;
 
     /// Delete the credential and append its required lifecycle audit atomically.

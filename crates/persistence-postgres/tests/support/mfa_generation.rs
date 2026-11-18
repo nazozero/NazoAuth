@@ -137,7 +137,7 @@ async fn remember(
                 generation,
                 blake3::hash(generation.as_bytes()).to_hex().to_string(),
                 None,
-                chrono::Utc::now() + chrono::Duration::hours(1)
+                jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1)
             )
             .await
             .unwrap()
@@ -167,7 +167,7 @@ async fn assert_full_generation(
                 user,
                 blake3::hash(generation.as_bytes()).to_hex().as_ref(),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()
@@ -430,7 +430,7 @@ async fn mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_f
     }
 }
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::ports::{
     BackupCodeCandidate, RepositoryFuture, TotpEnrollmentCheck, TotpVerificationOutcome,
 };
@@ -665,7 +665,7 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         credential_id: Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     ) -> RepositoryFuture<'_, bool> {
         MfaRepositoryPort::remember_device(
             &self.inner,

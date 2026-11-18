@@ -90,6 +90,7 @@ set can be scanned from one place.
 | [integration/openid-connect.md](integration/openid-connect.md) | OpenID Connect relying-party integration guide and security boundaries. |
 | [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) | Chinese OpenID Connect relying-party integration guide and security boundaries. |
 | [integration/rust-embedding.md](integration/rust-embedding.md) | Framework-neutral embedding, transport contract and reusable adapter conformance checks. |
+| [integration/jiff-migration.md](integration/jiff-migration.md) | Native Jiff API, PostgreSQL precision, frozen audit formats, and credential time boundaries. |
 
 ### Protocol
 

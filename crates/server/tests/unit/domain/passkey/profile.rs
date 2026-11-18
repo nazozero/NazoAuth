@@ -17,21 +17,21 @@ use actix_web::{
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
-use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use jiff::Timestamp;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_identity::ports::PasskeyCredential;
 use nazo_oauth_server::services::PASSKEY_CEREMONY_TTL_SECONDS;
-use passkey_auth::RegistrationResponse;
+use nazo_passkey::RegistrationResponse;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -50,7 +50,7 @@ fn normalize_passkey_label(value: Option<String>) -> Result<String, HttpResponse
     })
 }
 
-fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {
+fn normalize_ceremony_id(value: &str) -> Result<&str, HttpResponse> {
     nazo_identity::passkey::normalize_ceremony_id(value).map_err(|_| {
         authorization_error_response(
             StatusCode::BAD_REQUEST,
@@ -209,12 +209,57 @@ impl FakeAuthenticator {
 
     fn registration_response(&self, challenge_b64: &str, origin: &str) -> RegistrationResponse {
         let (_raw, client_data_json) = client_data("webauthn.create", challenge_b64, origin);
-        RegistrationResponse {
-            id: B64URL.encode(&self.credential_id),
-            transports: vec!["internal".to_owned()],
-            attestation_object: B64URL.encode(self.attestation_object()),
-            client_data_json,
+        serde_json::from_value(json!({
+            "id": B64URL.encode(&self.credential_id),
+            "rawId": B64URL.encode(&self.credential_id),
+            "type": "public-key",
+            "response": {
+                "transports": ["internal"],
+                "attestationObject": B64URL.encode(self.attestation_object()),
+                "clientDataJSON": client_data_json,
+            },
+            "clientExtensionResults": {},
+        }))
+        .unwrap()
+    }
+
+    fn packed_registration_response(
+        &self,
+        challenge_b64: &str,
+        origin: &str,
+        corrupt_signature: bool,
+    ) -> RegistrationResponse {
+        let (client_data_raw, client_data_json) =
+            client_data("webauthn.create", challenge_b64, origin);
+        let auth_data = self.auth_data_register();
+        let mut message = auth_data.clone();
+        message.extend_from_slice(&Sha256::digest(&client_data_raw));
+        let mut signature = self.sk.sign(&message).to_bytes();
+        if corrupt_signature {
+            signature[0] ^= 1;
         }
+        let attestation = cbor_map(vec![
+            (cbor_text("fmt"), cbor_text("packed")),
+            (
+                cbor_text("attStmt"),
+                cbor_map(vec![
+                    (cbor_text("alg"), cbor_nint(-8)),
+                    (cbor_text("sig"), cbor_bytes(&signature)),
+                ]),
+            ),
+            (cbor_text("authData"), cbor_bytes(&auth_data)),
+        ]);
+        serde_json::from_value(json!({
+            "id": B64URL.encode(&self.credential_id),
+            "rawId": B64URL.encode(&self.credential_id),
+            "type": "public-key",
+            "response": {
+                "transports": ["internal"],
+                "attestationObject": B64URL.encode(attestation),
+                "clientDataJSON": client_data_json,
+            },
+        }))
+        .unwrap()
     }
 
     fn cose_pubkey(&self) -> Vec<u8> {
@@ -269,7 +314,6 @@ impl LivePasskeyFixture {
             ("PASSKEY_ORIGIN", "https://example.com"),
             ("PASSKEY_REQUIRE_USER_VERIFICATION", "true"),
             ("PASSKEY_REQUIRE_USER_HANDLE", "true"),
-            ("PASSKEY_STRICT_BASE64", "true"),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_session_test"),
             ("CSRF_COOKIE_NAME", "nazo_csrf_test"),
@@ -328,7 +372,7 @@ impl LivePasskeyFixture {
     }
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
-        self.store_session_at(user, sid, Utc::now().timestamp())
+        self.store_session_at(user, sid, Timestamp::now().as_second())
             .await;
     }
 
@@ -387,7 +431,7 @@ impl LivePasskeyFixture {
         .bind::<SqlUuid, _>(user.tenant_id)
         .bind::<SqlUuid, _>(user.id)
         .bind::<Text, _>(
-            serde_json::from_value::<passkey_auth::PasskeyCredential>(credential.clone())
+            serde_json::from_value::<nazo_passkey::PasskeyCredential>(credential.clone())
                 .map(|value| value.id.to_b64url())
                 .unwrap_or_else(|_| format!("{credential_id}-{}", Uuid::now_v7().simple())),
         )
@@ -457,10 +501,12 @@ fn client_data(kind: &str, challenge_b64: &str, origin: &str) -> (Vec<u8>, Strin
 
 fn invalid_registration_response() -> RegistrationResponse {
     RegistrationResponse {
-        id: "invalid".to_owned(),
-        transports: Vec::new(),
-        attestation_object: "invalid".to_owned(),
-        client_data_json: "invalid".to_owned(),
+        id: nazo_passkey::CredentialId(b"invalid".to_vec()),
+        response: nazo_passkey::AttestationResponse {
+            transports: Vec::new(),
+            attestation_object: "invalid".to_owned(),
+            client_data_json: "invalid".to_owned(),
+        },
     }
 }
 
@@ -687,17 +733,59 @@ async fn registration_finish_persists_credential_and_consumes_ceremony_once() {
         .as_str()
         .expect("begin response should include challenge");
 
+    assert_eq!(
+        begin_body["publicKey"]["authenticatorSelection"]["residentKey"],
+        "preferred"
+    );
+    assert_eq!(
+        begin_body["publicKey"]["authenticatorSelection"]["requireResidentKey"],
+        false
+    );
+    assert_eq!(begin_body["publicKey"]["attestation"], "none");
     let authenticator = FakeAuthenticator::new(format!("credential-{suffix}").as_bytes());
-    let finish_response = passkey_registration_finish(
-        fixture.state.clone(),
-        fixture.request(&sid, &csrf),
-        Json(PasskeyFinishRequest {
-            ceremony_id: ceremony_id.to_owned(),
-            response: authenticator
-                .registration_response(challenge, &fixture.state.settings.identity.passkey.origin),
-        }),
+    let registration = authenticator
+        .registration_response(challenge, &fixture.state.settings.identity.passkey.origin);
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(super::test_support::test_profile_endpoint(&fixture.state))
+            .route(
+                "/auth/me/passkeys/registration/finish",
+                actix_web::web::post().to(crate::test_support::http::passkey_registration_finish),
+            ),
     )
     .await;
+    let finish_response = actix_web::test::call_service(
+        &app,
+        actix_web::test::TestRequest::post()
+            .uri("/auth/me/passkeys/registration/finish")
+            .cookie(Cookie::new(
+                fixture.state.settings.session.session_cookie_name.clone(),
+                sid.clone(),
+            ))
+            .cookie(Cookie::new(
+                fixture.state.settings.session.csrf_cookie_name.clone(),
+                csrf.clone(),
+            ))
+            .insert_header(("x-csrf-token", csrf.clone()))
+            .set_json(json!({
+                "ceremony_id": ceremony_id,
+                "response": {
+                    "id": registration.id.to_b64url(),
+                    "rawId": registration.id.to_b64url(),
+                    "type": "public-key",
+                    "response": {
+                        "attestationObject": registration.response.attestation_object,
+                        "clientDataJSON": registration.response.client_data_json,
+                        "transports": registration.response.transports,
+                    },
+                    "clientExtensionResults": {},
+                },
+            }))
+            .to_request(),
+    )
+    .await
+    .into_parts()
+    .1;
     let (finish_status, finish_body) = response_json(finish_response).await;
     assert_eq!(finish_status, StatusCode::CREATED);
     assert_eq!(finish_body["label"], "Work laptop");
@@ -868,6 +956,88 @@ async fn registration_finish_projects_malformed_ceremony_state_as_expired() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "passkey ceremony expired.");
+}
+
+#[actix_web::test]
+async fn registration_consumes_outdated_state_and_accepts_a_new_ceremony() {
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix).await;
+    let sid = format!("state-upgrade-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let authenticator = FakeAuthenticator::new(format!("state-upgrade-{suffix}").as_bytes());
+    let store = nazo_valkey::AuthenticationStore::new(&fixture.state.valkey_connection());
+    // Historical v1 binding for example.com / https://example.com with
+    // require_uv, strict_base64 and require_user_handle enabled.
+    let old_binding = [
+        150, 57, 14, 84, 222, 79, 186, 54, 249, 171, 118, 100, 53, 202, 70, 207, 87, 99, 103, 217,
+        154, 47, 132, 95, 107, 141, 67, 216, 80, 125, 180, 134,
+    ];
+    for mode in ["old_context", "expired", "current"] {
+        let (begin_status, begin) = response_json(
+            passkey_registration_begin(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyBeginRequest { label: None }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(begin_status, StatusCode::OK);
+        let ceremony_id = begin["ceremony_id"].as_str().unwrap();
+        if mode != "current" {
+            let mut state = store
+                .take_passkey_registration(ceremony_id)
+                .await
+                .unwrap()
+                .unwrap();
+            if mode == "old_context" {
+                state["state"]["context_binding"] = json!(old_binding);
+            } else {
+                state["state"]["created_at"] = json!(Timestamp::now().as_second() - 301);
+            }
+            store
+                .store_passkey_registration(ceremony_id, &state, 300)
+                .await
+                .unwrap();
+        }
+        let (status, body) = response_json(
+            passkey_registration_finish(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyFinishRequest {
+                    ceremony_id: ceremony_id.to_owned(),
+                    response: authenticator.registration_response(
+                        begin["publicKey"]["challenge"].as_str().unwrap(),
+                        &fixture.state.settings.identity.passkey.origin,
+                    ),
+                }),
+            )
+            .await,
+        )
+        .await;
+        assert!(
+            store
+                .take_passkey_registration(ceremony_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let rows = load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap();
+        if mode == "current" {
+            assert_eq!(status, StatusCode::CREATED);
+            assert_eq!(rows.len(), 1);
+        } else {
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["error_description"], "passkey ceremony expired.");
+            assert!(rows.is_empty());
+        }
+    }
 }
 
 #[actix_web::test]
@@ -1082,6 +1252,143 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
         .expect("passkeys should load");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].label, "Primary key");
+
+    // An excluded outer ID must not mask a different attested credential ID.
+    let (status, begin) = response_json(
+        passkey_registration_begin(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            Json(PasskeyBeginRequest { label: None }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let other = FakeAuthenticator::new(format!("mismatched-{suffix}").as_bytes());
+    let mut mismatched = other.registration_response(
+        begin["publicKey"]["challenge"].as_str().unwrap(),
+        &fixture.state.settings.identity.passkey.origin,
+    );
+    // The admitted id/rawId pair is one decoded ID; it still must match the
+    // credential ID authenticated inside attestationObject.
+    mismatched.id = nazo_passkey::CredentialId(authenticator.credential_id.clone());
+    let rejected = passkey_registration_finish(
+        fixture.state.clone(),
+        fixture.request(&sid, &csrf),
+        Json(PasskeyFinishRequest {
+            ceremony_id: begin["ceremony_id"].as_str().unwrap().to_owned(),
+            response: mismatched,
+        }),
+    )
+    .await;
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[actix_web::test]
+async fn excluded_credential_with_invalid_packed_signature_is_rejected_and_audited() {
+    #[derive(diesel::QueryableByName)]
+    struct AuditPayload {
+        #[diesel(sql_type = Jsonb)]
+        payload: Value,
+    }
+
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix).await;
+    let sid = format!("excluded-invalid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let authenticator = FakeAuthenticator::new(format!("credential-{suffix}").as_bytes());
+    let origin = &fixture.state.settings.identity.passkey.origin;
+
+    for (corrupt_signature, expected_status) in [
+        (false, StatusCode::CREATED),
+        (false, StatusCode::CONFLICT),
+        (true, StatusCode::BAD_REQUEST),
+    ] {
+        let (status, begin) = response_json(
+            passkey_registration_begin(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyBeginRequest { label: None }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        if expected_status != StatusCode::CREATED {
+            assert_eq!(
+                begin["publicKey"]["excludeCredentials"][0]["id"],
+                B64URL.encode(&authenticator.credential_id)
+            );
+        }
+        let ceremony_id = begin["ceremony_id"].as_str().unwrap();
+        let challenge = begin["publicKey"]["challenge"].as_str().unwrap();
+        let (status, body) = response_json(
+            passkey_registration_finish(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyFinishRequest {
+                    ceremony_id: ceremony_id.to_owned(),
+                    response: authenticator.packed_registration_response(
+                        challenge,
+                        origin,
+                        corrupt_signature,
+                    ),
+                }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, expected_status);
+        if corrupt_signature {
+            assert_eq!(body["error_description"], "passkey registration failed.");
+            let (status, body) = response_json(
+                passkey_registration_finish(
+                    fixture.state.clone(),
+                    fixture.request(&sid, &csrf),
+                    Json(PasskeyFinishRequest {
+                        ceremony_id: ceremony_id.to_owned(),
+                        response: authenticator
+                            .packed_registration_response(challenge, origin, true),
+                    }),
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["error_description"], "passkey ceremony expired.");
+        }
+    }
+
+    assert_eq!(
+        load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
+    let rejected = sql_query(
+        "SELECT payload FROM security_audit_events \
+         WHERE event_type='passkey_registration_rejected' AND payload->>'user_id'=$1",
+    )
+    .bind::<Text, _>(user.id.to_string())
+    .load::<AuditPayload>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(rejected.len(), 1, "required rejection evidence is durable");
+    assert_eq!(rejected[0].payload["reason"], "invalid_attestation");
+    assert_eq!(rejected[0].payload["tenant_id"], user.tenant_id.to_string());
 }
 
 #[actix_web::test]
@@ -1166,7 +1473,7 @@ async fn stale_session_cannot_begin_finish_or_delete_a_passkey() {
         )
         .await;
     fixture
-        .store_session_at(&user, &sid, Utc::now().timestamp() - 301)
+        .store_session_at(&user, &sid, Timestamp::now().as_second() - 301)
         .await;
     let authenticator = FakeAuthenticator::new(format!("new-{suffix}").as_bytes());
     let responses = [

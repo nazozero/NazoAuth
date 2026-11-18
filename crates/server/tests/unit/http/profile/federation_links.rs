@@ -2,7 +2,7 @@ use crate::test_support::DatabaseExternalIdentityFixture;
 
 use nazo_identity::{DEFAULT_TENANT_ID, ports::FederationLinkSummary};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde_json::json;
 
 use super::*;
@@ -21,8 +21,8 @@ fn federation_link_document_excludes_raw_provider_claims() {
             "access_token": "must-not-leak",
             "raw": "provider response"
         }),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Timestamp::now(),
+        updated_at: Timestamp::now(),
         last_login_at: None,
     };
 

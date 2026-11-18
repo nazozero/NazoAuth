@@ -19,7 +19,7 @@ fn valid_context(auth_time: i64) -> nazo_auth::RefreshTokenAuthenticationContext
 }
 
 fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
-    let issued_at = Utc::now();
+    let issued_at = jiff::Timestamp::now();
     nazo_auth::RefreshTokenCommit::IssueNew {
         token: NewRefreshToken {
             raw_token: "refresh".to_owned(),
@@ -32,7 +32,7 @@ fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
             user_id: Some(Uuid::now_v7()),
             audiences: vec!["resource".to_owned()],
             issued_at,
-            expires_at: issued_at + Duration::hours(1),
+            expires_at: issued_at + jiff::SignedDuration::from_hours(1),
             dpop_jkt: None,
             mtls_x5t_s256: None,
             client_attestation_jkt: None,
@@ -43,7 +43,7 @@ fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
             audiences: vec!["resource".to_owned()],
             authorization_details: serde_json::json!([]),
             subject: "subject".to_owned(),
-            authentication_context: valid_context(issued_at.timestamp()),
+            authentication_context: valid_context(issued_at.as_second()),
         }
         .clone(),
     }
@@ -75,7 +75,7 @@ fn refresh_token_validation_rejects_malformed_context_and_audiences() {
     assert!(validate_refresh_commit(&blank_audience).is_err());
 
     let mut future_authentication = valid_refresh_token();
-    let future_time = token_mut(&mut future_authentication).issued_at.timestamp() + 1;
+    let future_time = token_mut(&mut future_authentication).issued_at.as_second() + 1;
     contract_mut(&mut future_authentication)
         .authentication_context
         .auth_time = future_time;
@@ -152,7 +152,7 @@ fn refresh_contract_preparation_excludes_response_only_facts() {
 }
 
 fn ownership_family(contract: &RefreshContract) -> RefreshFamilyRow {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     RefreshFamilyRow {
         tenant_id: Uuid::from_u128(1),
         token_family_id: Uuid::from_u128(2),
@@ -164,7 +164,7 @@ fn ownership_family(contract: &RefreshContract) -> RefreshFamilyRow {
         current_token_blake3: vec![6; 32],
         current_audience: serde_json::json!(["resource://a"]),
         current_issued_at: now,
-        current_expires_at: now + Duration::hours(1),
+        current_expires_at: now + jiff::SignedDuration::from_hours(1),
         current_id_token_sid: Some("generation-sid".into()),
         dpop_jkt: None,
         mtls_x5t_s256: None,

@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::{
     PasswordHash, TenantId,
@@ -34,7 +34,7 @@ pub struct AuthenticatePasswordInput {
     pub source_ip: String,
     pub remembered_mfa: Option<RememberedMfaProof>,
     pub previous_session_id: Option<String>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 impl std::fmt::Debug for AuthenticatePasswordInput {
@@ -252,7 +252,7 @@ where
         let mut session = SessionRecord::new(
             user_id,
             account.authorization_epoch,
-            input.now.timestamp(),
+            input.now.as_second(),
             amr,
             account.mfa_enabled && !remembered_mfa,
             Some(random_urlsafe_token()),

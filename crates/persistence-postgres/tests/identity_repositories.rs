@@ -943,7 +943,7 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
         .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET)
         .await
         .unwrap();
-    let step = chrono::Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let step = jiff::Timestamp::now().as_second() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step).unwrap();
     let hashes = |prefix: &str| {
@@ -1320,7 +1320,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .await
         .unwrap();
 
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let token_hash = "a".repeat(64);
     let user_agent_hash = "b".repeat(64);
     trait_repository
@@ -1330,7 +1330,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             token_hash.clone(),
             Some(user_agent_hash.clone()),
-            now + chrono::Duration::minutes(10),
+            now + jiff::SignedDuration::from_mins(10),
         )
         .await
         .unwrap();
@@ -1341,7 +1341,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             "c".repeat(64),
             None,
-            now - chrono::Duration::minutes(1),
+            now - jiff::SignedDuration::from_mins(1),
         )
         .await
         .unwrap();
@@ -1383,7 +1383,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             unbound_token_hash.clone(),
             None,
-            now + chrono::Duration::minutes(10),
+            now + jiff::SignedDuration::from_mins(10),
         )
         .await
         .unwrap();
@@ -1425,7 +1425,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
                 user_id,
                 &token_hash,
                 Some(&user_agent_hash),
-                now + chrono::Duration::hours(1),
+                now + jiff::SignedDuration::from_hours(1),
             )
             .await
             .unwrap()
@@ -1704,8 +1704,18 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .unwrap();
 
     let (left, right) = tokio::join!(
-        repository.update_counter(tenant.tenant_id, user_id, "AQID", 0, 1),
-        repository.update_counter(tenant.tenant_id, user_id, "AQID", 0, 1)
+        repository.update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "AQID",
+            passkey_update(0, 1, None)
+        ),
+        repository.update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "AQID",
+            passkey_update(0, 1, None)
+        )
     );
     assert!(matches!(
         (&left, &right),
@@ -1713,14 +1723,24 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
     ));
     assert_eq!(
         repository
-            .update_counter(tenant.tenant_id, user_id, "AQID", 0, 2)
+            .update_authentication(
+                tenant.tenant_id,
+                user_id,
+                "AQID",
+                passkey_update(0, 2, None)
+            )
             .await
             .unwrap_err(),
         RepositoryError::Conflict
     );
     assert_eq!(
         repository
-            .update_counter(tenant.tenant_id, user_id, "AQID", 1, 1)
+            .update_authentication(
+                tenant.tenant_id,
+                user_id,
+                "AQID",
+                passkey_update(1, 1, Some(false))
+            )
             .await
             .unwrap_err(),
         RepositoryError::Conflict
@@ -1736,9 +1756,67 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .await
         .unwrap();
     repository
-        .update_counter(tenant.tenant_id, user_id, "BAUG", 0, 0)
+        .update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "BAUG",
+            passkey_update(0, 0, None),
+        )
         .await
         .unwrap();
+    let mut initialize = passkey_update(0, 0, Some(false));
+    initialize.initialize_user_verification = true;
+    repository
+        .update_authentication(tenant.tenant_id, user_id, "BAUG", initialize)
+        .await
+        .unwrap();
+    repository
+        .update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "BAUG",
+            passkey_update(0, 0, Some(false)),
+        )
+        .await
+        .unwrap();
+    let record = repository
+        .by_credential_id(tenant.tenant_id, user_id, "BAUG")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.credential.uv_initialized, Some(true));
+    assert_eq!(record.credential.backup_eligible, Some(false));
+    assert_eq!(record.credential.backup_state, Some(false));
+    assert_eq!(record.credential.counter, 0);
+
+    repository
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            test_passkey(&[7, 8, 9], 0),
+            "legacy zero counter".into(),
+        )
+        .await
+        .unwrap();
+    let mut backed_up = passkey_update(0, 0, None);
+    backed_up.backup_eligible = true;
+    backed_up.backup_state = true;
+    let (left, right) = tokio::join!(
+        repository.update_authentication(tenant.tenant_id, user_id, "BwgJ", backed_up),
+        repository.update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "BwgJ",
+            passkey_update(0, 0, None)
+        ),
+    );
+    assert!(
+        matches!(
+            (&left, &right),
+            (Ok(()), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(()))
+        ),
+        "legacy backup eligibility must be initialized once even with zero counters"
+    );
     cleanup(&pool, user_id).await;
 }
 
@@ -3444,7 +3522,7 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
     };
     let repository = mfa_repository(pool.clone());
     let old = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
-    let expires = chrono::Utc::now() + chrono::Duration::hours(1);
+    let expires = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1);
     assert!(
         repository
             .remember_device(
@@ -3543,7 +3621,7 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
                 user_id,
                 &"e".repeat(64),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()
@@ -3555,7 +3633,7 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
                 user_id,
                 &"d".repeat(64),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()
@@ -3646,7 +3724,7 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
                 generation,
                 "a".repeat(64),
                 None,
-                chrono::Utc::now() + chrono::Duration::hours(1),
+                jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
             )
             .await
     });
@@ -3696,7 +3774,7 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
                 user_id,
                 &"a".repeat(64),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()
@@ -3724,13 +3802,33 @@ mod mfa_generation;
 #[path = "support/admin_user_required.rs"]
 mod admin_user_required;
 
-fn test_passkey(id: &[u8], counter: u32) -> passkey_auth::PasskeyCredential {
-    passkey_auth::PasskeyCredential {
-        id: passkey_auth::CredentialId(id.to_vec()),
+fn passkey_update(
+    expected_counter: u32,
+    new_counter: u32,
+    expected_backup_eligible: Option<bool>,
+) -> nazo_identity::ports::PasskeyAuthenticationUpdate {
+    nazo_identity::ports::PasskeyAuthenticationUpdate {
+        expected_counter,
+        new_counter,
+        expected_backup_eligible,
+        backup_eligible: false,
+        backup_state: false,
+        initialize_user_verification: false,
+    }
+}
+
+fn test_passkey(id: &[u8], counter: u32) -> nazo_passkey::PasskeyCredential {
+    nazo_passkey::PasskeyCredential {
+        id: nazo_passkey::CredentialId(id.to_vec()),
         counter,
-        public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
+        public_key_cose: nazo_passkey::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
         transports: vec!["internal".into()],
         aaguid: [0; 16],
+        user_handle: None,
+        uv_initialized: None,
+        backup_eligible: None,
+        backup_state: None,
+        attestation: nazo_passkey::AttestationEvidence::Unknown,
     }
 }
 

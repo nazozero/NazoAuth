@@ -75,7 +75,7 @@ fn unsigned_request_object(claims: Value) -> String {
 }
 
 fn signed_request_object(client_id: &str, fixture: &ClientSigningFixture) -> String {
-    let now = Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let claims = json!({
         "client_id": client_id,
         "iss": client_id,
@@ -346,8 +346,8 @@ impl LiveAuthorizationFixture {
             params,
             dpop_jkt: None,
             mtls_x5t_s256: None,
-            issued_at: Utc::now(),
-            expires_at: Utc::now() + Duration::seconds(60),
+            issued_at: jiff::Timestamp::now(),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60),
         };
         valkey_set_ex(
             &self.state.valkey,
@@ -372,8 +372,8 @@ impl LiveAuthorizationFixture {
             params,
             dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
             mtls_x5t_s256: mtls_x5t_s256.map(ToOwned::to_owned),
-            issued_at: Utc::now(),
-            expires_at: Utc::now() + Duration::seconds(60),
+            issued_at: jiff::Timestamp::now(),
+            expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60),
         };
         valkey_set_ex(
             &self.state.valkey,
@@ -1112,7 +1112,7 @@ async fn fapi_par_uses_the_bounded_authorization_transaction_ttl() {
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second())
         .await;
 
     let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
@@ -1863,7 +1863,7 @@ async fn authorization_request_requires_reauthentication_for_prompt_none_session
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp() - 600)
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second() - 600)
         .await;
     let uri = format!(
         "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&prompt=none&max_age=0&state=reauth",
@@ -1904,7 +1904,7 @@ async fn authorization_request_redirects_invalid_scope_for_authenticated_session
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second())
         .await;
     let uri = format!(
         "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid%20email&state=invalid-scope",
@@ -1944,7 +1944,7 @@ async fn authorization_request_redirects_invalid_authorization_details_for_authe
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second())
         .await;
     let uri = format!(
         "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&authorization_details=not-json&state=bad-details",
@@ -1990,7 +1990,7 @@ async fn authorization_request_prompt_none_without_prior_grant_returns_consent_r
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second())
         .await;
     let uri = format!(
         "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&prompt=none&scope=openid&state=consent-required",
@@ -2031,7 +2031,7 @@ async fn authorization_request_persists_consent_payload_for_authenticated_intera
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second())
         .await;
     let uri = format!(
         "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid&state=interactive",
@@ -2094,7 +2094,7 @@ async fn signed_request_object_redirect_uri_supersedes_invalid_outer_redirect_ur
     let user = fixture.create_user(&suffix, "user", 0).await;
     let sid = format!("sid-{suffix}");
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, jiff::Timestamp::now().as_second())
         .await;
     let uri = format!(
         "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fattacker.example%2Fcallback&response_type=code&scope=profile&state=outer-state&code_challenge={VALID_CODE_CHALLENGE}&code_challenge_method=S256&request={}",

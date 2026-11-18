@@ -367,7 +367,7 @@ async fn batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_iso
     let pool = create_pool(&database_url, 4).unwrap();
     let tenant_id = Uuid::now_v7();
     let foreign_tenant_id = Uuid::now_v7();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let mut connection = get_conn(&pool).await.unwrap();
     for id in [tenant_id, foreign_tenant_id] {
         sql_query(
@@ -396,7 +396,7 @@ async fn batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_iso
         .bind::<SqlUuid, _>(tenant_id)
         .bind::<Text, _>(blake3::hash(token.token_id.as_bytes()).to_hex().to_string())
         .bind::<Text, _>(&token.audience)
-        .bind::<diesel::sql_types::Timestamptz, _>(now - chrono::Duration::minutes(30))
+        .bind::<diesel::sql_types::Timestamptz, _>((now - jiff::SignedDuration::from_mins(30)).to_diesel())
         .execute(&mut connection)
         .await
         .unwrap();
@@ -425,10 +425,10 @@ async fn batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_iso
         .bind::<SqlUuid, _>(tenant)
         .bind::<Text, _>(format!("/Users/{id}"))
         .bind::<diesel::sql_types::Timestamptz, _>(
-            now - chrono::Duration::minutes(occurred_minutes_ago),
+            (now - jiff::SignedDuration::from_mins(occurred_minutes_ago)).to_diesel(),
         )
         .bind::<diesel::sql_types::Timestamptz, _>(
-            now + chrono::Duration::minutes(expires_minutes_from_now),
+            (now + jiff::SignedDuration::from_mins(expires_minutes_from_now)).to_diesel(),
         )
         .execute(&mut connection)
         .await
@@ -552,3 +552,5 @@ async fn batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_iso
             .unwrap();
     }
 }
+
+use jiff_diesel::ToDiesel as _;

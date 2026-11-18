@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -54,7 +54,7 @@ impl ScimService {
         &self,
         tenant: TenantContext,
         email: Option<String>,
-        after: Option<(DateTime<Utc>, Uuid)>,
+        after: Option<(Timestamp, Uuid)>,
         limit: i64,
         offset: i64,
     ) -> Result<UserPage, RepositoryError> {

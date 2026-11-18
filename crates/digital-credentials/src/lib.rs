@@ -7,6 +7,7 @@
 mod dcql;
 mod format;
 mod jwe;
+pub mod mdoc_certificate;
 mod trust;
 
 pub use dcql::{

@@ -8,7 +8,7 @@ fn credential_proof_requires_scalar_audience_and_matching_present_issuer() {
         let metadata = proof_metadata(None);
         let base = json!({
             "aud": "https://issuer.example", "nonce": "expected-nonce",
-            "iat": Utc::now().timestamp(),
+            "iat": jiff::Timestamp::now().as_second(),
         });
         for issuer in [None, Some(json!("wallet-client"))] {
             let mut claims = base.clone();
@@ -65,15 +65,15 @@ fn credential_proof_requires_scalar_audience_and_matching_present_issuer() {
 #[test]
 fn credential_proof_binds_optional_attestation_and_requires_its_nonce() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let (jwk, key) = es256_test_key(73);
         let (other_jwk, other_key) = es256_test_key(79);
         let proof_claims = json!({"aud":"https://issuer.example",
-            "nonce":"expected-nonce", "iat":now.timestamp()});
+            "nonce":"expected-nonce", "iat":now.as_second()});
         for required in [None, Some(std::collections::BTreeMap::new())] {
             let metadata = proof_metadata(required);
             for nonce in [None, Some("wrong-nonce"), Some("expected-nonce")] {
-                let mut claims = json!({"iat":now.timestamp(), "exp":now.timestamp()+300,
+                let mut claims = json!({"iat":now.as_second(), "exp":now.as_second()+300,
                     "attested_keys":[jwk.clone()]});
                 if let Some(nonce) = nonce {
                     claims["nonce"] = json!(nonce);
@@ -115,9 +115,9 @@ fn credential_proof_binds_optional_attestation_and_requires_its_nonce() {
 
 #[test]
 fn credential_attestation_algorithm_obeys_selected_configuration_for_both_contexts() {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     let (validator, encoded, allowed) = key_attestation_fixture(json!({
-        "iat":now.timestamp(), "exp":now.timestamp()+300,
+        "iat":now.as_second(), "exp":now.as_second()+300,
         "nonce":"expected-nonce", "attested_keys":[es256_test_key(83).0],
     }));
     let unsupported = nazo_openid4vci::ProofTypeMetadata {
@@ -156,7 +156,7 @@ fn credential_attestation_is_one_jwt_with_multiple_attested_keys() {
     futures_executor::block_on(async {
         let keys = vec![es256_test_key(89).0, es256_test_key(97).0];
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
-            "iat":Utc::now().timestamp(), "nonce":"expected-nonce", "attested_keys":keys,
+            "iat":jiff::Timestamp::now().as_second(), "nonce":"expected-nonce", "attested_keys":keys,
         }));
         for count in [0, 1, 2] {
             let proofs = Proofs(std::collections::BTreeMap::from([(
@@ -201,7 +201,7 @@ fn credential_proof_issuer_uses_origin_even_for_a_registered_placeholder_name() 
         for client in ["wallet-client", "pre-authorized-wallet"] {
             for origin in [RegisteredClient, AnonymousPreAuthorized, LegacyUnspecified] {
                 for issuer in [None, Some(json!(client)), Some(json!("wrong-client"))] {
-                    let mut claims = json!({"aud":"https://issuer.example","nonce":"expected-nonce","iat":Utc::now().timestamp()});
+                    let mut claims = json!({"aud":"https://issuer.example","nonce":"expected-nonce","iat":jiff::Timestamp::now().as_second()});
                     if let Some(value) = &issuer {
                         claims["iss"] = value.clone();
                     }
@@ -287,7 +287,7 @@ fn anonymous_credential_proof_origin_ignores_same_named_registered_client_trust(
     }
 
     futures_executor::block_on(async {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let tenant_id = uuid::Uuid::now_v7();
         let (jwk, key) = es256_test_key(101);
         let attestation_claims = json!({
@@ -377,12 +377,12 @@ fn credential_embedded_attestation_algorithm_is_checked_after_valid_eddsa_outer_
         let pair = Ed25519KeyPair::from_pkcs8(document.as_ref()).unwrap();
         let jwk = json!({"kty":"OKP","crv":"Ed25519","x":URL_SAFE_NO_PAD.encode(pair.public_key().as_ref())});
         let key = EncodingKey::from_ed_der(document.as_ref());
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let (validator, attestation, _) = key_attestation_fixture(json!({
-            "iat":now.timestamp(),"exp":now.timestamp()+300,"nonce":"expected-nonce","attested_keys":[jwk.clone()],
+            "iat":now.as_second(),"exp":now.as_second()+300,"nonce":"expected-nonce","attested_keys":[jwk.clone()],
         }));
         let claims =
-            json!({"aud":"https://issuer.example","iat":now.timestamp(),"nonce":"expected-nonce"});
+            json!({"aud":"https://issuer.example","iat":now.as_second(),"nonce":"expected-nonce"});
         let allowed = nazo_openid4vci::ProofTypeMetadata {
             proof_signing_alg_values_supported: vec!["EdDSA".to_owned(), "ES256".to_owned()],
             key_attestations_required: None,

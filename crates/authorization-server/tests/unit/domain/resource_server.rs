@@ -21,12 +21,12 @@ fn verifier_cache_hits_only_the_same_live_snapshot_generation() {
 
 #[test]
 fn verifier_cache_expires_at_retirement_even_without_a_new_generation() {
-    let captured = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
-    let deadline = captured + chrono::Duration::seconds(60);
+    let captured = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+    let deadline = captured + jiff::SignedDuration::from_secs(60);
     assert!(within_verification_cache_window(
         captured,
         Some(deadline),
-        deadline - chrono::Duration::nanoseconds(1),
+        deadline - jiff::SignedDuration::from_nanos(1),
     ));
     assert!(!within_verification_cache_window(
         captured,
@@ -36,15 +36,15 @@ fn verifier_cache_expires_at_retirement_even_without_a_new_generation() {
     assert!(!within_verification_cache_window(
         captured,
         Some(deadline),
-        deadline + chrono::Duration::seconds(1),
+        deadline + jiff::SignedDuration::from_secs(1),
     ));
 }
 
 #[test]
 fn verifier_cache_rebuilds_after_clock_rollback_with_or_without_a_future_retirement() {
-    let captured = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
-    let rolled_back = captured - chrono::Duration::nanoseconds(1);
-    for deadline in [None, Some(captured + chrono::Duration::seconds(60))] {
+    let captured = jiff::Timestamp::new(1_700_000_000, 0).unwrap();
+    let rolled_back = captured - jiff::SignedDuration::from_nanos(1);
+    for deadline in [None, Some(captured + jiff::SignedDuration::from_secs(60))] {
         assert!(!within_verification_cache_window(
             captured,
             deadline,

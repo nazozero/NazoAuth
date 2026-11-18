@@ -1054,7 +1054,7 @@ async fn append_dynamic_registration_audit(
             "token_endpoint_auth_method": client.token_endpoint_auth_method,
             "source_ip_hash": source_ip_hash,
         }),
-        occurred_at: chrono::Utc::now(),
+        occurred_at: jiff::Timestamp::now(),
     };
     crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(connection, &event)
         .await
@@ -1115,7 +1115,7 @@ async fn append_admin_client_audit(
             "token_endpoint_auth_method": client.token_endpoint_auth_method,
             "outcome": "success", "source_ip_hash": source_ip_hash,
         }),
-        occurred_at: chrono::Utc::now(),
+        occurred_at: jiff::Timestamp::now(),
     };
     crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(connection, &event)
         .await

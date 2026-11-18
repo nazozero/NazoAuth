@@ -1129,7 +1129,6 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "PASSKEY_ORIGIN",
             "PASSKEY_REQUIRE_USER_VERIFICATION",
             "PASSKEY_REQUIRE_USER_HANDLE",
-            "PASSKEY_STRICT_BASE64",
             "PASSWORD_HASH_MAX_CONCURRENCY",
             "PASSWORD_HASH_QUEUE_TIMEOUT_MS",
             "PUBLIC_BASE_URL",

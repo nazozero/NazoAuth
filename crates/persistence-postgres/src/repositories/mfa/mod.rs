@@ -129,7 +129,7 @@ impl MfaRepository {
                                 "credential_id": credential_id, "outcome": "success",
                                 "source_ip_hash": source_ip_hash,
                             }),
-                            occurred_at: chrono::Utc::now(),
+                            occurred_at: jiff::Timestamp::now(),
                         },
                     )
                     .await?;
@@ -225,7 +225,7 @@ async fn append_required_mfa_outcome(
                 "target_user_id": user_id.as_uuid(), "credential_id": credential_id,
                 "outcome": "success", "source_ip_hash": source_ip_hash,
             }),
-            occurred_at: chrono::Utc::now(),
+            occurred_at: jiff::Timestamp::now(),
         },
     )
     .await

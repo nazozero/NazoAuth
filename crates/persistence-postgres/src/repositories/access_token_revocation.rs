@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, query_dsl::methods::FilterDsl, upsert::excluded};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS;
 use uuid::Uuid;
@@ -15,20 +15,20 @@ pub(super) struct NewAccessTokenRevocation {
     pub access_token_jti_blake3: String,
     pub client_id: Uuid,
     pub tenant_id: Uuid,
-    pub revoked_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub revoked_at: jiff_diesel::Timestamp,
+    pub expires_at: jiff_diesel::Timestamp,
 }
 
 /// Converts a verified access-token `exp` into the revocation-fact retention
 /// deadline covering the verifier's maximum acceptance window.
 pub(super) fn access_token_revocation_deadline(
-    expires_at: DateTime<Utc>,
-) -> Result<DateTime<Utc>, RepositoryError> {
+    expires_at: Timestamp,
+) -> Result<Timestamp, RepositoryError> {
     expires_at
-        .checked_add_signed(chrono::Duration::seconds(
+        .checked_add(jiff::SignedDuration::from_secs(
             MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
         ))
-        .ok_or_else(|| {
+        .map_err(|_| {
             RepositoryError::Consistency(
                 "access-token revocation deadline is not representable".to_owned(),
             )

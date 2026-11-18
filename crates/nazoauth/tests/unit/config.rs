@@ -45,10 +45,7 @@ fn product_defaults_preserve_native_policy() {
     .unwrap();
     local.validate().unwrap();
     assert!(!local.session.cookie_secure);
-    assert_eq!(
-        local.identity.passkey.origin,
-        "http://localhost:8000/tenant"
-    );
+    assert_eq!(local.identity.passkey.origin, "http://localhost:8000");
 }
 
 #[test]
@@ -110,6 +107,14 @@ fn mutable_configuration_is_revalidated_at_product_boundary() {
         ),
         (
             |c| c.identity.passkey.rp_id = "https://auth.example".into(),
+            "PASSKEY_RP_ID",
+        ),
+        (
+            |c| c.identity.passkey.origin = "https://auth.example/path".into(),
+            "PASSKEY_ORIGIN",
+        ),
+        (
+            |c| c.identity.passkey.origin = "https://different.example".into(),
             "PASSKEY_RP_ID",
         ),
         (

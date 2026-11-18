@@ -164,7 +164,8 @@ fn valid_commit_input(mode: TokenIssuanceMode) -> CommitTokenIssuance {
         user_id: Some(user_id),
         mode,
         access_token_jti: "access-jti".to_owned(),
-        access_token_expires_at: (Utc::now() + chrono::Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (Timestamp::now() + jiff::SignedDuration::from_mins(5))
+            .as_second(),
         refresh_token: None,
         audit_fields: TokenIssuedAuditFields {
             client_id: "client".to_owned(),
@@ -187,8 +188,8 @@ fn refresh_token_for(input: &CommitTokenIssuance) -> nazo_auth::RefreshTokenComm
             client_id: input.client_id,
             user_id: input.user_id,
             audiences: vec!["resource".to_owned()],
-            issued_at: Utc::now(),
-            expires_at: Utc::now() + chrono::Duration::hours(1),
+            issued_at: Timestamp::now(),
+            expires_at: Timestamp::now() + jiff::SignedDuration::from_hours(1),
             dpop_jkt: None,
             mtls_x5t_s256: None,
             client_attestation_jkt: None,
@@ -224,7 +225,7 @@ fn commit_input_validation_enforces_mode_ownership_and_expiry_contracts() {
 
     let single = valid_commit_input(TokenIssuanceMode::SingleUse {
         grant_key: "grant".to_owned(),
-        grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
     });
     assert!(validate_commit_input(&single).is_ok());
 
@@ -258,7 +259,7 @@ fn commit_input_validation_enforces_mode_ownership_and_expiry_contracts() {
 
     let mut empty_grant_key = valid_commit_input(TokenIssuanceMode::SingleUse {
         grant_key: " ".to_owned(),
-        grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
     });
     assert!(matches!(
         validate_commit_input(&empty_grant_key),
@@ -266,7 +267,7 @@ fn commit_input_validation_enforces_mode_ownership_and_expiry_contracts() {
     ));
     empty_grant_key.mode = TokenIssuanceMode::SingleUse {
         grant_key: "grant".to_owned(),
-        grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
     };
     assert!(validate_commit_input(&empty_grant_key).is_ok());
 
@@ -295,7 +296,7 @@ fn commit_input_validation_enforces_mode_ownership_and_expiry_contracts() {
 fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
     let input = valid_commit_input(TokenIssuanceMode::SingleUse {
         grant_key: "grant".to_owned(),
-        grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
     });
 
     let issued = token_issued_audit_event(&input, None);
@@ -326,7 +327,7 @@ fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
     refresh.lost_response_retry = Some(nazo_auth::LostResponseRetry {
         original_id: Uuid::now_v7(),
         original_blake3: [7u8; 32],
-        retry_started_at: Utc::now(),
+        retry_started_at: Timestamp::now(),
     });
     // A rotation is the same logical issuance: the rotated_from_id fact rides
     // on the single token_issued event instead of a second ledger row.

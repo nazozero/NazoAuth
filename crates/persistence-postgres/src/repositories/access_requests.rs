@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
     OptionalExtension, PgTextExpressionMethods, QueryDsl, SelectableHelper,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_auth::{ApprovedClient, PreparedClientRegistration};
 use nazo_identity::{
     AccessRequest, AccessRequestPage, AccessRequestStatus, NewAccessRequest, TenantId, UserId,
@@ -31,8 +31,10 @@ struct AccessRequestRecord {
     status: i16,
     admin_note: Option<String>,
     approved_client_id: Option<Uuid>,
-    created_at: DateTime<Utc>,
-    resolved_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    resolved_at: Option<Timestamp>,
 }
 
 macro_rules! user_record_selection {
@@ -361,7 +363,7 @@ impl AccessRequestRepository {
                                 "approved_client_id": approved.id, "client_id": approved.client_id,
                                 "outcome": "success", "source_ip_hash": source_ip_hash,
                             }),
-                            occurred_at: Utc::now(),
+                            occurred_at: Timestamp::now(),
                         },
                     ).await?;
                     let updated = diesel::update(
@@ -475,7 +477,7 @@ impl AccessRequestRepository {
                             "request_id": request_id, "request_user_id": request.user_id.as_uuid(),
                             "admin_user_id": actor_user_id.as_uuid(), "outcome": "success",
                         }),
-                        occurred_at: Utc::now(),
+                        occurred_at: Timestamp::now(),
                     },
                 )
                 .await?;

@@ -106,7 +106,7 @@ pub enum DeleteAvatarError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AvatarUploadStart {
     pub upload_id: String,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: jiff::Timestamp,
     pub target: AvatarUploadTarget,
 }
 
@@ -190,8 +190,8 @@ impl AvatarDirectUploadService {
             return Err(DirectAvatarUploadError::InvalidCurrentReference);
         }
         let upload_id = Uuid::now_v7().to_string();
-        let expires_at = chrono::Utc::now()
-            + chrono::Duration::seconds(
+        let expires_at = jiff::Timestamp::now()
+            + jiff::SignedDuration::from_secs(
                 i64::try_from(self.upload_ttl_seconds)
                     .map_err(|_| DirectAvatarUploadError::Expired)?,
             );
@@ -234,8 +234,8 @@ impl AvatarDirectUploadService {
             .authorized_client_count(account.tenant().tenant_id, account.id())
             .await
             .map_err(DirectAvatarUploadError::Overview)?;
-        let lease_until = chrono::Utc::now()
-            + chrono::Duration::seconds(
+        let lease_until = jiff::Timestamp::now()
+            + jiff::SignedDuration::from_secs(
                 i64::try_from(self.claim_lease_seconds)
                     .map_err(|_| DirectAvatarUploadError::Expired)?,
             );
@@ -259,7 +259,7 @@ impl AvatarDirectUploadService {
                             .await;
                         return Err(DirectAvatarUploadError::Missing);
                     }
-                    if authorization.expires_at <= chrono::Utc::now() {
+                    if authorization.expires_at <= jiff::Timestamp::now() {
                         let _ = self
                             .state
                             .release(account.user_id(), upload_id, &ownership_token)
@@ -347,7 +347,7 @@ impl AvatarDirectUploadService {
 
         if authorization.tenant_id != account.tenant().tenant_id
             || authorization.user_id != account.user_id()
-            || authorization.expires_at <= chrono::Utc::now()
+            || authorization.expires_at <= jiff::Timestamp::now()
         {
             return Err(DirectAvatarUploadError::Expired);
         }

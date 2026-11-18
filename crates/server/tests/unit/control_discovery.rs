@@ -51,7 +51,7 @@ fn identity_is_stable_and_online_statement_is_nonce_bound() {
         &identity_key_id(&endpoint),
         &public_key,
         &nonce,
-        Utc::now().timestamp(),
+        jiff::Timestamp::now().as_second(),
     )
     .unwrap();
     assert_eq!(statement.deployment_id, "deployment-test");

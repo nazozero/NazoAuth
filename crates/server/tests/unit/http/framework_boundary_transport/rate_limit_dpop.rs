@@ -179,7 +179,7 @@ fn signed_boundary_dpop_proof(
     let jwk = json!({"kty":"OKP", "crv":"Ed25519", "x": URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes())});
     let header = json!({"typ":"dpop+jwt", "alg":"EdDSA", "jwk":jwk});
     let mut claims =
-        json!({"htm":"POST", "htu":htu, "iat":chrono::Utc::now().timestamp(), "jti":jti});
+        json!({"htm":"POST", "htu":htu, "iat":jiff::Timestamp::now().as_second(), "jti":jti});
     if let Some(nonce) = nonce {
         claims["nonce"] = json!(nonce);
     }

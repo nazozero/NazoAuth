@@ -16,18 +16,25 @@ def main():
     for node in metadata["resolve"]["nodes"]:
         package = packages[node["id"]]
         name = package["name"]
-        if name in {"actix-web", "actix-http", "actix-router"}:
+        if name in {"actix-web", "actix-http", "actix-router", "rustls"}:
             if not (package.get("source") or "").startswith("registry+"):
                 errors.append(f"{name} must use an official registry release")
             if "http2" in node["features"]:
                 errors.append(f"{name}/http2 is enabled by feature unification")
+        if name == "actix-http":
+            version = tuple(int(part) for part in package["version"].split("-")[0].split("."))
+            if version < (3, 21, 3):
+                errors.append(
+                    f"actix-http {package['version']} is affected by "
+                    "RUSTSEC-2026-0552, RUSTSEC-2026-0553 or RUSTSEC-2026-0554"
+                )
         if name == "h2":
             version = tuple(int(part) for part in package["version"].split("-")[0].split("."))
             if version < (0, 4, 16):
                 errors.append(f"h2 {package['version']} is affected by RUSTSEC-2026-0258")
     if errors:
         raise SystemExit("\n".join(errors))
-    print("Native transport: official Actix, inbound HTTP/2 disabled, no affected h2 version")
+    print("Native transport: patched official Actix and rustls, inbound HTTP/2 disabled, no affected h2 version")
 
 
 if __name__ == "__main__":

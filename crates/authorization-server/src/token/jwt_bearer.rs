@@ -22,7 +22,7 @@ use crate::domain::rows::ClientRow;
 
 use http::StatusCode;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     JwtBearerAssertionClaims, JwtBearerGrantError, JwtBearerGrantPolicy, TokenIssuanceMode,
     ValidatedJwtBearerAssertion, admit_jwt_bearer_grant, is_subset, parse_scope,
@@ -81,7 +81,7 @@ pub fn validate_jwt_bearer_assertion_with_issuer(
     let token_data =
         nazo_crypto::jwt::decode::<JwtBearerAssertionClaims>(assertion, &decoding_key, &validation)
             .map_err(|_| JwtBearerAssertionError::Invalid)?;
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     validate_jwt_bearer_assertion_claims(
         token_data.claims,
         JwtBearerGrantPolicy {
@@ -187,7 +187,7 @@ pub async fn token_jwt_bearer_with_service(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
-    let policy = jwt_bearer_policy(issuance, client, Utc::now().timestamp());
+    let policy = jwt_bearer_policy(issuance, client, Timestamp::now().as_second());
     if let Err(error) = validate_jwt_bearer_grant_prerequisites(form.assertion.as_deref(), policy) {
         return Err(jwt_bearer_grant_error_response(error, client, form));
     }
@@ -234,7 +234,7 @@ pub async fn token_jwt_bearer_with_service(
                 return Err(sender_constraint_multiple_error());
             }
         };
-    let policy = jwt_bearer_policy(issuance, client, Utc::now().timestamp());
+    let policy = jwt_bearer_policy(issuance, client, Timestamp::now().as_second());
     let assertion = match header
         .map_err(|_| JwtBearerAssertionError::Invalid)
         .and_then(|header| {
