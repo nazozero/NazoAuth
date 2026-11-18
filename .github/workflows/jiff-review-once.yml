@@ -67,7 +67,7 @@ jobs:
           }
 
           #[cfg(test)]
-          #[path = "../tests/wire.rs"]''')
+          #[path = "../tests/unit/wire.rs"]''')
           cases='''[
                   ("2026-11-17T00:00:00Z", "2026-11-17T00:00:00Z"),
                   ("2026-11-17T00:00:00.1Z", "2026-11-17T00:00:00.100Z"),
@@ -102,7 +102,10 @@ jobs:
               }
           }
           ''')
-          p=Path('perf/audit-anchor-receiver/tests/wire.rs')
+          old=Path('perf/audit-anchor-receiver/tests/wire.rs')
+          p=Path('perf/audit-anchor-receiver/tests/unit/wire.rs')
+          p.parent.mkdir(parents=True,exist_ok=True)
+          old.rename(p)
           p.write_text(p.read_text()+'''\n#[test]
           fn event_hash_retains_floor_rounded_microseconds_on_both_sides_of_epoch() {
               let hash = |at| event_hash(1, &[0; 32], Uuid::nil(), "event", "security", at, b"{}");
