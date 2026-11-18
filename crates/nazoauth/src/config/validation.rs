@@ -196,7 +196,7 @@ impl Configuration {
                 && !passkey.rp_id.contains(':'),
             "PASSKEY_RP_ID must be a bare host name without scheme, port, or path"
         );
-        passkey_auth::Webauthn::try_new(&passkey.rp_id, &passkey.rp_name, &passkey.origin)
+        nazo_passkey::Webauthn::try_new(&passkey.rp_id, &passkey.rp_name, &passkey.origin)
             .map_err(|error| anyhow::anyhow!("invalid PASSKEY_RP_ID/PASSKEY_ORIGIN: {error}"))?;
         if let Some(saml) = &self.identity.federation.saml_gateway {
             ensure!(

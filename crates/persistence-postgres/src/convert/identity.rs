@@ -255,9 +255,9 @@ fn passkey_material(
     credential_id: &str,
     sign_count: i64,
     mut value: serde_json::Value,
-) -> Result<passkey_auth::PasskeyCredential, ConversionError> {
+) -> Result<nazo_passkey::PasskeyCredential, ConversionError> {
     let invalid = || ConversionError("stored passkey credential is malformed".into());
-    let id = passkey_auth::CredentialId::from_b64url(credential_id).map_err(|_| invalid())?;
+    let id = nazo_passkey::CredentialId::from_b64url(credential_id).map_err(|_| invalid())?;
     let counter = u32::try_from(sign_count).map_err(|_| invalid())?;
     let object = value.as_object_mut().ok_or_else(invalid)?;
     let id_value = serde_json::to_value(&id).map_err(|_| invalid())?;
@@ -277,7 +277,7 @@ fn passkey_material(
 }
 
 pub(crate) fn encoded_passkey(
-    credential: &passkey_auth::PasskeyCredential,
+    credential: &nazo_passkey::PasskeyCredential,
 ) -> Result<serde_json::Value, ConversionError> {
     let mut value = serde_json::to_value(credential)
         .map_err(|_| ConversionError("passkey credential serialization failed".into()))?;

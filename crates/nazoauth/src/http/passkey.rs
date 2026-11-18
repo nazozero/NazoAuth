@@ -15,7 +15,7 @@ use nazo_identity::{
     LoginSuccess, PasskeyError, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
-use passkey_auth::{AuthenticationResponse, RegistrationResponse};
+use nazo_passkey::{AuthenticationResponse, RegistrationResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -371,11 +371,6 @@ fn passkey_login_error(error: PasskeyEndpointError) -> Response {
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "invalid ceremony id.",
-        ),
-        PasskeyError::InvalidCredentialId => authorization_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "invalid passkey credential id.",
         ),
         PasskeyError::CeremonyExpired => authorization_error_response(
             StatusCode::BAD_REQUEST,

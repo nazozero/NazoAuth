@@ -93,8 +93,8 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
             .sign(&input)
             .await
             .expect("published good status entry");
-        let issued =
-            nazo_mdoc::parser::parse_issued(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+        let bytes = URL_SAFE_NO_PAD.decode(encoded).unwrap();
+        let issued = nazo_mdoc::parser::parse_issued_borrowed(&bytes).unwrap();
         let mso = issued.issuer_auth.mso().unwrap();
         assert_eq!(
             mdoc_reference_to_json(mso.status.unwrap().raw).unwrap(),
@@ -147,6 +147,14 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
     });
 }
 
+fn project_mdoc_status(raw: Cbor) -> Result<Value, CredentialTrustError> {
+    let mut encoded = Vec::new();
+    ciborium::into_writer(&raw, &mut encoded).unwrap();
+    let borrowed = nazo_mdoc::model::borrowed::CborValueRef::parse(&encoded)
+        .map_err(|_| CredentialTrustError::InvalidStatus)?;
+    mdoc_reference_to_json(borrowed)
+}
+
 #[test]
 fn mdoc_status_projection_preserves_presence_and_rejects_unknown_semantics() {
     let good = Cbor::Map(vec![(
@@ -157,7 +165,7 @@ fn mdoc_status_projection_preserves_presence_and_rejects_unknown_semantics() {
         ]),
     )]);
     assert_eq!(
-        mdoc_reference_to_json(good.clone()).unwrap(),
+        project_mdoc_status(good.clone()).unwrap(),
         serde_json::json!({"status_list":{"idx":0,"uri":URI}})
     );
     let mut tagged_index = good.clone();
@@ -185,7 +193,7 @@ fn mdoc_status_projection_preserves_presence_and_rejects_unknown_semantics() {
         duplicate,
     ] {
         assert_eq!(
-            mdoc_reference_to_json(raw),
+            project_mdoc_status(raw),
             Err(CredentialTrustError::InvalidStatus)
         );
     }

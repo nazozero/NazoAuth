@@ -21,26 +21,32 @@ const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
 
 /// Project only the supported authenticated MSO mechanism. General claim
 /// projection must never decide whether an authenticated status field exists.
-pub(super) fn mdoc_reference_to_json(raw: Cbor) -> Result<Value, CredentialTrustError> {
-    let mechanisms = unique_map(&raw)?;
-    let [(Cbor::Text(mechanism), reference)] = mechanisms else {
-        return Err(INVALID);
-    };
-    if mechanism != "status_list" {
+pub(super) fn mdoc_reference_to_json(
+    raw: nazo_mdoc::model::borrowed::CborValueRef<'_>,
+) -> Result<Value, CredentialTrustError> {
+    // Map uniqueness and CBOR wire types have already been checked by the core.
+    let mut mechanisms = raw.map().map_err(|_| INVALID)?;
+    if mechanisms.len() != 1 {
         return Err(INVALID);
     }
-    let reference = unique_map(reference)?;
+    let (mechanism, reference) = mechanisms.next().ok_or(INVALID)?.map_err(|_| INVALID)?;
+    if mechanism.as_text() != Some("status_list") {
+        return Err(INVALID);
+    }
+    let reference = reference.map().map_err(|_| INVALID)?;
     if reference.len() != 2 {
         return Err(INVALID);
     }
     let mut index = None;
     let mut uri = None;
-    for (name, value) in reference {
-        match (name.as_text(), value) {
-            (Some("idx"), Cbor::Integer(value)) => {
-                index = Some(u64::try_from(*value).map_err(|_| INVALID)?);
+    for entry in reference {
+        let (name, value) = entry.map_err(|_| INVALID)?;
+        match name.as_text() {
+            Some("idx") => {
+                index =
+                    Some(u64::try_from(value.as_integer().ok_or(INVALID)?).map_err(|_| INVALID)?)
             }
-            (Some("uri"), Cbor::Text(value)) => uri = Some(value),
+            Some("uri") => uri = Some(value.as_text().ok_or(INVALID)?),
             _ => return Err(INVALID),
         }
     }
@@ -502,18 +508,6 @@ fn validate_aggregation(value: Option<&Value>) -> Result<(), CredentialTrustErro
     }
     Ok(())
 }
-fn unique_map(value: &Cbor) -> Result<&[(Cbor, Cbor)], CredentialTrustError> {
-    let map = bounded_map(value)?;
-    if map
-        .iter()
-        .enumerate()
-        .any(|(i, (key, _))| map[..i].iter().any(|(previous, _)| previous == key))
-    {
-        return Err(INVALID);
-    }
-    Ok(map)
-}
-
 fn bounded_map(value: &Cbor) -> Result<&[(Cbor, Cbor)], CredentialTrustError> {
     let map = value.as_map().ok_or(INVALID)?;
     if map.len() > 64 {

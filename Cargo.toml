@@ -78,7 +78,7 @@ http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 iri-string = { version = "0.7.14", default-features = false }
 jsonwebtoken = { version = "12.0.0", default-features = false }
-nazo-mdoc = { version = "0.3.0", git = "https://github.com/nazozero/mdoc-rs", rev = "d2f653d262da4c783ca6c430ef1f056f40baa25f", default-features = false }
+nazo-mdoc = { version = "0.3.0", git = "https://github.com/nazozero/nazo-mdoc", rev = "920b717f9916a7dda1ecacd6bacf3bde84d75495", default-features = false }
 lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
@@ -107,7 +107,7 @@ nazo-valkey = { version = "0.3.9", path = "crates/state-store-valkey" }
 pem = "4.0.0"
 pkcs8 = { version = "0.11.0", features = ["alloc"] }
 p256 = "0.14.0"
-passkey-auth = { version = "0.2.0", features = ["aws-lc"] }
+nazo-passkey = { version = "0.2.0", git = "https://github.com/nazozero/nazo-passkey", rev = "092f672175e5facdd24062536df34a75c6145f98", features = ["aws-lc"] }
 process-wrap = { version = "10.0.1", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
 proptest = "1.12.0"
 rand = "0.10.3"
@@ -154,11 +154,3 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
-[patch.crates-io]
-# Pin the WebAuthn verifier's protocol and credential-persistence contract;
-# upgrades must pass the passkey/MFA and attestation regression suites.
-passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "84938674306a2ca0b84319e8ee499b61b8f32e84" }
-
-# Direct mTLS shares the immutable peer chain across the TLS/HTTP boundary.
-# Retire when upstream provides shared ownership or a measured per-connection copy is acceptable.
-rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

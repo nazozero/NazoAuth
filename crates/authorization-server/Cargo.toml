@@ -29,7 +29,7 @@ url.workspace = true
 urlencoding.workspace = true
 jiff.workspace = true
 http.workspace = true
-passkey-auth.workspace = true
+nazo-passkey.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 nazo-http-signatures.workspace = true

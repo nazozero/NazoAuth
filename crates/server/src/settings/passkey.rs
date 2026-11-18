@@ -24,13 +24,12 @@ pub(super) fn from_config(
             .to_owned(),
     };
     let rp_name = config.string("PASSKEY_RP_NAME", "Nazo OAuth");
-    passkey_auth::Webauthn::try_new(&rp_id, &rp_name, &origin)?;
+    nazo_passkey::Webauthn::try_new(&rp_id, &rp_name, &origin)?;
     Ok(PasskeySettings {
         rp_id,
         rp_name,
         origin,
         require_user_verification: config.bool("PASSKEY_REQUIRE_USER_VERIFICATION", true)?,
         require_user_handle: config.bool("PASSKEY_REQUIRE_USER_HANDLE", true)?,
-        strict_base64: config.bool("PASSKEY_STRICT_BASE64", true)?,
     })
 }

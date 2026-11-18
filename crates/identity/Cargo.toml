@@ -18,7 +18,7 @@ language-tags = "0.3.2"
 lettre.workspace = true
 nazo-crypto = { workspace = true, features = ["password"] }
 nazo-scim-events.workspace = true
-passkey-auth.workspace = true
+nazo-passkey.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

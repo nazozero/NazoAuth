@@ -2,9 +2,9 @@ use std::{error::Error, fmt};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jiff::Timestamp;
-use passkey_auth::{
+use nazo_passkey::{
     AuthenticationChallenge, AuthenticationResponse, AuthenticationState, RegistrationChallenge,
-    RegistrationResponse, RegistrationState, Webauthn,
+    RegistrationOptions, RegistrationResponse, RegistrationState, ResidentKeyRequirement, Webauthn,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -23,7 +23,6 @@ use crate::{
 pub enum PasskeyPolicyError {
     LabelTooLong,
     InvalidCeremonyId,
-    InvalidCredentialId,
 }
 
 impl fmt::Display for PasskeyPolicyError {
@@ -31,7 +30,6 @@ impl fmt::Display for PasskeyPolicyError {
         formatter.write_str(match self {
             Self::LabelTooLong => "passkey label is too long",
             Self::InvalidCeremonyId => "invalid ceremony ID",
-            Self::InvalidCredentialId => "invalid passkey credential ID",
         })
     }
 }
@@ -70,19 +68,6 @@ pub fn normalize_ceremony_id(value: &str) -> Result<String, PasskeyPolicyError> 
     Ok(value.to_owned())
 }
 
-pub fn credential_id_from_response(id: &str) -> Result<&str, PasskeyPolicyError> {
-    if id.is_empty() || id.len() > 1364 {
-        return Err(PasskeyPolicyError::InvalidCredentialId);
-    }
-    // The database key already uses canonical base64url. Validate once before
-    // lookup, then borrow it instead of allocating decoded and re-encoded copies.
-    let mut decoded = [0; 1023];
-    URL_SAFE_NO_PAD
-        .decode_slice(id, &mut decoded)
-        .map_err(|_| PasskeyPolicyError::InvalidCredentialId)?;
-    Ok(id)
-}
-
 #[derive(Clone, Debug)]
 pub struct PasskeyServiceConfig {
     pub tenant_id: TenantId,
@@ -91,7 +76,6 @@ pub struct PasskeyServiceConfig {
     pub origin: String,
     pub require_user_verification: bool,
     pub require_user_handle: bool,
-    pub strict_base64: bool,
     pub ceremony_ttl_seconds: u64,
     pub session_ttl_seconds: u64,
     pub pending_mfa_session_ttl_seconds: u64,
@@ -174,7 +158,6 @@ impl PasskeyAuditReason {
 pub enum PasskeyError {
     InvalidLabel,
     InvalidCeremonyId,
-    InvalidCredentialId,
     LoginFailed,
     CeremonyExpired,
     CeremonyMismatch,
@@ -223,8 +206,7 @@ where
     {
         let webauthn = Webauthn::new(&config.rp_id, &config.rp_name, &config.origin)
             .require_user_verification(config.require_user_verification)
-            .require_user_handle(config.require_user_handle)
-            .strict_base64(config.strict_base64);
+            .require_user_handle(config.require_user_handle);
         Self {
             accounts: std::sync::Arc::new(accounts),
             credentials: std::sync::Arc::new(credentials),
@@ -248,8 +230,7 @@ where
     ) -> Self {
         let webauthn = Webauthn::new(&config.rp_id, &config.rp_name, &config.origin)
             .require_user_verification(config.require_user_verification)
-            .require_user_handle(config.require_user_handle)
-            .strict_base64(config.strict_base64);
+            .require_user_handle(config.require_user_handle);
         Self {
             accounts,
             credentials,
@@ -279,27 +260,23 @@ where
             // explicitly marked as dummy before it is persisted.
             let dummy_user_id = random_user_id();
             self.credentials
-                .list(self.config.tenant_id, dummy_user_id)
+                .credential_ids(self.config.tenant_id, dummy_user_id)
                 .await
                 .map_err(PasskeyError::State)?;
             return self.dummy_login_begin(dummy_user_id).await;
         };
-        let rows = self
+        let credential_ids = self
             .credentials
-            .list(account.tenant().tenant_id, account.user_id())
+            .credential_ids(account.tenant().tenant_id, account.user_id())
             .await
             .map_err(PasskeyError::State)?;
-        if rows.is_empty() {
+        if credential_ids.is_empty() {
             self.audit.record(PasskeyAuditEvent::LoginFailureUser {
                 user_id: account.user_id(),
                 reason: PasskeyAuditReason::NoCredentials,
             });
             return self.dummy_login_begin(account.user_id()).await;
         }
-        let credential_ids = rows
-            .into_iter()
-            .map(|row| row.credential.id)
-            .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         // Username-first options intentionally omit account-specific transport
         // hints. The ID-only builder avoids creating hints just to discard them.
@@ -359,11 +336,10 @@ where
                     && account.user_id() == stored.user_id
             })
             .ok_or(PasskeyError::LoginFailed)?;
-        let credential_id = credential_id_from_response(&response.id)
-            .map_err(|_| PasskeyError::InvalidCredentialId)?;
+        let credential_id = response.id.to_b64url();
         let row = self
             .credentials
-            .by_credential_id(stored.tenant_id, stored.user_id, credential_id)
+            .by_credential_id(stored.tenant_id, stored.user_id, &credential_id)
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
@@ -387,7 +363,7 @@ where
             .update_authentication(
                 stored.tenant_id,
                 stored.user_id,
-                credential_id,
+                &credential_id,
                 PasskeyAuthenticationUpdate {
                     expected_counter: credential.counter,
                     new_counter: outcome.new_counter,
@@ -445,6 +421,10 @@ where
                 .as_deref()
                 .unwrap_or(&account.account.email),
             &existing_ids,
+            RegistrationOptions {
+                resident_key: ResidentKeyRequirement::Preferred,
+                ..Default::default()
+            },
         );
         let ceremony_id = random_urlsafe_token();
         self.ceremonies
@@ -494,7 +474,7 @@ where
         }
         let credential = match self.webauthn.finish_registration(&stored.state, &response) {
             Ok(credential) => credential,
-            Err(passkey_auth::Error::CredentialExcluded) => {
+            Err(nazo_passkey::Error::CredentialExcluded) => {
                 // Preserve the existing duplicate-registration HTTP contract
                 // when the verifier rejects the scoped exclusion before insert.
                 return Err(PasskeyError::AlreadyRegistered);
@@ -633,7 +613,7 @@ where
         dummy_user_id: UserId,
     ) -> Result<PasskeyLoginBegin, PasskeyError> {
         let user_handle = passkey_user_handle(self.config.tenant_id, dummy_user_id);
-        let dummy_credential_id = passkey_auth::CredentialId(rand::random::<[u8; 32]>().to_vec());
+        let dummy_credential_id = nazo_passkey::CredentialId(rand::random::<[u8; 32]>().to_vec());
         let (challenge, state) = self
             .webauthn
             .start_authentication_for_user(&user_handle, &[dummy_credential_id]);

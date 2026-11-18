@@ -107,45 +107,60 @@ pub(super) fn validate_mdoc_date_tag(tag: u64, text: &str) -> Result<(), Credent
         .ok_or(CredentialTrustError::InvalidEncoding)
 }
 
-pub(super) fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTrustError> {
-    match value {
-        ciborium::Value::Null => Ok(Value::Null),
-        ciborium::Value::Bool(value) => Ok(Value::Bool(value)),
-        ciborium::Value::Integer(value) => {
-            let value: i128 = value.into();
+/// Project the already validated, authenticated CBOR directly into the owned
+/// JSON result. Signed envelopes, digest maps and binary claim input stay borrowed.
+pub(super) fn cbor_to_json(
+    value: nazo_mdoc::model::borrowed::CborValueRef<'_>,
+) -> Result<Value, CredentialTrustError> {
+    const INVALID: CredentialTrustError = CredentialTrustError::InvalidEncoding;
+    match value.encoded()[0] >> 5 {
+        0 | 1 => {
+            let value = value.as_integer().ok_or(INVALID)?;
             i64::try_from(value)
                 .map(|value| json!(value))
                 .or_else(|_| u64::try_from(value).map(|value| json!(value)))
-                .map_err(|_| CredentialTrustError::InvalidEncoding)
+                .map_err(|_| INVALID)
         }
-        ciborium::Value::Float(value) => serde_json::Number::from_f64(value)
-            .map(Value::Number)
-            .ok_or(CredentialTrustError::InvalidEncoding),
-        ciborium::Value::Bytes(value) => Ok(Value::String(URL_SAFE_NO_PAD.encode(value))),
-        ciborium::Value::Text(value) => Ok(Value::String(value)),
-        ciborium::Value::Array(values) => values
-            .into_iter()
-            .map(cbor_to_json)
+        2 => Ok(Value::String(
+            URL_SAFE_NO_PAD.encode(value.as_bytes().ok_or(INVALID)?),
+        )),
+        3 => Ok(Value::String(value.as_text().ok_or(INVALID)?.to_owned())),
+        4 => value
+            .array()
+            .map_err(|_| INVALID)?
+            .map(|value| cbor_to_json(value.map_err(|_| INVALID)?))
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
-        ciborium::Value::Map(values) => values
-            .into_iter()
-            .map(|(key, value)| {
-                let ciborium::Value::Text(key) = key else {
-                    return Err(CredentialTrustError::InvalidEncoding);
-                };
-                Ok((key, cbor_to_json(value)?))
+        5 => value
+            .map()
+            .map_err(|_| INVALID)?
+            .map(|entry| {
+                let (key, value) = entry.map_err(|_| INVALID)?;
+                Ok((
+                    key.as_text().ok_or(INVALID)?.to_owned(),
+                    cbor_to_json(value)?,
+                ))
             })
             .collect::<Result<Map<_, _>, _>>()
             .map(Value::Object),
-        ciborium::Value::Tag(tag @ (0 | 1004), value) => {
-            let ciborium::Value::Text(text) = *value else {
-                return Err(CredentialTrustError::InvalidEncoding);
-            };
-            validate_mdoc_date_tag(tag, &text)?;
-            Ok(Value::String(text))
+        6 => {
+            let (tag, value) = value.tagged().map_err(|_| INVALID)?;
+            let text = value.as_text().ok_or(INVALID)?;
+            validate_mdoc_date_tag(tag, text)?;
+            Ok(Value::String(text.to_owned()))
         }
-        _ => Err(CredentialTrustError::InvalidEncoding),
+        7 if value.is_null() => Ok(Value::Null),
+        7 => {
+            if let Some(value) = value.as_bool() {
+                return Ok(Value::Bool(value));
+            }
+            value
+                .as_float()
+                .and_then(serde_json::Number::from_f64)
+                .map(Value::Number)
+                .ok_or(INVALID)
+        }
+        _ => Err(INVALID),
     }
 }
 

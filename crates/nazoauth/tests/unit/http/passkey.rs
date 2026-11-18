@@ -153,12 +153,87 @@ fn login_success() -> LoginSuccess {
 
 fn authentication_response() -> AuthenticationResponse {
     AuthenticationResponse {
-        id: "credential".to_owned(),
-        authenticator_data: "authenticator-data".to_owned(),
-        signature: "signature".to_owned(),
-        client_data_json: "client-data".to_owned(),
-        user_handle: None,
+        id: nazo_passkey::CredentialId(b"credential".to_vec()),
+        response: nazo_passkey::AssertionResponse {
+            authenticator_data: "authenticator-data".to_owned(),
+            signature: "signature".to_owned(),
+            client_data_json: "client-data".to_owned(),
+            user_handle: None,
+        },
     }
+}
+
+#[test]
+fn browser_credential_json_is_validated_before_login_operations() {
+    futures_executor::block_on(async {
+        let wire = json!({
+            "ceremony_id": "ceremony",
+            "response": {
+                "id": "AQID", "rawId": "AQID", "type": "public-key",
+                "response": {
+                    "authenticatorData": "AA", "signature": "AA",
+                    "clientDataJSON": "AA", "userHandle": "BAUG",
+                },
+                "clientExtensionResults": {},
+            },
+        });
+        let parsed: PasskeyLoginFinishRequest = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(parsed.response.id.as_bytes(), &[1, 2, 3]);
+        assert_eq!(
+            parsed.response.response.user_handle.as_deref(),
+            Some(&[4, 5, 6][..])
+        );
+
+        let mut invalid = Vec::new();
+        for id in [
+            "".to_owned(),
+            "A".repeat(1365),
+            "AQID=".into(),
+            "+/8".into(),
+            "AB".into(),
+        ] {
+            let mut value = wire.clone();
+            value["response"]["id"] = json!(id);
+            value["response"]["rawId"] = value["response"]["id"].clone();
+            invalid.push(value);
+        }
+        let mut mismatch = wire.clone();
+        mismatch["response"]["rawId"] = json!("BAUG");
+        invalid.push(mismatch);
+        let mut wrong_type = wire.clone();
+        wrong_type["response"]["type"] = json!("password");
+        invalid.push(wrong_type);
+        let mut noncanonical_handle = wire.clone();
+        noncanonical_handle["response"]["response"]["userHandle"] = json!("BAUG=");
+        invalid.push(noncanonical_handle);
+        let mut legacy = wire;
+        legacy["response"] = json!({
+            "id": "AQID", "authenticator_data": "AA", "signature": "AA",
+            "client_data_json": "AA", "user_handle": "BAUG",
+        });
+        invalid.push(legacy);
+
+        for value in invalid {
+            let (endpoint, operations, rate_limit) = login_endpoint(Ok(login_success()), Ok(()));
+            let payload =
+                serde_json::from_value::<PasskeyLoginFinishRequest>(value).map_err(|_| ());
+            assert!(payload.is_err());
+            let response = passkey_login_finish(
+                &endpoint,
+                &http::Request::builder()
+                    .method("POST")
+                    .body(Bytes::new())
+                    .unwrap(),
+                payload,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert!(!response.headers().contains_key(header::SET_COOKIE));
+            assert_no_store(response.headers());
+            assert!(operations.finishes.lock().unwrap().is_empty());
+            assert!(rate_limit.subjects.lock().unwrap().is_empty());
+        }
+    });
 }
 
 async fn response_json(response: Response) -> Value {

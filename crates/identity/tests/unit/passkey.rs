@@ -65,24 +65,3 @@ fn uv_initialization_requires_fresh_independent_mfa_bound_to_the_account() {
     session.user.principal.tenant.tenant_id = TenantId::new(Uuid::from_u128(102)).unwrap();
     assert!(!authorizes_uv_initialization(&session, &account, now));
 }
-
-#[test]
-fn credential_id_is_bounded_before_decode_and_keeps_strict_base64() {
-    for id in [
-        "".to_owned(),
-        "A".repeat(1365),
-        "AQID=".into(),
-        "+/8".into(),
-        "AB".into(),
-    ] {
-        assert_eq!(
-            credential_id_from_response(&id),
-            Err(PasskeyPolicyError::InvalidCredentialId),
-        );
-    }
-    let max = vec![42; 1023];
-    let encoded = URL_SAFE_NO_PAD.encode(&max);
-    let validated = credential_id_from_response(&encoded).unwrap();
-    assert_eq!(validated, encoded);
-    assert_eq!(validated.as_ptr(), encoded.as_ptr());
-}

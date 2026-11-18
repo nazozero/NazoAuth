@@ -1,5 +1,5 @@
 use super::*;
-use passkey_auth::{CosePublicKey, PasskeyCredential as WebauthnCredential};
+use nazo_passkey::{CosePublicKey, PasskeyCredential as WebauthnCredential};
 
 #[test]
 fn owned_credential_value_keeps_existing_webauthn_key_material_and_wire() {
@@ -8,7 +8,7 @@ fn owned_credential_value_keeps_existing_webauthn_key_material_and_wire() {
     let mut cose = vec![0xa4, 0x01, 0x01, 0x03, 0x27, 0x20, 0x06, 0x21, 0x58, 0x20];
     cose.extend_from_slice(&[7_u8; 32]);
     let credential = WebauthnCredential {
-        id: passkey_auth::CredentialId(vec![9_u8; 32]),
+        id: nazo_passkey::CredentialId(vec![9_u8; 32]),
         public_key_cose: CosePublicKey(cose.clone()),
         counter: 12,
         transports: vec!["internal".to_owned()],
@@ -17,7 +17,7 @@ fn owned_credential_value_keeps_existing_webauthn_key_material_and_wire() {
         uv_initialized: None,
         backup_eligible: None,
         backup_state: None,
-        attestation: passkey_auth::AttestationEvidence::Unknown,
+        attestation: nazo_passkey::AttestationEvidence::Unknown,
     };
     let wire = serde_json::to_value(&credential).unwrap();
     let expected_wire = wire.clone();
@@ -61,9 +61,8 @@ fn legacy_jsonb_es256_and_ed25519_credentials_authenticate_without_registration(
     es_cose.extend_from_slice(point.y().unwrap());
     let mut ed_cose = vec![0xa4, 0x01, 0x01, 0x03, 0x27, 0x20, 0x06, 0x21, 0x58, 0x20];
     ed_cose.extend_from_slice(ed.verifying_key().as_bytes());
-    let wa = passkey_auth::Webauthn::new("example.com", "Example", "https://example.com")
-        .require_user_verification(true)
-        .strict_base64(true);
+    let wa = nazo_passkey::Webauthn::new("example.com", "Example", "https://example.com")
+        .require_user_verification(true);
     for (alg, cose) in [(-7, es_cose), (-8, ed_cose)] {
         // Exact pre-upgrade JSONB keys; no registration is run by this test.
         let old = serde_json::json!({
@@ -81,7 +80,7 @@ fn legacy_jsonb_es256_and_ed25519_credentials_authenticate_without_registration(
         assert_eq!(credential.user_handle, None);
         assert_eq!(
             credential.attestation,
-            passkey_auth::AttestationEvidence::Unknown
+            nazo_passkey::AttestationEvidence::Unknown
         );
         let (challenge, state) = wa.start_authentication_with_creds_for_user(
             b"existing-user",
@@ -103,13 +102,18 @@ fn legacy_jsonb_es256_and_ed25519_credentials_authenticate_without_registration(
         } else {
             ed.sign(&message).to_bytes().to_vec()
         };
-        let mut response = passkey_auth::AuthenticationResponse {
-            id: "AQID".into(),
-            authenticator_data: B64.encode(auth_data),
-            signature: B64.encode(&signature),
-            client_data_json: B64.encode(client_data),
-            user_handle: Some(B64.encode(b"existing-user")),
-        };
+        let mut response: nazo_passkey::AuthenticationResponse =
+            serde_json::from_value(serde_json::json!({
+                "id": "AQID", "rawId": "AQID", "type": "public-key",
+                "response": {
+                    "authenticatorData": B64.encode(auth_data),
+                    "signature": B64.encode(&signature),
+                    "clientDataJSON": B64.encode(client_data),
+                    "userHandle": B64.encode(b"existing-user"),
+                },
+                "clientExtensionResults": {},
+            }))
+            .unwrap();
         let result = wa
             .finish_authentication(&state, &response, &credential)
             .unwrap();
@@ -123,7 +127,7 @@ fn legacy_jsonb_es256_and_ed25519_credentials_authenticate_without_registration(
         // scalar, so this exercises verification rather than just framing.
         let mut corrupted_signature = signature;
         *corrupted_signature.last_mut().unwrap() ^= 1;
-        response.signature = B64.encode(corrupted_signature);
+        response.response.signature = B64.encode(corrupted_signature);
         assert!(
             wa.finish_authentication(&state, &response, &credential)
                 .is_err()

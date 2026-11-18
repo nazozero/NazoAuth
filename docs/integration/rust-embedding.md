@@ -8,14 +8,13 @@ library contract.
 
 ## Dependencies in an external workspace
 
-Cargo does not inherit `[patch]` entries from dependencies. Copy the applicable
-`[patch.crates-io]` overrides from the [workspace manifest](../../Cargo.toml)
-for the NazoAuth revision being consumed into your own workspace-root
-`Cargo.toml`. The neutral facade requires the `passkey-auth` override.
-The `nazo-mdoc` dependency selects its immutable Git revision directly, so
-embedding workspaces do not copy an mdoc `[patch.crates-io]` entry. Actix uses official registry releases and requires no Git override.
-The `rustls` override applies only to the native host's shared-certificate TLS
-integration; it is not a dependency of the neutral facade.
+The `nazo-mdoc` and `nazo-passkey` dependencies select immutable Git revisions
+directly in the [workspace manifest](../../Cargo.toml). Embedding workspaces
+inherit those dependencies and do not need `[patch.crates-io]` overrides.
+Actix uses official registry releases.
+The native host also uses official rustls releases. Its connection callback
+owns the peer certificate chain once and shares immutable facts across requests;
+there is no per-request DER copy. rustls is not a dependency of the neutral facade.
 
 ### Native HTTP protocol support
 
@@ -36,29 +35,17 @@ features are additive; another dependency can re-enable Actix HTTP/2. Run
 and verify negotiated ALPN in the deployment. Removing `.auto_h2c(false)` alone
 is not a protocol policy; that method only applies to cleartext connections.
 
-### Remaining override exit conditions
+### Dependency upgrades
 
-The overrides are selected only in the workspace root; the facade does not
-select a fork or expose an alternative backend abstraction. Switching sources
-requires regenerating the lockfile, checking advisories and running the affected
-contracts; it is not guaranteed to be a drop-in operation.
-
-- `rustls`: the native connection-facts adapter uses `peer_certificates_shared`.
-  A stable release with this ownership API can replace the pin directly. With
-  the existing upstream borrowed `peer_certificates` API, own the chain once per
-  connection in this adapter and retain the same neutral certificate facts.
-  Re-run direct TLS/mTLS, certificate rotation and connection-boundary tests.
-- `passkey-auth`: require an advisory-clean cryptographic dependency graph and
-  equivalent registration, authentication and attestation behavior. Re-run
-  passkey and attestation tests before replacing the pin.
-
-No mutable upstream branch is used as a release dependency. Prefer official
-stable registry releases, with the resulting versions recorded in `Cargo.lock`.
+Changing a credential-library revision requires regenerating the lockfile,
+checking advisories and running its registration, authentication, issuance or
+presentation contracts on native and WASM targets. Keep immutable revisions or
+stable registry versions recorded in `Cargo.lock`.
 
 ### mdoc adapter contract
 
-`nazo-mdoc` is the maintained protocol core in the existing `nazozero/mdoc-rs`
-repository. The old `mdoc-rs` package is not aliased or wrapped. Embedders migrate
+`nazo-mdoc` is the protocol core in the `nazozero/nazo-mdoc`
+repository. Embedders migrate
 once to `nazo_mdoc`, preserve the exact production revision in the workspace
 manifest and lockfile, and use `issue` only where credentials are constructed.
 The WASM issuer enables its `wasm-js` randomness backend. Upgrades require mdoc
@@ -91,7 +78,7 @@ Signing material retains the authenticated issuing authority from the selected
 lease. The issuer removes configured trust anchors by their exact certificate
 identity before building `IssuerAuth.x5chain`; the IACA root is not sent.
 
-The core returns `PendingTrustDocument` after authenticating issuer data, holder
+The core returns `PendingTrustDocumentRef` after authenticating issuer data, holder
 proof and protocol constraints. NazoAuth separately validates the current X.509
 path, the configured certificate revocation policy and any authenticated MSO
 status reference before returning `VerifiedCredential`. MSO `signed` must be
@@ -130,7 +117,7 @@ signature against those exact bytes.
 
 ### Passkey adapter contract
 
-The integration uses the pinned `passkey-auth` 0.2 API. Existing credential JSONB
+The integration uses the pinned `nazo-passkey` 0.2 API under `nazo_passkey`. Existing credential JSONB
 remains readable without a schema migration or re-registration. Optional UV and
 backup history missing from an older record must remain unknown; adapters must
 not replace missing history with trusted values. The relational credential ID
@@ -156,8 +143,11 @@ only after validating the existing session cookie's CSRF proof; false preserves
 ordinary login without authorizing UV initialization. Do not accept it from the
 client JSON. The application separately resolves the session and checks fresh,
 independent OTP or recovery-code evidence for the same tenant and user. The
-public HTTP request format is unchanged. See the [passkey guide](../features/passkeys.md)
-for the current-assertion and subsequent-assertion MFA behavior.
+HTTP finish request wraps standard `PublicKeyCredential.toJSON()` output under
+`response`. The obsolete flattened wire format and `strict_base64` option have
+been removed. Restart pending ceremonies at the upgrade. See the
+[passkey guide](../features/passkeys.md) for the wire format and the current-assertion
+and subsequent-assertion MFA behavior.
 
 ## Build one tenant
 

@@ -13,10 +13,10 @@ not bypass OAuth/OIDC authorization, consent, token, or tenant checks.
 - `PASSKEY_ORIGIN`: exact serialized browser origin expected in `clientDataJSON.origin`. Defaults to the origin of the issuer derived from `PUBLIC_BASE_URL`; an issuer path is not included. Explicit values must have no path, query, fragment, user information or trailing slash. HTTPS is required except for local development on localhost or a loopback IPv4 address. An IPv6 issuer can use a separately configured supported passkey origin.
 - `PASSKEY_REQUIRE_USER_VERIFICATION`: requires authenticator user verification such as biometrics or PIN.
 - `PASSKEY_REQUIRE_USER_HANDLE`: requires assertions to include the expected user handle for username-first login.
-- `PASSKEY_STRICT_BASE64`: requires WebAuthn binary fields to use spec-compliant base64url without padding.
 
-Production deployments keep user verification, user handle, and strict base64
-enabled.
+Production deployments keep user verification and user handle checks enabled.
+WebAuthn binary fields always use canonical unpadded base64url. Remove the retired
+`PASSKEY_STRICT_BASE64` setting from configuration.
 
 The RP ID must match the origin host or a domain suffix at a label boundary.
 The browser additionally enforces the public-suffix restriction. Configuration
@@ -49,9 +49,36 @@ accounts. Dummy challenges keep the response shape usable for absent accounts,
 but do not guarantee account non-enumerability across repeated requests. This
 profile does not implement discoverable, username-free login.
 
+### Browser response format
+
+Finish requests wrap the browser's standard `PublicKeyCredential.toJSON()` result
+under `response`, alongside the issued `ceremony_id`:
+
+```javascript
+await fetch("/auth/passkey/finish", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ ceremony_id, response: credential.toJSON() }),
+});
+```
+
+Registration uses the same envelope at its finish endpoint and retains the
+session cookie and CSRF header. The credential object contains matching `id` and
+`rawId`, `type: "public-key"`, and its nested `response` dictionary with the
+standard camelCase WebAuthn fields. The server decodes the credential ID once at
+JSON admission; database lookup encodes that admitted ID to the existing textual
+key. Clients using the earlier flattened response must switch to the standard
+object during this upgrade. Restart pending ceremonies because the verifier's
+state binding changed; persisted credentials retain their existing representation.
+
+Registration explicitly requests `residentKey: "preferred"`,
+`requireResidentKey: false` and `attestation: "none"`. Login remains email-first.
+The library's optional attestation trust callback is not needed by this profile:
+registration verifies statements without requiring manufacturer provenance.
+
 ## Security Model
 
-WebAuthn ceremonies use the `passkey-auth` verifier. The server verifies challenge freshness, exact origin, RP ID hash, authenticator signature, user verification policy, user-handle binding, and authenticator counter anomaly policy.
+WebAuthn ceremonies use the `nazo-passkey` verifier. The server verifies challenge freshness, exact origin, RP ID hash, authenticator signature, user verification policy, user-handle binding, and authenticator counter anomaly policy.
 
 Ceremony state is stored only in Valkey with a five-minute TTL and is consumed with `GETDEL` at finish time. Persisted credentials are bound to `(tenant_id, user_id)` and credential ID uniqueness is enforced per tenant.
 
@@ -100,8 +127,8 @@ recovery-code evidence. The five-minute management window and configured session
 TTL therefore also bound this transition for sessions issued before the upgrade.
 
 The profile list selects only tenant/user-scoped display metadata. Registration
-begin reads the scoped credential IDs for its exclusion list without loading
-credential JSON. Login loads the complete credential needed for verification;
+and login begin read scoped credential IDs without loading credential JSON.
+Login finish loads and validates only the selected credential's complete material;
 registration finish verifies and persists the new credential.
 
 ## Credential Persistence

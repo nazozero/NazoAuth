@@ -96,10 +96,14 @@ rotation, historical CRLs and import preservation. Store external conformance re
 ## mdoc protocol and trust responsibilities
 
 `nazo-mdoc` owns the mdoc/CBOR/COSE boundary. Its presentation verifier returns
-`PendingTrustDocument` only after issuer signature, disclosed-item digests,
+`PendingTrustDocumentRef` only after issuer signature, disclosed-item digests,
 MSO validity and holder authentication succeed. The type is not a final trust
 decision. NazoAuth completes its existing certificate path, revocation and MSO
 status checks before `CredentialVerifierPort` returns `VerifiedCredential`.
+Authenticated claims are projected from borrowed CBOR directly into the final
+owned JSON result. Signed envelopes, item salts and MSO digest maps remain in
+the decoded presentation buffer. Only the holder key and certificate chain
+retained across the existing status-verification boundary are materialized.
 There is no assessment override or second device-signature calculation.
 
 | Responsibility | Authority | Regression contract |

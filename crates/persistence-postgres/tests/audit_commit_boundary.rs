@@ -618,17 +618,17 @@ async fn identity_mutations_and_required_audit_share_the_commit_boundary() {
         .unwrap();
     let before = f.snapshot().await;
     let passkeys = nazo_postgres::PasskeyRepository::new(f.pool.clone());
-    let credential = passkey_auth::PasskeyCredential {
-        id: passkey_auth::CredentialId(vec![1, 2, 3]),
+    let credential = nazo_passkey::PasskeyCredential {
+        id: nazo_passkey::CredentialId(vec![1, 2, 3]),
         counter: 0,
-        public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
+        public_key_cose: nazo_passkey::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
         transports: vec!["internal".into()],
         aaguid: [0; 16],
         user_handle: None,
         uv_initialized: None,
         backup_eligible: None,
         backup_state: None,
-        attestation: passkey_auth::AttestationEvidence::Unknown,
+        attestation: nazo_passkey::AttestationEvidence::Unknown,
     };
     f.mode("raise").await;
     assert!(

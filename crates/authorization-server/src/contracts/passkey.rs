@@ -5,7 +5,7 @@ use nazo_identity::{
     LoginSuccess, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
-use passkey_auth::{AuthenticationResponse, RegistrationResponse};
+use nazo_passkey::{AuthenticationResponse, RegistrationResponse};
 use uuid::Uuid;
 
 pub type PasskeyFuture<'a, T> =

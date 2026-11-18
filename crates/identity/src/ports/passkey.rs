@@ -1,5 +1,5 @@
 use jiff::Timestamp;
-use passkey_auth::PasskeyCredential as WebauthnCredential;
+use nazo_passkey::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
 
 use crate::{PublicAccount, TenantId, UserId};
@@ -92,7 +92,7 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'_, Vec<passkey_auth::CredentialId>>;
+    ) -> RepositoryFuture<'_, Vec<nazo_passkey::CredentialId>>;
 
     fn by_credential_id<'a>(
         &'a self,

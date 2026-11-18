@@ -3817,18 +3817,18 @@ fn passkey_update(
     }
 }
 
-fn test_passkey(id: &[u8], counter: u32) -> passkey_auth::PasskeyCredential {
-    passkey_auth::PasskeyCredential {
-        id: passkey_auth::CredentialId(id.to_vec()),
+fn test_passkey(id: &[u8], counter: u32) -> nazo_passkey::PasskeyCredential {
+    nazo_passkey::PasskeyCredential {
+        id: nazo_passkey::CredentialId(id.to_vec()),
         counter,
-        public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
+        public_key_cose: nazo_passkey::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
         transports: vec!["internal".into()],
         aaguid: [0; 16],
         user_handle: None,
         uv_initialized: None,
         backup_eligible: None,
         backup_state: None,
-        attestation: passkey_auth::AttestationEvidence::Unknown,
+        attestation: nazo_passkey::AttestationEvidence::Unknown,
     }
 }
 

@@ -31,7 +31,7 @@ use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_identity::ports::PasskeyCredential;
 use nazo_oauth_server::services::PASSKEY_CEREMONY_TTL_SECONDS;
-use passkey_auth::RegistrationResponse;
+use nazo_passkey::RegistrationResponse;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -209,12 +209,18 @@ impl FakeAuthenticator {
 
     fn registration_response(&self, challenge_b64: &str, origin: &str) -> RegistrationResponse {
         let (_raw, client_data_json) = client_data("webauthn.create", challenge_b64, origin);
-        RegistrationResponse {
-            id: B64URL.encode(&self.credential_id),
-            transports: vec!["internal".to_owned()],
-            attestation_object: B64URL.encode(self.attestation_object()),
-            client_data_json,
-        }
+        serde_json::from_value(json!({
+            "id": B64URL.encode(&self.credential_id),
+            "rawId": B64URL.encode(&self.credential_id),
+            "type": "public-key",
+            "response": {
+                "transports": ["internal"],
+                "attestationObject": B64URL.encode(self.attestation_object()),
+                "clientDataJSON": client_data_json,
+            },
+            "clientExtensionResults": {},
+        }))
+        .unwrap()
     }
 
     fn packed_registration_response(
@@ -243,12 +249,17 @@ impl FakeAuthenticator {
             ),
             (cbor_text("authData"), cbor_bytes(&auth_data)),
         ]);
-        RegistrationResponse {
-            id: B64URL.encode(&self.credential_id),
-            transports: vec!["internal".to_owned()],
-            attestation_object: B64URL.encode(attestation),
-            client_data_json,
-        }
+        serde_json::from_value(json!({
+            "id": B64URL.encode(&self.credential_id),
+            "rawId": B64URL.encode(&self.credential_id),
+            "type": "public-key",
+            "response": {
+                "transports": ["internal"],
+                "attestationObject": B64URL.encode(attestation),
+                "clientDataJSON": client_data_json,
+            },
+        }))
+        .unwrap()
     }
 
     fn cose_pubkey(&self) -> Vec<u8> {
@@ -303,7 +314,6 @@ impl LivePasskeyFixture {
             ("PASSKEY_ORIGIN", "https://example.com"),
             ("PASSKEY_REQUIRE_USER_VERIFICATION", "true"),
             ("PASSKEY_REQUIRE_USER_HANDLE", "true"),
-            ("PASSKEY_STRICT_BASE64", "true"),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_session_test"),
             ("CSRF_COOKIE_NAME", "nazo_csrf_test"),
@@ -421,7 +431,7 @@ impl LivePasskeyFixture {
         .bind::<SqlUuid, _>(user.tenant_id)
         .bind::<SqlUuid, _>(user.id)
         .bind::<Text, _>(
-            serde_json::from_value::<passkey_auth::PasskeyCredential>(credential.clone())
+            serde_json::from_value::<nazo_passkey::PasskeyCredential>(credential.clone())
                 .map(|value| value.id.to_b64url())
                 .unwrap_or_else(|_| format!("{credential_id}-{}", Uuid::now_v7().simple())),
         )
@@ -491,10 +501,12 @@ fn client_data(kind: &str, challenge_b64: &str, origin: &str) -> (Vec<u8>, Strin
 
 fn invalid_registration_response() -> RegistrationResponse {
     RegistrationResponse {
-        id: "invalid".to_owned(),
-        transports: Vec::new(),
-        attestation_object: "invalid".to_owned(),
-        client_data_json: "invalid".to_owned(),
+        id: nazo_passkey::CredentialId(b"invalid".to_vec()),
+        response: nazo_passkey::AttestationResponse {
+            transports: Vec::new(),
+            attestation_object: "invalid".to_owned(),
+            client_data_json: "invalid".to_owned(),
+        },
     }
 }
 
@@ -721,17 +733,59 @@ async fn registration_finish_persists_credential_and_consumes_ceremony_once() {
         .as_str()
         .expect("begin response should include challenge");
 
+    assert_eq!(
+        begin_body["publicKey"]["authenticatorSelection"]["residentKey"],
+        "preferred"
+    );
+    assert_eq!(
+        begin_body["publicKey"]["authenticatorSelection"]["requireResidentKey"],
+        false
+    );
+    assert_eq!(begin_body["publicKey"]["attestation"], "none");
     let authenticator = FakeAuthenticator::new(format!("credential-{suffix}").as_bytes());
-    let finish_response = passkey_registration_finish(
-        fixture.state.clone(),
-        fixture.request(&sid, &csrf),
-        Json(PasskeyFinishRequest {
-            ceremony_id: ceremony_id.to_owned(),
-            response: authenticator
-                .registration_response(challenge, &fixture.state.settings.identity.passkey.origin),
-        }),
+    let registration = authenticator
+        .registration_response(challenge, &fixture.state.settings.identity.passkey.origin);
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(super::test_support::test_profile_endpoint(&fixture.state))
+            .route(
+                "/auth/me/passkeys/registration/finish",
+                actix_web::web::post().to(crate::test_support::http::passkey_registration_finish),
+            ),
     )
     .await;
+    let finish_response = actix_web::test::call_service(
+        &app,
+        actix_web::test::TestRequest::post()
+            .uri("/auth/me/passkeys/registration/finish")
+            .cookie(Cookie::new(
+                fixture.state.settings.session.session_cookie_name.clone(),
+                sid.clone(),
+            ))
+            .cookie(Cookie::new(
+                fixture.state.settings.session.csrf_cookie_name.clone(),
+                csrf.clone(),
+            ))
+            .insert_header(("x-csrf-token", csrf.clone()))
+            .set_json(json!({
+                "ceremony_id": ceremony_id,
+                "response": {
+                    "id": registration.id.to_b64url(),
+                    "rawId": registration.id.to_b64url(),
+                    "type": "public-key",
+                    "response": {
+                        "attestationObject": registration.response.attestation_object,
+                        "clientDataJSON": registration.response.client_data_json,
+                        "transports": registration.response.transports,
+                    },
+                    "clientExtensionResults": {},
+                },
+            }))
+            .to_request(),
+    )
+    .await
+    .into_parts()
+    .1;
     let (finish_status, finish_body) = response_json(finish_response).await;
     assert_eq!(finish_status, StatusCode::CREATED);
     assert_eq!(finish_body["label"], "Work laptop");

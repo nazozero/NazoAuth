@@ -17,7 +17,7 @@ use nazo_identity::{
         PasskeyAuthenticationUpdate, PasskeyCredential, PasskeyCredentialSummary, RepositoryError,
     },
 };
-use passkey_auth::PasskeyCredential as WebauthnCredential;
+use nazo_passkey::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -252,7 +252,7 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<passkey_auth::CredentialId>> {
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<nazo_passkey::CredentialId>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
                 .await
@@ -267,7 +267,7 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
                 .map_err(map_error)?
                 .into_iter()
                 .map(|id| {
-                    passkey_auth::CredentialId::from_b64url(&id)
+                    nazo_passkey::CredentialId::from_b64url(&id)
                         .map_err(|error| RepositoryError::Consistency(error.to_string()))
                 })
                 .collect()

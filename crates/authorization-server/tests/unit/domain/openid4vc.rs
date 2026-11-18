@@ -15,7 +15,7 @@ use nazo_openid4vci::ProofValidatorPort as _;
 
 use super::Openid4vcProofValidator;
 use super::crypto_helpers::algorithm_name;
-use super::crypto_helpers::cbor_to_json;
+use super::crypto_helpers::cbor_to_json as project_borrowed_cbor;
 use super::crypto_helpers::decoding_key_trust;
 use super::crypto_helpers::json_to_cbor;
 use super::crypto_helpers::jwk_to_cose_key;
@@ -516,6 +516,14 @@ fn crypto_helpers_cover_jwk_key_and_algorithm_boundaries() {
     }
 }
 
+fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTrustError> {
+    let mut encoded = Vec::new();
+    ciborium::into_writer(&value, &mut encoded).unwrap();
+    let borrowed = nazo_mdoc::model::borrowed::CborValueRef::parse(&encoded)
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    project_borrowed_cbor(borrowed)
+}
+
 #[test]
 fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
     let value = json!({
@@ -527,6 +535,8 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         "text": "hello",
         "array": [null, false, "nested"],
         "object": {"key": 3},
+        "empty_array": [],
+        "empty_object": {},
     });
     let cbor = json_to_cbor(&value).expect("JSON value should map to CBOR");
     assert_eq!(
@@ -579,6 +589,8 @@ fn mdoc_claim_projection_rejects_unknown_tags_and_invalid_date_semantics() {
         json!("2016-12-31T23:59:60Z")
     );
     for invalid in [
+        Cbor::Float(f64::INFINITY),
+        Cbor::Float(f64::NAN),
         tagged(42, Cbor::Text("cannot erase the tag".into())),
         tagged(2, Cbor::Bytes(vec![1])),
         tagged(1, Cbor::Integer(0.into())),

@@ -156,7 +156,6 @@ pub struct PasskeySettings {
     pub origin: String,
     pub require_user_verification: bool,
     pub require_user_handle: bool,
-    pub strict_base64: bool,
 }
 
 impl Configuration {
@@ -255,7 +254,6 @@ impl Configuration {
                     origin,
                     require_user_verification: true,
                     require_user_handle: true,
-                    strict_base64: true,
                 },
                 federation: FederationSettings {
                     providers: FederationProviderRegistry::default(),

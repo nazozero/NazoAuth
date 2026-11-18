@@ -12,7 +12,7 @@ use nazo_mdoc::{
     builder::DocumentBuilder,
     model::types::{CoseAlgorithm, ValidityInfo},
     session::SessionTranscript,
-    verifier::{VerificationOptions, verify_presentation},
+    verifier::{VerificationOptions, verify_presentation_borrowed},
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -297,7 +297,7 @@ pub(super) fn verify(
     // enforce CBOR/profile structure here without re-encoding the signed bytes.
     let transcript = SessionTranscript::from_cbor(transcript_bytes)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let mut documents = verify_presentation(
+    let mut documents = verify_presentation_borrowed(
         &bytes,
         &transcript,
         &VerificationOptions {
@@ -321,19 +321,28 @@ pub(super) fn verify(
     let pending = documents
         .pop()
         .ok_or(CredentialTrustError::InvalidEncoding)?;
+    // The certificate chain crosses the asynchronous status boundary after the
+    // decoded presentation is released; copy only that retained evidence.
+    let certificates: Vec<Vec<u8>> = pending
+        .certificates()
+        .iter()
+        .map(|der| der.to_vec())
+        .collect();
     let trust_anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
     let issuer_chain_authority_key_identifiers = verify_mdoc_issuer_certificate_chain(
-        pending.certificates(),
+        &certificates,
         pending.document(),
         now,
         &trust_anchors,
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
     )?;
-    let (document, mso, certificates) = pending.into_parts();
+    let (document, mso, _) = pending.into_parts();
     let holder_key = mdoc_holder_key(
         mso.device_key_info
             .device_key
+            .into_owned()
+            .map_err(|_| CredentialTrustError::InvalidHolderBinding)?
             .to_vec()
             .map_err(|_| CredentialTrustError::InvalidHolderBinding)?,
     );
@@ -345,16 +354,19 @@ pub(super) fn verify(
     for (namespace, items) in document.issuer_signed.name_spaces {
         let mut claims = Map::new();
         for item in items {
-            claims.insert(item.element_identifier, cbor_to_json(item.element_value)?);
+            claims.insert(
+                item.element_identifier.to_owned(),
+                cbor_to_json(item.element_value)?,
+            );
         }
-        namespaces.insert(namespace, Value::Object(claims));
+        namespaces.insert(namespace.to_owned(), Value::Object(claims));
     }
     Ok((
         VerifiedCredential {
             format: CredentialFormat::MsoMdoc,
             issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(&certificates[0])),
             issuer_chain_authority_key_identifiers,
-            credential_type: mso.doc_type,
+            credential_type: mso.doc_type.to_owned(),
             claims: Value::Object(namespaces),
             holder_key: Some(holder_key),
             issued_at: Some(from_protocol_time(mso.validity_info.signed)?),
@@ -367,7 +379,7 @@ pub(super) fn verify(
 
 fn verify_mdoc_issuer_certificate_chain(
     certificates: &[Vec<u8>],
-    document: &nazo_mdoc::model::document::IssuerSignedDocument,
+    document: &nazo_mdoc::model::borrowed::IssuerSignedDocumentRef<'_>,
     now: jiff::Timestamp,
     trust_anchors: &[Vec<u8>],
     scoped_trust_anchors: &[Vec<u8>],
@@ -405,13 +417,13 @@ fn verify_mdoc_issuer_certificate_chain(
     {
         for item in items.iter().filter(|item| {
             matches!(
-                item.element_identifier.as_str(),
+                item.element_identifier,
                 "issuing_country" | "issuing_jurisdiction"
             )
         }) {
             validate_mdl_issuer_attribute(
                 &leaf,
-                &item.element_identifier,
+                item.element_identifier,
                 item.element_value
                     .as_text()
                     .ok_or(CredentialTrustError::UntrustedIssuer)?,

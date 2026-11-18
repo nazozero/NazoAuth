@@ -151,7 +151,7 @@ public JWK projection. The backend validates standard Ed25519 PKCS#8 v1 and v2
 inputs; generated storage encodings are unchanged. Cargo selects the backend
 without a runtime dispatch layer.
 
-The WebAuthn dependency enables `passkey-auth/aws-lc` to reuse native AWS-LC for
+The WebAuthn dependency enables `nazo-passkey/aws-lc` to reuse native AWS-LC for
 ES256 verification. Its WASM target retains RustCrypto ES256, and Ed25519 keeps
 the library's strict RustCrypto verification path on both targets. This selection
 does not change persisted credential key material or the MFA eligibility policy.
@@ -719,9 +719,11 @@ share an immutable `Arc<Value>`. Request-local refresh replaces the shared handl
 cache hits and client clones do not copy the JSON keyset. Registration wire inputs
 still own their JSON, and persistence borrows the shared value when serializing. Current account and tenant-trust decisions
 remain fresh authority reads, and Bytes/DER Arc clones remain shared storage.
-Direct TLS and request facts share the authenticated certificate chain through
-the pinned rustls `peer_certificates_shared` API. RFC 9440 decoding moves DER into
-the same certificate representation; tenant CA verification borrows that chain.
+The native host uses official rustls. Its connection callback owns the peer
+certificate chain once through `peer_certificates`; requests then share the
+immutable `Arc` facts without copying DER per request. RFC 9440 decoding moves
+DER into the same certificate representation; tenant CA verification borrows
+that chain. The connection-boundary copy does not change certificate validation.
 
 
 Operator presentation holds private immutable original compact segments, decoded

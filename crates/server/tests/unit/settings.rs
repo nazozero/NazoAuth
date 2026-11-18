@@ -284,7 +284,6 @@ fn passkey_settings_validate_the_serialized_origin_and_rp_binding() {
     assert_eq!(settings.rp_id, "auth.example.test");
     assert!(settings.require_user_verification);
     assert!(settings.require_user_handle);
-    assert!(settings.strict_base64);
 
     for (rp_id, origin) in [
         ("example.test", "https://auth.example.test:8443"),
@@ -296,12 +295,10 @@ fn passkey_settings_validate_the_serialized_origin_and_rp_binding() {
             ("PASSKEY_ORIGIN", origin),
             ("PASSKEY_REQUIRE_USER_VERIFICATION", "false"),
             ("PASSKEY_REQUIRE_USER_HANDLE", "false"),
-            ("PASSKEY_STRICT_BASE64", "false"),
         ]);
         let settings = passkey::from_config(&config, &issuer).unwrap();
         assert!(!settings.require_user_verification);
         assert!(!settings.require_user_handle);
-        assert!(!settings.strict_base64);
     }
     for (rp_id, origin) in [
         ("example.test", "https://example.test/"),
