@@ -1,0 +1,200 @@
+name: jiff-review-once
+on:
+  push:
+    branches: [validation/jiff-continuation-20261118]
+    paths: [.github/workflows/jiff-review-once.yml]
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.repository == 'nazozero/NazoAuth'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: jiff-continuation-review
+          cache-on-failure: true
+      - name: Reconcile obsolete tests with the existing POSIX boundary
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p = Path('crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs')
+          text = p.read_text()
+          start = text.index('#[test]\nfn mdoc_time_conversion_preserves_nanoseconds_and_whole_leap_seconds()')
+          end = text.index('\nfn sd_input(', start)
+          text = text[:start] + '''#[test]
+          fn mdoc_time_conversion_preserves_posix_nanoseconds() {
+              for text in [
+                  "1969-12-31T23:59:58.999999999Z",
+                  "1969-12-31T23:59:59.999999999Z",
+                  "1970-01-01T00:00:00Z",
+                  "1970-01-01T00:00:00.000000001Z",
+                  "2026-11-17T12:00:00.123456789Z",
+                  "2026-11-17T13:00:00.123456789+01:00",
+              ] {
+                  let original: Timestamp = text.parse().unwrap();
+                  let protocol = to_protocol_time(original).unwrap();
+                  assert!(!protocol.is_leap_second());
+                  assert_eq!(protocol.unix_nanos(), Some(original.as_nanosecond()));
+                  assert_eq!(from_protocol_time(protocol).unwrap(), original);
+              }
+          }
+
+          #[test]
+          fn mdoc_protocol_leap_second_cannot_be_projected_as_a_posix_instant() {
+              // Construct protocol data directly: parsing through Jiff first would
+              // constrain :60 to :59 and would no longer test the signed input.
+              let protocol = nazo_mdoc::Timestamp::parse_rfc3339("2016-12-31T23:59:60Z")
+                  .unwrap();
+              assert!(protocol.is_leap_second());
+              assert_eq!(protocol.format_rfc3339().unwrap(), "2016-12-31T23:59:60Z");
+              assert_eq!(protocol.unix_seconds(), None);
+              assert_eq!(protocol.unix_nanos(), None);
+              assert_eq!(
+                  from_protocol_time(protocol),
+                  Err(CredentialTrustError::InvalidValidity)
+              );
+              assert!(nazo_mdoc::Timestamp::parse_rfc3339("2016-12-31T23:59:60.5Z").is_err());
+          }
+          ''' + text[end:]
+          start = text.index('#[test]\nfn mdoc_verification_preserves_historical_whole_leap_second_with_current_path_time()')
+          end = text.index('\n#[test]\nfn mdoc_verification_rejects_signing_before_certificate_validity()', start)
+          text = text[:start] + '''#[test]
+          fn mdoc_verification_rejects_unrepresentable_signed_time_after_authentication() {
+              futures_executor::block_on(async {
+                  let (crypto, _, _) = real_crypto_fixture().await;
+                  let signed: Timestamp = "2016-12-31T23:59:59Z".parse().unwrap();
+                  let now: Timestamp = "2017-01-01T00:01:00Z".parse().unwrap();
+                  let certs = certificate_fixture_with_parameters(
+                      "issuer.example",
+                      KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+                      true,
+                      |ca, leaf| {
+                          let start = time::OffsetDateTime::from_unix_timestamp(
+                              (now - SignedDuration::from_hours(24)).as_second(),
+                          )
+                          .unwrap();
+                          ca.not_before = start;
+                          ca.not_after = start + time::Duration::days(365);
+                          leaf.not_before = start;
+                          leaf.not_after = start + time::Duration::days(30);
+                      },
+                  );
+                  let (encoded, transcript) = valid_mdoc_presentation(&certs, signed, None);
+                  let ordinary = resign_mdoc_validity(
+                      &encoded,
+                      &certs,
+                      signed,
+                      signed,
+                      now + SignedDuration::from_hours(1),
+                  );
+                  assert!(
+                      verify_certificate_chain_at(
+                          std::slice::from_ref(&certs.leaf_der),
+                          std::slice::from_ref(&certs.ca_der),
+                          now.as_second(),
+                      )
+                      .unwrap()
+                      .is_some()
+                  );
+                  let mut presentation = PresentedCredential {
+                      format: CredentialFormat::MsoMdoc,
+                      encoded: ordinary.as_str().into(),
+                      expected_nonce: "verifier-nonce".into(),
+                      expected_audience: "https://verifier.example".into(),
+                      mdoc_session_transcript: Some(transcript.as_slice().into()),
+                      additional_trust_anchors: vec![certs.ca_der.clone()].into(),
+                  };
+                  let (verified, _) = super::mdoc::verify(&crypto, &presentation, now).unwrap();
+                  assert_eq!(verified.issued_at, Some(signed));
+                  let leap = resign_mdoc(&ordinary, &certs, |_, mso| {
+                      let validity = mso
+                          .as_map_mut().unwrap().iter_mut()
+                          .find(|(key, _)| key.as_text() == Some("validityInfo"))
+                          .unwrap().1.as_map_mut().unwrap();
+                      for (key, value) in validity {
+                          if matches!(key.as_text(), Some("signed" | "validFrom")) {
+                              *value = ciborium::Value::Tag(
+                                  0,
+                                  Box::new(ciborium::Value::Text("2016-12-31T23:59:60Z".into())),
+                              );
+                          }
+                      }
+                  });
+                  let bytes = URL_SAFE_NO_PAD.decode(&leap).unwrap();
+                  let mut pending = nazo_mdoc::verifier::verify_presentation(
+                      &bytes,
+                      &SessionTranscript::from_cbor(&transcript).unwrap(),
+                      &nazo_mdoc::verifier::VerificationOptions {
+                          now: to_protocol_time(now).unwrap(),
+                          max_documents: 1,
+                      },
+                  )
+                  .expect("real issuer and holder signatures must authenticate the original :60 input");
+                  assert_eq!(pending.len(), 1);
+                  let (_, mso, _) = pending.pop().unwrap().into_parts();
+                  assert!(mso.validity_info.signed.is_leap_second());
+                  assert_eq!(mso.validity_info.signed.unix_nanos(), None);
+                  presentation.encoded = leap.into();
+                  assert_eq!(
+                      super::mdoc::verify(&crypto, &presentation, now),
+                      Err(CredentialTrustError::InvalidValidity),
+                      "the application must not silently replace an authenticated instant"
+                  );
+              });
+          }
+          ''' + text[end:]
+          assert 'chrono::' not in text
+          assert 'timestamp_subsec_nanos' not in text
+          p.write_text(text)
+      - name: Format changed tests and export inspectable source
+        run: |
+          rustfmt --edition 2024 crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs
+          git fetch --no-tags --depth=1 origin e0014c4a7088085b7b08288ae5f739f27f3f818c
+          mkdir -p /tmp/jiff-review
+          git diff e0014c4a7088085b7b08288ae5f739f27f3f818c -- . ':!.github/workflows/jiff-review-once.yml' > /tmp/jiff-review/migration.diff
+          git diff --check
+          git diff -- crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs > /tmp/jiff-review/repair.diff
+          git ls-files -z | tar --null -T - -czf /tmp/jiff-review/source.tar.gz
+          git rev-parse HEAD > /tmp/jiff-review/source-parent.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: jiff-review-source
+          path: /tmp/jiff-review
+          retention-days: 1
+      - name: Execute mdoc application regressions
+        run: |
+          set +e
+          cargo test -p nazo-oauth-server --lib --all-features --locked mdoc > /tmp/mdoc-review-tests.log 2>&1
+          code=$?
+          tail -100 /tmp/mdoc-review-tests.log
+          exit "$code"
+      - name: Commit tested repair only to the authorized branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/authorization-server/tests/unit/domain/openid4vc_credential_crypto.rs
+          git commit -m 'test(time): reconcile mdoc regression evidence with the native POSIX boundary'
+          header=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $header" push origin HEAD:refs/heads/validation/jiff-continuation-20261118
+          git rev-parse HEAD
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: jiff-review-mdoc-tests
+          path: /tmp/mdoc-review-tests.log
+          retention-days: 1
