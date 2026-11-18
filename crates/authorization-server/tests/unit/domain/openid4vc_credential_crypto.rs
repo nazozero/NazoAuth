@@ -400,27 +400,37 @@ fn valid_mdoc_presentation_with_holder(
 }
 
 #[test]
-fn mdoc_time_conversion_preserves_nanoseconds_and_whole_leap_seconds() {
+fn mdoc_time_conversion_preserves_posix_nanoseconds() {
     for text in [
+        "1969-12-31T23:59:58.999999999Z",
         "1969-12-31T23:59:59.999999999Z",
+        "1970-01-01T00:00:00Z",
+        "1970-01-01T00:00:00.000000001Z",
         "2026-11-17T12:00:00.123456789Z",
-        "2016-12-31T23:59:60Z",
+        "2026-11-17T13:00:00.123456789+01:00",
     ] {
-        let original = (text).parse::<jiff::Timestamp>().unwrap();
+        let original: Timestamp = text.parse().unwrap();
         let protocol = to_protocol_time(original).unwrap();
+        assert!(!protocol.is_leap_second());
+        assert_eq!(protocol.unix_nanos(), Some(original.as_nanosecond()));
         assert_eq!(from_protocol_time(protocol).unwrap(), original);
-        if text.contains(":60Z") {
-            assert!(protocol.is_leap_second());
-            assert!(protocol.unix_seconds().is_none());
-        }
     }
-    let fractional_leap = ("2016-12-31T23:59:60.5Z")
-        .parse::<jiff::Timestamp>()
-        .unwrap();
+}
+
+#[test]
+fn mdoc_protocol_leap_second_cannot_be_projected_as_a_posix_instant() {
+    // Construct protocol data directly: parsing through Jiff first would
+    // constrain :60 to :59 and would no longer test the signed input.
+    let protocol = nazo_mdoc::Timestamp::parse_rfc3339("2016-12-31T23:59:60Z").unwrap();
+    assert!(protocol.is_leap_second());
+    assert_eq!(protocol.format_rfc3339().unwrap(), "2016-12-31T23:59:60Z");
+    assert_eq!(protocol.unix_seconds(), None);
+    assert_eq!(protocol.unix_nanos(), None);
     assert_eq!(
-        to_protocol_time(fractional_leap),
+        from_protocol_time(protocol),
         Err(CredentialTrustError::InvalidValidity)
     );
+    assert!(nazo_mdoc::Timestamp::parse_rfc3339("2016-12-31T23:59:60.5Z").is_err());
 }
 
 fn sd_input(
@@ -1695,22 +1705,18 @@ fn mdoc_verification_rejects_expired_ds_even_when_mso_is_current() {
 }
 
 #[test]
-fn mdoc_verification_preserves_historical_whole_leap_second_with_current_path_time() {
+fn mdoc_verification_rejects_unrepresentable_signed_time_after_authentication() {
     futures_executor::block_on(async {
         let (crypto, _, _) = real_crypto_fixture().await;
-        let signed = chrono::DateTime::parse_from_rfc3339("2016-12-31T23:59:60Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let now = chrono::DateTime::parse_from_rfc3339("2017-01-01T00:01:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let signed: Timestamp = "2016-12-31T23:59:59Z".parse().unwrap();
+        let now: Timestamp = "2017-01-01T00:01:00Z".parse().unwrap();
         let certs = certificate_fixture_with_parameters(
             "issuer.example",
             KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
             true,
             |ca, leaf| {
                 let start = time::OffsetDateTime::from_unix_timestamp(
-                    (now - jiff::SignedDuration::from_hours((1) * 24)).timestamp(),
+                    (now - SignedDuration::from_hours(24)).as_second(),
                 )
                 .unwrap();
                 ca.not_before = start;
@@ -1720,28 +1726,70 @@ fn mdoc_verification_preserves_historical_whole_leap_second_with_current_path_ti
             },
         );
         let (encoded, transcript) = valid_mdoc_presentation(&certs, signed, None);
-        let encoded = resign_mdoc_validity(
+        let ordinary = resign_mdoc_validity(
             &encoded,
             &certs,
             signed,
             signed,
-            now + jiff::SignedDuration::from_hours(1),
+            now + SignedDuration::from_hours(1),
         );
-        let presentation = PresentedCredential {
+        assert!(
+            verify_certificate_chain_at(
+                std::slice::from_ref(&certs.leaf_der),
+                std::slice::from_ref(&certs.ca_der),
+                now.as_second(),
+            )
+            .unwrap()
+            .is_some()
+        );
+        let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded: encoded.into(),
+            encoded: ordinary.as_str().into(),
             expected_nonce: "verifier-nonce".into(),
             expected_audience: "https://verifier.example".into(),
-            mdoc_session_transcript: Some(transcript.into()),
-            additional_trust_anchors: vec![certs.ca_der].into(),
+            mdoc_session_transcript: Some(transcript.as_slice().into()),
+            additional_trust_anchors: vec![certs.ca_der.clone()].into(),
         };
-        let (verified, _) = super::mdoc::verify(&crypto, &presentation, now).expect(
-            "the current path time is ordinary; the authenticated MSO leap second is preserved",
-        );
+        let (verified, _) = super::mdoc::verify(&crypto, &presentation, now).unwrap();
         assert_eq!(verified.issued_at, Some(signed));
+        let leap = resign_mdoc(&ordinary, &certs, |_, mso| {
+            let validity = mso
+                .as_map_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|(key, _)| key.as_text() == Some("validityInfo"))
+                .unwrap()
+                .1
+                .as_map_mut()
+                .unwrap();
+            for (key, value) in validity {
+                if matches!(key.as_text(), Some("signed" | "validFrom")) {
+                    *value = ciborium::Value::Tag(
+                        0,
+                        Box::new(ciborium::Value::Text("2016-12-31T23:59:60Z".into())),
+                    );
+                }
+            }
+        });
+        let bytes = URL_SAFE_NO_PAD.decode(&leap).unwrap();
+        let mut pending = nazo_mdoc::verifier::verify_presentation(
+            &bytes,
+            &SessionTranscript::from_cbor(&transcript).unwrap(),
+            &nazo_mdoc::verifier::VerificationOptions {
+                now: to_protocol_time(now).unwrap(),
+                max_documents: 1,
+            },
+        )
+        .expect("real issuer and holder signatures must authenticate the original :60 input");
+        assert_eq!(pending.len(), 1);
+        let (_, mso, _) = pending.pop().unwrap().into_parts();
+        assert!(mso.validity_info.signed.is_leap_second());
+        assert_eq!(mso.validity_info.signed.unix_nanos(), None);
+        presentation.encoded = leap.into();
         assert_eq!(
-            verified.issued_at.unwrap().timestamp_subsec_nanos(),
-            1_000_000_000
+            super::mdoc::verify(&crypto, &presentation, now),
+            Err(CredentialTrustError::InvalidValidity),
+            "the application must not silently replace an authenticated instant"
         );
     });
 }
