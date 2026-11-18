@@ -132,14 +132,15 @@ validated date tags 0 and 1004. Unknown tags, nested tags and malformed tagged
 dates are rejected instead of losing their meaning during conversion. Other
 CBOR extensions need an explicit application mapping before they can be used
 as JSON claims.
-The core uses its own `Timestamp` value backed by `time`; the application
-converts its existing time values only at the mdoc boundary. Whole leap seconds
-are preserved during conversion, in authenticated MSO timestamps and in date
-claims. Certificate-path validation uses the current presentation time, not the
-MSO's historical signing time. Neither value is rounded into a neighboring
-instant; a leap-second current-time observation cannot be represented by the
-path engine and is rejected explicitly. Fractional leap seconds are outside the
-supported time profile.
+The core keeps its own protocol `Timestamp` representation, including
+authenticated whole-leap-second wire values. NazoAuth uses POSIX Jiff
+`Timestamp` values and converts them only at the mdoc boundary. Conversion into
+an application timestamp requires the protocol value's `unix_nanos()`; a value
+without a POSIX representation is rejected as invalid validity. No signed
+instant is rounded into a neighboring instant. Certificate-path validation
+uses the current POSIX presentation time, independently of the MSO's historical
+signing time. Fractional leap seconds are outside the supported time profile.
+See [native Jiff time boundaries](../integration/jiff-migration.md).
 Configuration owners remain responsible for complete credential schemas,
 required elements and the authority to issue their claims.
 
