@@ -21,9 +21,15 @@ fn certificate(ca: bool, include_key_cert_sign: bool) -> String {
     } else {
         vec![KeyUsagePurpose::DigitalSignature]
     };
-    let now = time::OffsetDateTime::now_utc();
-    params.not_before = now - time::Duration::minutes(1);
-    params.not_after = now + time::Duration::hours(1);
+    let now = jiff::Timestamp::now();
+    params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now - jiff::SignedDuration::from_mins(1)).as_nanosecond(),
+    )
+    .unwrap();
+    params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_hours(1)).as_nanosecond(),
+    )
+    .unwrap();
     params
         .self_signed(&key)
         .expect("self-signed certificate")

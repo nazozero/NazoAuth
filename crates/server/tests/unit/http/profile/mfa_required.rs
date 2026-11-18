@@ -572,11 +572,18 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         &app,
         test::TestRequest::post()
             .uri(path)
-            .cookie(actix_web::cookie::Cookie::new(
-                "session",
-                "http-old-session",
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    cookie::Cookie::new("session", "http-old-session",)
+                        .stripped()
+                        .encoded(),
+                    cookie::Cookie::new("csrf", "http-old-csrf")
+                        .stripped()
+                        .encoded()
+                ),
             ))
-            .cookie(actix_web::cookie::Cookie::new("csrf", "http-old-csrf"))
             .insert_header(("x-csrf-token", "http-old-csrf"))
             .insert_header((header::CONTENT_TYPE, "application/json"))
             .set_json(serde_json::json!({"code": code}))
@@ -584,7 +591,11 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
     )
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let cookies = response.response().cookies().collect::<Vec<_>>();
+    let cookies = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .map(|value| cookie::Cookie::parse(value.to_str().unwrap()).unwrap())
+        .collect::<Vec<_>>();
     assert_eq!(
         cookies.len(),
         2,

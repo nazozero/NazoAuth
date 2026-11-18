@@ -40,11 +40,11 @@ async fn authorization_decision_fails_closed_when_jarm_encryption_keys_cannot_re
 }
 use actix_web::{
     HttpRequest, HttpResponse,
-    cookie::Cookie,
     http::{StatusCode, header},
     test::TestRequest,
     web::{Data, Form},
 };
+use cookie::Cookie;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
@@ -496,19 +496,29 @@ impl DecisionLiveFixture {
     }
 
     fn auth_request(&self, sid: &str, csrf_token: Option<&str>) -> HttpRequest {
+        let mut cookies = cookie::CookieJar::new();
         let mut request = TestRequest::post().uri("/authorize/decision");
-        request = request.cookie(Cookie::new(
+        cookies.add(Cookie::new(
             self.state.settings.session.session_cookie_name.clone(),
             sid.to_owned(),
         ));
-        request = request.cookie(Cookie::new(
+        cookies.add(Cookie::new(
             self.state.settings.session.csrf_cookie_name.clone(),
             "csrf-session-token".to_owned(),
         ));
         if let Some(csrf_token) = csrf_token {
             request = request.insert_header(("x-csrf-token", csrf_token.to_owned()));
         }
-        request.to_http_request()
+        request
+            .insert_header((
+                "cookie",
+                cookies
+                    .delta()
+                    .map(|cookie| cookie.stripped().encoded().to_string())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ))
+            .to_http_request()
     }
 }
 
@@ -555,8 +565,16 @@ async fn authorization_decision_rejects_invalid_csrf_token_with_session_cookie()
     let csrf_cookie = state.settings.session.csrf_cookie_name.clone();
     let req = TestRequest::post()
         .uri("/authorize/decision")
-        .cookie(Cookie::new(session_cookie, "sid-csrf-1"))
-        .cookie(Cookie::new(csrf_cookie, "csrf-cookie"))
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                Cookie::new(session_cookie, "sid-csrf-1")
+                    .stripped()
+                    .encoded(),
+                Cookie::new(csrf_cookie, "csrf-cookie").stripped().encoded()
+            ),
+        ))
         .to_http_request();
     let form = AuthorizationDecisionForm {
         request_id: "request-1".to_owned(),

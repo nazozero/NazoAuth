@@ -1,6 +1,6 @@
 use super::*;
-use actix_web::cookie::Cookie;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -328,9 +328,15 @@ impl LiveAuthorizationFixture {
     pub(super) fn session_request(&self, sid: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::get()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     }
@@ -1824,9 +1830,15 @@ async fn authorization_request_reports_session_lookup_failure_after_client_valid
     let broken_state = Data::new(broken_state);
     let req = actix_web::test::TestRequest::get()
         .uri("/authorize")
-        .cookie(Cookie::new(
-            broken_state.settings.session.session_cookie_name.clone(),
-            "broken-session",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                broken_state.settings.session.session_cookie_name.clone(),
+                "broken-session",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
     let mut q = query(&[

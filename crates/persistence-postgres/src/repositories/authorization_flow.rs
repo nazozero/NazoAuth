@@ -418,7 +418,7 @@ impl diesel::query_builder::QueryId for AuthorizationDecisionQuery<'_> {
 impl diesel::query_builder::Query for AuthorizationDecisionQuery<'_> {
     type SqlType = diesel::sql_types::Untyped;
 }
-impl<Conn> diesel::RunQueryDsl<Conn> for AuthorizationDecisionQuery<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for AuthorizationDecisionQuery<'_> {}
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthorizationDecisionQuery<'_> {
     fn walk_ast<'b>(
         &'b self,

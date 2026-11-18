@@ -2,7 +2,7 @@ name: nazo-oauth
 
 services:
   runtime-init:
-    image: docker.io/library/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    image: docker.io/library/alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     user: "0:0"
     volumes:
       - avatars_data:/state/avatars
@@ -112,7 +112,7 @@ services:
       nazo_oauth_net:
 
   valkey:
-    image: docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    image: docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
     restart: unless-stopped
     environment:
       VALKEY_PASSWORD: "${NAZOAUTH_VALKEY_PASSWORD:?set a URL-safe Valkey password using only RFC 3986 unreserved characters}"

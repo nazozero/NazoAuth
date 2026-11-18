@@ -675,10 +675,10 @@ fn delete_expired_cleanup_candidate(
         .write(true)
         .open(&lock_path)
         .map_err(transport)?;
-    match lock.try_lock_exclusive() {
+    match lock.try_lock() {
         Ok(()) => {}
-        Err(error) if task_lock_is_contended(&error) => return Ok(false),
-        Err(error) => return Err(transport(error)),
+        Err(fs::TryLockError::WouldBlock) => return Ok(false),
+        Err(fs::TryLockError::Error(error)) => return Err(transport(error)),
     }
     // The unlocked scan is only a hint. A concurrent business command may
     // have replaced the record or begun temporary publication since that read.

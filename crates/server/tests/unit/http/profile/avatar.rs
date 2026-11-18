@@ -13,10 +13,10 @@ use nazo_identity::DEFAULT_TENANT_ID;
 
 use actix_web::error::PayloadError;
 use actix_web::{
-    cookie::Cookie,
     http::{header, header::HeaderMap},
     web::{Bytes, Data, Json, Path},
 };
+use cookie::Cookie;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
@@ -193,22 +193,38 @@ fn test_state_with_avatar_dir(avatar_storage_dir: PathBuf) -> TestInfrastructure
 
 fn request_with_session_but_no_csrf(state: &TestInfrastructure) -> HttpRequest {
     actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "active-session",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "active-session",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request()
 }
 
 fn request_with_session_and_csrf(state: &TestInfrastructure, sid: &str, csrf: &str) -> HttpRequest {
     actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            sid.to_owned(),
-        ))
-        .cookie(Cookie::new(
-            state.settings.session.csrf_cookie_name.clone(),
-            csrf.to_owned(),
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded(),
+                Cookie::new(
+                    state.settings.session.csrf_cookie_name.clone(),
+                    csrf.to_owned(),
+                )
+                .stripped()
+                .encoded()
+            ),
         ))
         .insert_header(("x-csrf-token", csrf))
         .to_http_request()
@@ -679,9 +695,15 @@ async fn avatar_upload_capability_reports_the_selected_tenant_service_without_cs
         .await;
         let request = actix_web::test::TestRequest::get()
             .uri("/auth/me/avatar/uploads")
-            .cookie(Cookie::new(
-                fixture.state.settings.session.session_cookie_name.clone(),
-                sid.clone(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    fixture.state.settings.session.session_cookie_name.clone(),
+                    sid.clone(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_request();
         let response = actix_web::test::call_service(&app, request).await;
@@ -1494,13 +1516,23 @@ async fn get_avatar_rejects_cross_site_request_before_metadata_or_file_lookup() 
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&user, &sid).await;
     let req = actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(
-            fixture.state.settings.session.session_cookie_name.clone(),
-            sid,
-        ))
-        .cookie(Cookie::new(
-            fixture.state.settings.session.csrf_cookie_name.clone(),
-            csrf.clone(),
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                Cookie::new(
+                    fixture.state.settings.session.session_cookie_name.clone(),
+                    sid,
+                )
+                .stripped()
+                .encoded(),
+                Cookie::new(
+                    fixture.state.settings.session.csrf_cookie_name.clone(),
+                    csrf.clone(),
+                )
+                .stripped()
+                .encoded()
+            ),
         ))
         .insert_header(("x-csrf-token", csrf))
         .insert_header(("sec-fetch-site", "cross-site"))

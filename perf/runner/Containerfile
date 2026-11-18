@@ -1,8 +1,8 @@
-FROM docker.io/library/golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS k6
+FROM docker.io/library/golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS k6
 
 RUN apk add --no-cache patch
-# Exact upstream v2.3.0 source; the patch changes JSON output encoding only.
-ADD --checksum=sha256:30b6421805f00c63b046a48219ced8fd3c8e47dcc099ee7e6b060e8f9e7ec146 https://codeload.github.com/grafana/k6/tar.gz/e0887846143ab176d4b5483c9d52cf3b3e009f1a /tmp/k6.tar.gz
+# Exact upstream v2.4.0 source; the patch changes JSON output encoding only.
+ADD --checksum=sha256:83a2a5c80cb6e08b0c7021a679e4fbe833655a58d0056ba6adf805c698fcb5a8 https://codeload.github.com/grafana/k6/tar.gz/dd9395906d48437a8d7ab53e309afa47ad8d67e0 /tmp/k6.tar.gz
 RUN mkdir /src && tar -xzf /tmp/k6.tar.gz -C /src --strip-components=1
 WORKDIR /src
 COPY perf/runner/k6-json-throughput.patch /tmp/k6-json-throughput.patch
@@ -11,10 +11,10 @@ RUN patch -p1 < /tmp/k6-json-throughput.patch \
     && GOMAXPROCS=2 go test -v -p 2 -timeout 180s ./internal/output/json ./metrics \
     && CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -ldflags="-s -w" -o /usr/bin/k6 .
 
-FROM docker.io/library/python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2
+FROM docker.io/library/python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
 
 RUN apk add --no-cache ca-certificates docker-cli \
-    && pip install --no-cache-dir "psycopg[binary]==3.3.6" "redis==8.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.2" "blake3==1.0.11" "orjson==3.13.0"
+    && pip install --no-cache-dir "psycopg[binary]==3.3.9" "redis==8.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.2" "blake3==1.0.11" "orjson==3.13.0"
 
 COPY --from=k6 /usr/bin/k6 /usr/bin/k6
 COPY perf /perf

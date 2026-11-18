@@ -230,11 +230,17 @@ fn certificate_fixture(signing_key_pem: &str, unix_seconds: i64) -> (Vec<u8>, Ve
     };
     // Match the native key controller's UTC-day validity boundary without
     // extending the DS lifetime beyond 457 days.
-    let not_before = time::OffsetDateTime::from_unix_timestamp(unix_seconds)
-        .unwrap()
-        .date()
-        .midnight()
-        .assume_utc();
+    let not_before = jiff::Timestamp::from_second(unix_seconds).unwrap();
+    let not_before = jiff::tz::Offset::UTC
+        .to_timestamp(
+            jiff::tz::Offset::UTC
+                .to_datetime(not_before)
+                .date()
+                .at(0, 0, 0, 0),
+        )
+        .unwrap();
+    let certificate_not_before =
+        time::OffsetDateTime::from_unix_timestamp_nanos(not_before.as_nanosecond()).unwrap();
     let ca_key_pem = certificate::generate_p256_private_key_pem().unwrap();
     let ca_public_key = certificate::public_key_from_pem(&ca_key_pem).unwrap();
     // Match the native publication-address derivation, not a trust identifier.
@@ -251,8 +257,11 @@ fn certificate_fixture(signing_key_pem: &str, unix_seconds: i64) -> (Vec<u8>, Ve
     ca.distinguished_name = name("Synthetic mdoc benchmark IACA");
     ca.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
     ca.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca.not_before = not_before;
-    ca.not_after = not_before + time::Duration::days(3650);
+    ca.not_before = certificate_not_before;
+    ca.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (not_before + jiff::SignedDuration::from_hours(3650 * 24)).as_nanosecond(),
+    )
+    .unwrap();
     ca.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     ca.key_identifier_method = KeyIdMethod::PreSpecified(Sha1::digest(&ca_public_key).to_vec());
     ca.custom_extensions.push(issuer_alternative_name());
@@ -265,8 +274,11 @@ fn certificate_fixture(signing_key_pem: &str, unix_seconds: i64) -> (Vec<u8>, Ve
     leaf.distinguished_name = name("issuer.example");
     leaf.is_ca = IsCa::NoCa;
     leaf.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf.not_before = not_before;
-    leaf.not_after = not_before + time::Duration::days(457);
+    leaf.not_before = certificate_not_before;
+    leaf.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (not_before + jiff::SignedDuration::from_hours(457 * 24)).as_nanosecond(),
+    )
+    .unwrap();
     leaf.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     leaf.use_authority_key_identifier_extension = true;
     let mut eku = CustomExtension::from_oid_content(

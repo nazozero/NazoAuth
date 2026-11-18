@@ -141,6 +141,9 @@ Cloudflare, browser transport, or bare-engine host implementation. Timezone-name
 validation queries the bundled `jiff-tzdb` IANA index directly without consulting
 the host's filesystem or constructing a timezone runtime.
 
+Certificate validity and CRL publication calculations use Jiff, with `time`
+values constructed only at the rcgen/ASN.1 API boundary.
+
 `nazo-crypto` retains the six portable capabilities `jose`, `ecdh`, `aead`,
 `password`, `ed25519`, and `x509`. Backend selection stays inside that crate and
 applies the same algorithm, key-format, certificate and signature policy across

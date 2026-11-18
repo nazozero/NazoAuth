@@ -254,7 +254,7 @@ manifest and pinned in `rust-toolchain.toml` and the build images. The
 workflow toolchain actions use the same release at an immutable revision. The executable CI definition
 is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
 service versions, fixtures, and complete environment. Python tools use
-Python 3.15.0 in CI and the development image; the latter retains Debian's
+Python 3.15.2 in CI and the development image; the latter retains Debian's
 separate system interpreter for OS tools. The S3 fixture builds the pinned
 latest public MinIO and mc releases; see [its source and license details](../../tests/fixtures/minio/README.md).
 Do not point these tests

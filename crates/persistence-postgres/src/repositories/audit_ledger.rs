@@ -883,7 +883,7 @@ impl diesel::query_builder::QueryId for AuditPrivilegeQuery<'_> {
 impl diesel::query_builder::Query for AuditPrivilegeQuery<'_> {
     type SqlType = diesel::sql_types::Untyped;
 }
-impl<Conn> diesel::RunQueryDsl<Conn> for AuditPrivilegeQuery<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for AuditPrivilegeQuery<'_> {}
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditPrivilegeQuery<'_> {
     fn walk_ast<'b>(
         &'b self,
@@ -914,7 +914,7 @@ impl diesel::query_builder::QueryId for AuditAppendQuery<'_> {
 impl diesel::query_builder::Query for AuditAppendQuery<'_> {
     type SqlType = diesel::sql_types::Untyped;
 }
-impl<Conn> diesel::RunQueryDsl<Conn> for AuditAppendQuery<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for AuditAppendQuery<'_> {}
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditAppendQuery<'_> {
     fn walk_ast<'b>(
         &'b self,

@@ -89,9 +89,15 @@ async fn live_session_state() -> Option<TestInfrastructure> {
 fn session_request(state: &TestInfrastructure, sid: &str) -> HttpRequest {
     crate::test_support::transport::request_head(
         &(TestRequest::default()
-            .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()),
     )
@@ -361,16 +367,18 @@ async fn profile_and_admin_session_boundaries_preserve_cookie_and_backend_semant
     let with_cookie = session_request(&state, "unavailable-session");
     assert!(!profiles.has_valid_csrf_token(&with_cookie, None));
     assert!(!profiles.has_valid_csrf_token(&with_cookie, Some("fallback")));
-    let csrf_cookie =
-        actix_web::cookie::Cookie::new(session.csrf_cookie_name.clone(), "csrf-token");
-    let csrf_request = TestRequest::default()
-        .cookie(actix_web::cookie::Cookie::new(
+    let csrf_cookie = cookie::Cookie::new(session.csrf_cookie_name.clone(), "csrf-token");
+    let csrf_request =
+        TestRequest::default()
+            .insert_header((
+                "cookie",
+                format!("{}; {}", cookie::Cookie::new(
             session.session_cookie_name.clone(),
             "unavailable-session",
-        ))
-        .cookie(csrf_cookie)
-        .insert_header(("x-csrf-token", "csrf-token"))
-        .to_http_request();
+        ).stripped().encoded(), csrf_cookie.stripped().encoded()),
+            ))
+            .insert_header(("x-csrf-token", "csrf-token"))
+            .to_http_request();
     let csrf_request = crate::test_support::transport::request_head(&csrf_request);
     assert!(profiles.has_valid_csrf_token(&csrf_request, None));
 

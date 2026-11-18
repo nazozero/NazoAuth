@@ -193,11 +193,11 @@ docker run -d --name "$POSTGRES_CONTAINER" \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=oauth \
   "${postgres_port_args[@]}" \
-  docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+  docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
 docker run -d --name "$VALKEY_CONTAINER" \
   --label "io.nazoauth.owner=$CODECOV_OWNER_LABEL" \
   "${valkey_port_args[@]}" \
-  docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+  docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
 docker build --file "$SCRIPT_ROOT/tests/fixtures/minio/Containerfile" \
   --tag nazoauth-test-minio:codecov "$SCRIPT_ROOT"
 docker run -d --name "$MINIO_CONTAINER" \

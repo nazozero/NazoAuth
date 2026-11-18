@@ -3,7 +3,7 @@
 This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
-Python benchmark tooling uses Python 3.15.0. The runner recipe pins exact
+Python benchmark tooling uses Python 3.15.2. The runner recipe pins exact
 package versions; coverage and E2E environments use the separate hash locks
 under `requirements/`. Redis clients
 explicitly use RESP2, the existing socket/connection settings, and zero retries,
@@ -23,7 +23,7 @@ Full retained-row counts are boundary diagnostics, with an additional sparse
 unchanged. Separate statements are observations at different instants, not an
 atomic accounting identity while writers/exporters are active.
 
-The runner image pins `orjson==3.12.0` for the streaming evidence decoder.
+The runner image pins `orjson==3.13.0` for the streaming evidence decoder.
 Checkpoint evidence uses k6's buffered `--quiet --out json=-` output,
 redirected to the analyzer FIFO. The script writes summaries only to files;
 the runner closes its FIFO descriptor before sampler shutdown and waiting
@@ -39,7 +39,7 @@ feeds two sub-4-KiB batches and verifies their complete envelopes arrive before
 the next batch or shutdown. All samples and the five-second lag gate remain
 unchanged.
 
-The runner builds exact k6 v2.3.0 source `e0887846143ab176d4b5483c9d52cf3b3e009f1a`
+The runner builds exact k6 v2.4.0 source `dd9395906d48437a8d7ab53e309afa47ad8d67e0`
 from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
 reuses bounded encodings of immutable tag sets and writes the same complete
 sample envelope without repeated reflection. Retained samples preserve every
@@ -57,7 +57,7 @@ Upstream output/metrics tests and added envelope equivalence,
 invalid-value and bounded-cache tests run during the image build. Per-point
 provenance records the resulting k6 binary hash and runner image.
 Install that same binary package when invoking its Python tools on the host:
-`python -m pip install --only-binary=:all: orjson==3.12.0`.
+`python -m pip install --only-binary=:all: orjson==3.13.0`.
 Streaming evidence retains the existing cohort, diagnostic-selection and
 five-second consumer-lag rules; forensic gzip output uses compression level 1.
 

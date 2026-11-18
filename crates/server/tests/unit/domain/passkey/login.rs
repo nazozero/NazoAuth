@@ -812,10 +812,10 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         &app,
         actix_web::test::TestRequest::post()
             .uri("/auth/passkey/finish")
-            .cookie(actix_web::cookie::Cookie::new(
+            .insert_header(("cookie", cookie::Cookie::new(
                 fixture.state.settings.session.session_cookie_name.clone(),
                 previous_session_id.clone(),
-            ))
+            ).stripped().encoded().to_string()))
             .set_json(json!({
                 "ceremony_id": ceremony_id,
                 "response": {
@@ -1177,9 +1177,12 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
         fixture.state.clone(),
         actix_web::test::TestRequest::default()
             .insert_header((header::USER_AGENT, user_agent))
-            .cookie(actix_web::cookie::Cookie::new(
-                MFA_REMEMBERED_COOKIE_NAME,
-                remember_token,
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(MFA_REMEMBERED_COOKIE_NAME, remember_token)
+                    .stripped()
+                    .encoded()
+                    .to_string(),
             ))
             .to_http_request(),
         Json(PasskeyLoginFinishRequest {

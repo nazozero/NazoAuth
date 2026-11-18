@@ -8,9 +8,9 @@ use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use actix_web::HttpRequest;
-use actix_web::cookie::Cookie;
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -288,9 +288,15 @@ impl LiveAdminClientDetailFixture {
     fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::get()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     }

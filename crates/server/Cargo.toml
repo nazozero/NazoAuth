@@ -24,7 +24,7 @@ hex.workspace = true
 http.workspace = true
 actix-files = { workspace = true }
 actix-tls = { workspace = true, features = ["accept", "rustls-0_23"] }
-actix-web = { workspace = true, features = ["cookies", "rustls-0_23"] }
+actix-web = { workspace = true, features = ["rustls-0_23"] }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 atomicwrites = { workspace = true }
@@ -32,7 +32,6 @@ base64 = { workspace = true }
 blake3 = { workspace = true }
 jiff.workspace = true
 flate2 = { workspace = true }
-fs2 = { workspace = true }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
 hmac = { workspace = true }
@@ -87,6 +86,7 @@ yasna = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+cookie = { workspace = true, features = ["percent-encode"] }
 jiff-diesel.workspace = true
 nazo-mdoc = { workspace = true, features = ["issue"] }
 nazoauth = { workspace = true, features = ["conformance", "test-support"] }

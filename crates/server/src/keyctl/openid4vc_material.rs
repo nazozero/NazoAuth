@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, bail};
+use jiff::{SignedDuration, Timestamp, tz::Offset};
 use nazo_auth::SigningPurpose;
 use nazo_crypto::certificate::{
     BasicConstraints, CertificateParams, CertificateRevocationListParams, CrlDistributionPoint,
@@ -279,18 +280,20 @@ fn build_openid4vc_certificate_bundle(
     signing_key_pem: &str,
     hostname: &str,
     mdoc_profile: Option<&MdocCertificateProfile>,
-    now: time::OffsetDateTime,
+    now: Timestamp,
 ) -> anyhow::Result<Openid4vcCertificateBundle> {
     // MSO issuance claims use UTC days. Locally managed mdoc certificates
     // must cover that same boundary, including a newly generated signer.
     // Anchor both ends so rounding never lengthens the certificate lifetime.
     // Imported certificates retain their authority's original validity.
     let not_before = if mdoc_profile.is_some() {
-        now.date().midnight().assume_utc()
+        Offset::UTC.to_timestamp(Offset::UTC.to_datetime(now).date().at(0, 0, 0, 0))?
     } else {
         now
     };
-    let ca_not_after = not_before + time::Duration::days(3650);
+    let ca_not_after = not_before.checked_add(SignedDuration::from_hours(3650 * 24))?;
+    let certificate_not_before =
+        time::OffsetDateTime::from_unix_timestamp_nanos(not_before.as_nanosecond())?;
     let ca_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
     let ca_public_key = mdoc_profile
         .map(|_| nazo_crypto::certificate::public_key_from_pem(&ca_key_pem))
@@ -329,8 +332,9 @@ fn build_openid4vc_certificate_bundle(
         BasicConstraints::Unconstrained
     });
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = not_before;
-    ca_params.not_after = ca_not_after;
+    ca_params.not_before = certificate_not_before;
+    ca_params.not_after =
+        time::OffsetDateTime::from_unix_timestamp_nanos(ca_not_after.as_nanosecond())?;
     ca_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     let ca_der = nazo_crypto::certificate::self_signed(ca_params, &ca_key_pem)?;
 
@@ -367,12 +371,14 @@ fn build_openid4vc_certificate_bundle(
     }
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = not_before;
-    leaf_params.not_after = if mdoc_profile.is_some() {
-        not_before + time::Duration::days(457)
+    leaf_params.not_before = certificate_not_before;
+    let leaf_not_after = if mdoc_profile.is_some() {
+        not_before.checked_add(SignedDuration::from_hours(457 * 24))?
     } else {
         ca_not_after
     };
+    leaf_params.not_after =
+        time::OffsetDateTime::from_unix_timestamp_nanos(leaf_not_after.as_nanosecond())?;
     leaf_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     leaf_params.use_authority_key_identifier_extension = mdoc_profile.is_some();
     let leaf_der =
@@ -550,7 +556,7 @@ fn build_managed_material(
         signing_key_pem,
         &profile.hostname,
         profile.mdoc_profile.as_ref(),
-        time::OffsetDateTime::now_utc(),
+        Timestamp::now(),
     )?;
     let (mut anchors, mut iacas, mut revocation_snapshot) = match previous {
         Some(previous) => (

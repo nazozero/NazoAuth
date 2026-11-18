@@ -685,20 +685,28 @@ struct Openid4vcFixture {
 fn openid4vc_fixture(status: Option<CertificateRevocationStatus>, stale: bool) -> Openid4vcFixture {
     let signing_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-    let now = time::OffsetDateTime::now_utc();
+    let now = Timestamp::now();
+    let not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now - jiff::SignedDuration::from_mins(1)).as_nanosecond(),
+    )
+    .unwrap();
+    let not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_hours(1)).as_nanosecond(),
+    )
+    .unwrap();
 
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = now - time::Duration::minutes(1);
-    ca_params.not_after = now + time::Duration::hours(1);
+    ca_params.not_before = not_before;
+    ca_params.not_after = not_after;
     let ca = CertifiedIssuer::self_signed(ca_params, ca_key).unwrap();
 
     let mut leaf_params = CertificateParams::new(vec!["issuer.test".to_owned()]).unwrap();
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = now - time::Duration::minutes(1);
-    leaf_params.not_after = now + time::Duration::hours(1);
+    leaf_params.not_before = not_before;
+    leaf_params.not_after = not_after;
     let leaf = leaf_params.signed_by(&signing_key, &ca).unwrap();
 
     let leaf_der = leaf.der().to_vec();

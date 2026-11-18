@@ -6,7 +6,6 @@ use std::{
 
 use anyhow::{Context as _, bail};
 use flate2::read::GzDecoder;
-use fs2::FileExt as _;
 use futures_util::StreamExt as _;
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
@@ -117,7 +116,7 @@ async fn install_default(root: &Path) -> anyhow::Result<()> {
             .read(true)
             .write(true)
             .open(lock_path)?;
-        lock.lock_exclusive()?;
+        lock.lock()?;
         Ok(lock)
     })
     .await

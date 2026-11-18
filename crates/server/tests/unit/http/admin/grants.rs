@@ -1,5 +1,5 @@
 use super::*;
-use actix_web::cookie::Cookie;
+use cookie::Cookie;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Int4, Nullable, Text, Uuid as SqlUuid};
@@ -412,9 +412,15 @@ impl LiveAdminGrantFixture {
     fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::get()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     }
@@ -422,13 +428,23 @@ impl LiveAdminGrantFixture {
     fn admin_post_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::post()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        self.state.settings.session.session_cookie_name.clone(),
+                        sid.to_owned(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        self.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.to_owned(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header(("x-csrf-token", csrf))
             .to_http_request()
@@ -656,9 +672,15 @@ async fn admin_revoke_grant_rejects_missing_csrf_before_auth_or_lookup() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/grants/revoke")
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "session-id",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
 

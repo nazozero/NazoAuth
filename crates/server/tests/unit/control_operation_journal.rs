@@ -949,7 +949,7 @@ async fn retention_keeps_locked_candidates_for_a_later_round() {
     let directory = temporary_directory();
     let lock = cleanup_task_lock(&directory);
     let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
-    lock.lock_exclusive().unwrap();
+    lock.lock().unwrap();
     assert_eq!(
         cleanup_completed_before(&directory, 50_000, None).unwrap(),
         0
@@ -1028,7 +1028,7 @@ fn concurrent_offers_have_exactly_one_creator_and_conflicts_are_deterministic() 
         let creators = Arc::clone(&creators);
         std::thread::spawn(move || {
             let lock = cleanup_task_lock(&directory);
-            lock.lock_exclusive().unwrap();
+            lock.lock().unwrap();
             match accept(
                 &directory,
                 &operation(OPERATION_ID),
@@ -1222,9 +1222,9 @@ fn cleanup_enumeration_releases_business_lock_and_contended_deletion_is_retained
         .unwrap()
         .inspect(|_| {
             contender
-                .try_lock_exclusive()
+                .try_lock()
                 .expect("enumeration must not hold the business lock");
-            fs2::FileExt::unlock(&contender).unwrap();
+            contender.unlock().unwrap();
         });
     let batch = cleanup_batch(
         &directory,
@@ -1241,7 +1241,7 @@ fn cleanup_enumeration_releases_business_lock_and_contended_deletion_is_retained
     drop(entries);
 
     let expired = cleanup_record(&directory, OPERATION_ID_B, "completed", Some(1_000));
-    contender.lock_exclusive().unwrap();
+    contender.lock().unwrap();
     let mut entries = fs::read_dir(control_journal_directory(&directory)).unwrap();
     let batch = cleanup_batch(
         &directory,

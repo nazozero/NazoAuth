@@ -18,7 +18,11 @@ pub(super) fn desired_from_row(
         revision: parse_revision(row.revision)?,
         actor_id: row.actor_id.map(|value| value.to_string()),
         reason: row.reason,
-        updated_at: row.updated_at.into(),
+        updated_at: row.updated_at.try_into().map_err(|error| {
+            RepositoryError::Consistency(format!(
+                "runtime update timestamp is out of range: {error}"
+            ))
+        })?,
     })
 }
 
@@ -31,9 +35,21 @@ pub(super) fn instance_from_row(
         state: parse_actual_state(&row.actual_state)?,
         transition_revision: parse_revision(row.transition_revision)?,
         applied_revision: row.applied_revision.map(parse_revision).transpose()?,
-        drain_deadline: row.drain_deadline.map(Into::into),
+        drain_deadline: row
+            .drain_deadline
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(|error| {
+                RepositoryError::Consistency(format!(
+                    "runtime drain deadline is out of range: {error}"
+                ))
+            })?,
         error_code: row.error_code,
-        updated_at: row.updated_at.into(),
+        updated_at: row.updated_at.try_into().map_err(|error| {
+            RepositoryError::Consistency(format!(
+                "runtime update timestamp is out of range: {error}"
+            ))
+        })?,
     })
 }
 
@@ -58,7 +74,11 @@ pub(super) fn event_from_row(row: ModuleEventRow) -> Result<ModuleEventRecord, R
             .map(|value| parse_event_state(event_type, value))
             .transpose()?,
         outcome_code: row.outcome_code,
-        occurred_at: row.occurred_at.into(),
+        occurred_at: row.occurred_at.try_into().map_err(|error| {
+            RepositoryError::Consistency(format!(
+                "runtime event timestamp is out of range: {error}"
+            ))
+        })?,
     })
 }
 

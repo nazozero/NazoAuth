@@ -13,7 +13,7 @@ blake3.workspace = true
 jiff.workspace = true
 hmac.workspace = true
 image.workspace = true
-jiff-tzdb = "0.1.9"
+jiff-tzdb = "1.0.0"
 language-tags = "0.3.2"
 lettre.workspace = true
 nazo-crypto = { workspace = true, features = ["password"] }
@@ -22,7 +22,7 @@ nazo-passkey.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sha1 = "0.11.0"
+sha1.workspace = true
 sha2.workspace = true
 tracing.workspace = true
 urlencoding.workspace = true

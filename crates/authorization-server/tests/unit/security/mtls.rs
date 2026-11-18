@@ -84,9 +84,15 @@ fn test_certificate(
     params
         .distinguished_name
         .push(DnType::CommonName, common_name);
-    let now = time::OffsetDateTime::now_utc();
-    params.not_before = now + time::Duration::seconds(not_before_offset);
-    params.not_after = now + time::Duration::seconds(not_after_offset);
+    let now = jiff::Timestamp::now();
+    params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_secs(not_before_offset)).as_nanosecond(),
+    )
+    .unwrap();
+    params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_secs(not_after_offset)).as_nanosecond(),
+    )
+    .unwrap();
     finish_test_certificate(params)
 }
 
@@ -131,9 +137,15 @@ fn test_certificate_with_full_subject() -> TestCertificate {
 fn current_test_certificate_params() -> CertificateParams {
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
-    let now = time::OffsetDateTime::now_utc();
-    params.not_before = now - time::Duration::minutes(1);
-    params.not_after = now + time::Duration::hours(1);
+    let now = jiff::Timestamp::now();
+    params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now - jiff::SignedDuration::from_mins(1)).as_nanosecond(),
+    )
+    .unwrap();
+    params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_hours(1)).as_nanosecond(),
+    )
+    .unwrap();
     params
 }
 

@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_support::{access_request_profiles, delivery_profiles, profile_sessions};
-use actix_web::cookie::Cookie;
+use cookie::Cookie;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Int2, Int4, Text, Uuid as SqlUuid};
@@ -612,9 +612,15 @@ impl LiveAdminAccessRequestFixture {
     fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::get()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     }
@@ -622,13 +628,23 @@ impl LiveAdminAccessRequestFixture {
     fn admin_post_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::post()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        self.state.settings.session.session_cookie_name.clone(),
+                        sid.to_owned(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        self.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.to_owned(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header(("x-csrf-token", csrf))
             .to_http_request()
@@ -931,9 +947,15 @@ async fn approve_access_request_rejects_missing_csrf_before_admin_or_database_lo
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/access-requests/request-id/approve")
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "session-id",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
 
@@ -1268,9 +1290,15 @@ async fn reject_access_request_rejects_missing_csrf_before_admin_or_database_loo
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/access-requests/request-id/reject")
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "session-id",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
 

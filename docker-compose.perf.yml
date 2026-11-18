@@ -2,7 +2,7 @@ name: ${COMPOSE_PROJECT_NAME:-nazoauth-perf}
 
 services:
   postgres:
-    image: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    image: docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
     command:
       - postgres
       - -c
@@ -43,7 +43,7 @@ services:
       perf_net:
 
   valkey:
-    image: docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    image: docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
     command: ["valkey-server", "--save", "", "--appendonly", "no", "--loglevel", "warning"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -54,7 +54,7 @@ services:
       perf_net:
 
   postgres-init:
-    image: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    image: docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
     environment:
       PGPASSWORD: postgres
     command:

@@ -228,7 +228,7 @@ pub fn redirect_to_device_verification_ui(
     let mut location = device_verification_uri(config);
     if !user_code.trim().is_empty() {
         location.push_str("?user_code=");
-        location.push_str(&urlencoding::encode(user_code));
+        urlencoding::Encoded(user_code).append_to(&mut location);
     }
     crate::http::finish(
         http::Response::builder()

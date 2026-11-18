@@ -32,8 +32,8 @@ use crate::test_support::TestInfrastructure;
 use crate::test_support::{access_request_profiles, delivery_profiles, profile_sessions};
 use uuid::Uuid;
 
-use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -183,13 +183,23 @@ impl LiveProfileAccessRequestFixture {
 
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
         TestRequest::default()
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        self.state.settings.session.session_cookie_name.clone(),
+                        sid.to_owned(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        self.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.to_owned(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header((header::CONTENT_TYPE, "application/json"))
             .insert_header(("x-csrf-token", csrf))
@@ -199,9 +209,15 @@ impl LiveProfileAccessRequestFixture {
 
 fn request_with_session_but_no_csrf(state: &TestInfrastructure, sid: &str) -> HttpRequest {
     TestRequest::default()
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            sid.to_owned(),
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                sid.to_owned(),
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request()
 }

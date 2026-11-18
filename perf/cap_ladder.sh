@@ -9,7 +9,7 @@ DUR="${3:-60s}"; WARM="${4:-15000}"
 OUT=/workspace/perf-results/ladder
 mkdir -p "$OUT"
 
-sat() { docker run --rm docker.io/library/python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2 python -c "import sys;sys.exit(0 if ($1) else 1)"; }
+sat() { docker run --rm docker.io/library/python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd python -c "import sys;sys.exit(0 if ($1) else 1)"; }
 
 prev_tps=0; low_growth=0; baseline_p99=0; saturated=0
 for c in $LEVELS; do
@@ -28,7 +28,7 @@ for c in $LEVELS; do
     -e PERF_DURATION="$DUR" -e CAP_WARMUP_MS="$WARM" \
     -e PERF_USER_COUNT="$users" \
     perf > "$d/run.log" 2>&1
-  read tps errs p99 appcpu <<<"$(docker run --rm -v "$d":/r -v /workspace/perf/cap_point.py:/cap_point.py docker.io/library/python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2 python /cap_point.py /r "$SCEN" 2>/dev/null)"
+  read tps errs p99 appcpu <<<"$(docker run --rm -v "$d":/r -v /workspace/perf/cap_point.py:/cap_point.py docker.io/library/python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd python /cap_point.py /r "$SCEN" 2>/dev/null)"
   if [ -z "${tps:-}" ]; then
     echo "  FAILED: no measured stats; see $d/run.log"; tail -5 "$d/run.log"
     [ -f /workspace/perf-results/STOP ] && break
@@ -40,7 +40,7 @@ for c in $LEVELS; do
     echo "  SATURATED: errors/latency/cpu threshold"; saturated=1; break
   fi
   if [ "$prev_tps" != "0" ]; then
-    growth=$(docker run --rm docker.io/library/python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2 python -c "print(($tps-$prev_tps)/$prev_tps*100)")
+    growth=$(docker run --rm docker.io/library/python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd python -c "print(($tps-$prev_tps)/$prev_tps*100)")
     echo "  growth vs prev: ${growth}%"
     if sat "$growth<10"; then
       low_growth=$((low_growth+1))

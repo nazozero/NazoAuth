@@ -555,15 +555,18 @@ fn bound_federation_test_request() -> actix_web::test::TestRequest {
     let value = URL_SAFE_NO_PAD.encode(test_browser_binding_seed());
     // These existing policy tests span both dev and secure fixture settings.
     // Dedicated binding tests below construct each configured name explicitly.
-    actix_web::test::TestRequest::get()
-        .cookie(actix_web::cookie::Cookie::new(
-            "nazo_federation_binding",
-            value.clone(),
-        ))
-        .cookie(actix_web::cookie::Cookie::new(
-            "__Host-nazo_federation_binding",
-            value,
-        ))
+    actix_web::test::TestRequest::get().insert_header((
+        "cookie",
+        format!(
+            "{}; {}",
+            cookie::Cookie::new("nazo_federation_binding", value.clone(),)
+                .stripped()
+                .encoded(),
+            cookie::Cookie::new("__Host-nazo_federation_binding", value,)
+                .stripped()
+                .encoded()
+        ),
+    ))
 }
 
 async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {

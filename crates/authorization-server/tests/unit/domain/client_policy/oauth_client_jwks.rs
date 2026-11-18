@@ -22,9 +22,15 @@ fn test_x5c(common_name: &str, not_before_offset: i64, not_after_offset: i64) ->
     params
         .distinguished_name
         .push(DnType::CommonName, common_name);
-    let now = time::OffsetDateTime::now_utc();
-    params.not_before = now + time::Duration::seconds(not_before_offset);
-    params.not_after = now + time::Duration::seconds(not_after_offset);
+    let now = jiff::Timestamp::now();
+    params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_secs(not_before_offset)).as_nanosecond(),
+    )
+    .unwrap();
+    params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + jiff::SignedDuration::from_secs(not_after_offset)).as_nanosecond(),
+    )
+    .unwrap();
     STANDARD.encode(params.self_signed(&key).expect("test cert").der())
 }
 

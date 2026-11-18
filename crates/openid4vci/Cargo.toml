@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-bytes = "1.12.1"
+bytes.workspace = true
 jiff.workspace = true
 blake3.workspace = true
 nazo-digital-credentials.workspace = true

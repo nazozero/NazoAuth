@@ -2,6 +2,7 @@
 //! TLS verifies the database hostname and configured CA (or public roots).
 use crate::wire::{decode_hash, AnchorReceipt};
 use anyhow::{bail, Context, Result};
+use rustls::pki_types::{pem::PemObject, CertificateDer};
 use tokio_postgres::{config::SslMode, Config, NoTls};
 
 pub struct DatabaseConfirmation {
@@ -18,9 +19,8 @@ pub fn configuration(url: &str) -> Result<DatabaseConfirmation> {
         config.ssl_mode(SslMode::Require);
     }
     let tls = if let Ok(path) = std::env::var("ANCHOR_RECEIVER_DATABASE_CA") {
-        let mut input = std::io::BufReader::new(std::fs::File::open(path)?);
         let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_pemfile::certs(&mut input) {
+        for cert in CertificateDer::pem_file_iter(path)? {
             roots.add(cert?)?;
         }
         if roots.is_empty() {

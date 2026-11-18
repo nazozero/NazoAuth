@@ -57,8 +57,14 @@ fn write_test_tls_material_with_server_algorithm(
     server_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     server_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     if expired_server {
-        server_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(2);
-        server_params.not_after = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+        server_params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2 * 24)).as_nanosecond(),
+        )
+        .unwrap();
+        server_params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24)).as_nanosecond(),
+        )
+        .unwrap();
     }
     let server_certificate = server_params.signed_by(&server_key, &ca).unwrap();
 

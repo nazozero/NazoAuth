@@ -93,10 +93,12 @@ fn legacy_mdoc_material(
     profile: &Openid4vcCertificateProfile,
 ) -> Openid4vcMaterial {
     let mdoc = profile.mdoc_profile.as_ref().unwrap();
-    let now = time::OffsetDateTime::now_utc()
-        .date()
-        .midnight()
-        .assume_utc();
+    let now = Timestamp::now();
+    let now = Offset::UTC
+        .to_timestamp(Offset::UTC.to_datetime(now).date().at(0, 0, 0, 0))
+        .unwrap();
+    let certificate_not_before =
+        time::OffsetDateTime::from_unix_timestamp_nanos(now.as_nanosecond()).unwrap();
     let ca_pem = ca_key.serialize_pem();
     let ca_public_key = nazo_crypto::certificate::public_key_from_pem(&ca_pem).unwrap();
     let mut ca_params = CertificateParams::default();
@@ -115,8 +117,11 @@ fn legacy_mdoc_material(
     ca_params
         .custom_extensions
         .push(issuer_alternative_name(&mdoc.issuer_contact_uri));
-    ca_params.not_before = now;
-    ca_params.not_after = now + time::Duration::days(3650);
+    ca_params.not_before = certificate_not_before;
+    ca_params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + SignedDuration::from_hours(3650 * 24)).as_nanosecond(),
+    )
+    .unwrap();
     ca_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     let ca_der = nazo_crypto::certificate::self_signed(ca_params, &ca_pem).unwrap();
     let id = hex::encode(Sha256::digest(&ca_der));
@@ -144,8 +149,11 @@ fn legacy_mdoc_material(
         uris: vec![format!("{}/{}.crl", mdoc.crl_distribution_uri, id)],
     }];
     leaf_params.use_authority_key_identifier_extension = true;
-    leaf_params.not_before = now;
-    leaf_params.not_after = now + time::Duration::days(457);
+    leaf_params.not_before = certificate_not_before;
+    leaf_params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + SignedDuration::from_hours(457 * 24)).as_nanosecond(),
+    )
+    .unwrap();
     leaf_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     let leaf_der =
         nazo_crypto::certificate::sign(leaf_params, &signing_pem, &ca_der, &ca_pem).unwrap();
@@ -913,7 +921,12 @@ async fn mdoc_import_binds_the_active_root_and_enforces_its_profile() {
     // Even an exactly matched active/publication pair is refused when the
     // newly imported root exceeds the allowed certificate lifetime.
     let overlong_der = reissue_test_iaca(pem, &original_ca, mdoc, id, |params| {
-        params.not_after = params.not_before + time::Duration::days(8_000);
+        let not_before =
+            Timestamp::from_nanosecond(params.not_before.unix_timestamp_nanos()).unwrap();
+        params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (not_before + SignedDuration::from_hours(8_000 * 24)).as_nanosecond(),
+        )
+        .unwrap();
     });
     let (_, overlong) = x509_parser::parse_x509_certificate(&overlong_der).unwrap();
     nazo_crypto::certificate::verify_signature(&overlong, overlong.public_key()).unwrap();
@@ -966,8 +979,10 @@ async fn mdoc_import_rejects_fractional_iaca_validity_without_truncating_the_bou
         .checked_add(jiff::Span::new().years(20))
         .unwrap();
     let limit = jiff::tz::Offset::UTC.to_timestamp(limit).unwrap();
-    let excessive = time::OffsetDateTime::from_unix_timestamp(limit.as_second()).unwrap()
-        + time::Duration::milliseconds(1);
+    let excessive = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (limit + SignedDuration::from_millis(1)).as_nanosecond(),
+    )
+    .unwrap();
 
     // rcgen emits whole-second certificate validity. Use existing ASN.1 readers
     // and writers to construct a DER-valid fractional GeneralizedTime, then
@@ -1874,21 +1889,13 @@ fn iaca_profile_uses_twenty_calendar_years_including_century_month_end() {
     let chain = iaca_certificates(&material, id);
     let (_, original_ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
     let datetime = |year, month, day| {
-        time::Date::from_calendar_date(year, month, day)
+        Offset::UTC
+            .to_timestamp(jiff::civil::date(year, month, day).at(12, 34, 56, 0))
             .unwrap()
-            .with_hms(12, 34, 56)
-            .unwrap()
-            .assume_utc()
     };
     for (start, limit) in [
-        (
-            datetime(2026, time::Month::November, 17),
-            datetime(2046, time::Month::November, 17),
-        ),
-        (
-            datetime(2080, time::Month::February, 29),
-            datetime(2100, time::Month::February, 28),
-        ),
+        (datetime(2026, 11, 17), datetime(2046, 11, 17)),
+        (datetime(2080, 2, 29), datetime(2100, 2, 28)),
     ] {
         for exceeds in [false, true] {
             let der = reissue_test_iaca(
@@ -1897,8 +1904,13 @@ fn iaca_profile_uses_twenty_calendar_years_including_century_month_end() {
                 profile.mdoc_profile.as_ref().unwrap(),
                 id,
                 |params| {
-                    params.not_before = start;
-                    params.not_after = limit + time::Duration::seconds(i64::from(exceeds));
+                    params.not_before =
+                        time::OffsetDateTime::from_unix_timestamp_nanos(start.as_nanosecond())
+                            .unwrap();
+                    params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+                        (limit + SignedDuration::from_secs(i64::from(exceeds))).as_nanosecond(),
+                    )
+                    .unwrap();
                 },
             );
             let (_, ca) = x509_parser::parse_x509_certificate(&der).unwrap();
@@ -1918,10 +1930,10 @@ fn iaca_profile_uses_twenty_calendar_years_including_century_month_end() {
 fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
     // Two unrelated key generations on the same day must not expose their
     // creation second through the MSO's certificate lower bound.
-    let day = time::OffsetDateTime::from_unix_timestamp(1_791_590_400).unwrap();
-    assert_eq!(day.unix_timestamp().rem_euclid(86_400), 0);
+    let day = Timestamp::from_second(1_791_590_400).unwrap();
+    assert_eq!(day.as_second().rem_euclid(86_400), 0);
     for offset in [0, 1, 43_217, 86_399, 86_400] {
-        let now = day + time::Duration::seconds(offset);
+        let now = day + SignedDuration::from_secs(offset);
         let key = nazo_crypto::certificate::generate_p256_private_key_pem().unwrap();
         let profile = managed_profile("issuer.example");
         let bundle = build_openid4vc_certificate_bundle(
@@ -1935,7 +1947,7 @@ fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
         let (_, leaf) = x509_parser::parse_x509_certificate(&material.leaf_der).unwrap();
         let ca_der = parse_certificates(&bundle.ca_pem).remove(0);
         let (_, ca) = x509_parser::parse_x509_certificate(ca_der.as_ref()).unwrap();
-        let expected = now.date().midnight().assume_utc().unix_timestamp();
+        let expected = now.as_second().div_euclid(86_400) * 86_400;
         for (certificate, lifetime) in [(&leaf, 457), (&ca, 3650)] {
             assert_eq!(certificate.validity().not_before.timestamp(), expected);
             assert_eq!(
@@ -1943,8 +1955,7 @@ fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
                 expected + lifetime * 86_400
             );
             assert!(
-                certificate.validity().not_after.timestamp()
-                    <= now.unix_timestamp() + lifetime * 86_400
+                certificate.validity().not_after.timestamp() <= now.as_second() + lifetime * 86_400
             );
         }
         assert!(mdoc_certificate_profile_matches(
