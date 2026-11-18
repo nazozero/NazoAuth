@@ -104,7 +104,7 @@ pub(crate) async fn prepare_fixture() {
         Arc::new(nazo_key_management::test_support::MemorySigningKeyRepository::default());
     let keys = KeyManager::load_or_create_database(
         KeySettings {
-            rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+            rotation_interval: jiff::SignedDuration::from_hours(24),
             prepublish_window: jiff::SignedDuration::from_hours(1),
             verification_grace: jiff::SignedDuration::from_hours(1),
         },
@@ -127,8 +127,7 @@ pub(crate) async fn prepare_fixture() {
         })
         .await
         .unwrap();
-    let issued_at: jiff::Timestamp =
-        chrono::DateTime::from_timestamp(jiff::Timestamp::now().timestamp(), 0).unwrap();
+    let issued_at = jiff::Timestamp::from_second(jiff::Timestamp::now().as_second()).unwrap();
     let (leaf_der, ca_der) = certificate_fixture(
         &keys.database_local_private_key_pem(&kid).unwrap(),
         issued_at.as_second(),

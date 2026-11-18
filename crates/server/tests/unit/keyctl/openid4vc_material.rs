@@ -960,8 +960,12 @@ async fn mdoc_import_rejects_fractional_iaca_validity_without_truncating_the_bou
     let chain = iaca_certificates(&active, id);
     let (_, original_ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
     let start =
-        chrono::DateTime::from_timestamp(original_ca.validity().not_before.timestamp(), 0).unwrap();
-    let limit = start.checked_add_months(chrono::Months::new(240)).unwrap();
+        jiff::Timestamp::from_second(original_ca.validity().not_before.timestamp()).unwrap();
+    let limit = jiff::tz::Offset::UTC
+        .to_datetime(start)
+        .checked_add(jiff::Span::new().years(20))
+        .unwrap();
+    let limit = jiff::tz::Offset::UTC.to_timestamp(limit).unwrap();
     let excessive = time::OffsetDateTime::from_unix_timestamp(limit.as_second()).unwrap()
         + time::Duration::milliseconds(1);
 
