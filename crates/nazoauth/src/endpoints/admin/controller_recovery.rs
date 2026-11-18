@@ -33,7 +33,7 @@ pub async fn controller_recovery_challenge(
             "deployment_id": issued.deployment_id,
             // The nonce is a public value the control side must sign over.
             "nonce": URL_SAFE_NO_PAD.encode(issued.nonce),
-            "expires_at": issued.expires_at.to_string(),
+            "expires_at": issued.expires_at,
             "algorithm": {
                 "type": "Ed25519",
             },
@@ -81,8 +81,8 @@ pub async fn controller_recovery_commit(
                 "label": commit.slot.label,
                 "kid": commit.slot.kid,
                 "slot_index": commit.slot.slot_index,
-                "issued_at": commit.slot.issued_at.to_string(),
-                "expires_at": commit.slot.expires_at.to_string(),
+                "issued_at": commit.slot.issued_at,
+                "expires_at": commit.slot.expires_at,
                 "status": "active",
             },
             "recovery_generation": commit.recovery_generation,
@@ -119,7 +119,7 @@ pub fn root_error_response(error: RecoveryRootError) -> HttpResponse {
                     serde_json::json!({
                         "controller_id": controller.controller_id,
                         "kid": controller.kid,
-                        "expires_at": controller.expires_at.to_string(),
+                        "expires_at": controller.expires_at,
                     })
                 })
                 .collect();

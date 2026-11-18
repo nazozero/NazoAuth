@@ -95,7 +95,7 @@ pub(super) async fn append_slot(
         audit,
         serde_json::json!({
             "deployment_id":slot.deployment_id,"controller_id":slot.controller_id,"kid":slot.kid,
-            "slot_index":slot.slot_index,"expires_at":slot.expires_at.to_string(),
+            "slot_index":slot.slot_index,"expires_at":slot.expires_at,
         }),
     )
     .await

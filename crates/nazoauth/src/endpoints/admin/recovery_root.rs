@@ -74,8 +74,8 @@ pub async fn admin_recovery_root(
             "recovery_kid": root.recovery_kid,
             "kdf": root.kdf,
             "generation": root.generation,
-            "created_at": root.created_at.to_string(),
-            "updated_at": root.updated_at.to_string(),
+            "created_at": root.created_at,
+            "updated_at": root.updated_at,
         })),
         Ok(None) => json_response_no_store(serde_json::json!({
             "deployment_id": deployment_id,
@@ -127,7 +127,7 @@ pub async fn admin_recovery_root_approval(
                 "approval_token": issued.token,
                 "action": "recovery-root-rotate",
                 "action_sha256": issued.action_sha256,
-                "expires_at": issued.expires_at.to_string(),
+                "expires_at": issued.expires_at,
                 "single_use": true,
             }))
         }
@@ -181,8 +181,8 @@ pub async fn admin_recovery_root_rotate(
                 "recovery_kid": root.recovery_kid,
                 "kdf": root.kdf,
                 "generation": root.generation,
-                "created_at": root.created_at.to_string(),
-                "updated_at": root.updated_at.to_string(),
+                "created_at": root.created_at,
+                "updated_at": root.updated_at,
             },
             "previous_generation_invalid": true,
         })),

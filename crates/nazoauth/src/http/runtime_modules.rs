@@ -480,11 +480,13 @@ impl Serialize for RuntimeTimestamp {
         } else {
             9
         };
-        let civil = value.to_zoned(jiff::tz::TimeZone::UTC).datetime();
+        let civil = jiff::tz::Offset::UTC.to_datetime(value);
         serializer.collect_str(&format_args!("{civil:.precision$}+00:00"))
     }
 }
 
+// web_time::SystemTime is distinct from std::time::SystemTime on WASM.
+// Keep this allocation-free epoch conversion shared by both targets.
 fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {
     let nanos = match value.duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_nanos() as i128,

@@ -134,7 +134,7 @@ pub(crate) fn maintain_encryption_keys(
     if payload.get("request_object_created_at").is_none() {
         // The old format has no creation time. Start its rotation schedule at
         // this durable migration boundary rather than inventing a historical age.
-        payload["request_object_created_at"] = json!(now.to_string());
+        payload["request_object_created_at"] = json!(now);
         payload["request_object_retained_keys"] = json!([]);
         changed = true;
     }
@@ -156,9 +156,8 @@ pub(crate) fn maintain_encryption_keys(
                 payload["request_object_private_pem"].clone(),
                 payload["request_object_created_at"].clone(),
                 json!(
-                    (now + settings.verification_grace
-                        + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS)
-                        .to_string()
+                    now + settings.verification_grace
+                        + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS
                 ),
             )?;
             let mut candidate = payload["request_object_retained_keys"]
@@ -176,7 +175,7 @@ pub(crate) fn maintain_encryption_keys(
     } else if now >= due - settings.prepublish_window {
         let candidate = retained_entry(
             json!(URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?)),
-            json!(now.to_string()),
+            json!(now),
             Value::Null,
         )?;
         payload["request_object_retained_keys"]

@@ -606,9 +606,9 @@ where
 }
 
 fn batch_privacy_claim_time(value: Timestamp) -> Timestamp {
-    let timestamp = value.as_second();
-    let rounded = timestamp - timestamp.rem_euclid(86_400);
-    Timestamp::new(rounded, 0).unwrap_or(value)
+    // Divide before narrowing so a pre-epoch fraction stays in its UTC day.
+    let rounded = value.as_nanosecond().div_euclid(86_400_000_000_000) * 86_400;
+    Timestamp::from_second(rounded as i64).unwrap_or(value)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -649,3 +649,7 @@ impl From<nazo_digital_credentials::CredentialTrustError> for CredentialIssuance
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/service.rs"]
+mod tests;

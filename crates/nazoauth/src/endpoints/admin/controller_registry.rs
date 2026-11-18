@@ -252,7 +252,7 @@ pub async fn admin_controller_approval(
                 "approval_token": issued.token,
                 "action": issued.action.as_str(),
                 "action_sha256": issued.action_sha256,
-                "expires_at": issued.expires_at.to_string(),
+                "expires_at": issued.expires_at,
                 "single_use": true,
             }))
         }
@@ -487,8 +487,8 @@ pub fn slot_view(slot: &StoredControllerSlot) -> serde_json::Value {
         "label": slot.label,
         "kid": slot.kid,
         "slot_index": slot.slot_index,
-        "issued_at": slot.issued_at.to_string(),
-        "expires_at": slot.expires_at.to_string(),
+        "issued_at": slot.issued_at,
+        "expires_at": slot.expires_at,
         "status": status_str(slot.status),
         "warning": expiry_warning(Timestamp::now(), slot.expires_at).map(|warning| match warning {
             ControllerKeyWarning::Urgent => "urgent_24h",
@@ -528,7 +528,7 @@ pub fn service_error_response(error: ControllerRegistryServiceError) -> HttpResp
                         "label": summary.label,
                         "kid": summary.kid,
                         "slot_index": summary.slot_index,
-                        "expires_at": summary.expires_at.to_string(),
+                        "expires_at": summary.expires_at,
                     })
                 })
                 .collect();

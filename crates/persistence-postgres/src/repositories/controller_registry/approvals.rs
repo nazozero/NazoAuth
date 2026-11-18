@@ -209,7 +209,7 @@ impl ControllerRegistryRepository {
                         "deployment_id": deployment_id,
                         "action": issued.action.as_str(),
                         "action_sha256": issued.action_sha256,
-                        "expires_at": issued.expires_at.to_string(),
+                        "expires_at": issued.expires_at,
                     }),
                 )
                 .await

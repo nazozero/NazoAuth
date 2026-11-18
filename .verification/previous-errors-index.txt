@@ -1,4 +1,0 @@
-crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:552: cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`
-crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:710: no method named `as_second` found for struct `ASN1Time` in the current scope
-crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:727: no method named `as_second` found for struct `ASN1Time` in the current scope
-crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs:206: mismatched types
