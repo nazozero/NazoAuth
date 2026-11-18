@@ -40,6 +40,7 @@ pub(super) struct AnchorReceipt {
     pub(super) event_count: i64,
     pub(super) last_hash: String,
     pub(super) batch_digest: String,
+    #[serde(serialize_with = "nazo_persistence::audit_wire::serialize_audit_timestamp")]
     pub(super) received_at: Timestamp,
     #[serde(default)]
     pub(super) reject_reason: Option<String>,
@@ -61,6 +62,7 @@ struct ReceiptSigningView<'a> {
     event_count: i64,
     last_hash: &'a str,
     batch_digest: &'a str,
+    #[serde(serialize_with = "nazo_persistence::audit_wire::serialize_audit_timestamp")]
     received_at: Timestamp,
     reject_reason: Option<&'a str>,
     permanent: bool,

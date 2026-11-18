@@ -56,10 +56,10 @@ fn serialize_base64<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok,
     serializer.collect_str(&Base64Display::new(bytes, &URL_SAFE_NO_PAD))
 }
 
-// Anchor v2 has a frozen byte representation: fractional precision is 0, 3,
-// 6 or 9 digits. Jiff's default minimal precision would change old batches.
-// collect_str writes directly into the serializer without a temporary String.
-fn serialize_audit_timestamp<S: Serializer>(
+/// Serialize the frozen audit timestamp format for checkpoints and receipts.
+/// Fractional precision is 0, 3, 6 or 9 digits, with a UTC Z offset.
+/// Writes directly into the serializer without an intermediate timestamp String.
+pub fn serialize_audit_timestamp<S: Serializer>(
     value: &jiff::Timestamp,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {

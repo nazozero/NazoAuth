@@ -5,9 +5,9 @@
 
 use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use jiff::Timestamp;
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use uuid::Uuid;
@@ -69,6 +69,7 @@ pub struct AnchorReceipt {
     pub event_count: i64,
     pub last_hash: String,
     pub batch_digest: String,
+    #[serde(serialize_with = "serialize_audit_timestamp")]
     pub received_at: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reject_reason: Option<String>,
@@ -90,6 +91,7 @@ struct ReceiptSigningView<'a> {
     event_count: i64,
     last_hash: &'a str,
     batch_digest: &'a str,
+    #[serde(serialize_with = "serialize_audit_timestamp")]
     received_at: Timestamp,
     reject_reason: Option<&'a str>,
     permanent: bool,
@@ -125,7 +127,9 @@ pub fn event_hash(
     hasher.update(event_id.as_bytes());
     len_prefixed(&mut hasher, event_type.as_bytes());
     len_prefixed(&mut hasher, event_category.as_bytes());
-    hasher.update(&occurred_at.as_microsecond().to_be_bytes());
+    // Audit v1 floors Unix microseconds, including pre-epoch fractions.
+    let micros = occurred_at.as_nanosecond().div_euclid(1_000) as i64;
+    hasher.update(&micros.to_be_bytes());
     len_prefixed(&mut hasher, payload_canonical);
     *hasher.finalize().as_bytes()
 }
@@ -306,6 +310,24 @@ fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
         .collect()
 }
 
+// Kept independent of the exporter so fixture signatures detect wire drift.
+fn serialize_audit_timestamp<S: serde::Serializer>(
+    value: &Timestamp,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    let nanos = value.subsec_nanosecond();
+    let precision = if nanos == 0 {
+        0
+    } else if nanos % 1_000_000 == 0 {
+        3
+    } else if nanos % 1_000 == 0 {
+        6
+    } else {
+        9
+    };
+    serializer.collect_str(&format_args!("{value:.precision$}"))
+}
+
 #[cfg(test)]
-#[path = "../tests/wire.rs"]
+#[path = "../tests/unit/wire.rs"]
 mod tests;

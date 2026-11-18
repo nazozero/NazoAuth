@@ -2298,3 +2298,47 @@ fn local_checkpoint_identity_requires_complete_committed_timestamps() {
         assert!(AnchorCheckpoint::from_snapshot(&partial).is_none());
     }
 }
+
+#[test]
+fn legacy_receipt_signing_bytes_preserve_fractional_precision() {
+    let batch = batch(vec![delivery(1)]);
+    let expectation = batch_expectation("deployment-1", &batch);
+    for (input, canonical) in [
+        ("2026-11-17T00:00:00Z", "2026-11-17T00:00:00Z"),
+        ("2026-11-17T00:00:00.1Z", "2026-11-17T00:00:00.100Z"),
+        ("2026-11-17T00:00:00.1234Z", "2026-11-17T00:00:00.123400Z"),
+        (
+            "2026-11-17T00:00:00.1234567Z",
+            "2026-11-17T00:00:00.123456700Z",
+        ),
+        (
+            "1969-12-31T23:59:59.999999999Z",
+            "1969-12-31T23:59:59.999999999Z",
+        ),
+        ("2026-11-17T01:00:00.12+01:00", "2026-11-17T00:00:00.120Z"),
+    ] {
+        let frozen = format!(
+            r#"{{"schema_version":"nazo.audit.anchor.receipt.v1","checkpoint_kind":"batch","status":"accepted","deployment_id":"deployment-1","first_sequence":1,"last_sequence":1,"event_count":1,"last_hash":"{}","batch_digest":"{}","received_at":"{}","reject_reason":null,"permanent":false}}"#,
+            expectation.last_hash, expectation.batch_digest, canonical,
+        );
+        // Sign the frozen pre-migration bytes, not receipt_signing_body's output.
+        let signature = test_signing_key().sign(frozen.as_bytes());
+        let mut wire: Value = serde_json::from_str(&frozen).unwrap();
+        wire["received_at"] = json!(input);
+        wire["signature"] = json!(encode_hash(&signature.to_bytes()));
+        let receipt: AnchorReceipt = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(receipt_signing_body(&receipt).unwrap(), frozen.as_bytes());
+        assert_eq!(
+            serde_json::to_value(&receipt).unwrap()["received_at"],
+            canonical
+        );
+        assert_eq!(
+            verify_receipt(
+                &serde_json::to_vec(&wire).unwrap(),
+                &test_verify_key(),
+                &expectation
+            ),
+            Ok(ReceiptVerdict::Accepted { duplicate: false }),
+        );
+    }
+}

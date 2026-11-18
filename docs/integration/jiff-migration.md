@@ -27,8 +27,10 @@ fractional zeros. String-typed response fields and HTTP headers still require
 owned text.
 
 Audit-chain v1 hashes floor-rounded Unix microseconds, including dates before
-1970. Audit-anchor v2 serializes 0/3/6/9 fractional digits and a `Z` offset;
-runtime-management JSON retains 0/3/6/9 digits and `+00:00`. These frozen formats
+1970. Audit-anchor v2 checkpoints and v1 receipt signatures serialize 0/3/6/9
+fractional digits and a `Z` offset. The independent receiver uses the same frozen
+format, including pre-epoch hash rounding. Runtime-management JSON retains
+0/3/6/9 digits and `+00:00`. These frozen formats
 stream directly into serde without an intermediate timestamp string. The runtime
 HTTP boundary converts `web_time::SystemTime` through epoch nanoseconds because
 its WASM type is distinct from the standard library's `SystemTime`.
