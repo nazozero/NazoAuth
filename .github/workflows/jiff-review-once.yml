@@ -1,0 +1,190 @@
+name: jiff-review-once
+on:
+  push:
+    branches: [validation/jiff-continuation-20261118]
+    paths: [.github/workflows/jiff-review-once.yml]
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.repository == 'nazozero/NazoAuth'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: jiff-continuation-review
+          cache-on-failure: true
+      - name: Apply reviewed minimal changes
+        shell: python
+        run: |
+          from pathlib import Path
+          def replace(path, old, new, count=1):
+              p=Path(path)
+              text=p.read_text()
+              assert text.count(old)==count, (path,old,text.count(old),count)
+              p.write_text(text.replace(old,new))
+          replace('crates/nazoauth/src/http/runtime_modules.rs',
+                  'let civil = value.to_zoned(jiff::tz::TimeZone::UTC).datetime();',
+                  'let civil = jiff::tz::Offset::UTC.to_datetime(value);')
+          replace('crates/nazoauth/src/http/runtime_modules.rs',
+                  'fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {',
+                  '// web_time::SystemTime is distinct from std::time::SystemTime on WASM.\n'
+                  '// Keep this allocation-free epoch conversion shared by both targets.\n'
+                  'fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {')
+          changes={
+              'crates/nazoauth/src/endpoints/admin/controller_recovery.rs': {
+                  'issued.expires_at.to_string()':1,'commit.slot.issued_at.to_string()':1,
+                  'commit.slot.expires_at.to_string()':1,'controller.expires_at.to_string()':1},
+              'crates/nazoauth/src/endpoints/admin/controller_registry.rs': {
+                  'issued.expires_at.to_string()':1,'slot.issued_at.to_string()':1,
+                  'slot.expires_at.to_string()':1,'summary.expires_at.to_string()':1},
+              'crates/nazoauth/src/endpoints/admin/recovery_root.rs': {
+                  'root.created_at.to_string()':2,'root.updated_at.to_string()':2,
+                  'issued.expires_at.to_string()':1},
+              'crates/persistence-postgres/src/repositories/controller_registry/approvals.rs': {
+                  'issued.expires_at.to_string()':1},
+              'crates/persistence-postgres/src/repositories/controller_registry/required.rs': {
+                  'slot.expires_at.to_string()':1},
+          }
+          for path,expressions in changes.items():
+              for expression,count in expressions.items():
+                  replace(path,expression,expression.removesuffix('.to_string()'),count)
+          replace('crates/key-management/src/request_object_encryption.rs',
+                  'json!(now.to_string())','json!(now)',2)
+          replace('crates/key-management/src/request_object_encryption.rs',
+                  '''(now + settings.verification_grace
+                                  + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS)
+                                  .to_string()''',
+                  '''now + settings.verification_grace
+                                  + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS''')
+          replace('crates/openid4vci/src/service.rs',
+                  '    let timestamp = value.as_second();\n    let rounded = timestamp - timestamp.rem_euclid(86_400);\n    Timestamp::new(rounded, 0).unwrap_or(value)',
+                  '    // Divide before narrowing so a pre-epoch fraction stays in its UTC day.\n'
+                  '    let rounded = value.as_nanosecond().div_euclid(86_400_000_000_000) * 86_400;\n'
+                  '    Timestamp::from_second(rounded as i64).unwrap_or(value)')
+          p=Path('crates/openid4vci/src/service.rs')
+          p.write_text(p.read_text()+'\n#[cfg(test)]\n#[path = "../tests/unit/service.rs"]\nmod tests;\n')
+          p=Path('crates/openid4vci/tests/unit/service.rs')
+          assert not p.exists()
+          p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text('''use super::batch_privacy_claim_time;
+          use jiff::Timestamp;
+
+          #[test]
+          fn privacy_time_floors_to_the_same_utc_day_without_extending_a_deadline() {
+              for (input, expected) in [
+                  ("1969-12-30T23:59:59.999999999Z", "1969-12-30T00:00:00Z"),
+                  ("1969-12-31T23:59:59.999999999Z", "1969-12-31T00:00:00Z"),
+                  ("1970-01-01T00:00:00Z", "1970-01-01T00:00:00Z"),
+                  ("1970-01-01T00:00:00.000000001Z", "1970-01-01T00:00:00Z"),
+                  ("2026-11-17T23:59:59.999999999Z", "2026-11-17T00:00:00Z"),
+                  ("2026-11-18T01:00:00+09:00", "2026-11-17T00:00:00Z"),
+              ] {
+                  let input: Timestamp = input.parse().unwrap();
+                  let rounded = batch_privacy_claim_time(input);
+                  assert_eq!(rounded, expected.parse::<Timestamp>().unwrap());
+                  assert!(rounded <= input);
+                  assert_eq!(batch_privacy_claim_time(rounded), rounded);
+              }
+              // If midnight is outside the type's range, retain the original instant.
+              assert_eq!(batch_privacy_claim_time(Timestamp::MIN), Timestamp::MIN);
+              assert!(batch_privacy_claim_time(Timestamp::MAX) <= Timestamp::MAX);
+          }
+          ''')
+          for name in ['jiff-check.json','jiff-check.txt','jiff-peer-merge.md','jiff-warnings.json',
+                       'previous-errors-index.txt','time-remaining.txt']:
+              Path('.verification',name).unlink()
+          Path('docs/integration/jiff-migration.md').write_text('''# Native Jiff time boundaries
+
+          Application and domain APIs use `jiff::Timestamp` for instants and
+          `jiff::SignedDuration` for elapsed time. Jiff uses the POSIX time scale. TTLs,
+          retry intervals and token ages use elapsed time, not calendar-day arithmetic.
+          Invalid external or persisted instants fail at the owning boundary; they never
+          acquire a replacement creation or expiry time from the wall clock.
+
+          ## PostgreSQL
+
+          The official `jiff-diesel` types are confined to the PostgreSQL adapter. Domain
+          and persistence ports remain independent of Diesel. Query objects retain only
+          the timestamp scalar wrappers required by Diesel's bind lifetimes; request
+          payloads remain borrowed and prepared-query identities are unchanged.
+
+          PostgreSQL stores signed microseconds relative to 2000-01-01. Its adapter
+          truncates submicrosecond differences toward zero. This database precision rule
+          is distinct from the frozen audit-chain v1 rule below. Nullable timestamps and
+          timestamp arrays use the same official adapter. SQL and column types do not
+          change with this migration.
+
+          ## Serialization and audit identity
+
+          Ordinary timestamp-valued JSON fields serialize the typed instant directly.
+          Consumers parse the timestamp, rather than requiring a fixed number of trailing
+          fractional zeros. String-typed response fields and HTTP headers still require
+          owned text.
+
+          Audit-chain v1 hashes floor-rounded Unix microseconds, including dates before
+          1970. Audit-anchor v2 serializes 0/3/6/9 fractional digits and a `Z` offset;
+          runtime-management JSON retains 0/3/6/9 digits and `+00:00`. These frozen formats
+          stream directly into serde without an intermediate timestamp string. The runtime
+          HTTP boundary converts `web_time::SystemTime` through epoch nanoseconds because
+          its WASM type is distinct from the standard library's `SystemTime`.
+
+          ## Credentials and certificates
+
+          Credential privacy times are floored to the start of their UTC day without
+          extending the original deadline. If midnight falls outside Jiff's representable
+          range, the original instant is retained.
+
+          The IACA validity ceiling uses twenty calendar years in UTC, including leap-year
+          month-end adjustment; it is not a fixed day count. Certificate validity fields
+          must have whole-second precision. CRL publication instead uses an exact elapsed
+          24-hour interval and floor-rounded whole seconds. Its persisted publication
+          identity, CAS conflict handling and clock-rollback rejection remain unchanged.
+
+          The mdoc protocol type retains its wire-time semantics. Conversion to the POSIX
+          application type is fallible: an authenticated protocol leap second cannot be
+          silently replaced with a neighboring instant and is rejected at that boundary.
+          There is no application leap-second calendar or compatibility layer. Certificate
+          path and revocation checks use the same current verification instant, not the
+          credential's signed time.
+          ''')
+      - name: Validate changed packages and preserve the patch
+        run: |
+          cargo fmt --all
+          git diff --check
+          python3 scripts/verify_static_contracts.py --check
+          mkdir -p /tmp/jiff-review
+          git add crates docs/integration/jiff-migration.md .verification
+          git diff --cached > /tmp/jiff-review/refinement.diff
+          set +e
+          cargo test --locked --all-features -p nazoauth -p nazo-key-management -p nazo-openid4vci --lib > /tmp/jiff-review/tests.log 2>&1
+          code=$?
+          tail -100 /tmp/jiff-review/tests.log
+          exit "$code"
+      - name: Commit reviewed and tested changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'refactor(time): remove redundant JSON formatting and preserve privacy rounding'
+          header=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $header" push origin HEAD:refs/heads/validation/jiff-continuation-20261118
+          git rev-parse HEAD
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: jiff-refinement-evidence
+          path: /tmp/jiff-review
+          retention-days: 1
