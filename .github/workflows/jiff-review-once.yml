@@ -18,8 +18,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
         with:
+          toolchain: '1.100.0'
           components: rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
@@ -163,10 +164,10 @@ jobs:
         run: |
           cargo fmt --all
           git diff --check
-          python3 scripts/verify_static_contracts.py --check
           mkdir -p /tmp/jiff-review
           git add crates docs/integration/jiff-migration.md .verification
           git diff --cached > /tmp/jiff-review/refinement.diff
+          python3 scripts/verify_static_contracts.py --check
           set +e
           cargo test --locked --all-features -p nazoauth -p nazo-key-management -p nazo-openid4vci --lib > /tmp/jiff-review/tests.log 2>&1
           code=$?
