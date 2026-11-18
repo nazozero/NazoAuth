@@ -1,46 +1,31 @@
 # Contributing to NazoAuth
 
-## Licensing boundary
+## Contributions and licensing
 
-NazoAuth uses an open-source/commercial dual-licensing model:
+Pull requests for code, tests, and documentation are welcome. You can submit a
+pull request directly; no contributor license agreement (CLA), copyright
+assignment, or Developer Certificate of Origin (DCO) sign-off is required.
 
-- the public repository is licensed under `AGPL-3.0-or-later`;
-- a copyright holder may separately offer commercial licenses for qualifying
-  uses that cannot comply with the AGPL.
+By submitting a contribution for inclusion in this repository, you license it
+under the same [AGPL-3.0-or-later](LICENSE) terms as the project and confirm that
+you have the right to do so. You retain copyright in your work. Preserve
+applicable third-party licenses and attribution notices.
 
-The commercial option is a separate written agreement. It is not an additional
-license automatically granted by this repository.
-The public license text is the unmodified AGPL in [LICENSE](LICENSE); the
-commercial licensing notice is [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Accepting a contribution under the AGPL does not give maintainers permission
+to relicense it under proprietary terms. Any additional permission for
+[commercial licensing](COMMERCIAL-LICENSE.md) is separate and optional; it is
+not a condition for accepting community contributions.
 
-## External code contributions
-
-NazoAuth must retain enough copyright authority to offer the commercial
-license without weakening the AGPL option. Therefore an external code
-contribution must not be merged until the contributor has completed the
-project's contributor license agreement (CLA). The CLA must, at minimum, grant
-the project copyright holders a non-exclusive, perpetual, worldwide,
-irrevocable right to use, modify, distribute, sublicense, and relicense the
-contribution, including under both the public AGPL license and separate
-commercial licenses.
-
-Merely opening a pull request, signing off a commit, or accepting the Developer
-Certificate of Origin does not by itself grant commercial relicensing rights.
-Until a CLA workflow is published, external contributors should open an issue
-to discuss a proposed change; maintainers must not merge the contributed code.
-
-Dependency-only automation updates remain governed by the licenses of the
-updated dependencies and the repository's supply-chain policy. Maintainers must
-not represent third-party code as covered by a NazoAuth commercial license.
+Dependency updates remain subject to the dependencies' licenses and the
+repository's supply-chain policy.
 
 Code contributions must follow the workspace boundaries in
 [docs/project/architecture.md](docs/project/architecture.md) and the mandatory
 test layout in [docs/project/testing.md](docs/project/testing.md). The latter is
 enforced by `python scripts/verify_static_contracts.py --check`.
 
-Documentation, issue reports, and suggestions that contain no contributed code
-do not require a CLA, but their authors must avoid including third-party
-confidential information or material they are not authorized to submit.
+Do not submit confidential information or material you are not authorized to
+share.
 
 ## Documentation
 

@@ -178,6 +178,7 @@ cargo test --workspace --all-features --locked
 | [SCIM](docs/features/scim.md) | [安全模型](docs/security/threat-model.md) |
 | [协议覆盖](docs/protocol/rfc-compliance-matrix.md) | [性能测量](docs/performance/README.md) |
 
-漏洞报告见 [SECURITY.md](SECURITY.md)，贡献规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+漏洞报告见 [SECURITY.md](SECURITY.md)。欢迎直接通过 Pull Request 贡献代码、测试和文档，无需 CLA；详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-项目使用 [AGPL-3.0-or-later](LICENSE) 许可证。[商业许可](COMMERCIAL-LICENSE.md)须另行签署协议。
+项目使用 [AGPL-3.0-or-later](LICENSE) 许可证，遵守其条款即可商业使用，包括收费分发和提供服务。
+[商业许可](COMMERCIAL-LICENSE.md)须另行签署书面协议，且仅覆盖许可方拥有所需权利的内容。
