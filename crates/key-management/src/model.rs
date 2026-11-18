@@ -356,6 +356,47 @@ pub struct Openid4vcPublicMaterial {
     pub revocation_snapshot: Option<nazo_digital_credentials::CertificateRevocationSnapshot>,
 }
 
+/// Decoded public certificates owned by one immutable key generation.
+/// Path selection, certificate validity and revocation remain request decisions.
+#[derive(Debug)]
+pub struct Openid4vcCertificates {
+    certificate_chain_der: Vec<Vec<u8>>,
+    trust_anchors_der: Vec<Vec<u8>>,
+}
+
+impl Openid4vcCertificates {
+    fn from_material(material: &Openid4vcPublicMaterial) -> anyhow::Result<Self> {
+        let certificate_chain_der = decode_openid4vc_certificate_sequence(
+            &material.certificate_chain_pem,
+            "certificate chain",
+        )?;
+        let mut trust_anchors_der = Vec::new();
+        for der in
+            decode_openid4vc_certificate_sequence(&material.trust_anchors_pem, "trust anchors")?
+        {
+            let (_, certificate) = x509_parser::parse_x509_certificate(&der)
+                .expect("certificate sequence decoder checked complete X.509 DER");
+            if certificate.is_ca() && !trust_anchors_der.contains(&der) {
+                trust_anchors_der.push(der);
+            }
+        }
+        Ok(Self {
+            certificate_chain_der,
+            trust_anchors_der,
+        })
+    }
+
+    #[must_use]
+    pub fn certificate_chain_der(&self) -> &[Vec<u8>] {
+        &self.certificate_chain_der
+    }
+
+    #[must_use]
+    pub fn trust_anchors_der(&self) -> &[Vec<u8>] {
+        &self.trust_anchors_der
+    }
+}
+
 /// Atomically managed OpenID4VC material for one tenant.
 ///
 /// `iaca_private_materials` is encrypted with the rest of the database-backed
@@ -423,6 +464,7 @@ pub(crate) struct KeyGeneration {
     pub(crate) loaded: LoadedKeyset,
     pub(crate) snapshot: Arc<KeySnapshot>,
     openid4vc_public: Option<Arc<Openid4vcPublicMaterial>>,
+    openid4vc_certificates: Option<Arc<Openid4vcCertificates>>,
     openid4vc_revocation:
         Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>,
     openid4vc_signing_revoked: bool,
@@ -504,6 +546,14 @@ impl Openid4vcSigningLease {
             .as_ref()
             .expect("OpenID4VC signing lease always has managed material")
             .public
+    }
+
+    #[must_use]
+    pub fn certificates(&self) -> &Openid4vcCertificates {
+        self.generation
+            .openid4vc_certificates
+            .as_deref()
+            .expect("OpenID4VC signing lease always has managed certificates")
     }
 
     pub async fn encode_jwt<T: Serialize>(
@@ -623,9 +673,22 @@ pub(crate) fn parse_openid4vc_certificate_chain(
     pem_text: &str,
     description: &str,
 ) -> anyhow::Result<Vec<Vec<u8>>> {
+    let certificates = decode_openid4vc_certificate_sequence(pem_text, description)?;
+    if certificates.is_empty() {
+        anyhow::bail!("OpenID4VC {description} must contain a certificate");
+    }
+    Ok(certificates)
+}
+
+// Decoding preserves an empty sequence. The persisted-material validator and
+// certificate consumers enforce their existing nonempty-chain requirements.
+fn decode_openid4vc_certificate_sequence(
+    pem_text: &str,
+    description: &str,
+) -> anyhow::Result<Vec<Vec<u8>>> {
     let blocks = pem::parse_many(pem_text.as_bytes())
         .map_err(|error| anyhow::anyhow!("failed to parse {description}: {error}"))?;
-    if blocks.is_empty() {
+    if blocks.is_empty() && !pem_text.trim().is_empty() {
         anyhow::bail!("OpenID4VC {description} must contain a certificate");
     }
     blocks
@@ -816,6 +879,13 @@ impl KeyManager {
     #[must_use]
     pub fn openid4vc_public_material(&self) -> Option<Arc<Openid4vcPublicMaterial>> {
         self.inner.generation.load().openid4vc_public.clone()
+    }
+
+    /// Share decoded certificates from one published generation. An outstanding
+    /// view remains valid across refresh and rotation without copying DER.
+    #[must_use]
+    pub fn openid4vc_certificates(&self) -> Option<Arc<Openid4vcCertificates>> {
+        self.inner.generation.load().openid4vc_certificates.clone()
     }
 
     /// Share the generation's structurally validated, indexed revocation view.
@@ -1366,6 +1436,11 @@ impl KeyGeneration {
             .openid4vc_material
             .as_ref()
             .map(|material| Arc::new(material.public.clone()));
+        let openid4vc_certificates = openid4vc_public
+            .as_deref()
+            .map(Openid4vcCertificates::from_material)
+            .transpose()?
+            .map(Arc::new);
         let openid4vc_revocation = openid4vc_public
             .as_ref()
             .and_then(|material| material.revocation_snapshot.as_ref())
@@ -1386,6 +1461,7 @@ impl KeyGeneration {
             loaded,
             snapshot,
             openid4vc_public,
+            openid4vc_certificates,
             openid4vc_revocation,
             openid4vc_signing_revoked,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),

@@ -1044,15 +1044,6 @@ fn mdoc_verification_checks_root_profile_beyond_an_iaca_link() {
             sha1::Sha1::digest(root_key.public_key_raw()).to_vec(),
         );
         link_params.use_authority_key_identifier_extension = true;
-        // Annex B.1.3 link purpose, distinct from the DS purpose and root profile.
-        let mut link_eku = rcgen::CustomExtension::from_oid_content(
-            &[2, 5, 29, 37],
-            vec![
-                0x30, 0x09, 0x06, 0x07, 0x28, 0x81, 0x8c, 0x5d, 0x05, 0x01, 0x06,
-            ],
-        );
-        link_eku.set_criticality(true);
-        link_params.custom_extensions.push(link_eku);
         for missing_root_crldp in [false, true] {
             let mut params = root_params.clone();
             if missing_root_crldp {
@@ -1113,6 +1104,235 @@ fn mdoc_verification_checks_root_profile_beyond_an_iaca_link() {
             );
         }
     });
+}
+
+#[test]
+fn mdoc_issuance_and_verification_require_iaca_link_profiles() {
+    futures_executor::block_on(async {
+        let (crypto, valid, signing_kid) = real_crypto_fixture().await;
+        let holder = nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk();
+        let input = mdoc_input(
+            Some(HolderBinding::Jwk { jwk: holder }),
+            json!({"org.iso.18013.5.1":{"issuing_country":"US"}}),
+        );
+        for case in [
+            "valid",
+            "missing_crldp",
+            "missing_contact",
+            "missing_crl_sign",
+            "excess_ku",
+            "path_length",
+            "missing_aki",
+            "wrong_aki",
+            "expiry_past_root",
+            "critical_extra_eku",
+            "changed_dn_missing_san",
+            "changed_dn_wrong_san",
+            "changed_dn_valid_san",
+        ] {
+            let mut params = None;
+            let mut key = None;
+            let certs = certificate_fixture_with_wire_edit(
+                "issuer.example",
+                KeyPair::from_pem(&valid.leaf_key.serialize_pem()).unwrap(),
+                true,
+                |ca, _| params = Some(ca.clone()),
+                |der, ca_key| {
+                    key = Some(KeyPair::from_pem(&ca_key.serialize_pem()).unwrap());
+                    der
+                },
+            );
+            let mut link_params = params.unwrap();
+            let root_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut root_params = link_params.clone();
+            root_params.key_identifier_method = rcgen::KeyIdMethod::PreSpecified(
+                sha1::Sha1::digest(root_key.public_key_raw()).to_vec(),
+            );
+            if case.starts_with("changed_dn_") {
+                root_params
+                    .distinguished_name
+                    .push(DnType::CommonName, "Previous OpenID4VC root");
+            }
+            let root = CertifiedIssuer::self_signed(root_params, root_key).unwrap();
+            link_params.use_authority_key_identifier_extension = true;
+            match case {
+                "missing_crldp" => link_params.crl_distribution_points.clear(),
+                "missing_contact" => link_params.custom_extensions.clear(),
+                "missing_crl_sign" => link_params.key_usages = vec![KeyUsagePurpose::KeyCertSign],
+                "excess_ku" => link_params
+                    .key_usages
+                    .push(KeyUsagePurpose::DigitalSignature),
+                "path_length" => link_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(1)),
+                "missing_aki" => link_params.use_authority_key_identifier_extension = false,
+                "wrong_aki" => {
+                    link_params.use_authority_key_identifier_extension = false;
+                    link_params
+                        .custom_extensions
+                        .push(rcgen::CustomExtension::from_oid_content(
+                            &[2, 5, 29, 35],
+                            yasna::construct_der(|writer| {
+                                writer.write_sequence(|writer| {
+                                    writer.next().write_tagged_implicit(
+                                        yasna::Tag::context(0),
+                                        |writer| {
+                                            writer.write_bytes(&sha1::Sha1::digest(
+                                                certs.leaf_key.public_key_raw(),
+                                            ));
+                                        },
+                                    );
+                                });
+                            }),
+                        ));
+                }
+                "expiry_past_root" => link_params.not_after += time::Duration::days(1),
+                "critical_extra_eku" => {
+                    let mut eku = rcgen::CustomExtension::from_oid_content(
+                        &[2, 5, 29, 37],
+                        vec![
+                            0x30, 0x09, 0x06, 0x07, 0x28, 0x81, 0x8c, 0x5d, 0x05, 0x01, 0x06,
+                        ],
+                    );
+                    eku.set_criticality(true);
+                    link_params.custom_extensions.push(eku);
+                }
+                "changed_dn_valid_san" | "changed_dn_wrong_san" => {
+                    let name_certificate = if case == "changed_dn_valid_san" {
+                        certs.ca_der.as_slice()
+                    } else {
+                        root.der().as_ref()
+                    };
+                    let (_, certificate) =
+                        x509_parser::parse_x509_certificate(name_certificate).unwrap();
+                    link_params
+                        .custom_extensions
+                        .push(rcgen::CustomExtension::from_oid_content(
+                            &[2, 5, 29, 17],
+                            yasna::construct_der(|writer| {
+                                writer.write_sequence(|writer| {
+                                    writer
+                                        .next()
+                                        .write_tagged(yasna::Tag::context(4), |writer| {
+                                            writer.write_der(certificate.subject().as_raw());
+                                        });
+                                });
+                            }),
+                        ));
+                }
+                _ => {}
+            }
+            let link = link_params.signed_by(key.as_ref().unwrap(), &root).unwrap();
+            let chain = vec![certs.leaf_der.clone(), link.der().to_vec()];
+            assert!(
+                verify_certificate_chain_at(
+                    &chain,
+                    &[root.der().to_vec()],
+                    Timestamp::now().as_second()
+                )
+                .unwrap()
+                .is_some(),
+                "{case}: cryptographic path must succeed independently of Annex B profile checks"
+            );
+            crypto
+                .keyset
+                .set_openid4vc_material_for_test(Openid4vcMaterial {
+                    public: Openid4vcPublicMaterial {
+                        signing_kid: signing_kid.clone(),
+                        certificate_chain_pem: format!("{}{}", certs.leaf_pem, link.pem()),
+                        trust_anchors_pem: root.pem(),
+                        revocation_snapshot: None,
+                    },
+                    iaca_private_materials: Default::default(),
+                });
+            let candidate = Openid4vcCredentialCrypto::new_with_policies(
+                crypto.keyset.clone(),
+                VcIssuerTrustPolicy::san_bound(),
+                crate::policy::Openid4vcRevocationPolicy::Disabled,
+            )
+            .unwrap();
+            let issuance = candidate.sign(&input).await.map(|_| ());
+            // Independently issue genuine protocol evidence so the issuer's
+            // profile check cannot mask a verifier omission.
+            let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
+            let encoded = resign_mdoc(&encoded, &certs, |document, _| {
+                document
+                    .issuer_signed
+                    .issuer_auth
+                    .cose_sign1
+                    .unprotected
+                    .rest
+                    .iter_mut()
+                    .find(|(label, _)| *label == coset::Label::Int(33))
+                    .unwrap()
+                    .1 = ciborium::Value::Array(
+                    chain.iter().cloned().map(ciborium::Value::Bytes).collect(),
+                );
+            });
+            let verification = candidate
+                .verify_mdoc(&PresentedCredential {
+                    format: CredentialFormat::MsoMdoc,
+                    encoded: encoded.into(),
+                    expected_nonce: "verifier-nonce".into(),
+                    expected_audience: "https://verifier.example".into(),
+                    mdoc_session_transcript: Some(transcript.into()),
+                    additional_trust_anchors: vec![root.der().to_vec()].into(),
+                })
+                .map(|_| ());
+            let expected = if matches!(case, "valid" | "changed_dn_valid_san") {
+                Ok(())
+            } else {
+                Err(CredentialTrustError::UntrustedIssuer)
+            };
+            assert_eq!((issuance, verification), (expected, expected), "{case}");
+        }
+    });
+}
+
+#[test]
+fn mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link() {
+    let mut params = None;
+    let mut key = None;
+    let certs = certificate_fixture_with_wire_edit(
+        "issuer.example",
+        KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+        true,
+        |ca, _| params = Some(ca.clone()),
+        |der, ca_key| {
+            key = Some(KeyPair::from_pem(&ca_key.serialize_pem()).unwrap());
+            der
+        },
+    );
+    let mut newest_params = params.unwrap();
+    newest_params.use_authority_key_identifier_extension = true;
+    let root_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut root_params = newest_params.clone();
+    root_params.use_authority_key_identifier_extension = false;
+    root_params.not_after -= time::Duration::days(180);
+    root_params.key_identifier_method =
+        rcgen::KeyIdMethod::PreSpecified(sha1::Sha1::digest(root_key.public_key_raw()).to_vec());
+    let parent_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut parent_params = root_params.clone();
+    parent_params.use_authority_key_identifier_extension = true;
+    parent_params.key_identifier_method =
+        rcgen::KeyIdMethod::PreSpecified(sha1::Sha1::digest(parent_key.public_key_raw()).to_vec());
+    let root = CertifiedIssuer::self_signed(root_params, root_key).unwrap();
+    let parent = CertifiedIssuer::signed_by(parent_params, parent_key, &root).unwrap();
+    let newest = newest_params
+        .signed_by(key.as_ref().unwrap(), &parent)
+        .unwrap();
+    let (_, leaf) = x509_parser::parse_x509_certificate(&certs.leaf_der).unwrap();
+    let chain = vec![
+        certs.leaf_der.clone(),
+        newest.der().to_vec(),
+        parent.der().to_vec(),
+    ];
+    // The parent link is bounded by an older root. Its own self-signed root
+    // may live longer, so that link's expiry cannot bound the newer link.
+    // This exercises profile semantics independently of path-engine support
+    // for multiple self-issued intermediates with pathLenConstraint zero.
+    assert_eq!(
+        super::mdoc::check_mdoc_issuer_profiles(&leaf, &chain, root.der(), |_| {}),
+        Ok(()),
+    );
 }
 
 #[test]
@@ -1311,31 +1531,39 @@ fn mdoc_mdl_binary_elements_require_base64url_and_encode_as_bstr() {
 }
 
 #[test]
-fn sd_jwt_chain_and_combined_anchor_validation_fail_closed() {
+fn sd_jwt_chain_and_scoped_anchor_validation_fail_closed() {
     let certs = certificate_fixture("issuer.example");
     let crypto = crypto_with_certificate(
         nazo_key_management::KeyManager::for_test(Algorithm::ES256),
         &certs,
         crate::policy::Openid4vcRevocationPolicy::Disabled,
     );
+    let x5c = [STANDARD.encode(&certs.leaf_der)];
     let valid = crypto
-        .validate_sd_jwt_chain(&[STANDARD.encode(&certs.leaf_der)], &[])
+        .validate_sd_jwt_chain(&x5c, &[])
         .expect("valid SD-JWT chain");
     assert_eq!(valid.certificates, vec![certs.leaf_der.clone()]);
-    assert_eq!(
+    assert!(!valid.scoped_anchor_authenticated);
+    assert!(
         crypto
-            .combined_trust_anchors(std::slice::from_ref(&certs.ca_der))
+            .validate_sd_jwt_chain(&x5c, std::slice::from_ref(&certs.ca_der))
             .unwrap()
-            .len(),
-        1
+            .scoped_anchor_authenticated
     );
     let other_certs = certificate_fixture("other.example");
-    assert_eq!(
+    let other_x5c = [STANDARD.encode(&other_certs.leaf_der)];
+    assert!(crypto.validate_sd_jwt_chain(&other_x5c, &[]).is_err());
+    assert!(
         crypto
-            .combined_trust_anchors(std::slice::from_ref(&other_certs.ca_der))
+            .validate_sd_jwt_chain(&other_x5c, std::slice::from_ref(&other_certs.ca_der))
             .unwrap()
-            .len(),
-        2
+            .scoped_anchor_authenticated
+    );
+    assert!(
+        !crypto
+            .validate_sd_jwt_chain(&x5c, std::slice::from_ref(&other_certs.ca_der))
+            .unwrap()
+            .scoped_anchor_authenticated
     );
     assert!(crypto.validate_sd_jwt_chain(&[], &[]).is_err());
     assert!(matches!(
@@ -1343,11 +1571,11 @@ fn sd_jwt_chain_and_combined_anchor_validation_fail_closed() {
         Err(CredentialTrustError::InvalidEncoding)
     ));
     assert!(matches!(
-        crypto.combined_trust_anchors(&[vec![1, 2, 3]]),
+        crypto.validate_sd_jwt_chain(&x5c, &[vec![1, 2, 3]]),
         Err(CredentialTrustError::InvalidEncoding)
     ));
     assert!(matches!(
-        crypto.combined_trust_anchors(&[certs.leaf_der]),
+        crypto.validate_sd_jwt_chain(&x5c, &[certs.leaf_der]),
         Err(CredentialTrustError::UntrustedIssuer)
     ));
 }

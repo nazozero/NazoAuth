@@ -24,6 +24,13 @@ use crate::CredentialTrustError;
 
 const INVALID: CredentialTrustError = CredentialTrustError::UntrustedIssuer;
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Profile {
+    DocumentSigner,
+    IacaRoot,
+    IacaLink,
+}
+
 /// Checks the additional DS constraints in ISO 18013-5:2021 Annex B.1.1/B.1.4.
 /// The protocol core owns SPKI/key encoding; the existing RFC 5280 engine owns
 /// version 3, matching signature identifiers and exact issuer/subject path names.
@@ -31,7 +38,7 @@ const INVALID: CredentialTrustError = CredentialTrustError::UntrustedIssuer;
 pub fn check_mdoc_document_signer_profile(
     certificate: &X509Certificate<'_>,
 ) -> Result<(), CredentialTrustError> {
-    check_profile(certificate, false)
+    check_profile(certificate, Profile::DocumentSigner)
 }
 
 /// Checks an IACA root's ISO 18013-5 Annex B.1.2 profile at material admission,
@@ -41,13 +48,44 @@ pub fn check_mdoc_document_signer_profile(
 pub fn check_mdoc_iaca_profile(
     certificate: &X509Certificate<'_>,
 ) -> Result<(), CredentialTrustError> {
-    check_profile(certificate, true)
+    check_profile(certificate, Profile::IacaRoot)
+}
+
+/// Checks an authenticated IACA rollover link against its actual issuing CA.
+/// Annex B.1.3 binds its AKI to that CA's SKI. If the issuer is the authenticated
+/// root, its validity also bounds the link's expiry. A cross-signed issuer link
+/// does not establish the expiry of its corresponding self-signed root.
+/// The existing path engine owns certificate signatures and exact path names.
+pub fn check_mdoc_iaca_link_profile(
+    certificate: &X509Certificate<'_>,
+    issuer: &X509Certificate<'_>,
+    issuer_is_root: bool,
+) -> Result<(), CredentialTrustError> {
+    check_profile(certificate, Profile::IacaLink)?;
+    if issuer_is_root && certificate.validity().not_after > issuer.validity().not_after {
+        return Err(INVALID);
+    }
+    if certificate.subject().as_raw() != certificate.issuer().as_raw()
+        && certificate
+            .subject_alternative_name()
+            .map_err(|_| INVALID)?
+            .is_none_or(|extension| {
+                !extension.value.general_names.iter().any(|name| {
+                    matches!(name, GeneralName::DirectoryName(name)
+                        if name.as_raw() == certificate.subject().as_raw())
+                })
+            })
+    {
+        return Err(INVALID);
+    }
+    check_authority_key_binding(certificate, issuer)
 }
 
 fn check_profile(
     certificate: &X509Certificate<'_>,
-    iaca: bool,
+    profile: Profile,
 ) -> Result<(), CredentialTrustError> {
+    let iaca = profile != Profile::DocumentSigner;
     let serial = certificate.raw_serial();
     let duration = certificate.validity().not_after.timestamp()
         - certificate.validity().not_before.timestamp();
@@ -75,21 +113,23 @@ fn check_profile(
         {
             return Err(INVALID);
         }
-        let not_before = Timestamp::from_second(certificate.validity().not_before.timestamp())
-            .map_err(|_| INVALID)?;
-        // Calendar years, including February month-end clamping; not a fixed
-        // 7305-day approximation that changes at Gregorian century boundaries.
-        let latest = Offset::UTC
-            .to_datetime(not_before)
-            .checked_add(Span::new().years(20))
-            .map_err(|_| INVALID)?;
-        let latest = Offset::UTC.to_timestamp(latest).map_err(|_| INVALID)?;
-        if certificate.version() != X509Version::V3
-            || certificate.signature_algorithm != certificate.tbs_certificate.signature
-            || certificate.subject().as_raw() != certificate.issuer().as_raw()
-            || certificate.validity().not_after.timestamp() > latest.as_second()
-        {
-            return Err(INVALID);
+        if profile == Profile::IacaRoot {
+            let not_before = Timestamp::from_second(certificate.validity().not_before.timestamp())
+                .map_err(|_| INVALID)?;
+            // Calendar years, including February month-end clamping; not a fixed
+            // 7305-day approximation that changes at Gregorian century boundaries.
+            let latest = Offset::UTC
+                .to_datetime(not_before)
+                .checked_add(Span::new().years(20))
+                .map_err(|_| INVALID)?;
+            let latest = Offset::UTC.to_timestamp(latest).map_err(|_| INVALID)?;
+            if certificate.version() != X509Version::V3
+                || certificate.signature_algorithm != certificate.tbs_certificate.signature
+                || certificate.subject().as_raw() != certificate.issuer().as_raw()
+                || certificate.validity().not_after.timestamp() > latest.as_second()
+            {
+                return Err(INVALID);
+            }
         }
         let spki = certificate.public_key();
         let parameters = spki.algorithm.parameters.as_ref().ok_or(INVALID)?;
@@ -114,7 +154,7 @@ fn check_profile(
         if point.first() != Some(&4) || point.len() != 1 + 2 * width {
             return Err(INVALID);
         }
-        // The existing self-signature verifier validates this point using the
+        // The existing signature/path verifier validates this point using the
         // selected curve; this profile does not implement curve arithmetic.
     }
     subject_country(certificate)?;
@@ -146,8 +186,15 @@ fn check_profile(
     }
 
     let mut seen = HashSet::with_capacity(certificate.extensions().len());
-    let (mut ku, mut eku, mut ski, mut aki, mut ian, mut crldp, mut constraints) =
-        (false, iaca, false, iaca, false, false, !iaca);
+    let (mut ku, mut eku, mut ski, mut aki, mut ian, mut crldp, mut constraints) = (
+        false,
+        iaca,
+        false,
+        profile == Profile::IacaRoot,
+        false,
+        false,
+        !iaca,
+    );
     for extension in certificate.extensions() {
         if !seen.insert(&extension.oid)
             || [
@@ -191,7 +238,7 @@ fn check_profile(
                 }
                 ski = true;
             }
-            ParsedExtension::AuthorityKeyIdentifier(value) if !iaca => {
+            ParsedExtension::AuthorityKeyIdentifier(value) if profile != Profile::IacaRoot => {
                 if value
                     .key_identifier
                     .as_ref()
@@ -291,6 +338,13 @@ pub fn check_mdoc_issuer_binding(
     {
         return Err(INVALID);
     }
+    check_authority_key_binding(leaf, issuer)
+}
+
+fn check_authority_key_binding(
+    leaf: &X509Certificate<'_>,
+    issuer: &X509Certificate<'_>,
+) -> Result<(), CredentialTrustError> {
     let aki = leaf
         .get_extension_unique(&oid!(2.5.29.35))
         .map_err(|_| INVALID)?

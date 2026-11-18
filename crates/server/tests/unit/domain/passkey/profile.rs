@@ -50,7 +50,7 @@ fn normalize_passkey_label(value: Option<String>) -> Result<String, HttpResponse
     })
 }
 
-fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {
+fn normalize_ceremony_id(value: &str) -> Result<&str, HttpResponse> {
     nazo_identity::passkey::normalize_ceremony_id(value).map_err(|_| {
         authorization_error_response(
             StatusCode::BAD_REQUEST,

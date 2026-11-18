@@ -102,8 +102,10 @@ decision. NazoAuth completes its existing certificate path, revocation and MSO
 status checks before `CredentialVerifierPort` returns `VerifiedCredential`.
 Authenticated claims are projected from borrowed CBOR directly into the final
 owned JSON result. Signed envelopes, item salts and MSO digest maps remain in
-the decoded presentation buffer. Only the holder key and certificate chain
-retained across the existing status-verification boundary are materialized.
+the decoded presentation buffer. The holder key is materialized for the result;
+certificate DER stays borrowed through path, profile and revocation checks and
+is copied only when an MSO status reference requires retention across the
+asynchronous status boundary.
 There is no assessment override or second device-signature calculation.
 
 | Responsibility | Authority | Regression contract |
@@ -116,6 +118,7 @@ There is no assessment override or second device-signature calculation.
 | Issuer X.509 trust and time | Core checks MSO `signed` within the DS validity interval; NazoAuth's AWS-LC-backed path owner uses the same current time as MSO validity and certificate revocation | `mdoc_verification_rejects_expired_ds_even_when_mso_is_current`, certificate-path and historical whole-leap-second regressions |
 | Document Signer certificate profile | Shared `nazo-digital-credentials::mdoc_certificate` checks additional Annex B fields at signing, verification and native material admission; the existing path engine and core retain their own checks | `mdoc_verification_requires_document_signer_profile`, `mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding` and keyctl material regressions |
 | IACA root profile | Signing and verification check the actual authenticated root through the same shared profile; material admission also checks self-signature, current time, tenant and publication address | `mdoc_issuance_and_verification_require_authenticated_iaca_profile`, `mdoc_verification_checks_root_profile_beyond_an_iaca_link`, `mdoc_import_binds_the_active_root_and_enforces_its_profile` |
+| IACA rollover link profile | Every intermediate in the authenticated ordered path uses the Annex B.1.3 profile, including issuer-key binding and the changed-DN directory name | `mdoc_issuance_and_verification_require_iaca_link_profiles`, `mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link` |
 | mDL issuer attributes | Disclosed `issuing_country` matches DS country; disclosed `issuing_jurisdiction` matches DS state when that state exists | `authenticated_mdl_disclosures_match_the_document_signer_country`, `mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state` |
 | Certificate revocation | Existing `CertificateRevocationPolicy` and authenticated path anchor | Missing/stale snapshots, known revocation and scoped-unknown status regressions |
 | MSO status presence and mechanism policy | Core preserves the complete authenticated CBOR status; NazoAuth accepts only the exact supported `status_list` shape | Unsupported, tagged, duplicate or additional mechanisms fail closed; status presence is never inferred from a lossy JSON conversion |
@@ -192,6 +195,20 @@ authenticates the self-signature and binds the material to its tenant and actual
 publication route. See
 [managed mdoc state](../operations/mdoc-shared-state.md) for historical CRL
 address retention and explicit rotation.
+
+IACA rollover links share the CA key, serial, contact, CRL and extension rules.
+Each link requires critical `keyCertSign`/`cRLSign`-only KU, critical CA constraints
+with path length zero, and a noncritical AKI matching its actual issuer's SKI.
+A link whose subject DN differs from its issuer DN also carries that new subject
+DN as a `directoryName` in its noncritical SAN. A link signed directly by the
+authenticated root cannot expire after that root. An intermediate link's expiry
+does not establish the lifetime of its corresponding self-signed root.
+These checks reuse the existing path result and parsed CA certificates; they do
+not repeat signature verification. The current certificate backend accepts
+direct-root paths and paths with one IACA link; its path-length calculation
+rejects multiple self-issued CA links. For later rollovers, configure the newer
+independently authenticated IACA root as a trust anchor and present the chain
+ending at that root.
 
 The issuer omits configured trust anchors from the emitted `x5chain` by exact
 certificate identity. For interoperability, the receiving path owner still

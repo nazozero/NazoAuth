@@ -131,7 +131,7 @@ It drives one-shot application and background-batch futures itself. Neither
 protocol decisions nor discovery rules depend on the compilation target.
 
 The supported WASM runtime supplies JavaScript `Date`, `performance` and
-`crypto.getRandomValues` through the libraries' WASM bindings. Chrono provides
+`crypto.getRandomValues` through the libraries' WASM bindings. Jiff provides
 UTC wall time, UUID supplies timestamped identifiers, `getrandom` supplies
 cryptographic entropy, and `web-time` provides the portable clock operations
 that the standard library cannot execute on this target. Native clock calls
@@ -150,6 +150,10 @@ generations retain parsed Ed25519, P-256 and RSA key pairs for signatures and
 public JWK projection. The backend validates standard Ed25519 PKCS#8 v1 and v2
 inputs; generated storage encodings are unchanged. Cargo selects the backend
 without a runtime dispatch layer.
+
+Each key generation also owns decoded OpenID4VC certificate DER shared by verifier
+requests and pinned signing leases; path selection, validity and revocation checks
+remain at the request boundary, and scoped trust anchors are borrowed directly.
 
 The WebAuthn dependency enables `nazo-passkey/aws-lc` to reuse native AWS-LC for
 ES256 verification. Its WASM target retains RustCrypto ES256, and Ed25519 keeps

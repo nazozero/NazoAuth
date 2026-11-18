@@ -169,7 +169,7 @@ async fn load_user_passkeys(
         })
 }
 
-fn passkey_user_handle(user: &DatabaseUserFixture) -> Vec<u8> {
+fn passkey_user_handle(user: &DatabaseUserFixture) -> [u8; 32] {
     nazo_identity::passkey::passkey_user_handle(
         nazo_identity::TenantId::new(user.tenant_id).expect("test tenant ID must be valid"),
         nazo_identity::UserId::new(user.id).expect("test user ID must be valid"),

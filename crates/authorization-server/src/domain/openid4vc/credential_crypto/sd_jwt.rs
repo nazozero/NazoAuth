@@ -432,10 +432,10 @@ pub(super) fn validate_sd_jwt_chain(
     let leaf_der = certificates
         .first()
         .ok_or(CredentialTrustError::UntrustedIssuer)?;
-    let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
+    let trust_material = crypto.credential_trust_material(additional_trust_anchors)?;
     let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(
         &certificates,
-        &anchors,
+        trust_material.trust_anchors_der(),
         additional_trust_anchors,
     )
     .map_err(|_| CredentialTrustError::UntrustedIssuer)?;

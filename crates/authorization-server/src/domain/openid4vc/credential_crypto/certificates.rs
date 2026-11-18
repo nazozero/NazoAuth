@@ -2,8 +2,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_digital_credentials::{
     CertificateRevocationPolicy, CredentialTrustError, VcIssuerTrustPolicy,
 };
-use nazo_key_management::{KeyManager, Openid4vcPublicMaterial, Openid4vcSigningLease};
+use nazo_key_management::{KeyManager, Openid4vcCertificates, Openid4vcSigningLease};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 
 use super::super::crypto_helpers::{parse_pem_certificates, parse_x509, verify_openid4vc_chain};
 use super::Openid4vcCredentialCrypto;
@@ -70,8 +71,8 @@ pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Ve
 /// Prepare after dependency I/O and consume at the signing boundary.
 pub(crate) struct Openid4vcSigningMaterial {
     pub(super) lease: Openid4vcSigningLease,
-    pub(super) certificate_chain_der: Vec<Vec<u8>>,
-    trust_anchor_der: Vec<u8>,
+    certificate_chain_len: usize,
+    trust_anchor_index: usize,
 }
 
 impl Openid4vcCredentialCrypto {
@@ -80,10 +81,13 @@ impl Openid4vcCredentialCrypto {
         issuer_trust_policy: VcIssuerTrustPolicy,
         revocation_policy: crate::policy::Openid4vcRevocationPolicy,
     ) -> anyhow::Result<Self> {
-        let material = keyset.openid4vc_public_material().ok_or_else(|| {
+        let material = keyset.openid4vc_certificates().ok_or_else(|| {
             anyhow::anyhow!("OpenID4VC managed certificate material is unavailable")
         })?;
-        validate_public_material(&material)?;
+        verify_openid4vc_chain(
+            material.certificate_chain_der(),
+            material.trust_anchors_der(),
+        )?;
         Ok(Self {
             keyset,
             issuer_trust_policy,
@@ -104,27 +108,25 @@ impl Openid4vcCredentialCrypto {
         signing_material(lease)
     }
 
-    pub(super) fn combined_trust_anchors(
+    pub(super) fn credential_trust_material(
         &self,
         additional: &[Vec<u8>],
-    ) -> Result<Vec<Vec<u8>>, CredentialTrustError> {
+    ) -> Result<Arc<Openid4vcCertificates>, CredentialTrustError> {
         let material = self
             .keyset
-            .openid4vc_public_material()
+            .openid4vc_certificates()
             .ok_or(CredentialTrustError::UntrustedIssuer)?;
-        let mut anchors =
-            parse_trust_anchors(&material).map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+        if material.trust_anchors_der().is_empty() {
+            return Err(CredentialTrustError::UntrustedIssuer);
+        }
         for anchor in additional {
             let (_, certificate) = x509_parser::parse_x509_certificate(anchor)
                 .map_err(|_| CredentialTrustError::InvalidEncoding)?;
             if !certificate.is_ca() {
                 return Err(CredentialTrustError::UntrustedIssuer);
             }
-            if !anchors.contains(anchor) {
-                anchors.push(anchor.clone());
-            }
         }
-        Ok(anchors)
+        Ok(material)
     }
 
     pub(super) fn current_revocation_policy(&self) -> CertificateRevocationPolicy {
@@ -150,22 +152,20 @@ impl Openid4vcCredentialCrypto {
 }
 
 impl Openid4vcSigningMaterial {
-    pub(super) fn leaf_der(&self) -> &[u8] {
-        &self.certificate_chain_der[0]
+    pub(super) fn certificate_chain_der(&self) -> &[Vec<u8>] {
+        &self.lease.certificates().certificate_chain_der()[..self.certificate_chain_len]
     }
 
-    pub(super) fn issuer_der(&self) -> &[u8] {
-        self.certificate_chain_der
-            .get(1)
-            .map_or(self.trust_anchor_der.as_slice(), Vec::as_slice)
+    pub(super) fn leaf_der(&self) -> &[u8] {
+        &self.certificate_chain_der()[0]
     }
 
     pub(super) fn trust_anchor_der(&self) -> &[u8] {
-        &self.trust_anchor_der
+        &self.lease.certificates().trust_anchors_der()[self.trust_anchor_index]
     }
 
     pub(super) fn x5c(&self) -> Vec<String> {
-        self.certificate_chain_der
+        self.certificate_chain_der()
             .iter()
             .map(|certificate| STANDARD.encode(certificate))
             .collect()
@@ -196,41 +196,27 @@ impl Openid4vcSigningMaterial {
 }
 
 fn signing_material(lease: Openid4vcSigningLease) -> anyhow::Result<Openid4vcSigningMaterial> {
-    let mut certificates =
-        parse_pem_certificates(lease.material().certificate_chain_pem.as_bytes())?;
+    let certificates = lease.certificates().certificate_chain_der();
     if certificates.is_empty() {
         anyhow::bail!("OpenID4VC signing certificate chain is empty");
     }
-    let mut trust_anchors = parse_trust_anchors(lease.material())?;
-    let authenticated = verify_openid4vc_chain(&certificates, &trust_anchors)?;
+    let trust_anchors = lease.certificates().trust_anchors_der();
+    let authenticated = verify_openid4vc_chain(certificates, trust_anchors)?;
     let anchor_index = trust_anchors
         .iter()
         .position(|anchor| anchor.as_slice() == authenticated)
         .expect("verified path returns an explicit loaded trust anchor");
-    certificates.retain(|certificate| !trust_anchors.contains(certificate));
+    // The path verifier rejects every presented configured anchor except its
+    // authenticated terminal root. Exclude that root from the wire chain.
+    let certificate_chain_len = certificates.len()
+        - usize::from(
+            certificates
+                .last()
+                .is_some_and(|der| der.as_slice() == authenticated),
+        );
     Ok(Openid4vcSigningMaterial {
         lease,
-        certificate_chain_der: certificates,
-        trust_anchor_der: trust_anchors.swap_remove(anchor_index),
+        certificate_chain_len,
+        trust_anchor_index: anchor_index,
     })
-}
-
-fn validate_public_material(material: &Openid4vcPublicMaterial) -> anyhow::Result<()> {
-    let certificates = parse_pem_certificates(material.certificate_chain_pem.as_bytes())?;
-    let anchors = parse_trust_anchors(material)?;
-    verify_openid4vc_chain(&certificates, &anchors).map(|_| ())
-}
-
-fn parse_trust_anchors(material: &Openid4vcPublicMaterial) -> anyhow::Result<Vec<Vec<u8>>> {
-    let mut anchors = Vec::new();
-    for der in parse_pem_certificates(material.trust_anchors_pem.as_bytes())? {
-        let (_, parsed) = parse_x509(&der, "OpenID4VC trust certificate")?;
-        if parsed.is_ca() && !anchors.contains(&der) {
-            anchors.push(der);
-        }
-    }
-    if anchors.is_empty() {
-        anyhow::bail!("OpenID4VC trust anchor set must not be empty");
-    }
-    Ok(anchors)
 }

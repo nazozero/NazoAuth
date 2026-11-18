@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use nazo_auth::SigningPurpose;
+use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CertificateRevocationEntry, CertificateRevocationSnapshot, CertificateRevocationStatus,
     certificate_identity,
@@ -1257,6 +1257,77 @@ fn local_private_key_export_requires_a_local_database_key() {
     with_external["keys"].as_array_mut().unwrap().push(external);
     let loaded = load_payload(None, &with_external).unwrap();
     assert!(local_private_key_pem(&loaded, "external").is_err());
+}
+
+#[tokio::test]
+async fn openid4vc_certificate_projection_and_signing_lease_stay_on_their_generation() {
+    let (manager, _, _, _) = database_fixture().await;
+    let revision = manager.database_openid4vc_state().await.unwrap().revision;
+    let first = openid4vc_fixture(None, false);
+    let first_kid = first.material.public.signing_kid.clone();
+    let committed = manager
+        .database_commit_openid4vc(revision, first.material, Some(first.private_key_pem))
+        .await
+        .unwrap();
+    let original = manager.openid4vc_certificates().unwrap();
+    let lease = manager.prepare_openid4vc_signing().unwrap();
+    assert!(Arc::ptr_eq(
+        &original,
+        &manager.openid4vc_certificates().unwrap()
+    ));
+    assert!(std::ptr::eq(lease.certificates(), original.as_ref()));
+
+    let replacement = openid4vc_fixture(None, false);
+    let replacement_kid = replacement.material.public.signing_kid.clone();
+    manager
+        .database_commit_openid4vc(
+            committed.revision,
+            replacement.material,
+            Some(replacement.private_key_pem),
+        )
+        .await
+        .unwrap();
+    let current = manager.openid4vc_certificates().unwrap();
+    assert!(!Arc::ptr_eq(&original, &current));
+    assert_ne!(
+        original.certificate_chain_der(),
+        current.certificate_chain_der()
+    );
+    assert_eq!(lease.kid(), first_kid);
+    assert_eq!(
+        manager.prepare_openid4vc_signing().unwrap().kid(),
+        replacement_kid
+    );
+    assert!(std::ptr::eq(lease.certificates(), original.as_ref()));
+
+    // A lease retained across a real rotation must still sign with the key
+    // authenticated by its own certificate, never the newly published one.
+    let signing_input = b"OpenID4VC generation-bound certificate";
+    let signature = lease
+        .sign(SignRequest {
+            purpose: SigningPurpose::Credential,
+            algorithm: "ES256",
+            signing_input,
+        })
+        .await
+        .unwrap();
+    for (certificates, accepted) in [(original.as_ref(), true), (current.as_ref(), false)] {
+        let (_, leaf) =
+            x509_parser::parse_x509_certificate(&certificates.certificate_chain_der()[0]).unwrap();
+        let key = nazo_crypto::jwt::VerificationKey::from_ec_sec1(
+            leaf.public_key().subject_public_key.data.as_ref(),
+        );
+        assert_eq!(
+            nazo_crypto::signature::verify(
+                nazo_crypto::jwt::Algorithm::ES256,
+                &key,
+                signing_input,
+                signature.as_bytes(),
+            )
+            .is_ok(),
+            accepted,
+        );
+    }
 }
 
 #[tokio::test]

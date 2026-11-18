@@ -422,7 +422,7 @@ impl CertificateRevocationPolicy {
     pub fn check_chain_with_scoped_trust(
         &self,
         issuer: Option<&str>,
-        certificates: &[Vec<u8>],
+        certificates: &[impl AsRef<[u8]>],
         now: Timestamp,
         scoped_anchor_authenticated: bool,
     ) -> Result<(), CredentialTrustError> {
@@ -432,7 +432,7 @@ impl CertificateRevocationPolicy {
     fn check_chain_inner(
         &self,
         issuer: Option<&str>,
-        certificates: &[Vec<u8>],
+        certificates: &[impl AsRef<[u8]>],
         now: Timestamp,
         scoped_anchor_authenticated: bool,
     ) -> Result<(), CredentialTrustError> {
@@ -462,7 +462,7 @@ impl CertificateRevocationPolicy {
                 _ => CredentialTrustError::RevocationSnapshotUnavailable,
             })?;
         for certificate in certificates {
-            let identity = certificate_identity(certificate);
+            let identity = certificate_identity(certificate.as_ref());
             match snapshot.status_for(issuer, &identity) {
                 Some(CertificateRevocationStatus::Revoked) => {
                     return Err(CredentialTrustError::RevokedCertificate);

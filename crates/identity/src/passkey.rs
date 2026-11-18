@@ -37,10 +37,10 @@ impl fmt::Display for PasskeyPolicyError {
 impl Error for PasskeyPolicyError {}
 
 #[must_use]
-pub fn passkey_user_handle(tenant_id: TenantId, user_id: UserId) -> Vec<u8> {
-    let mut handle = Vec::with_capacity(32);
-    handle.extend_from_slice(tenant_id.as_uuid().as_bytes());
-    handle.extend_from_slice(user_id.as_uuid().as_bytes());
+pub fn passkey_user_handle(tenant_id: TenantId, user_id: UserId) -> [u8; 32] {
+    let mut handle = [0; 32];
+    handle[..16].copy_from_slice(tenant_id.as_uuid().as_bytes());
+    handle[16..].copy_from_slice(user_id.as_uuid().as_bytes());
     handle
 }
 
@@ -55,7 +55,7 @@ pub fn normalize_passkey_label(value: Option<&str>) -> Result<String, PasskeyPol
     Ok(label.to_owned())
 }
 
-pub fn normalize_ceremony_id(value: &str) -> Result<String, PasskeyPolicyError> {
+pub fn normalize_ceremony_id(value: &str) -> Result<&str, PasskeyPolicyError> {
     let value = value.trim();
     if value.len() < 32
         || value.len() > 256
@@ -65,7 +65,7 @@ pub fn normalize_ceremony_id(value: &str) -> Result<String, PasskeyPolicyError> 
     {
         return Err(PasskeyPolicyError::InvalidCeremonyId);
     }
-    Ok(value.to_owned())
+    Ok(value)
 }
 
 #[derive(Clone, Debug)]
@@ -318,7 +318,7 @@ where
             normalize_ceremony_id(ceremony_id).map_err(|_| PasskeyError::InvalidCeremonyId)?;
         let stored = self
             .ceremonies
-            .take_authentication(&ceremony_id)
+            .take_authentication(ceremony_id)
             .await
             .map_err(ceremony_read_error)?
             .ok_or(PasskeyError::CeremonyExpired)?;
@@ -463,7 +463,7 @@ where
             normalize_ceremony_id(ceremony_id).map_err(|_| PasskeyError::InvalidCeremonyId)?;
         let stored = self
             .ceremonies
-            .take_registration(&ceremony_id)
+            .take_registration(ceremony_id)
             .await
             .map_err(ceremony_read_error)?
             .ok_or(PasskeyError::CeremonyExpired)?;

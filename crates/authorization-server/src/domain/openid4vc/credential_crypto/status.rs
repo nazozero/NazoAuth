@@ -398,11 +398,15 @@ fn status_key(
     if format == CredentialFormat::SdJwtVc {
         // HAIP excludes trust anchors from x5c. Authenticate the presented chain,
         // then bind its signing key to the already authenticated credential key.
-        let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
-        if chain.iter().any(|der| anchors.contains(der)) {
+        let trust_material = crypto.credential_trust_material(additional_trust_anchors)?;
+        let anchors = trust_material.trust_anchors_der();
+        if chain
+            .iter()
+            .any(|der| anchors.contains(der) || additional_trust_anchors.contains(der))
+        {
             return Err(INVALID);
         }
-        let anchor = verify_openid4vc_chain_with_scoped(chain, &anchors, additional_trust_anchors)
+        let anchor = verify_openid4vc_chain_with_scoped(chain, anchors, additional_trust_anchors)
             .map_err(|_| INVALID)?;
         if leaf.public_key().raw != credential_signer.public_key().raw {
             return Err(INVALID);
@@ -418,11 +422,17 @@ fn status_key(
                     .any(|der| der.as_slice() == anchor),
             )?;
     } else {
-        let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
+        let trust_material = crypto.credential_trust_material(additional_trust_anchors)?;
+        let anchors = trust_material.trust_anchors_der();
         let issuer = issuer_chain
             .iter()
             .skip(1)
             .chain(anchors.iter())
+            .chain(
+                additional_trust_anchors
+                    .iter()
+                    .filter(|anchor| !anchors.contains(anchor)),
+            )
             .find(|der| {
                 parse_x509(der, "IACA").is_ok_and(|(_, ca)| {
                     ca.is_ca()

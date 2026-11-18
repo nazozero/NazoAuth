@@ -6,7 +6,8 @@ use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
     mdoc_certificate::{
-        check_mdoc_document_signer_profile, check_mdoc_iaca_profile, check_mdoc_issuer_binding,
+        check_mdoc_document_signer_profile, check_mdoc_iaca_link_profile, check_mdoc_iaca_profile,
+        check_mdoc_issuer_binding,
     },
 };
 use nazo_mdoc::{
@@ -79,8 +80,9 @@ pub(super) async fn sign(
     check_mdoc_document_signer_profile(&certificate)?;
     check_mdoc_issuer_profiles(
         &certificate,
-        signing_material.issuer_der(),
+        signing_material.certificate_chain_der(),
         signing_material.trust_anchor_der(),
+        |_| {},
     )?;
     validate_mdl_issuer_attributes(&certificate, &input.payload.credential_type, namespaces)?;
     let not_before =
@@ -110,7 +112,7 @@ pub(super) async fn sign(
             crypto,
             &[],
             &input.payload.issuer,
-            &signing_material.certificate_chain_der,
+            signing_material.certificate_chain_der(),
         )?;
         builder = builder.status_raw(json_to_cbor(
             input.status.as_ref().expect("resolved status reference"),
@@ -132,7 +134,10 @@ pub(super) async fn sign(
         builder = builder.add_namespace(namespace, entries);
     }
     let prepared = builder
-        .prepare(CoseAlgorithm::ES256, signing_material.certificate_chain_der)
+        .prepare(
+            CoseAlgorithm::ES256,
+            signing_material.certificate_chain_der().to_vec(),
+        )
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     let signature = signing_material
         .lease
@@ -325,23 +330,17 @@ pub(super) fn verify(
     let pending = documents
         .pop()
         .ok_or(CredentialTrustError::InvalidEncoding)?;
-    // The certificate chain crosses the asynchronous status boundary after the
-    // decoded presentation is released; copy only that retained evidence.
-    let certificates: Vec<Vec<u8>> = pending
-        .certificates()
-        .iter()
-        .map(|der| der.to_vec())
-        .collect();
-    let trust_anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
+    let trust_material =
+        crypto.credential_trust_material(&presentation.additional_trust_anchors)?;
     let issuer_chain_authority_key_identifiers = verify_mdoc_issuer_certificate_chain(
-        &certificates,
+        pending.certificates(),
         pending.document(),
         now,
-        &trust_anchors,
+        trust_material.trust_anchors_der(),
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
     )?;
-    let (document, mso, _) = pending.into_parts();
+    let (document, mso, certificates) = pending.into_parts();
     let holder_key = mdoc_holder_key(
         mso.device_key_info
             .device_key
@@ -365,24 +364,29 @@ pub(super) fn verify(
         }
         namespaces.insert(namespace.to_owned(), Value::Object(claims));
     }
-    Ok((
-        VerifiedCredential {
-            format: CredentialFormat::MsoMdoc,
-            issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(&certificates[0])),
-            issuer_chain_authority_key_identifiers,
-            credential_type: mso.doc_type.to_owned(),
-            claims: Value::Object(namespaces),
-            holder_key: Some(holder_key),
-            issued_at: Some(from_protocol_time(mso.validity_info.signed)?),
-            expires_at: Some(from_protocol_time(mso.validity_info.valid_until)?),
-            status,
-        },
-        certificates,
-    ))
+    let credential = VerifiedCredential {
+        format: CredentialFormat::MsoMdoc,
+        issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(certificates[0])),
+        issuer_chain_authority_key_identifiers,
+        credential_type: mso.doc_type.to_owned(),
+        claims: Value::Object(namespaces),
+        holder_key: Some(holder_key),
+        issued_at: Some(from_protocol_time(mso.validity_info.signed)?),
+        expires_at: Some(from_protocol_time(mso.validity_info.valid_until)?),
+        status,
+    };
+    // Only credential-status verification retains the chain after this decoded
+    // presentation is released. Ordinary verification keeps every DER borrowed.
+    let retained_certificates = if credential.status.is_some() {
+        certificates.into_iter().map(<[u8]>::to_vec).collect()
+    } else {
+        Vec::new()
+    };
+    Ok((credential, retained_certificates))
 }
 
 fn verify_mdoc_issuer_certificate_chain(
-    certificates: &[Vec<u8>],
+    certificates: &[impl AsRef<[u8]>],
     document: &nazo_mdoc::model::borrowed::IssuerSignedDocumentRef<'_>,
     now: jiff::Timestamp,
     trust_anchors: &[Vec<u8>],
@@ -392,7 +396,7 @@ fn verify_mdoc_issuer_certificate_chain(
     let Some(leaf_der) = certificates.first() else {
         return Err(CredentialTrustError::UntrustedIssuer);
     };
-    let (remainder, leaf) = x509_parser::parse_x509_certificate(leaf_der)
+    let (remainder, leaf) = x509_parser::parse_x509_certificate(leaf_der.as_ref())
         .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
     if !remainder.is_empty() {
         return Err(CredentialTrustError::UntrustedIssuer);
@@ -412,8 +416,11 @@ fn verify_mdoc_issuer_certificate_chain(
     .ok_or(CredentialTrustError::UntrustedIssuer)?;
     // Compare against the actual authenticated issuing CA, including an IACA
     // link when present. A matching name in some other loaded anchor is no proof.
-    let issuer_der = certificates.get(1).map_or(anchor, Vec::as_slice);
-    let issuer = check_mdoc_issuer_profiles(&leaf, issuer_der, anchor)?;
+    let mut identifiers = Vec::new();
+    super::certificates::append_authority_key_identifiers(&leaf, &mut identifiers);
+    check_mdoc_issuer_profiles(&leaf, certificates, anchor, |certificate| {
+        super::certificates::append_authority_key_identifiers(certificate, &mut identifiers);
+    })?;
     if document.doc_type == MDL_DOCTYPE
         && let Some(items) = document.issuer_signed.name_spaces.get(MDL_NAMESPACE)
     {
@@ -442,44 +449,51 @@ fn verify_mdoc_issuer_certificate_chain(
         now,
         scoped_anchor_authenticated,
     )?;
-    // Project authenticated certificates already parsed for the profile. Do not
-    // append the loaded anchor or parse the common single-leaf path again.
-    let mut identifiers = Vec::new();
-    super::certificates::append_authority_key_identifiers(&leaf, &mut identifiers);
-    if certificates.len() > 1 {
-        super::certificates::append_authority_key_identifiers(&issuer, &mut identifiers);
-        for der in &certificates[2..] {
-            let (_, certificate) = x509_parser::parse_x509_certificate(der)
-                .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-            super::certificates::append_authority_key_identifiers(&certificate, &mut identifiers);
-        }
-    }
     Ok(identifiers)
 }
 
 /// Apply the same Annex B profiles after the existing path owner selects the
-/// actual issuer and root. A configured anchor is not exempt from its IACA
-/// profile. Reuse the direct issuer when it is also the root, as in native chains.
-fn check_mdoc_issuer_profiles<'a>(
+/// exact ordered chain and root. Parse each CA once for its profile, bindings
+/// and the verifier's authenticated metadata projection; signing needs no projection.
+pub(super) fn check_mdoc_issuer_profiles(
     leaf: &x509_parser::certificate::X509Certificate<'_>,
-    issuer_der: &'a [u8],
+    certificates: &[impl AsRef<[u8]>],
     anchor_der: &[u8],
-) -> Result<x509_parser::certificate::X509Certificate<'a>, CredentialTrustError> {
-    let (_, issuer) =
-        parse_x509(issuer_der, "mdoc issuer").map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-    check_mdoc_issuer_binding(leaf, &issuer)?;
-    if issuer_der == anchor_der {
-        check_mdoc_iaca_profile(&issuer)?;
-    } else {
-        let (_, anchor) = parse_x509(anchor_der, "mdoc IACA root")
+    mut on_presented_ca: impl FnMut(&x509_parser::certificate::X509Certificate<'_>),
+) -> Result<(), CredentialTrustError> {
+    let (_, root) = parse_x509(anchor_der, "mdoc IACA root")
+        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    check_mdoc_iaca_profile(&root)?;
+    let root_presented = certificates
+        .last()
+        .is_some_and(|der| der.as_ref() == anchor_der);
+    let links = &certificates[1..certificates.len() - usize::from(root_presented)];
+    if let Some((first, rest)) = links.split_first() {
+        let (_, mut link) = parse_x509(first.as_ref(), "mdoc IACA link")
             .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-        check_mdoc_iaca_profile(&anchor)?;
+        check_mdoc_issuer_binding(leaf, &link)?;
+        for der in rest {
+            let (_, issuer) = parse_x509(der.as_ref(), "mdoc IACA link")
+                .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+            check_mdoc_iaca_link_profile(&link, &issuer, false)?;
+            on_presented_ca(&link);
+            link = issuer;
+        }
+        check_mdoc_iaca_link_profile(&link, &root, true)?;
+        on_presented_ca(&link);
+    } else {
+        check_mdoc_issuer_binding(leaf, &root)?;
     }
-    Ok(issuer)
+    // Loaded anchors are not presented issuer metadata. An explicitly transmitted
+    // root remains part of the already authenticated wire chain.
+    if root_presented {
+        on_presented_ca(&root);
+    }
+    Ok(())
 }
 
 pub(super) fn verify_certificate_chain_with_scoped_at<'a>(
-    certificates: &[Vec<u8>],
+    certificates: &[impl AsRef<[u8]>],
     anchors: &'a [Vec<u8>],
     scoped: &'a [Vec<u8>],
     unix_time: i64,
@@ -490,14 +504,17 @@ pub(super) fn verify_certificate_chain_with_scoped_at<'a>(
         .iter()
         .chain(anchors.iter().filter(|anchor| !scoped.contains(anchor)))
     {
-        let path = if certificates.last() == Some(anchor) {
+        let path = if certificates
+            .last()
+            .is_some_and(|certificate| certificate.as_ref() == anchor.as_slice())
+        {
             &certificates[..certificates.len() - 1]
         } else {
             certificates
         };
         let chain: Vec<_> = path
             .iter()
-            .map(|der| nazo_crypto::certificate::CertificateDer::from(der.as_slice()))
+            .map(|der| nazo_crypto::certificate::CertificateDer::from(der.as_ref()))
             .collect();
         if nazo_crypto::certificate::verify_document_signing_chain_at(
             &chain,
