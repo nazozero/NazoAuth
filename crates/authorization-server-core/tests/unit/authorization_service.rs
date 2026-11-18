@@ -523,6 +523,48 @@ fn pushed_request_digest_is_independent_of_hash_map_iteration_order() {
 }
 
 #[test]
+fn pre_migration_par_digest_admits_unchanged_consent_with_subseconds() {
+    for (fraction, canonical) in [("1", "100"), ("1234", "123400"), ("1234567", "123456700")] {
+        let owner = Uuid::from_u128(10);
+        let mut par = pushed();
+        par.issued_at = format!("2023-11-14T22:13:20.{fraction}Z").parse().unwrap();
+        par.expires_at = par.issued_at + SignedDuration::from_mins(10);
+        // These bytes are fixed by the pre-migration consent binding contract.
+        let frozen = format!(
+            r#"{{"client_id":"client-1","params":{{}},"dpop_jkt":null,"mtls_x5t_s256":null,"issued_at":"2023-11-14T22:13:20.{canonical}Z","expires_at":"2023-11-14T22:23:20.{canonical}Z"}}"#,
+        );
+        let expected = blake3::hash(frozen.as_bytes()).to_hex().to_string();
+        assert_eq!(
+            super::pushed_authorization_request_digest(&par).unwrap(),
+            expected
+        );
+
+        let mut bound_consent = consent(owner, Some("request-uri-1"));
+        bound_consent.pushed_request_digest = Some(expected.clone());
+        let store = FakeStore::default();
+        *store.0.consent.lock().unwrap() = Some(bound_consent);
+        *store.0.pushed.lock().unwrap() = Some(par);
+        let service = service(FakeRepository::default(), store.clone());
+        let preview =
+            futures_executor::block_on(service.preview_user_decision("request-1", owner)).unwrap();
+        assert_eq!(
+            preview.consent.pushed_request_digest.as_deref(),
+            Some(expected.as_str())
+        );
+
+        store.0.pushed.lock().unwrap().as_mut().unwrap().expires_at += SignedDuration::from_secs(1);
+        assert!(matches!(
+            futures_executor::block_on(service.preview_user_decision("request-1", owner)),
+            Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(_))
+        ));
+        assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 0);
+        assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+        assert!(store.0.consent.lock().unwrap().is_some());
+        assert!(store.0.pushed.lock().unwrap().is_some());
+    }
+}
+
+#[test]
 fn foreign_user_cannot_consume_an_observed_consent() {
     futures_executor::block_on(foreign_user_cannot_consume_an_observed_consent_async());
 }

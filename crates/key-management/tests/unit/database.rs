@@ -169,6 +169,45 @@ async fn mdoc_publication_is_durable_across_reload_material_commit_and_reseal() 
 }
 
 #[tokio::test]
+async fn mdoc_publication_reuses_pre_migration_snapshot_digest() {
+    let (manager, repository, issuer, _) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    let first = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    let mut saved = repository.snapshot().unwrap();
+    let mut payload =
+        decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut saved).unwrap();
+    // Frozen snapshot bytes used by the previous publisher, independent of
+    // the current Timestamp serializer. Publication freshness is retained below.
+    let frozen_snapshot = r#"{"version":1,"this_update":"2023-11-14T22:13:20.100Z","next_update":"2023-11-15T22:13:20.123400Z","entries":[]}"#;
+    let frozen_source = format!(
+        "[{},{},{}]",
+        serde_json::to_string(&issuer).unwrap(),
+        serde_json::to_string(&first.certificate_chain_der).unwrap(),
+        frozen_snapshot,
+    );
+    let source_hash: [u8; 32] = Sha256::digest(frozen_source.as_bytes()).into();
+    payload["openid4vc"]["public"]["revocation_snapshot"] =
+        serde_json::from_str(frozen_snapshot).unwrap();
+    payload["mdoc_crl_publications"][&issuer]["source_hash"] = json!(source_hash);
+    let revision = saved.revision + 1;
+    repository.replace(Some(
+        persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys).unwrap(),
+    ));
+
+    let again = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    assert_eq!(again.crl_number, first.crl_number);
+    assert_eq!(
+        (again.this_update, again.next_update),
+        (first.this_update, first.next_update)
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, revision);
+    assert_eq!(
+        again.revocation_snapshot,
+        serde_json::from_str::<CertificateRevocationSnapshot>(frozen_snapshot).unwrap()
+    );
+}
+
+#[tokio::test]
 async fn mdoc_publication_concurrent_publishers_share_one_persisted_version() {
     struct SimultaneousReads {
         inner: Arc<MemorySigningKeyRepository>,

@@ -39,6 +39,14 @@ fn snapshot(
 }
 
 #[test]
+fn snapshot_serialization_preserves_pre_migration_identity_bytes() {
+    let frozen = br#"{"version":1,"this_update":"2026-11-17T00:00:00.100Z","next_update":"2026-11-18T00:00:00.123400Z","entries":[{"issuer":"https://issuer.example","certificate":"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","status":"revoked","revoked_at":"2026-11-17T00:00:00.123456700Z"},{"issuer":"https://issuer.example","certificate":"sha256:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","status":"good"}]}"#;
+    let snapshot = CertificateRevocationSnapshot::from_json(frozen).unwrap();
+    assert_eq!(serde_json::to_vec(&snapshot).unwrap(), frozen);
+    assert!(snapshot.entries[1].revoked_at.is_none());
+}
+
+#[test]
 fn required_policy_accepts_an_explicit_good_status() {
     let certificate = certificate_der();
     let initial_snapshot = Arc::new(snapshot(&certificate, CertificateRevocationStatus::Good));

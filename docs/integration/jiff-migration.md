@@ -19,12 +19,18 @@ is distinct from the frozen audit-chain v1 rule below. Nullable timestamps and
 timestamp arrays use the same official adapter. SQL and column types do not
 change with this migration.
 
-## Serialization and audit identity
+## Serialization and persisted identity
 
 Ordinary timestamp-valued JSON fields serialize the typed instant directly.
 Consumers parse the timestamp, rather than requiring a fixed number of trailing
 fractional zeros. String-typed response fields and HTTP headers still require
 owned text.
+
+Consent-bound PAR digests and certificate revocation snapshots preserve their
+0/3/6/9 fractional digits and UTC `Z` timestamp bytes. These persisted identities
+must stay stable across hosts and upgrades: a formatting change must not reject
+an unchanged consent or mint a new CRL publication from unchanged revocation
+facts. The snapshot's optional revocation time uses the same format.
 
 Audit-chain v1 hashes floor-rounded Unix microseconds, including dates before
 1970. Audit-anchor v2 checkpoints and v1 receipt signatures serialize 0/3/6/9

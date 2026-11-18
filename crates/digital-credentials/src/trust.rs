@@ -73,7 +73,11 @@ pub struct CertificateRevocationEntry {
     pub certificate: String,
     pub status: CertificateRevocationStatus,
     /// Time the local authority recorded revocation, retained across CRL refreshes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_snapshot_timestamp"
+    )]
     pub revoked_at: Option<Timestamp>,
 }
 
@@ -95,9 +99,42 @@ pub enum CertificateRevocationStatus {
 #[serde(deny_unknown_fields)]
 pub struct CertificateRevocationSnapshot {
     pub version: u32,
+    #[serde(serialize_with = "serialize_snapshot_timestamp")]
     pub this_update: Timestamp,
+    #[serde(serialize_with = "serialize_snapshot_timestamp")]
     pub next_update: Timestamp,
     pub entries: Vec<CertificateRevocationEntry>,
+}
+
+// The persisted CRL source identity includes these JSON timestamp bytes.
+// Preserve the snapshot's 0/3/6/9-digit UTC format without temporary strings.
+fn serialize_snapshot_timestamp<S: serde::Serializer>(
+    value: &Timestamp,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let nanos = value.subsec_nanosecond();
+    let precision = if nanos == 0 {
+        0
+    } else if nanos % 1_000_000 == 0 {
+        3
+    } else if nanos % 1_000 == 0 {
+        6
+    } else {
+        9
+    };
+    serializer.collect_str(&format_args!("{value:.precision$}"))
+}
+
+fn serialize_optional_snapshot_timestamp<S: serde::Serializer>(
+    value: &Option<Timestamp>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    #[derive(serde::Serialize)]
+    struct SnapshotTimestamp<'a>(
+        #[serde(serialize_with = "serialize_snapshot_timestamp")] &'a Timestamp,
+    );
+
+    serde::Serialize::serialize(&value.as_ref().map(SnapshotTimestamp), serializer)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

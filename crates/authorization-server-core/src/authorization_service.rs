@@ -242,6 +242,25 @@ pub fn prepare_authorization_code(
     }
 }
 
+// Consent retains this digest across hosts and upgrades. Keep its timestamp
+// bytes stable while writing directly into the existing hash serializer.
+fn serialize_par_timestamp<S: serde::Serializer>(
+    value: &Timestamp,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let nanos = value.subsec_nanosecond();
+    let precision = if nanos == 0 {
+        0
+    } else if nanos % 1_000_000 == 0 {
+        3
+    } else if nanos % 1_000 == 0 {
+        6
+    } else {
+        9
+    };
+    serializer.collect_str(&format_args!("{value:.precision$}"))
+}
+
 pub fn pushed_authorization_request_digest(
     request: &PushedAuthorizationRequest,
 ) -> Result<String, AuthorizationPortError> {
@@ -251,7 +270,9 @@ pub fn pushed_authorization_request_digest(
         params: std::collections::BTreeMap<&'a str, &'a str>,
         dpop_jkt: Option<&'a str>,
         mtls_x5t_s256: Option<&'a str>,
+        #[serde(serialize_with = "serialize_par_timestamp")]
         issued_at: &'a Timestamp,
+        #[serde(serialize_with = "serialize_par_timestamp")]
         expires_at: &'a Timestamp,
     }
 
