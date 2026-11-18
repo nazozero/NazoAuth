@@ -1187,7 +1187,9 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
         begin["publicKey"]["challenge"].as_str().unwrap(),
         &fixture.state.settings.identity.passkey.origin,
     );
-    mismatched.id = B64URL.encode(&authenticator.credential_id);
+    // The admitted id/rawId pair is one decoded ID; it still must match the
+    // credential ID authenticated inside attestationObject.
+    mismatched.id = nazo_passkey::CredentialId(authenticator.credential_id.clone());
     let rejected = passkey_registration_finish(
         fixture.state.clone(),
         fixture.request(&sid, &csrf),
