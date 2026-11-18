@@ -144,10 +144,12 @@ ordinary login without authorizing UV initialization. Do not accept it from the
 client JSON. The application separately resolves the session and checks fresh,
 independent OTP or recovery-code evidence for the same tenant and user. The
 HTTP finish request wraps standard `PublicKeyCredential.toJSON()` output under
-`response`. The obsolete flattened wire format and `strict_base64` option have
-been removed. Restart pending ceremonies at the upgrade. See the
-[passkey guide](../features/passkeys.md) for the wire format and the current-assertion
-and subsequent-assertion MFA behavior.
+`response`. NazoAuth owns this HTTP envelope and the pending-ceremony lifecycle;
+`nazo-passkey` supplies the protocol parser and verifier. NazoAuth consumes pending
+state once and reports missing, expired or incompatible state through the existing
+ceremony-expired response. A fresh begin request uses the current verifier state
+without changing stored credentials. See the [passkey guide](../features/passkeys.md)
+for the wire format and MFA behavior.
 
 ## Build one tenant
 

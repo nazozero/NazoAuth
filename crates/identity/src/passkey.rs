@@ -348,6 +348,13 @@ where
             .webauthn
             .finish_authentication(&stored.state, &response, &credential)
             .map_err(|error| {
+                if matches!(
+                    error,
+                    nazo_passkey::Error::InvalidState(_)
+                        | nazo_passkey::Error::CeremonyExpired { .. }
+                ) {
+                    return PasskeyError::CeremonyExpired;
+                }
                 tracing::debug!(
                     error = ?error,
                     user_id = %account.user_id().as_uuid(),
@@ -474,6 +481,9 @@ where
         }
         let credential = match self.webauthn.finish_registration(&stored.state, &response) {
             Ok(credential) => credential,
+            Err(
+                nazo_passkey::Error::InvalidState(_) | nazo_passkey::Error::CeremonyExpired { .. },
+            ) => return Err(PasskeyError::CeremonyExpired),
             Err(nazo_passkey::Error::CredentialExcluded) => {
                 // Preserve the existing duplicate-registration HTTP contract
                 // when the verifier rejects the scoped exclusion before insert.

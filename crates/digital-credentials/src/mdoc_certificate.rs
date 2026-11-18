@@ -34,7 +34,8 @@ pub fn check_mdoc_document_signer_profile(
     check_profile(certificate, false)
 }
 
-/// Checks a newly admitted IACA root's ISO 18013-5 Annex B.1.2 profile.
+/// Checks an IACA root's ISO 18013-5 Annex B.1.2 profile at material admission,
+/// credential issuance and presentation verification.
 /// Its owner separately verifies the self-signature, current validity, tenant
 /// authority and real CRL publication binding. Brainpool keys are unsupported.
 pub fn check_mdoc_iaca_profile(

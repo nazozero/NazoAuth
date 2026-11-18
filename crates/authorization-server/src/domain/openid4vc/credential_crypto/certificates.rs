@@ -160,6 +160,10 @@ impl Openid4vcSigningMaterial {
             .map_or(self.trust_anchor_der.as_slice(), Vec::as_slice)
     }
 
+    pub(super) fn trust_anchor_der(&self) -> &[u8] {
+        &self.trust_anchor_der
+    }
+
     pub(super) fn x5c(&self) -> Vec<String> {
         self.certificate_chain_der
             .iter()

@@ -115,13 +115,22 @@ There is no assessment override or second device-signature calculation.
 | One document per DeviceResponse | NazoAuth selects the HAIP `max_documents = 1` profile at the parsing boundary | Multi-document response cannot hide a session mismatch or be accepted as an optional credential |
 | Issuer X.509 trust and time | Core checks MSO `signed` within the DS validity interval; NazoAuth's AWS-LC-backed path owner uses the same current time as MSO validity and certificate revocation | `mdoc_verification_rejects_expired_ds_even_when_mso_is_current`, certificate-path and historical whole-leap-second regressions |
 | Document Signer certificate profile | Shared `nazo-digital-credentials::mdoc_certificate` checks additional Annex B fields at signing, verification and native material admission; the existing path engine and core retain their own checks | `mdoc_verification_requires_document_signer_profile`, `mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding` and keyctl material regressions |
-| Newly admitted IACA material | Shared IACA profile plus the native owner's actual self-signature, current-time, tenant and publication-address checks | `mdoc_import_binds_the_active_root_and_enforces_its_profile`, `iaca_profile_uses_twenty_calendar_years_including_century_month_end` |
+| IACA root profile | Signing and verification check the actual authenticated root through the same shared profile; material admission also checks self-signature, current time, tenant and publication address | `mdoc_issuance_and_verification_require_authenticated_iaca_profile`, `mdoc_verification_checks_root_profile_beyond_an_iaca_link`, `mdoc_import_binds_the_active_root_and_enforces_its_profile` |
 | mDL issuer attributes | Disclosed `issuing_country` matches DS country; disclosed `issuing_jurisdiction` matches DS state when that state exists | `authenticated_mdl_disclosures_match_the_document_signer_country`, `mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state` |
 | Certificate revocation | Existing `CertificateRevocationPolicy` and authenticated path anchor | Missing/stale snapshots, known revocation and scoped-unknown status regressions |
 | MSO status presence and mechanism policy | Core preserves the complete authenticated CBOR status; NazoAuth accepts only the exact supported `status_list` shape | Unsupported, tagged, duplicate or additional mechanisms fail closed; status presence is never inferred from a lossy JSON conversion |
 | Credential status verification | Existing bounded HTTPS resolver and draft-21 JWT/CWT validator | Revoked, suspended, unknown, unreachable, wrong-signature and wrong-IACA regressions |
 | External signing and certificate chain | Core prepare/finish plus one NazoAuth key-generation lease; the complete authenticated non-root chain is retained | `credential_execution_uses_completed_builder_and_pinned_lease_without_native_runtime` |
 | mDL date and binary element encoding | NazoAuth applies ISO field types only to `org.iso.18013.5.1` within `org.iso.18013.5.1.mDL` | `mdoc_date_tags_are_scoped_to_the_iso_mdl_schema`, `mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values` and binary-element tests |
+
+The issuer delegates digest-ID generation to the pinned `nazo-mdoc` builder,
+which selects random identifiers below `2^31`. The core verifier enforces this
+bound in every authenticated MSO digest map and disclosed item, as required by
+[ISO/IEC 18013-5:2021 §9.1.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf).
+NazoAuth does not generate a second set of IDs or relax the verifier's bound.
+An already signed credential with an out-of-range ID requires new authorized
+issuance: changing the identifier changes an item's digest and the signed MSO.
+Omitting a disclosure does not remove its authenticated MSO digest entry.
 
 The mDL JSON adapter encodes `birth_date` as Tag 1004; `issue_date` and
 `expiry_date` accept either a full calendar date with Tag 1004 or a complete
@@ -160,15 +169,27 @@ reachability. The existing X.509 path engine checks version, matching signature
 identifiers and exact issuer/subject names; the core checks SPKI encoding and
 algorithm/key compatibility. There is no second path validator.
 
-New IACA material shares the serial, name, identifier, contact and extension
-checks. Its root profile additionally requires version 3, equal issuer/subject
+IACA roots used for issuance, verification or material admission share the
+serial, name, identifier, contact and extension checks.
+[ISO/IEC 18013-5:2021 Annex B.1.1 and B.1.2](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
+apply the certificate profiles to readers and issuing infrastructures and
+specify the IACA root profile. These field checks complement the existing
+RFC 5280 path validation; they do not repeat it or establish trust. The root profile
+additionally requires version 3, equal issuer/subject
 DER names and signature identifiers, critical CA constraints with path length
 zero, and critical KU containing only `keyCertSign` and `cRLSign`. Supported
 root keys use uncompressed P-256/P-384/P-521 with named-curve parameters;
 Brainpool is outside this implementation. Root validity is bounded to 20
 calendar years, with February 29 clamped to the target month's last day.
-The native owner separately authenticates the self-signature and binds the
-material to its tenant and actual publication route. See
+Issuance uses the root selected by the captured signing lease's authenticated
+path. Verification uses the root returned by the current presentation's path
+validation, including for client-scoped trust. A different valid configured
+root cannot satisfy this check. A missing root CRL distribution point or issuer
+contact rejects issuance and verification, even when the DS signature and path
+are otherwise valid. The common direct-issuer/root certificate is parsed once
+for these profile and binding checks. The native material owner separately
+authenticates the self-signature and binds the material to its tenant and actual
+publication route. See
 [managed mdoc state](../operations/mdoc-shared-state.md) for historical CRL
 address retention and explicit rotation.
 

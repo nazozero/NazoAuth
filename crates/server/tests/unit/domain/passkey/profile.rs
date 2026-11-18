@@ -959,6 +959,88 @@ async fn registration_finish_projects_malformed_ceremony_state_as_expired() {
 }
 
 #[actix_web::test]
+async fn registration_consumes_outdated_state_and_accepts_a_new_ceremony() {
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix).await;
+    let sid = format!("state-upgrade-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let authenticator = FakeAuthenticator::new(format!("state-upgrade-{suffix}").as_bytes());
+    let store = nazo_valkey::AuthenticationStore::new(&fixture.state.valkey_connection());
+    // Historical v1 binding for example.com / https://example.com with
+    // require_uv, strict_base64 and require_user_handle enabled.
+    let old_binding = [
+        150, 57, 14, 84, 222, 79, 186, 54, 249, 171, 118, 100, 53, 202, 70, 207, 87, 99, 103, 217,
+        154, 47, 132, 95, 107, 141, 67, 216, 80, 125, 180, 134,
+    ];
+    for mode in ["old_context", "expired", "current"] {
+        let (begin_status, begin) = response_json(
+            passkey_registration_begin(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyBeginRequest { label: None }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(begin_status, StatusCode::OK);
+        let ceremony_id = begin["ceremony_id"].as_str().unwrap();
+        if mode != "current" {
+            let mut state = store
+                .take_passkey_registration(ceremony_id)
+                .await
+                .unwrap()
+                .unwrap();
+            if mode == "old_context" {
+                state["state"]["context_binding"] = json!(old_binding);
+            } else {
+                state["state"]["created_at"] = json!(Timestamp::now().as_second() - 301);
+            }
+            store
+                .store_passkey_registration(ceremony_id, &state, 300)
+                .await
+                .unwrap();
+        }
+        let (status, body) = response_json(
+            passkey_registration_finish(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyFinishRequest {
+                    ceremony_id: ceremony_id.to_owned(),
+                    response: authenticator.registration_response(
+                        begin["publicKey"]["challenge"].as_str().unwrap(),
+                        &fixture.state.settings.identity.passkey.origin,
+                    ),
+                }),
+            )
+            .await,
+        )
+        .await;
+        assert!(
+            store
+                .take_passkey_registration(ceremony_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let rows = load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap();
+        if mode == "current" {
+            assert_eq!(status, StatusCode::CREATED);
+            assert_eq!(rows.len(), 1);
+        } else {
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["error_description"], "passkey ceremony expired.");
+            assert!(rows.is_empty());
+        }
+    }
+}
+
+#[actix_web::test]
 async fn registration_finish_rejects_invalid_authenticator_response_without_persisting_credential()
 {
     let Some(fixture) = LivePasskeyFixture::new().await else {

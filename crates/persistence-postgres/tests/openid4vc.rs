@@ -6803,7 +6803,7 @@ async fn pre_authorized_commit_rolls_back_grant_when_offer_write_fails_and_can_r
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "preauth-atomic").await;
     let issuer = Openid4vciRepository::new(
         pool.clone(),
-        [0x74; 32],
+        rand::random::<[u8; 32]>(),
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let mut access = openid4vc_access_fixture(

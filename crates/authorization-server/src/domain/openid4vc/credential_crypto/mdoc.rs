@@ -5,7 +5,9 @@ use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
-    mdoc_certificate::{check_mdoc_document_signer_profile, check_mdoc_issuer_binding},
+    mdoc_certificate::{
+        check_mdoc_document_signer_profile, check_mdoc_iaca_profile, check_mdoc_issuer_binding,
+    },
 };
 use nazo_mdoc::{
     Timestamp as MdocTimestamp,
@@ -18,7 +20,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::super::crypto_helpers::{
-    cbor_to_json, json_to_cbor, jwk_to_cose_key, validate_mdoc_date_tag,
+    cbor_to_json, json_to_cbor, jwk_to_cose_key, parse_x509, validate_mdoc_date_tag,
 };
 use super::{MdocStatusIssuancePolicy, Openid4vcCredentialCrypto, status};
 
@@ -75,9 +77,11 @@ pub(super) async fn sign(
         return Err(CredentialTrustError::InvalidEncoding);
     }
     check_mdoc_document_signer_profile(&certificate)?;
-    let (_, issuer) = x509_parser::parse_x509_certificate(signing_material.issuer_der())
-        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-    check_mdoc_issuer_binding(&certificate, &issuer)?;
+    check_mdoc_issuer_profiles(
+        &certificate,
+        signing_material.issuer_der(),
+        signing_material.trust_anchor_der(),
+    )?;
     validate_mdl_issuer_attributes(&certificate, &input.payload.credential_type, namespaces)?;
     let not_before =
         MdocTimestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
@@ -409,9 +413,7 @@ fn verify_mdoc_issuer_certificate_chain(
     // Compare against the actual authenticated issuing CA, including an IACA
     // link when present. A matching name in some other loaded anchor is no proof.
     let issuer_der = certificates.get(1).map_or(anchor, Vec::as_slice);
-    let (_, issuer) = x509_parser::parse_x509_certificate(issuer_der)
-        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-    check_mdoc_issuer_binding(&leaf, &issuer)?;
+    let issuer = check_mdoc_issuer_profiles(&leaf, issuer_der, anchor)?;
     if document.doc_type == MDL_DOCTYPE
         && let Some(items) = document.issuer_signed.name_spaces.get(MDL_NAMESPACE)
     {
@@ -453,6 +455,27 @@ fn verify_mdoc_issuer_certificate_chain(
         }
     }
     Ok(identifiers)
+}
+
+/// Apply the same Annex B profiles after the existing path owner selects the
+/// actual issuer and root. A configured anchor is not exempt from its IACA
+/// profile. Reuse the direct issuer when it is also the root, as in native chains.
+fn check_mdoc_issuer_profiles<'a>(
+    leaf: &x509_parser::certificate::X509Certificate<'_>,
+    issuer_der: &'a [u8],
+    anchor_der: &[u8],
+) -> Result<x509_parser::certificate::X509Certificate<'a>, CredentialTrustError> {
+    let (_, issuer) =
+        parse_x509(issuer_der, "mdoc issuer").map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    check_mdoc_issuer_binding(leaf, &issuer)?;
+    if issuer_der == anchor_der {
+        check_mdoc_iaca_profile(&issuer)?;
+    } else {
+        let (_, anchor) = parse_x509(anchor_der, "mdoc IACA root")
+            .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+        check_mdoc_iaca_profile(&anchor)?;
+    }
+    Ok(issuer)
 }
 
 pub(super) fn verify_certificate_chain_with_scoped_at<'a>(

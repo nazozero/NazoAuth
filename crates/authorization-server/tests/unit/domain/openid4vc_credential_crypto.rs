@@ -196,25 +196,27 @@ fn certificate_fixture_with_wire_edit(
                 writer.write_bytes(&sha1::Sha1::digest(leaf_key.public_key_raw()))
             }),
         ));
-    leaf_params
-        .custom_extensions
-        .push(rcgen::CustomExtension::from_oid_content(
-            &[2, 5, 29, 18],
-            yasna::construct_der(|writer| {
-                writer.write_sequence(|writer| {
-                    writer
-                        .next()
-                        .write_tagged_implicit(yasna::Tag::context(6), |writer| {
-                            writer.write_ia5_string("https://issuer.example");
-                        });
-                });
-            }),
-        ));
-    leaf_params
-        .crl_distribution_points
-        .push(rcgen::CrlDistributionPoint {
-            uris: vec!["https://issuer.example/test-issuer.crl".to_owned()],
-        });
+    for params in [&mut ca_params, &mut leaf_params] {
+        params
+            .custom_extensions
+            .push(rcgen::CustomExtension::from_oid_content(
+                &[2, 5, 29, 18],
+                yasna::construct_der(|writer| {
+                    writer.write_sequence(|writer| {
+                        writer
+                            .next()
+                            .write_tagged_implicit(yasna::Tag::context(6), |writer| {
+                                writer.write_ia5_string("https://issuer.example");
+                            });
+                    });
+                }),
+            ));
+        params
+            .crl_distribution_points
+            .push(rcgen::CrlDistributionPoint {
+                uris: vec!["https://issuer.example/test-issuer.crl".to_owned()],
+            });
+    }
     edit(&mut ca_params, &mut leaf_params);
     let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("self-signed CA");
     let leaf = leaf_params
@@ -962,6 +964,152 @@ fn mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding() {
                 candidate.sign(&input).await,
                 Err(CredentialTrustError::UntrustedIssuer),
                 "{case}"
+            );
+        }
+    });
+}
+
+#[test]
+fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
+    futures_executor::block_on(async {
+        let (crypto, valid, _) = real_crypto_fixture().await;
+        let holder = nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk();
+        let input = mdoc_input(
+            Some(HolderBinding::Jwk { jwk: holder }),
+            json!({"org.iso.18013.5.1":{"issuing_country":"US"}}),
+        );
+        for case in ["valid", "missing_crldp", "missing_contact"] {
+            let certs = certificate_fixture_with_parameters(
+                "issuer.example",
+                KeyPair::from_pem(&valid.leaf_key.serialize_pem()).unwrap(),
+                true,
+                |ca, _| match case {
+                    "valid" => {}
+                    "missing_crldp" => ca.crl_distribution_points.clear(),
+                    "missing_contact" => ca.custom_extensions.clear(),
+                    _ => unreachable!(),
+                },
+            );
+            let candidate = crypto_with_certificate(
+                crypto.keyset.clone(),
+                &certs,
+                crate::policy::Openid4vcRevocationPolicy::Disabled,
+            );
+            let issuance = candidate.sign(&input).await.map(|_| ());
+            // Prepare authentic protocol evidence independently of NazoAuth's
+            // issuer checks, so a rejecting issuer cannot mask a verifier gap.
+            let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
+            let verification = candidate
+                .verify_mdoc(&PresentedCredential {
+                    format: CredentialFormat::MsoMdoc,
+                    encoded: encoded.into(),
+                    expected_nonce: "verifier-nonce".into(),
+                    expected_audience: "https://verifier.example".into(),
+                    mdoc_session_transcript: Some(transcript.into()),
+                    // A valid unrelated root cannot stand in for the authenticated
+                    // root, even when it is the first configured scoped anchor.
+                    additional_trust_anchors: vec![valid.ca_der.clone(), certs.ca_der].into(),
+                })
+                .map(|_| ());
+            let expected = if case == "valid" {
+                Ok(())
+            } else {
+                Err(CredentialTrustError::UntrustedIssuer)
+            };
+            assert_eq!((issuance, verification), (expected, expected), "{case}");
+        }
+    });
+}
+
+#[test]
+fn mdoc_verification_checks_root_profile_beyond_an_iaca_link() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let mut issuer_params = None;
+        let mut issuer_key = None;
+        let certs = certificate_fixture_with_wire_edit(
+            "issuer.example",
+            KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+            true,
+            |ca, _| issuer_params = Some(ca.clone()),
+            |der, key| {
+                issuer_key = Some(KeyPair::from_pem(&key.serialize_pem()).unwrap());
+                der
+            },
+        );
+        let mut link_params = issuer_params.unwrap();
+        let root_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut root_params = link_params.clone();
+        root_params.key_identifier_method = rcgen::KeyIdMethod::PreSpecified(
+            sha1::Sha1::digest(root_key.public_key_raw()).to_vec(),
+        );
+        link_params.use_authority_key_identifier_extension = true;
+        // Annex B.1.3 link purpose, distinct from the DS purpose and root profile.
+        let mut link_eku = rcgen::CustomExtension::from_oid_content(
+            &[2, 5, 29, 37],
+            vec![
+                0x30, 0x09, 0x06, 0x07, 0x28, 0x81, 0x8c, 0x5d, 0x05, 0x01, 0x06,
+            ],
+        );
+        link_eku.set_criticality(true);
+        link_params.custom_extensions.push(link_eku);
+        for missing_root_crldp in [false, true] {
+            let mut params = root_params.clone();
+            if missing_root_crldp {
+                params.crl_distribution_points.clear();
+            }
+            let root = CertifiedIssuer::self_signed(
+                params,
+                KeyPair::from_pem(&root_key.serialize_pem()).unwrap(),
+            )
+            .unwrap();
+            let link = link_params
+                .signed_by(issuer_key.as_ref().unwrap(), &root)
+                .unwrap();
+            let chain = vec![certs.leaf_der.clone(), link.der().to_vec()];
+            // The root and self-issued link both retain pathLenConstraint=0.
+            // Both paths authenticate before their root profile is considered.
+            assert!(
+                verify_certificate_chain_at(
+                    &chain,
+                    &[root.der().to_vec()],
+                    Timestamp::now().as_second(),
+                )
+                .unwrap()
+                .is_some()
+            );
+            let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
+            let encoded = resign_mdoc(&encoded, &certs, |document, _| {
+                document
+                    .issuer_signed
+                    .issuer_auth
+                    .cose_sign1
+                    .unprotected
+                    .rest
+                    .iter_mut()
+                    .find(|(label, _)| *label == coset::Label::Int(33))
+                    .unwrap()
+                    .1 = ciborium::Value::Array(
+                    chain.iter().cloned().map(ciborium::Value::Bytes).collect(),
+                );
+            });
+            let result = crypto
+                .verify_mdoc(&PresentedCredential {
+                    format: CredentialFormat::MsoMdoc,
+                    encoded: encoded.into(),
+                    expected_nonce: "verifier-nonce".into(),
+                    expected_audience: "https://verifier.example".into(),
+                    mdoc_session_transcript: Some(transcript.into()),
+                    additional_trust_anchors: vec![root.der().to_vec()].into(),
+                })
+                .map(|_| ());
+            assert_eq!(
+                result,
+                if missing_root_crldp {
+                    Err(CredentialTrustError::UntrustedIssuer)
+                } else {
+                    Ok(())
+                },
             );
         }
     });

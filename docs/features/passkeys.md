@@ -51,8 +51,13 @@ profile does not implement discoverable, username-free login.
 
 ### Browser response format
 
-Finish requests wrap the browser's standard `PublicKeyCredential.toJSON()` result
-under `response`, alongside the issued `ceremony_id`:
+NazoAuth defines the HTTP envelope: finish requests contain `ceremony_id` and
+`response`. The response uses the browser JSON representation defined by
+[WebAuthn Level 3 §5.1](https://www.w3.org/TR/webauthn-3/#sctn-public-key-credential).
+WebAuthn leaves delivery to the RP server to the application (§7); NazoAuth passes
+this representation directly to its single `nazo-passkey` parser.
+
+A browser client sends `PublicKeyCredential.toJSON()` as follows:
 
 ```javascript
 await fetch("/auth/passkey/finish", {
@@ -67,9 +72,8 @@ session cookie and CSRF header. The credential object contains matching `id` and
 `rawId`, `type: "public-key"`, and its nested `response` dictionary with the
 standard camelCase WebAuthn fields. The server decodes the credential ID once at
 JSON admission; database lookup encodes that admitted ID to the existing textual
-key. Clients using the earlier flattened response must switch to the standard
-object during this upgrade. Restart pending ceremonies because the verifier's
-state binding changed; persisted credentials retain their existing representation.
+key. Signed `clientDataJSON`, authenticator data and attestation bytes retain their
+original encoding through verification.
 
 Registration explicitly requests `residentKey: "preferred"`,
 `requireResidentKey: false` and `attestation: "none"`. Login remains email-first.
@@ -78,14 +82,19 @@ registration verifies statements without requiring manufacturer provenance.
 
 ## Security Model
 
-WebAuthn ceremonies use the `nazo-passkey` verifier. The server verifies challenge freshness, exact origin, RP ID hash, authenticator signature, user verification policy, user-handle binding, and authenticator counter anomaly policy.
+`nazo-passkey` validates the challenge, origin, RP ID hash, authenticator
+signature, signed user/backup flags and credential binding. NazoAuth selects the
+RP policy and owns account/tenant lookup, ceremony lifetime and one-time
+consumption, credential persistence, MFA decisions, sessions and audit.
 
-Ceremony state is stored only in Valkey with a five-minute TTL and is consumed with `GETDEL` at finish time. Persisted credentials are bound to `(tenant_id, user_id)` and credential ID uniqueness is enforced per tenant.
-
-Ceremony state also binds the RP ID, origin and verifier policy that issued it.
-After a policy change, or an upgrade from states without this binding, start a
-new ceremony. This affects only pending registration/login attempts; persisted
-credentials remain usable.
+Ceremony state is stored only in Valkey with a five-minute TTL and is consumed
+with `GETDEL` before verification. NazoAuth treats missing, malformed, expired or
+obsolete verifier-bound state as `400 invalid_request` with
+`passkey ceremony expired.`. This includes a changed RP policy or verifier-state
+format. An ordinary begin request creates current state; expired attempts need
+no migration or manual cache cleanup. Persisted credentials remain bound to
+`(tenant_id, user_id)` and retain their existing representation; credential ID
+uniqueness is enforced per tenant.
 
 Successful passkey login with authenticator-verified UV and a previously
 initialized UV enrollment creates a normal HTTPOnly session with

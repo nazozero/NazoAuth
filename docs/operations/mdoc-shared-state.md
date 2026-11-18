@@ -39,10 +39,13 @@ the MSO validity check. An expired DS is not made acceptable by an earlier
 MSO signing time. The authenticated signing time retains a whole leap second;
 it is not forced through a Unix-time conversion that would lose that value.
 
-The remaining checks include the issuer signature, the supported mDL DS
-certificate profile and issuer binding, credential status when present, and
-holder authentication. A successful COSE signature alone does not complete
-these responsibilities.
+Signing and verification apply the same supported Annex B DS and IACA root
+profiles to their authenticated certificate path. The actual selected root must
+carry its required issuer contact and CRL distribution point; a trusted key or
+a valid unrelated root does not replace those fields. This also applies when
+an existing database generation is loaded directly for signing. Credential
+status when present and holder authentication remain separate checks. A
+successful COSE signature alone does not complete these responsibilities.
 
 The standard is identified in the [HAIP normative references](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#ISO.18013-5).
 Freshly issued test certificates and backdated MSO signing times can violate
@@ -123,10 +126,12 @@ certificate fingerprints used for trust and revocation identities.
 
 Previously published DER-hash addresses remain attached to their original
 records across rotation. No second copy of an IACA private key is created under
-an alias. An existing active root without CRLDistributionPoints requires the
-explicit rotation command before further issuance; its original DS CRL remains
-available afterward. Certificate bytes already distributed to holders are not
-rewritten.
+an alias. Signing rejects an active root without CRLDistributionPoints.
+`mdoc-rotate` atomically creates a new compliant IACA and DS generation while
+retaining the original authority record and DS CRL endpoint. Issuance does not
+replace trust anchors as a side effect of a credential request. Certificate
+bytes already distributed to holders remain unchanged; retaining their CRL
+endpoint does not waive the issuer or verifier's current certificate profile.
 
 Each current IACA record owns one DS; revocation
 marks that DS revoked, not every historical DS. Concurrent updates use the
@@ -156,15 +161,12 @@ earlier than the previous publication's `thisUpdate` is rejected. Publication
 monotonicity relies on preserving the authoritative database revision during
 recovery; restoring an older database is not a safe way to reset CRL state.
 
-Upgrade every instance that publishes these CRLs before exposing a new
-publication number. Once a number above `2^64` has been served, the older `u64`
-clock-based publisher cannot resume that endpoint with a valid later number.
-The source change remains reviewable and revertible, but publication state has
-no transparent rollback to the old numbering scheme. Retain the new publisher
-or stop the old endpoint and recover under the authority's normal issuance and
-trust-management procedure. Restoring a database backup must also preserve a
-counter at least as high as every publication already served. This change does
-not itself deploy a production publisher or migrate production state.
+Every instance serving the same CRL endpoint uses this persisted allocation.
+A published number is issuer state: once a number above `2^64` has been served,
+the former `u64` clock-based publisher cannot produce a valid later number for
+that endpoint. Recovery retains a database revision at least as high as every
+publication already served; restoring an older snapshot does not reset the
+sequence.
 
 The root's CRL endpoint publishes the IACA-signed list for its owned DS. It does
 not independently establish trust in that IACA or make a compromised root key
