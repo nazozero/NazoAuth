@@ -27,10 +27,7 @@ jobs:
           components: llvm-tools-preview, rustfmt, clippy
 
       - name: Prepare released migration reference and PostgreSQL dump client
-        run: |
-          git fetch --no-tags --depth=1 origin 385d23a330158ae78ff3fd55df2eac3a74cb2aec
-          chmod +x scripts/pg_dump_test_container.sh
-          echo "PG_DUMP=$GITHUB_WORKSPACE/scripts/pg_dump_test_container.sh" >> "$GITHUB_ENV"
+        run: bash scripts/prepare_ci_migration_reference.sh
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:

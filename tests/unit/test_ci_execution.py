@@ -31,8 +31,11 @@ class CiExecutionTests(unittest.TestCase):
         self.assertIn("shard: [1, 2, 3, 4, 5, 6]", quality)
         self.assertIn("--partition slice:${{ matrix.shard }}/6 --test-threads 1 --no-fail-fast", quality)
         self.assertIn("test(=pending_migrations_create_all_runtime_module_state_tables)", quality)
-        for result in ("BUILD_RESULT", "CLIPPY_RESULT", "FIXTURE_RESULT", "SHARDS_RESULT"):
-            self.assertIn(f'test "${result}" = success', quality)
+        gate = quality.split("\n  rust-gate:", 1)[1].split("\n  python-quality:", 1)[0]
+        for job in ("rust-quality", "rust-build", "rust-clippy", "rust-fixture", "rust-shards"):
+            self.assertIn(f"needs.{job}.result != 'success'", gate)
+        self.assertIn("needs.inputs.result == 'success' && needs.inputs.outputs.run == 'false'", gate)
+        self.assertIn("run: exit 1", gate)
         self.assertIn("cargo test --workspace --all-features --locked --doc", quality)
         from scripts.ci_inputs import INPUTS
         for path in (".github/workflows/codecov.yml", "codecov.yml", "requirements/codecov.txt"):
@@ -52,6 +55,8 @@ class CiExecutionTests(unittest.TestCase):
         self.assertEqual(set(re.findall(r"--skip (\w+)", script)), owned)
         timing = quality.split("- name: Test timing contracts excluded from coverage", 1)[1].split("\n      - name:", 1)[0]
         self.assertIn("if: github.event_name == 'workflow_dispatch'", timing)
+        self.assertIn("run: bash scripts/test_ci_timing_contracts.sh", timing)
+        timing = (ROOT / "scripts/test_ci_timing_contracts.sh").read_text()
         self.assertIn("--test tenant_directory_convergence", timing)
         self.assertIn(convergence, timing)
         self.assertIn("--test token_issuance_simplification", timing)

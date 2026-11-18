@@ -35,10 +35,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
 
-      - name: Install pinned nightly and cargo-fuzz
-        run: |
-          rustup toolchain install nightly-2026-10-04 --profile minimal
-          cargo +nightly-2026-10-04 install cargo-fuzz --version 0.13.2 --locked
+      - name: Install pinned nightly
+        run: rustup toolchain install nightly-2026-10-04 --profile minimal
+
+      - name: Install cargo-fuzz
+        run: cargo +nightly-2026-10-04 install cargo-fuzz --version 0.13.2 --locked
 
       - name: Fuzz closed operator JWS parser
         run: cargo +nightly-2026-10-04 fuzz run operator_jws_parser -- -max_total_time=60 -rss_limit_mb=512 -timeout=10

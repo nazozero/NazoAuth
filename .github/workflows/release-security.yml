@@ -32,46 +32,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          basic_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic_auth" fetch \
-            --no-tags origin \
-            refs/heads/main:refs/remotes/origin/main
-          python3 scripts/check_release_ci.py
+        run: bash .github/scripts/release/check-inputs.sh verify-ci
       - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
       - name: Validate immutable release input
         shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF_TYPE" = tag ]]; then
-            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-            release_version="${GITHUB_REF_NAME#v}"
-            workspace_version="$(python3 - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          manifest = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))
-          print(manifest["workspace"]["package"]["version"])
-          PY
-            )"
-            if [[ "$workspace_version" != "$release_version" ]]; then
-              echo "tag $GITHUB_REF_NAME does not match workspace version $workspace_version" >&2
-              exit 1
-            fi
-            metadata="$(cargo metadata --locked --no-deps --format-version 1)"
-            mismatches="$(jq -r --arg version "$release_version" '
-              [.workspace_members[] as $member
-                | .packages[]
-                | select(.id == $member and .version != $version)
-                | "\(.name)=\(.version)"]
-              | join(", ")
-            ' <<<"$metadata")"
-            if [[ -n "$mismatches" ]]; then
-              echo "tag $GITHUB_REF_NAME does not match workspace package versions: $mismatches" >&2
-              exit 1
-            fi
-          fi
+        run: bash .github/scripts/release/check-inputs.sh validate-version
       - name: Validate Release workflow and predicate contracts
         run: python3 -m unittest tests.unit.test_release_attestation tests.unit.test_release_governance
           tests.unit.test_release_ci tests.unit.test_release_oci
@@ -85,10 +50,9 @@ jobs:
         run: cargo deny check advisories bans licenses sources
       - name: Generate internal Rust SBOM evidence
         shell: bash
-        run: |
-          set -euo pipefail
-          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazoauth.cdx
-          mkdir -p target/release-evidence/sbom
+        run: >-
+          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazoauth.cdx &&
+          mkdir -p target/release-evidence/sbom &&
           mv crates/server/nazoauth.cdx.json target/release-evidence/sbom/nazoauth.cdx.json
       - name: Upload internal supply-chain evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -109,15 +73,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
       - name: Package the unique operator protocol source
         shell: bash
-        run: |
-          set -euo pipefail
-          cargo package --locked --package nazo-crypto --package nazo-operator-protocol
-          mkdir -p target/release-protocol
-          version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "nazo-operator-protocol") | .version')"
-          for name in nazo-crypto nazo-operator-protocol; do
-            cp -- "target/package/${name}-${version}.crate" target/release-protocol/
-          done
-          (cd target/release-protocol && sha256sum ./*.crate > SHA256SUMS)
+        run: bash .github/scripts/release/assets.sh package-protocol
       - name: Upload immutable operator protocol package input
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -176,6 +132,10 @@ jobs:
             libc: darwin
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_EXECUTABLE_SUFFIX: ${{ matrix.executable_suffix }}
+      RELEASE_LIBC: ${{ matrix.libc }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
@@ -187,116 +147,48 @@ jobs:
       - name: Install Linux native build prerequisites
         if: matrix.os == 'linux'
         shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
+        run: >-
+          sudo apt-get update &&
           sudo apt-get install -y --no-install-recommends cmake make musl-tools perl
       - name: Bind musl builds to the native musl compiler
         if: matrix.libc == 'musl'
         shell: bash
-        run: |
-          set -euo pipefail
-          target='${{ matrix.target }}'
-          cc_variable="CC_${target//-/_}"
-          linker_variable="CARGO_TARGET_${target^^}_LINKER"
-          linker_variable="${linker_variable//-/_}"
-          {
-            echo "$cc_variable=musl-gcc"
-            echo "$linker_variable=musl-gcc"
-          } >> "$GITHUB_ENV"
+        run: bash .github/scripts/release/platform.sh bind-musl
       - name: Verify macOS native build prerequisites
         if: matrix.os == 'macos'
         shell: bash
-        run: |
-          set -euo pipefail
-          cmake --version
-          make --version
+        run: >-
+          cmake --version &&
+          make --version &&
           perl -v >/dev/null
       - name: Verify Windows native build prerequisites
         if: matrix.os == 'windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          cmake --version
-          perl -v | Out-Null
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path -LiteralPath $vswhere)) { throw "vswhere is unavailable" }
-          $component = "${{ matrix.msvc_component }}"
-          $installation = & $vswhere -latest -products * -requires $component -property installationPath
-          if (-not $installation) { throw "MSVC build tools are unavailable" }
-          $nmake = Get-ChildItem -LiteralPath "$installation\VC\Tools\MSVC" -Recurse -Filter nmake.exe | Select-Object -First 1
-          if (-not $nmake) { throw "nmake is unavailable" }
-          "MSVC_INSTALLATION=$installation" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        env:
+          MSVC_COMPONENT: ${{ matrix.msvc_component }}
+        run: ./.github/scripts/release/platform.ps1 check-msvc
       - name: Build the server binary once for this platform
         run: >-
           cargo build --release --locked --target ${{ matrix.target }}
           --package nazo-server --bin nazoauth
       - name: Smoke the server binary and verify release identity
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $server = Resolve-Path "target/${{ matrix.target }}/release/nazoauth${{ matrix.executable_suffix }}"
-          & $server --help
-          if ($LASTEXITCODE -ne 0) { throw "nazoauth help smoke failed" }
-          $identity = (& $server release-identity | ConvertFrom-Json)
-          if ($LASTEXITCODE -ne 0) { throw "nazoauth release identity smoke failed" }
-          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
-          $serverPackage = $metadata.packages | Where-Object { $_.name -eq "nazo-server" }
-          if ($identity.release -ne "v$($serverPackage.version)") { throw "embedded release mismatch" }
-          $protocolSource = Get-Content "crates/operator-protocol/src/lib.rs" -Raw
-          $protocolMatch = [regex]::Match($protocolSource, 'pub const PROTOCOL_VERSION: u32 = (\d+);')
-          if (!$protocolMatch.Success) { throw "unable to read the source protocol version" }
-          if ($identity.protocol -ne [int]$protocolMatch.Groups[1].Value) { throw "embedded protocol mismatch" }
+        run: ./.github/scripts/release/platform.ps1 smoke
       - name: Verify Linux single-file native dependency boundary
         if: matrix.os == 'linux'
         shell: bash
-        run: |
-          set -euo pipefail
-          for binary in "target/${{ matrix.target }}/release/nazoauth"; do
-            dynamic="$(readelf -d "$binary")"
-            if grep -Eiq 'NEEDED.*(libpq|libssl|libcrypto)' <<<"$dynamic"; then
-              echo "$binary depends on a non-system database or TLS library" >&2
-              exit 1
-            fi
-            if [[ "${{ matrix.libc }}" = musl ]]; then
-              if grep -q '(NEEDED)' <<<"$dynamic"; then
-                echo "$binary is not fully static" >&2
-                exit 1
-              fi
-            fi
-          done
+        run: bash .github/scripts/release/platform.sh check-linux
       - name: Verify macOS single-file native dependency boundary
         if: matrix.os == 'macos'
         shell: bash
-        run: |
-          set -euo pipefail
-          for binary in "target/${{ matrix.target }}/release/nazoauth"; do
-            if otool -L "$binary" | grep -Eiq '(libpq|libssl|libcrypto)'; then
-              echo "$binary depends on a non-system database or TLS library" >&2
-              exit 1
-            fi
-          done
+        run: bash .github/scripts/release/platform.sh check-macos
       - name: Verify Windows single-file native dependency boundary
         if: matrix.os == 'windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          if (-not $env:MSVC_INSTALLATION) { throw "verified MSVC installation is unavailable" }
-          $dumpbin = Get-ChildItem -LiteralPath "$env:MSVC_INSTALLATION\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Select-Object -First 1
-          if (-not $dumpbin) { throw "dumpbin is unavailable" }
-          foreach ($binary in @("target/${{ matrix.target }}/release/nazoauth.exe")) {
-            $dependencies = & $dumpbin.FullName /DEPENDENTS $binary
-            if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $binary" }
-            if ($dependencies -match "(?i)(libpq|libssl|libcrypto|ssleay|libeay).*\.dll") {
-              throw "$binary depends on a non-system database or TLS DLL"
-            }
-          }
+        run: ./.github/scripts/release/platform.ps1 check-windows
       - name: Stage platform-suffixed binaries
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          New-Item -ItemType Directory -Force -Path "target/release-binaries" | Out-Null
-          Copy-Item -LiteralPath "target/${{ matrix.target }}/release/nazoauth${{ matrix.executable_suffix }}" -Destination "target/release-binaries/nazoauth-${{ matrix.target }}${{ matrix.executable_suffix }}"
+        run: ./.github/scripts/release/platform.ps1 stage
       - name: Upload platform binaries
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -331,22 +223,13 @@ jobs:
           path: target/release-container/source-arm64
       - name: Stage the exact native application binaries for OCI assembly
         shell: bash
-        run: |
-          set -euo pipefail
-          install -Dm755 \
-            target/release-container/source-amd64/nazoauth-x86_64-unknown-linux-gnu \
-            target/release-container/amd64/nazoauth
-          install -Dm755 \
-            target/release-container/source-arm64/nazoauth-aarch64-unknown-linux-gnu \
-            target/release-container/arm64/nazoauth
-          test "$(find target/release-container/amd64 target/release-container/arm64 -type f -name nazoauth | wc -l)" -eq 2
+        run: bash .github/scripts/release/oci.sh stage-binaries
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Install OCI inspection tools
         shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
+        run: >-
+          sudo apt-get update &&
           sudo apt-get install -y --no-install-recommends jq skopeo
       - name: Build exact multi-platform OCI archive
         id: oci
@@ -366,49 +249,16 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
       - name: Scan the exact OCI archive before publication
         shell: bash
-        run: |
-          set -euo pipefail
-          archive="${{ runner.temp }}/nazoauth-image.oci.tar"
-          layout="$(mktemp -d "${RUNNER_TEMP}/nazoauth-image.oci.XXXXXX")"
-          mkdir -p target/release-evidence/oci
-          python3 scripts/validate_release_oci.py \
-            --archive "$archive" \
-            --layout "$layout" \
-            --expected-index-digest "${{ steps.oci.outputs.digest }}" \
-            --repository "ghcr.io/nazozero/nazoauth" \
-            --output target/release-evidence/oci/descriptor.json
-          chmod -R go+rX "$layout"
-          for platform in linux/amd64 linux/arm64; do
-            docker run --rm \
-              --cap-drop ALL \
-              --security-opt no-new-privileges \
-              -v "$layout:/image:ro" \
-              docker.io/aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 image \
-                --format table \
-                --exit-code 1 \
-                --severity CRITICAL,HIGH \
-                --ignore-unfixed \
-                --platform "$platform" \
-                --input /image
-          done
+        env:
+          EXPECTED_INDEX_DIGEST: ${{ steps.oci.outputs.digest }}
+          TRIVY_IMAGE: docker.io/aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+        run: bash .github/scripts/release/oci.sh scan
       - name: Record the closed OCI descriptor
         id: descriptor
         shell: bash
-        run: |
-          set -euo pipefail
-          descriptor="target/release-evidence/oci/descriptor.json"
-          index_digest="$(jq -er .index_digest "$descriptor")"
-          [[ "$index_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "$index_digest" = "${{ steps.oci.outputs.digest }}"
-          amd64_digest="$(jq -er '.platform_manifests["linux/amd64"]' "$descriptor")"
-          arm64_digest="$(jq -er '.platform_manifests["linux/arm64"]' "$descriptor")"
-          [[ "$amd64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [[ "$arm64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          {
-            echo "index_digest=$index_digest"
-            echo "amd64_digest=$amd64_digest"
-            echo "arm64_digest=$arm64_digest"
-          } >> "$GITHUB_OUTPUT"
+        env:
+          EXPECTED_INDEX_DIGEST: ${{ steps.oci.outputs.digest }}
+        run: bash .github/scripts/release/oci.sh record-descriptor
       - name: Upload OCI descriptor
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -472,14 +322,13 @@ jobs:
           path: target/release-evidence/oci
       - name: Build the closed ReleaseManifest predicate
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/build_release_attestation.py \
-            --version "$GITHUB_REF_NAME" \
-            --target "${{ matrix.target }}" \
-            --binary "target/release-binaries/nazoauth-${{ matrix.target }}${{ matrix.executable_suffix }}" \
-            --oci target/release-evidence/oci/descriptor.json \
-            --output "target/release-evidence/release-manifest-${{ matrix.target }}.json"
+        run: >-
+          python3 scripts/build_release_attestation.py
+          --version "$GITHUB_REF_NAME"
+          --target "${{ matrix.target }}"
+          --binary "target/release-binaries/nazoauth-${{ matrix.target }}${{ matrix.executable_suffix }}"
+          --oci target/release-evidence/oci/descriptor.json
+          --output "target/release-evidence/release-manifest-${{ matrix.target }}.json"
       - name: Attest nazoauth ReleaseManifest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -509,6 +358,10 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts/release
       - name: Download the exact packaged protocol crate
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -517,13 +370,7 @@ jobs:
       - name: Verify the protocol package name and digest record
         id: protocol_package
         shell: bash
-        run: |
-          set -euo pipefail
-          package="target/release-protocol/nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"
-          test -f "$package"
-          test -f "target/release-protocol/nazo-crypto-${GITHUB_REF_NAME#v}.crate"
-          (cd target/release-protocol && sha256sum --check SHA256SUMS)
-          echo "path=target/release-protocol/*.crate" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/release/assets.sh verify-protocol
       - name: Attest operator protocol package provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -541,6 +388,10 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts/release
       - name: Download the exact scanned OCI archive
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -553,37 +404,19 @@ jobs:
           path: target/release-evidence/oci
       - name: Install OCI publication tools
         shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
+        run: >-
+          sudo apt-get update &&
           sudo apt-get install -y --no-install-recommends jq skopeo
       - name: Authenticate to GHCR
         shell: bash
         env:
           GHCR_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Publish the exact scanned OCI index without rebuilding
         shell: bash
-        run: |
-          set -euo pipefail
-          archive="target/release-evidence/oci/nazoauth-image.oci.tar"
-          descriptor="target/release-evidence/oci/descriptor.json"
-          test -f "$archive"
-          test "$(jq -r .index_digest "$descriptor")" = "${{ needs.container-image.outputs.index_digest }}"
-          destination="docker://ghcr.io/nazozero/nazoauth:${GITHUB_REF_NAME}"
-          if existing="$(skopeo inspect "$destination" 2>/dev/null | jq -er .Digest)"; then
-            if [[ "$existing" != "${{ needs.container-image.outputs.index_digest }}" ]]; then
-              echo "existing OCI tag has a different digest: $existing" >&2
-              exit 1
-            fi
-            echo "OCI tag already names the exact scanned index; resuming publication"
-          else
-            skopeo copy --all "oci-archive:$archive" "$destination"
-          fi
-          published="$(skopeo inspect "$destination" | jq -r .Digest)"
-          test "$published" = "${{ needs.container-image.outputs.index_digest }}"
+        env:
+          EXPECTED_INDEX_DIGEST: ${{ needs.container-image.outputs.index_digest }}
+        run: bash .github/scripts/release/oci.sh publish
       - name: Install cosign
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
@@ -606,6 +439,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts/release
       - name: Download every attested platform binary
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -621,57 +458,4 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          test "$(find target/release-binaries -maxdepth 1 -type f | wc -l)" -eq 8
-          for target in \
-            x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
-            x86_64-unknown-linux-musl aarch64-unknown-linux-musl \
-            x86_64-apple-darwin aarch64-apple-darwin; do
-            test -f "target/release-binaries/nazoauth-$target"
-          done
-          for target in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
-            test -f "target/release-binaries/nazoauth-$target.exe"
-          done
-          protocol_asset="nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"
-          crypto_asset="nazo-crypto-${GITHUB_REF_NAME#v}.crate"
-          test -f "target/release-protocol/$protocol_asset"
-          test -f "target/release-protocol/$crypto_asset"
-          (cd target/release-protocol && sha256sum --check SHA256SUMS)
-          allowed_names="$(mktemp)"
-          find target/release-binaries -maxdepth 1 -type f -printf '%f\n' \
-            | sort > "$allowed_names"
-          printf '%s\n' "$protocol_asset" "$crypto_asset" >> "$allowed_names"
-          sort -u -o "$allowed_names" "$allowed_names"
-          test "$(wc -l < "$allowed_names")" -eq 10
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" \
-              --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
-          remote_names="$(mktemp)"
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --json assets --jq '.assets[].name' > "$remote_names"
-          while IFS= read -r name; do
-            test -z "$name" || grep -Fxq "$name" "$allowed_names" || {
-              echo "GitHub Release contains an unexpected asset: $name" >&2
-              exit 1
-            }
-          done < "$remote_names"
-          existing="$(mktemp -d)"
-          for asset in target/release-binaries/* "target/release-protocol/$protocol_asset" "target/release-protocol/$crypto_asset"; do
-            name="$(basename "$asset")"
-            if grep -Fxq "$name" "$remote_names"; then
-              gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-                --pattern "$name" --dir "$existing"
-              cmp --silent "$asset" "$existing/$name" || {
-                echo "existing GitHub Release asset differs: $name" >&2
-                exit 1
-              }
-              echo "GitHub Release already has the exact asset: $name"
-            else
-              gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$asset"
-            fi
-          done
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --json assets --jq '.assets[].name' > "$remote_names"
-          test "$(wc -l < "$remote_names")" -eq 10
-          diff -u "$allowed_names" <(sort "$remote_names")
+        run: bash .github/scripts/release/assets.sh publish

@@ -41,6 +41,9 @@ class CiInputTests(unittest.TestCase):
             "perf/tests/test_capacity_producer.py": {"perf"},
             "perf/env.yaml": {"security", "perf"},
             "scripts/full_real_request_load.py": {"security"},
+            "scripts/prepare_ci_migration_reference.sh": {"rust", "security"},
+            ".github/e2e-fixture.sh": {"security"},
+            ".github/e2e-runtime.yml": {"security"},
             ".github/workflows/ci-inputs.yml": set(gate.WORKFLOWS),
         }
         for path, expected in changes.items():

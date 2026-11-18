@@ -139,17 +139,24 @@ class ReleaseGovernanceTests(unittest.TestCase):
         validator = (ROOT / "scripts" / "validate_release_oci.py").read_text(
             encoding="utf-8"
         )
-        scan = workflow.split("- name: Scan the exact OCI archive before publication", 1)[
+        scan_step = workflow.split("- name: Scan the exact OCI archive before publication", 1)[
             1
         ].split("- name: Record the closed OCI descriptor", 1)[0]
-        record = workflow.split("- name: Record the closed OCI descriptor", 1)[1].split(
+        record_step = workflow.split("- name: Record the closed OCI descriptor", 1)[1].split(
             "- name: Upload OCI descriptor", 1
         )[0]
+        self.assertIn("run: bash .github/scripts/release/oci.sh scan", scan_step)
+        self.assertIn("run: bash .github/scripts/release/oci.sh record-descriptor", record_step)
+        for step in (scan_step, record_step):
+            self.assertIn("EXPECTED_INDEX_DIGEST: ${{ steps.oci.outputs.digest }}", step)
+        oci = (ROOT / ".github/scripts/release/oci.sh").read_text(encoding="utf-8")
+        scan = oci.split("\nscan() {", 1)[1].split("\n}", 1)[0]
+        record = oci.split("\nrecord_descriptor() {", 1)[1].split("\n}", 1)[0]
 
-        self.assertIn('archive="${{ runner.temp }}/nazoauth-image.oci.tar"', scan)
+        self.assertIn('archive="$RUNNER_TEMP/nazoauth-image.oci.tar"', scan)
         self.assertIn('layout="$(mktemp -d "${RUNNER_TEMP}/nazoauth-image.oci.XXXXXX")"', scan)
         self.assertIn("python3 scripts/validate_release_oci.py", scan)
-        self.assertIn('--expected-index-digest "${{ steps.oci.outputs.digest }}"', scan)
+        self.assertIn('--expected-index-digest "$EXPECTED_INDEX_DIGEST"', scan)
         self.assertIn("--output target/release-evidence/oci/descriptor.json", scan)
         self.assertIn('tarfile.open(archive, mode="r:*")', validator)
         self.assertIn("member.isfile() or member.isdir()", validator)
@@ -168,7 +175,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn('--platform "$platform"', scan)
         self.assertNotIn("--input /image.tar", scan)
         self.assertEqual(
-            len(re.findall(r"docker\.io/aquasec/trivy:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}\b", scan)),
+            len(re.findall(r"docker\.io/aquasec/trivy:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}\b", scan_step)),
             1,
         )
         self.assertIn('descriptor="target/release-evidence/oci/descriptor.json"', record)
@@ -330,9 +337,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
         release = (
             ROOT / ".github" / "workflows" / "release-security.yml"
         ).read_text(encoding="utf-8")
-        validation = release.split("- name: Validate immutable release input", 1)[1].split(
-            "- name: Validate Release workflow and predicate contracts", 1
-        )[0]
+        self.assertIn("run: bash .github/scripts/release/check-inputs.sh validate-version", release)
+        validation = (ROOT / ".github/scripts/release/check-inputs.sh").read_text(encoding="utf-8")
 
         self.assertIn('if [[ "$GITHUB_REF_TYPE" = tag ]]; then', validation)
         self.assertIn(
@@ -360,8 +366,10 @@ class ReleaseGovernanceTests(unittest.TestCase):
         policy = release.split("  policy:", 1)[1].split("  platform-binaries:", 1)[0]
         self.assertIn("actions: read", release)
         self.assertIn("fetch-depth: 0", policy)
-        self.assertIn("refs/heads/main:refs/remotes/origin/main", policy)
-        self.assertIn("python3 scripts/check_release_ci.py", policy)
+        self.assertIn("run: bash .github/scripts/release/check-inputs.sh verify-ci", policy)
+        verifier = (ROOT / ".github/scripts/release/check-inputs.sh").read_text(encoding="utf-8")
+        self.assertIn("refs/heads/main:refs/remotes/origin/main", verifier)
+        self.assertIn("python3 scripts/check_release_ci.py", verifier)
         self.assertIn("persist-credentials: false", policy)
 
     def test_coverage_is_scheduled_or_manual_not_a_merge_retest(self) -> None:
@@ -429,15 +437,15 @@ class ReleaseGovernanceTests(unittest.TestCase):
             "pub const PROTOCOL_VERSION: u32 = 4;",
             protocol_source,
         )
+        self.assertIn("run: ./.github/scripts/release/platform.ps1 smoke", release)
+        powershell = (ROOT / ".github/scripts/release/platform.ps1").read_text(encoding="utf-8")
+        platform = (ROOT / ".github/scripts/release/platform.sh").read_text(encoding="utf-8")
         self.assertIn(
             "$protocolSource = Get-Content "
             '"crates/operator-protocol/src/lib.rs" -Raw',
-            release,
+            powershell,
         )
-        self.assertIn(
-            "$identity.protocol -ne [int]$protocolMatch.Groups[1].Value",
-            release,
-        )
+        self.assertIn("$identity.protocol -ne [int]$protocolMatch.Groups[1].Value", powershell)
         targets = {
             "x86_64-unknown-linux-gnu",
             "aarch64-unknown-linux-gnu",
@@ -460,11 +468,11 @@ class ReleaseGovernanceTests(unittest.TestCase):
         ):
             self.assertIn(f"runner: {runner}", release)
         self.assertNotIn("cargo test --locked --package nazoauthctl --all-targets", release)
-        self.assertIn("& $server release-identity | ConvertFrom-Json", release)
-        self.assertIn("Verify Linux single-file native dependency boundary", release)
-        self.assertIn("Bind musl builds to the native musl compiler", release)
-        self.assertIn('echo "$cc_variable=musl-gcc"', release)
-        self.assertIn('echo "$linker_variable=musl-gcc"', release)
+        self.assertIn("& $server release-identity | ConvertFrom-Json", powershell)
+        self.assertIn("run: bash .github/scripts/release/platform.sh check-linux", release)
+        self.assertIn("run: bash .github/scripts/release/platform.sh bind-musl", release)
+        self.assertIn('echo "$cc_variable=musl-gcc"', platform)
+        self.assertIn('echo "$linker_variable=musl-gcc"', platform)
         self.assertIn("platforms: linux/amd64,linux/arm64", release)
         self.assertIn(
             "outputs: type=oci,dest=${{ runner.temp }}/nazoauth-image.oci.tar,"
@@ -472,9 +480,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             "oci-artifact=true",
             release,
         )
-        scan = release.split(
-            "- name: Scan the exact OCI archive before publication", 1
-        )[1].split("- name: Record the closed OCI descriptor", 1)[0]
+        scan = (ROOT / ".github/scripts/release/oci.sh").read_text(encoding="utf-8")
         self.assertLess(
             scan.index('chmod -R go+rX "$layout"'),
             scan.index("docker run --rm"),
@@ -490,11 +496,11 @@ class ReleaseGovernanceTests(unittest.TestCase):
         )
         self.assertIn(
             '$installation = & $vswhere -latest -products * -requires $component -property installationPath',
-            release,
+            powershell,
         )
         self.assertIn(
             'Get-ChildItem -LiteralPath "$env:MSVC_INSTALLATION\\VC\\Tools\\MSVC"',
-            release,
+            powershell,
         )
         self.assertEqual(release.count("Microsoft.VisualStudio.Component.VC.Tools.ARM64"), 1)
         action_refs = re.findall(r"uses:\s+[^\s@]+@([^\s#]+)", release)
@@ -502,9 +508,9 @@ class ReleaseGovernanceTests(unittest.TestCase):
         for action_ref in action_refs:
             self.assertRegex(action_ref, r"^[0-9a-f]{40}$")
 
-        publish = release.split(
-            "name: Publish immutable server and protocol GitHub Release assets", 1
-        )[1]
+        self.assertIn("run: bash .github/scripts/release/assets.sh publish", release)
+        assets = (ROOT / ".github/scripts/release/assets.sh").read_text(encoding="utf-8")
+        publish = assets.split("\npublish() {", 1)[1].split("\n}", 1)[0]
         self.assertIn("target/release-binaries/*", publish)
         for forbidden in (".tar", ".json", ".bundle", "SBOM", "install_nazoauthctl"):
             self.assertNotIn(forbidden, publish)
@@ -517,11 +523,14 @@ class ReleaseGovernanceTests(unittest.TestCase):
         package_job = release.split("  operator-protocol-package:", 1)[1].split(
             "  platform-binaries:", 1
         )[0]
+        self.assertIn("run: bash .github/scripts/release/assets.sh package-protocol", package_job)
+        assets = (ROOT / ".github/scripts/release/assets.sh").read_text(encoding="utf-8")
+        package = assets.split("\npackage_protocol() {", 1)[1].split("\n}", 1)[0]
         self.assertIn(
-            "cargo package --locked --package nazo-crypto --package nazo-operator-protocol", package_job
+            "cargo package --locked --package nazo-crypto --package nazo-operator-protocol", package
         )
-        self.assertIn("for name in nazo-crypto nazo-operator-protocol; do", package_job)
-        self.assertNotIn("--no-verify", package_job)
+        self.assertIn("for name in nazo-crypto nazo-operator-protocol; do", package)
+        self.assertNotIn("--no-verify", package)
         self.assertIn("release-operator-protocol-package", package_job)
 
         attest_job = release.split("  attest-operator-protocol:", 1)[1].split(
@@ -531,9 +540,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn("actions/attest-build-provenance@", attest_job)
         self.assertIn("steps.protocol_package.outputs.path", attest_job)
 
-        publish = release.split(
-            "name: Publish immutable server and protocol GitHub Release assets", 1
-        )[1]
+        self.assertIn("run: bash .github/scripts/release/assets.sh verify-protocol", attest_job)
+        publish = assets.split("\npublish() {", 1)[1].split("\n}", 1)[0]
         self.assertIn(
             'protocol_asset="nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"',
             publish,
@@ -594,15 +602,13 @@ class ReleaseGovernanceTests(unittest.TestCase):
             ROOT / ".github" / "workflows" / "conformance-security.yml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn(
-            "docker run --rm --name nazo-oauth-e2e-migrate",
-            conformance,
-        )
-        self.assertIn("nazo-oauth-e2e:latest nazoauth migrate", conformance)
-
-        runtime_config = conformance.split(
-            "cat > runtime/e2e/.env.yaml <<'YAML'", 1
-        )[1].split("\n          YAML", 1)[0]
+        self.assertIn("run: bash .github/e2e-fixture.sh configure", conformance)
+        self.assertIn("run: bash .github/e2e-fixture.sh start-server", conformance)
+        fixture = (ROOT / ".github/e2e-fixture.sh").read_text(encoding="utf-8")
+        self.assertIn("docker run --rm --name nazo-oauth-e2e-migrate", fixture)
+        self.assertIn("nazo-oauth-e2e:latest nazoauth migrate", fixture)
+        self.assertIn("cp .github/e2e-runtime.yml runtime/e2e/.env.yaml", fixture)
+        runtime_config = (ROOT / ".github/e2e-runtime.yml").read_text(encoding="utf-8")
         self.assertIn(
             'VALKEY_STATE_EPOCH: "019c8ca2-30a6-7000-8000-00000000e104"',
             runtime_config,

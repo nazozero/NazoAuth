@@ -1,0 +1,52 @@
+BIND: "0.0.0.0:8000"
+DATA_DIR: "/var/lib/nazo_oauth"
+UI_ENABLED: false
+DEPLOYMENT_ID: "deployment-ci"
+RUNTIME_INSTANCE_ID: "e2e-primary"
+INSTANCE_IDENTITY_DIR: "/var/lib/nazo_oauth/runtime-instance"
+DATABASE_URL: "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth"
+VALKEY_URL: "redis://nazo-oauth-e2e-valkey:6379/0"
+VALKEY_STATE_EPOCH: "019c8ca2-30a6-7000-8000-00000000e104"
+VALKEY_COMMAND_TIMEOUT_MS: 1000
+ISSUER: "http://127.0.0.1:8000"
+FRONTEND_BASE_URL: "http://127.0.0.1:3000"
+CORS_ALLOWED_ORIGINS:
+  - "http://127.0.0.1:3000"
+DEFAULT_AUDIENCE: "resource://default"
+SESSION_COOKIE_NAME: "nazo_oauth_session"
+CSRF_COOKIE_NAME: "nazo_oauth_csrf"
+COOKIE_SECURE: false
+SESSION_TTL_SECONDS: 28800
+AUTH_CODE_TTL_SECONDS: 60
+ACCESS_TOKEN_TTL_SECONDS: 300
+ID_TOKEN_TTL_SECONDS: 600
+REFRESH_TOKEN_TTL_SECONDS: 2592000
+AVATAR_MAX_BYTES: 2097152
+AVATAR_OBJECT_STORE: "local"
+CLIENT_DELIVERY_TTL_SECONDS: 86400
+RATE_LIMIT_WINDOW_SECONDS: 60
+TRUSTED_PROXY_CIDRS: ""
+CLIENT_IP_HEADER_MODE: "none"
+SUBJECT_TYPE: "public"
+PAIRWISE_SUBJECT_SECRET: ""
+PAR_TTL_SECONDS: 90
+REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
+FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS: 60
+FEDERATION_PROVIDER_CONFIGS: >-
+  [{"provider_id":"codecov-oidc","enabled":true,"display_name":"Codecov OIDC","adapter_type":"oidc","issuer":"https://issuer.example","authorization_endpoint":"https://issuer.example/authorize","token_endpoint":"https://issuer.example/token","jwks_url":"https://issuer.example/jwks","client_id":"codecov-oidc-client","client_secret":"codecov-oidc-secret","redirect_uri":"http://127.0.0.1:8000/auth/federation/codecov-oidc/callback","scopes":"openid email profile"}]
+FEDERATION_SAML_GATEWAY_ENABLED: true
+FEDERATION_SAML_GATEWAY_ISSUER: "codecov-saml-gateway"
+FEDERATION_SAML_GATEWAY_AUDIENCE: "nazo-oauth-codecov"
+FEDERATION_SAML_GATEWAY_SECRET: "codecov-saml-gateway-secret-000000"
+EMAIL_DELIVERY: "smtp"
+EMAIL_CODE_TTL_SECONDS: 900
+EMAIL_CODE_SEND_COOLDOWN_SECONDS: 1
+EMAIL_CODE_PEER_COOLDOWN_SECONDS: 1
+EMAIL_SMTP_HOST: "nazo-oauth-e2e-runner"
+EMAIL_SMTP_PORT: 1025
+EMAIL_SMTP_TLS: "none"
+EMAIL_SMTP_USERNAME: ""
+EMAIL_SMTP_PASSWORD: ""
+EMAIL_FROM: "Nazo OAuth <no-reply@example.com>"
+EMAIL_CODE_DEV_RESPONSE_ENABLED: false
+RUST_LOG: "info"

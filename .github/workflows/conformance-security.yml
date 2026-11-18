@@ -30,11 +30,12 @@ jobs:
           python-version: "3.15.0"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compile the real HTTP policy scripts
+        run: python -m py_compile scripts/full_real_request_source_policy.py scripts/rfc9967_scim_set_e2e.py
       - name: Check real HTTP source policy
-        run: |
-          python -m py_compile scripts/full_real_request_source_policy.py scripts/rfc9967_scim_set_e2e.py
-          python scripts/rfc9967_scim_set_e2e.py --source-policy-check
-          python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
+        run: python scripts/rfc9967_scim_set_e2e.py --source-policy-check
+      - name: Test the real HTTP source policy
+        run: python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
 
   supply-chain-gate:
     needs: inputs
@@ -54,9 +55,9 @@ jobs:
       - name: Check dependency policy
         run: cargo deny check advisories bans licenses sources
       - name: Generate Rust SBOM
-        run: |
-          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazoauth.cdx
-          mkdir -p target
+        run: >-
+          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazoauth.cdx &&
+          mkdir -p target &&
           mv crates/server/nazoauth.cdx.json target/nazoauth.cdx.json
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build service image
@@ -70,18 +71,9 @@ jobs:
           cache-from: type=gha,scope=nazo-oauth-service
           cache-to: type=gha,mode=max,scope=nazo-oauth-service
       - name: Scan service image
-        run: |
-          docker run --rm --entrypoint dpkg-query nazo-oauth-supply-chain:${{ github.sha }} -W apt libpcre2-8-0 libsqlite3-0 perl-base zlib1g
-          mkdir -p target/ci-service-image
-          docker save nazo-oauth-supply-chain:${{ github.sha }} -o target/ci-service-image/nazo-oauth-service.tar
-          docker run --rm \
-            -v "$PWD/target/ci-service-image/nazo-oauth-service.tar:/image.tar:ro" \
-            docker.io/aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 image \
-              --format table \
-              --exit-code 1 \
-              --severity CRITICAL,HIGH \
-              --ignore-unfixed \
-              --input /image.tar
+        env:
+          TRIVY_IMAGE: docker.io/aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+        run: bash .github/e2e-scan-service-image.sh
       - name: Upload scanned service image
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -110,9 +102,9 @@ jobs:
           name: nazo-oauth-service-image-${{ github.sha }}
           path: target/ci-service-image
       - name: Load scanned service image
-        run: |
-          docker load --input target/ci-service-image/nazo-oauth-service.tar
-          docker tag nazo-oauth-supply-chain:${{ github.sha }} nazo-oauth-e2e:latest
+        run: >-
+          docker load --input target/ci-service-image/nazo-oauth-service.tar &&
+          docker tag "nazo-oauth-supply-chain:$GITHUB_SHA" nazo-oauth-e2e:latest
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build E2E runner image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -124,209 +116,42 @@ jobs:
           cache-to: type=gha,mode=max,scope=nazo-oauth-e2e-runner
           file: .github/e2e-runner.Containerfile
       - name: Prepare isolated runtime config
-        run: |
-          mkdir -p runtime/e2e/avatars runtime/e2e/secrets runtime/e2e/bootstrap runtime/e2e/instance runtime/e2e/runtime-primary runtime/e2e/runtime-signed
-          cat > runtime/e2e/.env.yaml <<'YAML'
-          BIND: "0.0.0.0:8000"
-          DATA_DIR: "/var/lib/nazo_oauth"
-          UI_ENABLED: false
-          DEPLOYMENT_ID: "deployment-ci"
-          RUNTIME_INSTANCE_ID: "e2e-primary"
-          INSTANCE_IDENTITY_DIR: "/var/lib/nazo_oauth/runtime-instance"
-          DATABASE_URL: "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth"
-          VALKEY_URL: "redis://nazo-oauth-e2e-valkey:6379/0"
-          VALKEY_STATE_EPOCH: "019c8ca2-30a6-7000-8000-00000000e104"
-          VALKEY_COMMAND_TIMEOUT_MS: 1000
-          ISSUER: "http://127.0.0.1:8000"
-          FRONTEND_BASE_URL: "http://127.0.0.1:3000"
-          CORS_ALLOWED_ORIGINS:
-            - "http://127.0.0.1:3000"
-          DEFAULT_AUDIENCE: "resource://default"
-          SESSION_COOKIE_NAME: "nazo_oauth_session"
-          CSRF_COOKIE_NAME: "nazo_oauth_csrf"
-          COOKIE_SECURE: false
-          SESSION_TTL_SECONDS: 28800
-          AUTH_CODE_TTL_SECONDS: 60
-          ACCESS_TOKEN_TTL_SECONDS: 300
-          ID_TOKEN_TTL_SECONDS: 600
-          REFRESH_TOKEN_TTL_SECONDS: 2592000
-          AVATAR_MAX_BYTES: 2097152
-          AVATAR_OBJECT_STORE: "local"
-          CLIENT_DELIVERY_TTL_SECONDS: 86400
-          RATE_LIMIT_WINDOW_SECONDS: 60
-          TRUSTED_PROXY_CIDRS: ""
-          CLIENT_IP_HEADER_MODE: "none"
-          SUBJECT_TYPE: "public"
-          PAIRWISE_SUBJECT_SECRET: ""
-          PAR_TTL_SECONDS: 90
-          REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
-          FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS: 60
-          FEDERATION_PROVIDER_CONFIGS: >-
-            [{"provider_id":"codecov-oidc","enabled":true,"display_name":"Codecov OIDC","adapter_type":"oidc","issuer":"https://issuer.example","authorization_endpoint":"https://issuer.example/authorize","token_endpoint":"https://issuer.example/token","jwks_url":"https://issuer.example/jwks","client_id":"codecov-oidc-client","client_secret":"codecov-oidc-secret","redirect_uri":"http://127.0.0.1:8000/auth/federation/codecov-oidc/callback","scopes":"openid email profile"}]
-          FEDERATION_SAML_GATEWAY_ENABLED: true
-          FEDERATION_SAML_GATEWAY_ISSUER: "codecov-saml-gateway"
-          FEDERATION_SAML_GATEWAY_AUDIENCE: "nazo-oauth-codecov"
-          FEDERATION_SAML_GATEWAY_SECRET: "codecov-saml-gateway-secret-000000"
-          EMAIL_DELIVERY: "smtp"
-          EMAIL_CODE_TTL_SECONDS: 900
-          EMAIL_CODE_SEND_COOLDOWN_SECONDS: 1
-          EMAIL_CODE_PEER_COOLDOWN_SECONDS: 1
-          EMAIL_SMTP_HOST: "nazo-oauth-e2e-runner"
-          EMAIL_SMTP_PORT: 1025
-          EMAIL_SMTP_TLS: "none"
-          EMAIL_SMTP_USERNAME: ""
-          EMAIL_SMTP_PASSWORD: ""
-          EMAIL_FROM: "Nazo OAuth <no-reply@example.com>"
-          EMAIL_CODE_DEV_RESPONSE_ENABLED: false
-          RUST_LOG: "info"
-          YAML
-          mfa_totp_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
-          signing_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
-          {
-            echo 'MFA_TOTP_ENCRYPTION_KEY_ID: "e2e-ephemeral-v1"'
-            printf 'MFA_TOTP_ENCRYPTION_KEY: "%s"\n' "$mfa_totp_key"
-            echo 'SIGNING_KEY_ENCRYPTION_KEY_ID: "e2e-signing-root"'
-            printf 'SIGNING_KEY_ENCRYPTION_KEY: "%s"\n' "$signing_key"
-          } >> runtime/e2e/.env.yaml
-          cp runtime/e2e/.env.yaml runtime/e2e/.env-signed.yaml
-          sed -i 's/RUNTIME_INSTANCE_ID: "e2e-primary"/RUNTIME_INSTANCE_ID: "e2e-signed"/' runtime/e2e/.env-signed.yaml
+        run: bash .github/e2e-fixture.sh configure
       - name: Start PostgreSQL and Valkey
-        run: |
-          docker network create nazo-oauth-e2e-net
-          docker run -d --name nazo-oauth-e2e-postgres --network nazo-oauth-e2e-net -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=oauth docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
-          docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
-          ready=false
-          for _ in $(seq 1 60); do
-            if docker run --rm --network nazo-oauth-e2e-net -e PGPASSWORD=postgres docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 \
-              sh -lc 'pg_isready -h nazo-oauth-e2e-postgres -U postgres -d oauth && psql -h nazo-oauth-e2e-postgres -U postgres -d oauth -c "select 1" >/dev/null'
-            then
-              ready=true
-              break
-            fi
-            sleep 2
-          done
-          [ "$ready" = "true" ]
+        env:
+          POSTGRES_IMAGE: docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+          VALKEY_IMAGE: docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+        run: bash .github/e2e-fixture.sh start-dependencies
       - name: Migrate and start server
-        run: |
-          app_password="$(openssl rand -hex 24)"
-          docker exec nazo-oauth-e2e-postgres psql -U postgres -d oauth -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE nazoauth_e2e_app LOGIN PASSWORD '$app_password' NOSUPERUSER NOBYPASSRLS NOINHERIT"
-          docker exec -i nazo-oauth-e2e-postgres psql -U postgres -d oauth -v ON_ERROR_STOP=1 <<'SQL'
-          REVOKE ALL ON DATABASE oauth FROM PUBLIC;
-          GRANT CONNECT ON DATABASE oauth TO postgres, nazoauth_e2e_app;
-          REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-          SQL
-          docker run --rm --name nazo-oauth-e2e-migrate --network nazo-oauth-e2e-net \
-            --user "$(id -u):$(id -g)" \
-            --cap-drop ALL --security-opt no-new-privileges --read-only \
-            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
-            -e NAZOAUTH_MIGRATION_RUNTIME_ROLE=nazoauth_e2e_app \
-            -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
-            -v "$PWD/runtime/e2e/secrets:/var/lib/nazo_oauth/secrets" \
-            nazo-oauth-e2e:latest nazoauth migrate
-          docker run --rm --name nazo-oauth-e2e-tenant-bootstrap --network nazo-oauth-e2e-net \
-            --user "$(id -u):$(id -g)" \
-            --cap-drop ALL --security-opt no-new-privileges --read-only \
-            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
-            -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
-            -v "$PWD/runtime/e2e/secrets:/var/lib/nazo_oauth/secrets" \
-            nazo-oauth-e2e:latest nazoauth tenant-bootstrap
-          docker exec -i nazo-oauth-e2e-postgres psql -U postgres -d oauth -v ON_ERROR_STOP=1 <<'SQL'
-          WITH changed AS (
-              UPDATE runtime_module_desired_states
-              SET desired_mode = 'enabled',
-                  revision = revision + 1,
-                  reason = 'RFC 9967 CI fixture',
-                  updated_at = CURRENT_TIMESTAMP
-              WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
-                AND module_id = 'scim_security_events'
-                AND desired_mode = 'disabled'
-              RETURNING tenant_id, module_id, revision, actor_id, reason, updated_at
-          )
-          INSERT INTO runtime_module_state_events (
-              event_id, tenant_id, module_id, event_type, revision, instance_id, actor_id,
-              reason, before_state, after_state, outcome_code, occurred_at
-          )
-          SELECT
-              uuidv7(), tenant_id, module_id, 'desired_state_changed', revision, NULL, actor_id,
-              reason, 'disabled', 'enabled', NULL, updated_at
-          FROM changed;
-          SQL
-          test "$(
-            docker exec -e PGPASSWORD="$app_password" nazo-oauth-e2e-postgres \
-              psql -h 127.0.0.1 -U nazoauth_e2e_app -d oauth -At -v ON_ERROR_STOP=1 \
-              -c 'SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight(true, true, false)'
-          )" = "t"
-          sed -i \
-            "s#postgresql://postgres:postgres@#postgresql://nazoauth_e2e_app:${app_password}@#" \
-            runtime/e2e/.env.yaml runtime/e2e/.env-signed.yaml
-          docker run -d --name nazo-oauth-e2e-server --network nazo-oauth-e2e-net \
-            --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
-            -e NAZO_RUNTIME_INSTANCE_ID=e2e-primary \
-            -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
-            -v "$PWD/runtime/e2e/secrets:/var/lib/nazo_oauth/secrets" \
-            -v "$PWD/runtime/e2e/bootstrap:/var/lib/nazo_oauth/bootstrap" \
-            -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/tenants/00000000-0000-0000-0000-000000000001/avatars" \
-            -v "$PWD/runtime/e2e/instance:/var/lib/nazo_oauth/instance" \
-            -v "$PWD/runtime/e2e/runtime-primary:/var/lib/nazo_oauth/runtime-instance" \
-            nazo-oauth-e2e:latest nazoauth server
-          docker run -d --name nazo-oauth-e2e-server-signed --network nazo-oauth-e2e-net \
-            --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
-            -e NAZO_RUNTIME_INSTANCE_ID=e2e-signed \
-            -v "$PWD/runtime/e2e/.env-signed.yaml:/app/.env.yaml:ro" \
-            -v "$PWD/runtime/e2e/secrets:/var/lib/nazo_oauth/secrets" \
-            -v "$PWD/runtime/e2e/bootstrap:/var/lib/nazo_oauth/bootstrap" \
-            -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/tenants/00000000-0000-0000-0000-000000000001/avatars" \
-            -v "$PWD/runtime/e2e/instance:/var/lib/nazo_oauth/instance" \
-            -v "$PWD/runtime/e2e/runtime-signed:/var/lib/nazo_oauth/runtime-instance" \
-            nazo-oauth-e2e:latest nazoauth server
+        run: bash .github/e2e-fixture.sh start-server
       - name: Require both non-root servers to become ready
-        run: |
-          ready=false
-          for _ in $(seq 1 60); do
-            if docker run --rm --network nazo-oauth-e2e-net \
-              nazo-oauth-e2e-runner:latest python -c \
-              'import urllib.request; headers={"Host":"127.0.0.1:8000"}; urllib.request.urlopen(urllib.request.Request("http://nazo-oauth-e2e-server:8000/health", headers=headers), timeout=2).read(); urllib.request.urlopen(urllib.request.Request("http://nazo-oauth-e2e-server-signed:8000/health", headers=headers), timeout=2).read()'
-            then
-              ready=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$ready" != "true" ]; then
-            docker inspect nazo-oauth-e2e-server nazo-oauth-e2e-server-signed
-            docker logs nazo-oauth-e2e-server || true
-            docker logs nazo-oauth-e2e-server-signed || true
-            exit 1
-          fi
+        run: bash .github/e2e-fixture.sh wait-for-servers
       - name: Run RFC 9967 SCIM SET black-box matrix
-        run: |
-          docker run --rm --name nazo-oauth-rfc9967-runner --network nazo-oauth-e2e-net \
-            -v "$PWD:/app" -w /app \
-            -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
-            -e E2E_ISSUER_URL=http://127.0.0.1:8000 \
-            -e E2E_TENANT_HOST=127.0.0.1:8000 \
-            -e E2E_DATABASE_URL=postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth \
-            nazo-oauth-e2e-runner:latest python scripts/rfc9967_scim_set_e2e.py
+        run: >-
+          docker run --rm --name nazo-oauth-rfc9967-runner --network nazo-oauth-e2e-net
+          -v "$PWD:/app" -w /app
+          -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000
+          -e E2E_ISSUER_URL=http://127.0.0.1:8000
+          -e E2E_TENANT_HOST=127.0.0.1:8000
+          -e E2E_DATABASE_URL=postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth
+          nazo-oauth-e2e-runner:latest python scripts/rfc9967_scim_set_e2e.py
       - name: Run load and race gate
-        run: |
-          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
-            -v "$PWD:/app" -w /app \
-            -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
-            -e E2E_TENANT_HOST=127.0.0.1:8000 \
-            -e LOAD_REQUESTS=400 \
-            -e LOAD_CONCURRENCY=32 \
-            nazo-oauth-e2e-runner:latest python scripts/full_real_request_load.py
+        run: >-
+          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net
+          -v "$PWD:/app" -w /app
+          -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000
+          -e E2E_TENANT_HOST=127.0.0.1:8000
+          -e LOAD_REQUESTS=400
+          -e LOAD_CONCURRENCY=32
+          nazo-oauth-e2e-runner:latest python scripts/full_real_request_load.py
       - name: Run Valkey outage injection
-        run: |
-          docker stop nazo-oauth-e2e-valkey
-          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
-            -v "$PWD:/app" -w /app \
-            -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
-            -e E2E_TENANT_HOST=127.0.0.1:8000 \
-            nazo-oauth-e2e-runner:latest python scripts/valkey_failure_injection.py
+        run: >-
+          docker stop nazo-oauth-e2e-valkey &&
+          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net
+          -v "$PWD:/app" -w /app
+          -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000
+          -e E2E_TENANT_HOST=127.0.0.1:8000
+          nazo-oauth-e2e-runner:latest python scripts/valkey_failure_injection.py
       - name: Cleanup
         if: always()
-        run: |
-          docker rm -f nazo-oauth-rfc9967-runner nazo-oauth-e2e-runner nazo-oauth-e2e-server nazo-oauth-e2e-server-signed nazo-oauth-e2e-postgres nazo-oauth-e2e-valkey 2>/dev/null || true
-          docker network rm nazo-oauth-e2e-net 2>/dev/null || true
+        run: bash .github/e2e-fixture.sh cleanup

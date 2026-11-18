@@ -142,8 +142,9 @@ activated only by the corresponding test consumers.
 
 Target compilation is followed by executing the same application contracts in
 Node with `wasm-bindgen-test`. Install `wasm-bindgen-cli` at the exact
-`wasm-bindgen` version recorded in `Cargo.lock`; the workflow derives this
-version and installs it with its own locked dependency graph. The test profile
+`wasm-bindgen` version recorded in `Cargo.lock`. Run
+`python scripts/install_ci_wasm_runner.py` to install that version with its
+locked dependency graph, as CI does. The test profile
 uses optimization for RSA key generation, matching the workflow:
 
 ```sh
