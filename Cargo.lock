@@ -2824,6 +2824,7 @@ dependencies = [
  "nazo-auth",
  "nazo-crypto",
  "nazo-digital-credentials",
+ "nazo-mdoc",
  "p256",
  "pem",
  "rand 0.10.4",

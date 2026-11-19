@@ -1003,6 +1003,7 @@ fn mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding() {
 fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
     futures_executor::block_on(async {
         let (crypto, valid, _) = real_crypto_fixture().await;
+        let (scoped_verifier, _, _) = real_crypto_fixture().await;
         let holder = nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk();
         let input = mdoc_input(
             Some(HolderBinding::Jwk { jwk: holder }),
@@ -1069,12 +1070,20 @@ fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
                 &certs,
                 crate::policy::Openid4vcRevocationPolicy::Disabled,
             );
+            assert_eq!(
+                candidate
+                    .keyset
+                    .openid4vc_certificates()
+                    .unwrap()
+                    .mdoc_iaca_root_admitted(&certs.ca_der),
+                Some(case == "valid"),
+                "{case}"
+            );
             let issuance = candidate.sign(&input).await.map(|_| ());
             // Prepare authentic protocol evidence independently of NazoAuth's
             // issuer checks, so a rejecting issuer cannot mask a verifier gap.
             let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
-            let verification = candidate
-                .verify_mdoc(&PresentedCredential {
+            let presentation = PresentedCredential {
                     format: CredentialFormat::MsoMdoc,
                     encoded: encoded.into(),
                     expected_nonce: "verifier-nonce".into(),
@@ -1082,7 +1091,14 @@ fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
                     mdoc_session_transcript: Some(transcript.into()),
                     // A valid unrelated root cannot stand in for the authenticated
                     // root, even when it is the first configured scoped anchor.
-                    additional_trust_anchors: vec![valid.ca_der.clone(), certs.ca_der].into(),
+                    additional_trust_anchors: vec![valid.ca_der.clone(), certs.ca_der.clone()].into(),
+                };
+            let verification = candidate.verify_mdoc(&presentation).map(|_| ());
+            // A verifier without the configured IACA must check this scoped root.
+            let scoped_verification = scoped_verifier
+                .verify_mdoc(&PresentedCredential {
+                    additional_trust_anchors: vec![certs.ca_der].into(),
+                    ..presentation
                 })
                 .map(|_| ());
             let expected = if case == "valid" {
@@ -1090,7 +1106,11 @@ fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
             } else {
                 Err(CredentialTrustError::UntrustedIssuer)
             };
-            assert_eq!((issuance, verification), (expected, expected), "{case}");
+            assert_eq!(
+                (issuance, verification, scoped_verification),
+                (expected, expected, expected),
+                "{case}"
+            );
         }
     });
 }
@@ -1486,7 +1506,15 @@ fn mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link() {
         "the current path engine rejects multiple pathLen=0 rollover links"
     );
     assert_eq!(
-        super::mdoc::check_mdoc_issuer_profiles(&leaf, &chain, root.der(), &roots, &[], |_| {}),
+        super::mdoc::check_mdoc_issuer_profiles(
+            &leaf,
+            &chain,
+            root.der(),
+            &roots,
+            &[],
+            |_| None,
+            |_| {},
+        ),
         Ok(()),
     );
     assert_eq!(
@@ -1496,6 +1524,7 @@ fn mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link() {
             root.der(),
             &[certs.ca_der, root.der().to_vec()],
             &[],
+            |_| None,
             |_| {},
         ),
         Err(CredentialTrustError::UntrustedIssuer),

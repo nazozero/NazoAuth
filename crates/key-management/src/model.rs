@@ -362,6 +362,8 @@ pub struct Openid4vcPublicMaterial {
 pub struct Openid4vcCertificates {
     certificate_chain_der: Vec<Vec<u8>>,
     trust_anchors_der: Vec<Vec<u8>>,
+    // Profile and self-signature were checked against this exact immutable DER.
+    mdoc_iaca_root_admitted: Vec<bool>,
 }
 
 impl Openid4vcCertificates {
@@ -371,18 +373,28 @@ impl Openid4vcCertificates {
             "certificate chain",
         )?;
         let mut trust_anchors_der = Vec::new();
+        let mut mdoc_iaca_root_admitted = Vec::new();
         for der in
             decode_openid4vc_certificate_sequence(&material.trust_anchors_pem, "trust anchors")?
         {
             let (_, certificate) = x509_parser::parse_x509_certificate(&der)
                 .expect("certificate sequence decoder checked complete X.509 DER");
             if certificate.is_ca() && !trust_anchors_der.contains(&der) {
+                mdoc_iaca_root_admitted.push(
+                    nazo_mdoc::certificate::check_iaca_profile(&certificate).is_ok()
+                        && nazo_crypto::certificate::verify_signature(
+                            &certificate,
+                            certificate.public_key(),
+                        )
+                        .is_ok(),
+                );
                 trust_anchors_der.push(der);
             }
         }
         Ok(Self {
             certificate_chain_der,
             trust_anchors_der,
+            mdoc_iaca_root_admitted,
         })
     }
 
@@ -394,6 +406,17 @@ impl Openid4vcCertificates {
     #[must_use]
     pub fn trust_anchors_der(&self) -> &[Vec<u8>] {
         &self.trust_anchors_der
+    }
+
+    /// `None` means this certificate is not configured in this generation:
+    /// request-scoped roots require their own validation at use time.
+    /// Non-mdoc anchors remain available to other credential formats.
+    #[must_use]
+    pub fn mdoc_iaca_root_admitted(&self, der: &[u8]) -> Option<bool> {
+        self.trust_anchors_der
+            .iter()
+            .zip(&self.mdoc_iaca_root_admitted)
+            .find_map(|(root, admitted)| (root.as_slice() == der).then_some(*admitted))
     }
 }
 
