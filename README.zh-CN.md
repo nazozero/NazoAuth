@@ -81,9 +81,11 @@ Implicit、Hybrid、密码授权、未签名 Request Object 和 CIBA push 不受
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
 
-此按钮自动创建 Worker、D1 并执行迁移，但不会立即开放认证入口。必须先安全生成
-签名密钥、初始用户及客户端，配置 HTTPS 域名和 WAF 后才能启用。当前 WASM 代码大小及
-密码哈希 CPU 预算要求 **Workers Paid**。详见
+此按钮可在 **Workers Free** 上创建 Worker 和 D1。首次部署不开放公网入口，
+需要离线生成签名密钥与服务客户端，再配置 HTTPS 域名及 WAF。免费版的默认
+机器间认证模式支持 Client Credentials、令牌操作和 JWKS；密码登录无法保证
+满足免费版每次 10 ms CPU 限制，因此不会开放。现行代码包上限为两种套餐
+统一 64 MiB（未压缩）。详见
 [Cloudflare 一键部署操作](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button)。
 
 <details>

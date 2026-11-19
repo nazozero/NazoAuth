@@ -10,8 +10,11 @@ redirects and response policy stay in the shared implementation.
 ## Deployment profile
 
 Each deployment serves one issuer and one tenant through one primary D1 binding.
-Provision accounts and clients before deploying. Host the login/consent UI
-separately and set `frontend_base_url` to that application.
+The default Workers Free deployment is machine-only and provisions confidential
+service clients, without password users or interactive consent. The full
+profile can provision accounts and clients; it needs Workers Paid for password
+CPU. In that profile, host the login/consent UI separately and configure
+`frontend_base_url` accordingly.
 
 | Capability | Workers profile |
 | --- | --- |
@@ -55,9 +58,10 @@ indexed batches outside request handling. Durable fences retain their
 contract-specific retention deadlines. No isolate cache owns sessions,
 authorization codes, revocations or replay decisions.
 
-The minute cron starts at most 64 cleanup passes of up to 1,000 rows per
-category, and stops starting passes after 20 seconds or when a pass removes fewer
-than 1,000 rows in total. This lets cleanup catch up with replay traffic while
+The full profile's minute cron starts up to 64 cleanup passes of 1,000 rows
+each, stopping after 20 seconds or a short pass. The Workers Free machine-only
+profile makes a single pass of at most 500 rows; cleanup does not run a
+multi-pass loop against Free's 10 ms Cron CPU budget. This lets cleanup catch up with replay traffic while
 bounding each transaction and the scheduled work.
 
 ## Build
@@ -97,14 +101,23 @@ on non-WASM targets.
 Use the repository **root**. Cloudflare's button cannot clone only `deploy/cloudflare`:
 the Rust workspace and its dependencies live outside that directory.
 
-The button creates a Git copy, provisions the `NAZO_DB` D1 binding, runs the
-checked-in SQL migrations and deploys the Worker. The application is intentionally
+The button creates a Git copy, provisions the `NAZO_DB` D1 binding, deploys
+the private Worker and runs its SQL migrations. The D1 ID is intentionally
+omitted: Wrangler can resolve the provisioned database by binding name. The application is intentionally
 **not reachable** yet (`workers_dev = false`, no public route). Never expose an
 unprovisioned identity server or install a public bootstrap endpoint.
 
-The current Worker bundle is approximately 3.20 MiB gzip, exceeding the 3 MB
-Workers Free bundle limit. Password hashing also needs more than the Free plan's
-10 ms per-request CPU budget. **Use Workers Paid**; D1 still includes an allowance.
+Cloudflare [removed the gzip size cap in September 2026](https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/):
+Free and Paid now accept up to 64 MiB uncompressed (this Worker is approximately
+8.5 MiB). **Workers Free** has 100,000 requests/day, 10 ms CPU per HTTP request
+and 10 ms per Cron invocation; D1 has separate daily row-read/write quotas.
+
+The deployment button defaults to `machine_only: true`: service clients with
+Client Credentials, token management, OAuth metadata and JWKS. It rejects
+password users, Authorization Code and interactive login paths. The full
+interactive profile uses `machine_only: false` and **Workers Paid**, preserving
+Argon2id's security parameters. Client Credentials CPU usage on Free still
+requires real edge measurements before claiming production SLO compliance.
 Cloudflare Workers Builds has a 20-minute timeout and does not preinstall Rust:
 the repository-root `build` script installs Rust 1.100.0 and `worker-build`
 0.9.0. Confirm build completion in the Cloudflare dashboard.
@@ -114,8 +127,10 @@ button, install the local build dependencies (`npm run build`, requires Node,
 curl, and Python 3), and create a private JSON input **outside the Git
 repository** from `deploy/cloudflare/bootstrap.example.json`. Set the actual
 issuer HTTPS origin, the separately hosted frontend HTTPS origin, clients,
-and at least one user with an original password. The template password is
-deliberately rejected. Then run:
+and the intended confidential service clients. The Free template has
+`machine_only: true` and `users: []`. Paid full-profile deployments may set
+`machine_only: false` and provision users with original, strong passwords.
+Then run:
 
 ```sh
 npm run bootstrap -- /private/bootstrap.json /private/nazoauth-credentials.json
@@ -148,9 +163,9 @@ or credentials in a Git repository or CI log.
 
 ## Provision a fresh deployment
 
-Manual installations: create a D1 database and use the repository-root
-`wrangler.toml`. Set its database ID and public route; the checked-in zero ID
-is a placeholder for Deploy to Cloudflare auto-provisioning.
+Manual installations: create a D1 database or let Wrangler auto-provision it.
+Use repository-root `wrangler.toml` and the `NAZO_DB` binding. No placeholder
+database UUID is used. Set a public custom domain only after initialization.
 Configure the ingress rule below before exposing the route. Use Workers Paid to
 budget password hashing and the full application module.
 
@@ -241,7 +256,12 @@ into a fresh migrated database. The command refuses to overwrite an existing fil
 npm run deploy
 ```
 
-The Worker refuses to create missing keys in a request. Parsed keys and the
+The Worker refuses to create missing keys in a request. The Free machine-only
+profile allows OAuth server metadata, JWKS, service token issuance and token
+management, and does not expose any interactive authorization or password
+endpoints. The full profile retains the complete endpoint set documented above.
+
+Parsed keys and the
 completed application graph are reused within an isolate. The shared key manager
 advances persisted lifecycle state; a request refreshes its snapshot at most once
 per minute. Changing wrapping keys requires retaining access to the old

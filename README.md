@@ -89,11 +89,13 @@ supported deployment profile.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
 
-The deploy button provisions the Worker and D1 schema. It does not expose an
-issuer: signing keys, initial accounts/clients, the HTTPS domain and the zone
-WAF policy must be configured before enabling traffic. The current WASM bundle
-requires **Workers Paid** (gzip size and password hashing CPU). See the
-[Cloudflare setup instructions](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button).
+The button creates an unpublished Worker and D1 schema. Offline bootstrap
+provisions signing keys and service clients before the HTTPS domain and WAF
+rule can be enabled. **Workers Free** defaults to a machine-to-machine
+profile (Client Credentials, token management and JWKS). Interactive password
+login is unavailable under Free's 10 ms CPU budget. Both plans now permit
+64 MiB uncompressed Worker code. See the
+[setup instructions](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button).
 
 <details>
 <summary><strong>Install on an SSH host</strong></summary>
