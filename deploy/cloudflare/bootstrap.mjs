@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { delimiter, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -44,6 +44,21 @@ function configuration(input) {
   if (!Array.isArray(input.clients) || !Array.isArray(input.users)) {
     throw new Error('clients and users must be arrays (empty arrays are allowed)');
   }
+  const machineOnly = input.machine_only !== false;
+  if (machineOnly) {
+    if (input.users.length !== 0) {
+      throw new Error('Free machine-only profile cannot register password users');
+    }
+    if (!input.clients.every(client => client.client_type === 'confidential' &&
+        Array.isArray(client.redirect_uris) && client.redirect_uris.length === 0 &&
+        Array.isArray(client.grant_types) && client.grant_types.length === 1 &&
+        client.grant_types[0] === 'client_credentials')) {
+      throw new Error('Free machine-only profile needs confidential client_credentials clients');
+    }
+    if ((input.modules ?? []).length !== 0) {
+      throw new Error('Free machine-only profile cannot enable browser modules');
+    }
+  }
   for (const user of input.users) {
     if (typeof user.password !== 'string' || user.password.length < 12 ||
         /REPLACE|CHANGE_ME|PASSWORD_HERE|^</i.test(user.password)) {
@@ -56,7 +71,7 @@ function configuration(input) {
   const config = {
     tenant, issuer, frontend_base_url: frontend, ingress: 'direct_cloudflare',
     cors_allowed_origins: input.cors_allowed_origins ?? [frontend],
-    modules: input.modules ?? [],
+    modules: input.modules ?? [], machine_only: machineOnly,
   };
   return { config, clients: input.clients, users: input.users };
 }
@@ -110,12 +125,8 @@ function main() {
   if (inputPath === outputPath) throw new Error('Input and output must be distinct');
   if (statSync(inputPath).size > 1024 * 1024) throw new Error('Input exceeds 1 MiB');
   const { config, clients, users } = configuration(JSON.parse(readFileSync(inputPath, 'utf8')));
-  const wranglerText = readFileSync(wranglerConfig, 'utf8');
-  const dbId = wranglerText.match(/^database_id = "([^"]+)"$/m)?.[1];
-  if (!dbId || dbId === '00000000-0000-0000-0000-000000000000') {
-    throw new Error('No Cloudflare-provisioned D1 ID in wrangler.toml; deploy with the button first');
-  }
-
+  // Wrangler resolves the auto-provisioned D1 by binding name, even if
+  // Cloudflare's button did not write the database ID back to this TOML file.
   // Migrations are idempotent. Read the actual remote authority before importing.
   wrangler('d1', 'migrations', 'apply', 'NAZO_DB', '--remote');
   assertUnusedDatabase();

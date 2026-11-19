@@ -1,24 +1,27 @@
 {
   "issuer": "https://auth.example.com",
   "frontend_base_url": "https://app.example.com",
+  "machine_only": true,
   "modules": [],
   "clients": [
     {
-      "client_name": "Web application",
-      "client_type": "public",
-      "redirect_uris": ["https://app.example.com/callback"],
-      "scopes": ["openid", "profile", "email", "offline_access"],
-      "allowed_audiences": ["resource://default"],
-      "grant_types": ["authorization_code", "refresh_token"],
-      "token_endpoint_auth_method": "none",
-      "security_policy": { "version": 1 }
+      "client_name": "Service client",
+      "client_type": "confidential",
+      "redirect_uris": [],
+      "scopes": [
+        "service"
+      ],
+      "allowed_audiences": [
+        "resource://default"
+      ],
+      "grant_types": [
+        "client_credentials"
+      ],
+      "token_endpoint_auth_method": "client_secret_basic",
+      "security_policy": {
+        "version": 1
+      }
     }
   ],
-  "users": [
-    {
-      "email": "operator@example.com",
-      "username": "operator",
-      "password": "REPLACE_WITH_LONG_RANDOM_PASSWORD"
-    }
-  ]
+  "users": []
 }

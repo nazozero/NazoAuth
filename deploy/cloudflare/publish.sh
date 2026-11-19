@@ -1,7 +1,13 @@
 #!/bin/sh
 set -eu
-
-# The build and deploy commands run in separate shells in Workers Builds.
 export PATH="$HOME/.cargo/bin:$PATH"
-npm run db:migrate --prefix deploy/cloudflare
-npm run deploy --prefix deploy/cloudflare
+
+# An unpublished template needs its first deploy for D1 auto-provisioning.
+# Once an issuer has a public route, apply migrations before publishing code.
+if grep -Eq '^routes[[:space:]]*=' wrangler.toml; then
+  npm run db:migrate --prefix deploy/cloudflare
+  npm run deploy --prefix deploy/cloudflare
+else
+  npm run deploy --prefix deploy/cloudflare
+  npm run db:migrate --prefix deploy/cloudflare
+fi

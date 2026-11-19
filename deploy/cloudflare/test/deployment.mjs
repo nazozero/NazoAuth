@@ -16,6 +16,9 @@ test('Cloudflare button uses the complete Rust workspace root', () => {
   assert.match(wrangler, /^migrations_dir = "crates\/authorization-server-d1\/migrations"$/m);
   assert.match(wrangler, /^binding = "NAZO_DB"$/m);
   assert.match(wrangler, /^workers_dev = false$/m);
+  assert.doesNotMatch(wrangler, /^database_id =/m);
+  assert.doesNotMatch(wrangler, /^cpu_ms =/m);
+  assert.match(wrangler, /"machine_only":true/);
   assert.match(wrangler, /^binding = "NAZO_VERSION"$/m);
   const nested = JSON.parse(read('../package.json'));
   assert.match(nested.scripts['db:migrate'], /NAZO_DB --remote --config \.\.\/\.\.\/wrangler\.toml/);
@@ -28,7 +31,10 @@ test('build and publish entrypoints use pinned tooling and migration before depl
   assert.match(build, /1\.100\.0/);
   assert.match(build, /wasm32-unknown-unknown/);
   assert.match(build, /worker-build --version 0\.9\.0 --locked/);
-  assert.ok(publish.indexOf('db:migrate') < publish.indexOf('npm run deploy'));
+  assert.match(publish, /grep -Eq/);
+  assert.match(publish, /npm run db:migrate/);
+  assert.match(publish, /npm run deploy/);
+  assert.match(read('../bootstrap.mjs'), /machine_only/);
 });
 
 test('bootstrap refuses missing private input without touching remote resources', () => {
