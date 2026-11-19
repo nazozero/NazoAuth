@@ -41,8 +41,10 @@ it is not forced through a Unix-time conversion that would lose that value.
 
 Signing and verification use `nazo-mdoc`'s supported Annex B DS and IACA profiles.
 The protocol core validates DS fields once and returns a borrowed leaf view.
-NazoAuth supplies the authenticated path and verifies root self-signatures with
-its existing X.509 engine. The actual selected root must
+KeyManager checks configured IACA root profiles and self-signatures once per
+immutable certificate generation. Scoped roots are checked when used; NazoAuth
+still authenticates the selected certificate path, current validity and
+revocation for each presentation. The actual selected root must
 carry its required issuer contact and CRL distribution point; a trusted key or
 a valid unrelated root does not replace those fields. This also applies when
 an existing database generation is loaded directly for signing. Credential

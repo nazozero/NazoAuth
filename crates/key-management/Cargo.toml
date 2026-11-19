@@ -17,8 +17,9 @@ anyhow.workspace = true
 base64.workspace = true
 jiff.workspace = true
 nazo-auth.workspace = true
-nazo-crypto = { workspace = true, features = ["jose", "ecdh", "aead", "ed25519"] }
+nazo-crypto = { workspace = true, features = ["jose", "ecdh", "aead", "ed25519", "x509"] }
 nazo-digital-credentials.workspace = true
+nazo-mdoc = { workspace = true, features = ["certificate-profile"] }
 pem.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }

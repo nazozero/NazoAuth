@@ -6,6 +6,7 @@ use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
 };
+use nazo_key_management::Openid4vcCertificates;
 use nazo_mdoc::{
     Timestamp as MdocTimestamp,
     builder::DocumentBuilder,
@@ -15,7 +16,7 @@ use nazo_mdoc::{
     },
     model::types::{CoseAlgorithm, ValidityInfo},
     session::SessionTranscript,
-    verifier::{VerificationOptions, verify_presentation_borrowed},
+    verifier::{VerificationOptions, verify_presentation_borrowed_with_signer},
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -81,6 +82,12 @@ pub(super) async fn sign(
         signing_material.trust_anchor_der(),
         signing_material.lease.certificates().trust_anchors_der(),
         &[],
+        |der| {
+            signing_material
+                .lease
+                .certificates()
+                .mdoc_iaca_root_admitted(der)
+        },
         |_| {},
     )?;
     // The configured mDL dataset requires a country. The protocol core validates
@@ -142,15 +149,15 @@ pub(super) async fn sign(
             .collect::<Result<Vec<_>, CredentialTrustError>>()?;
         builder = builder.add_namespace(namespace, entries);
     }
-    let prepared = builder
-        .prepare(
-            CoseAlgorithm::ES256,
-            signing_material.certificate_chain_der().to_vec(),
-        )
-        .map_err(|error| match error {
-            nazo_mdoc::MdocError::CertificateProfile(_) => CredentialTrustError::UntrustedIssuer,
-            _ => CredentialTrustError::InvalidEncoding,
-        })?;
+    let chain = signing_material.certificate_chain_der().to_vec();
+    let prepared = match signing_material.lease.certificates().mdoc_signer() {
+        Some(signer) => builder.prepare_with_signer(chain, signer),
+        None => builder.prepare(CoseAlgorithm::ES256, chain),
+    }
+    .map_err(|error| match error {
+        nazo_mdoc::MdocError::CertificateProfile(_) => CredentialTrustError::UntrustedIssuer,
+        _ => CredentialTrustError::InvalidEncoding,
+    })?;
     let signature = signing_material
         .lease
         .sign(SignRequest {
@@ -263,13 +270,19 @@ pub(super) fn verify(
     // enforce CBOR/profile structure here without re-encoding the signed bytes.
     let transcript = SessionTranscript::from_cbor(transcript_bytes)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let mut documents = verify_presentation_borrowed(
+    // A matching immutable DS needs no repeat profile/key admission. Unknown
+    // signers still pass the full strict-DER/profile path in the core.
+    let material = crypto.keyset.openid4vc_certificates();
+    let mut documents = verify_presentation_borrowed_with_signer(
         &bytes,
         &transcript,
         &VerificationOptions {
             now: to_protocol_time(now)?,
             max_documents: 1,
         },
+        material
+            .as_ref()
+            .and_then(|material| material.mdoc_signer()),
     )
     .map_err(|error| match error {
         nazo_mdoc::MdocError::DeviceAuth(_)
@@ -295,7 +308,7 @@ pub(super) fn verify(
         pending.certificates(),
         pending.leaf_certificate(),
         now,
-        trust_material.trust_anchors_der(),
+        &trust_material,
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
     )?;
@@ -345,7 +358,7 @@ fn verify_mdoc_issuer_certificate_chain(
     certificates: &[impl AsRef<[u8]>],
     leaf: &x509_parser::certificate::X509Certificate<'_>,
     now: jiff::Timestamp,
-    trust_anchors: &[Vec<u8>],
+    trust_anchors: &Openid4vcCertificates,
     scoped_trust_anchors: &[Vec<u8>],
     revocation_policy: &nazo_digital_credentials::CertificateRevocationPolicy,
 ) -> Result<Vec<Vec<u8>>, CredentialTrustError> {
@@ -356,7 +369,7 @@ fn verify_mdoc_issuer_certificate_chain(
     // rejected at the protocol/application boundary in from_protocol_time.
     let anchor = verify_certificate_chain_with_scoped_at(
         certificates,
-        trust_anchors,
+        trust_anchors.trust_anchors_der(),
         scoped_trust_anchors,
         now.as_second(),
     )?
@@ -369,8 +382,9 @@ fn verify_mdoc_issuer_certificate_chain(
         leaf,
         certificates,
         anchor,
-        trust_anchors,
+        trust_anchors.trust_anchors_der(),
         scoped_trust_anchors,
+        |der| trust_anchors.mdoc_iaca_root_admitted(der),
         |certificate| {
             super::certificates::append_authority_key_identifiers(certificate, &mut identifiers);
         },
@@ -396,23 +410,28 @@ pub(super) fn check_mdoc_issuer_profiles(
     anchor_der: &[u8],
     configured_roots: &[Vec<u8>],
     scoped_roots: &[Vec<u8>],
+    admitted_root: impl Fn(&[u8]) -> Option<bool>,
     mut on_presented_ca: impl FnMut(&x509_parser::certificate::X509Certificate<'_>),
 ) -> Result<(), CredentialTrustError> {
     const INVALID: CredentialTrustError = CredentialTrustError::UntrustedIssuer;
     let (_, root) = parse_x509(anchor_der, "mdoc IACA root").map_err(|_| INVALID)?;
-    check_iaca_profile(&root).map_err(|_| INVALID)?;
-    // A WebPKI trust anchor authenticates child signatures; its own signature
-    // is not part of that path check. The ISO root is explicitly self-signed.
-    nazo_crypto::certificate::verify_signature(&root, root.public_key()).map_err(|_| INVALID)?;
+    // Configured IACA roots were authenticated at generation admission. Scoped
+    // roots arrive per request and must still pass their own profile/signature.
+    if !admitted_root(anchor_der).unwrap_or_else(|| {
+        check_iaca_profile(&root).is_ok()
+            && nazo_crypto::certificate::verify_signature(&root, root.public_key()).is_ok()
+    }) {
+        return Err(INVALID);
+    }
     check_x5chain_root_exclusion(certificates, anchor_der).map_err(|_| INVALID)?;
     let links = &certificates[1..];
     if let Some((first, rest)) = links.split_first() {
         let (_, mut link) = parse_x509(first.as_ref(), "mdoc IACA link").map_err(|_| INVALID)?;
         check_issuer_binding(leaf, &link).map_err(|_| INVALID)?;
-        let mut new_root = rollover_root(&link, configured_roots, scoped_roots)?;
+        let mut new_root = rollover_root(&link, configured_roots, scoped_roots, &admitted_root)?;
         for der in rest {
             let (_, issuer) = parse_x509(der.as_ref(), "mdoc IACA link").map_err(|_| INVALID)?;
-            let old_root = rollover_root(&issuer, configured_roots, scoped_roots)?;
+            let old_root = rollover_root(&issuer, configured_roots, scoped_roots, &admitted_root)?;
             check_iaca_link_profile(&link, &old_root, &new_root).map_err(|_| INVALID)?;
             on_presented_ca(&link);
             link = issuer;
@@ -430,6 +449,7 @@ fn rollover_root<'a>(
     link: &x509_parser::certificate::X509Certificate<'_>,
     configured: &'a [Vec<u8>],
     scoped: &'a [Vec<u8>],
+    admitted_root: &impl Fn(&[u8]) -> Option<bool>,
 ) -> Result<x509_parser::certificate::X509Certificate<'a>, CredentialTrustError> {
     const INVALID: CredentialTrustError = CredentialTrustError::UntrustedIssuer;
     for der in scoped.iter().chain(configured) {
@@ -440,9 +460,12 @@ fn rollover_root<'a>(
             && root.public_key().raw == link.public_key().raw
             && root.issuer().as_raw() == root.subject().as_raw()
         {
-            check_iaca_profile(&root).map_err(|_| INVALID)?;
-            nazo_crypto::certificate::verify_signature(&root, root.public_key())
-                .map_err(|_| INVALID)?;
+            if !admitted_root(der).unwrap_or_else(|| {
+                check_iaca_profile(&root).is_ok()
+                    && nazo_crypto::certificate::verify_signature(&root, root.public_key()).is_ok()
+            }) {
+                return Err(INVALID);
+            }
             return Ok(root);
         }
     }
