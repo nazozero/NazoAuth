@@ -1916,7 +1916,7 @@ fn iaca_profile_uses_twenty_calendar_years_including_century_month_end() {
             let (_, ca) = x509_parser::parse_x509_certificate(&der).unwrap();
             nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).unwrap();
             assert_eq!(
-                check_mdoc_iaca_profile(&ca).is_ok(),
+                check_iaca_profile(&ca).is_ok(),
                 !exceeds,
                 "start={start}, limit={limit}, exceeds={exceeds}"
             );

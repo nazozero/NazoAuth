@@ -88,25 +88,6 @@ pub(super) fn json_to_cbor(value: &Value) -> Result<ciborium::Value, CredentialT
     }
 }
 
-/// Date tags supported by the mdoc JSON adapter use ISO full-date or whole UTC
-/// seconds. Keep issuance and authenticated-claim projection on the same rule.
-pub(super) fn validate_mdoc_date_tag(tag: u64, text: &str) -> Result<(), CredentialTrustError> {
-    let valid = match tag {
-        1004 => nazo_mdoc::cbor::FullDate::new(text).is_ok(),
-        0 => {
-            text.len() == 20
-                && text.as_bytes().get(10) == Some(&b'T')
-                && text.ends_with('Z')
-                && nazo_mdoc::Timestamp::parse_rfc3339(text)
-                    .is_ok_and(|date| date.is_whole_second())
-        }
-        _ => false,
-    };
-    valid
-        .then_some(())
-        .ok_or(CredentialTrustError::InvalidEncoding)
-}
-
 /// Project the already validated, authenticated CBOR directly into the owned
 /// JSON result. Signed envelopes, digest maps and binary claim input stay borrowed.
 pub(super) fn cbor_to_json(
@@ -146,7 +127,7 @@ pub(super) fn cbor_to_json(
         6 => {
             let (tag, value) = value.tagged().map_err(|_| INVALID)?;
             let text = value.as_text().ok_or(INVALID)?;
-            validate_mdoc_date_tag(tag, text)?;
+            nazo_mdoc::cbor::validate_date_tag(tag, text).map_err(|_| INVALID)?;
             Ok(Value::String(text.to_owned()))
         }
         7 if value.is_null() => Ok(Value::Null),

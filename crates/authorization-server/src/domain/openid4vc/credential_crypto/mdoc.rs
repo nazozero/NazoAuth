@@ -5,14 +5,14 @@ use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
-    mdoc_certificate::{
-        check_mdoc_document_signer_profile, check_mdoc_iaca_link_profile, check_mdoc_iaca_profile,
-        check_mdoc_issuer_binding,
-    },
 };
 use nazo_mdoc::{
     Timestamp as MdocTimestamp,
     builder::DocumentBuilder,
+    certificate::{
+        check_iaca_link_profile, check_iaca_profile, check_issuer_binding,
+        check_x5chain_root_exclusion,
+    },
     model::types::{CoseAlgorithm, ValidityInfo},
     session::SessionTranscript,
     verifier::{VerificationOptions, verify_presentation_borrowed},
@@ -20,9 +20,7 @@ use nazo_mdoc::{
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use super::super::crypto_helpers::{
-    cbor_to_json, json_to_cbor, jwk_to_cose_key, parse_x509, validate_mdoc_date_tag,
-};
+use super::super::crypto_helpers::{cbor_to_json, json_to_cbor, jwk_to_cose_key, parse_x509};
 use super::{MdocStatusIssuancePolicy, Openid4vcCredentialCrypto, status};
 
 const MDL_DOCTYPE: &str = "org.iso.18013.5.1.mDL";
@@ -77,14 +75,25 @@ pub(super) async fn sign(
     if !remainder.is_empty() {
         return Err(CredentialTrustError::InvalidEncoding);
     }
-    check_mdoc_document_signer_profile(&certificate)?;
     check_mdoc_issuer_profiles(
         &certificate,
         signing_material.certificate_chain_der(),
         signing_material.trust_anchor_der(),
+        signing_material.lease.certificates().trust_anchors_der(),
+        &[],
         |_| {},
     )?;
-    validate_mdl_issuer_attributes(&certificate, &input.payload.credential_type, namespaces)?;
+    // The configured mDL dataset requires a country. The protocol core validates
+    // every supplied mDL value and binds country/jurisdiction to the signer.
+    if input.payload.credential_type == MDL_DOCTYPE
+        && namespaces
+            .get(MDL_NAMESPACE)
+            .and_then(|namespace| namespace.get("issuing_country"))
+            .and_then(Value::as_str)
+            .is_none()
+    {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
     let not_before =
         MdocTimestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
             .map_err(|_| CredentialTrustError::InvalidEncoding)?;
@@ -138,7 +147,10 @@ pub(super) async fn sign(
             CoseAlgorithm::ES256,
             signing_material.certificate_chain_der().to_vec(),
         )
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        .map_err(|error| match error {
+            nazo_mdoc::MdocError::CertificateProfile(_) => CredentialTrustError::UntrustedIssuer,
+            _ => CredentialTrustError::InvalidEncoding,
+        })?;
     let signature = signing_material
         .lease
         .sign(SignRequest {
@@ -156,62 +168,6 @@ pub(super) async fn sign(
             .to_issuer_signed_cbor()
             .map_err(|_| CredentialTrustError::InvalidEncoding)?,
     ))
-}
-
-fn validate_mdl_issuer_attributes(
-    certificate: &x509_parser::certificate::X509Certificate<'_>,
-    credential_type: &str,
-    namespaces: &Map<String, Value>,
-) -> Result<(), CredentialTrustError> {
-    if credential_type != MDL_DOCTYPE {
-        return Ok(());
-    }
-
-    let namespace = namespaces
-        .get(MDL_NAMESPACE)
-        .and_then(Value::as_object)
-        .ok_or(CredentialTrustError::InvalidEncoding)?;
-    let country = namespace
-        .get("issuing_country")
-        .and_then(Value::as_str)
-        .ok_or(CredentialTrustError::InvalidEncoding)?;
-    validate_mdl_issuer_attribute(certificate, "issuing_country", country)?;
-    if let Some(jurisdiction) = namespace.get("issuing_jurisdiction") {
-        validate_mdl_issuer_attribute(
-            certificate,
-            "issuing_jurisdiction",
-            jurisdiction
-                .as_str()
-                .ok_or(CredentialTrustError::InvalidEncoding)?,
-        )?;
-    }
-    Ok(())
-}
-
-// The DS profile has already established a well-formed country attribute.
-// ISO 18013-5 §7.2.1 compares retrieved data; ST is optional, so a national DS
-// without ST may sign an issuing_jurisdiction. No extra certificate parse is needed.
-fn validate_mdl_issuer_attribute(
-    certificate: &x509_parser::certificate::X509Certificate<'_>,
-    name: &str,
-    value: &str,
-) -> Result<(), CredentialTrustError> {
-    use x509_parser::der_parser::oid;
-    let oid = if name == "issuing_country" {
-        oid!(2.5.4.6)
-    } else {
-        oid!(2.5.4.8)
-    };
-    for attribute in certificate
-        .subject()
-        .iter_attributes()
-        .filter(|attribute| attribute.attr_type() == &oid)
-    {
-        if attribute.as_str().ok() != Some(value) {
-            return Err(CredentialTrustError::InvalidEncoding);
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn mdoc_element_to_cbor(
@@ -275,7 +231,8 @@ fn mdoc_date(value: &Value, full_date: bool) -> Result<ciborium::Value, Credenti
         .as_str()
         .ok_or(CredentialTrustError::InvalidEncoding)?;
     let tag = if full_date { 1004 } else { 0 };
-    validate_mdoc_date_tag(tag, text)?;
+    // Map the application's JSON representation. The builder validates the
+    // selected mDL type and date once before exposing external signing input.
     Ok(ciborium::Value::Tag(
         tag,
         Box::new(ciborium::Value::Text(text.to_owned())),
@@ -322,7 +279,9 @@ pub(super) fn verify(
             CredentialTrustError::InvalidSignature
         }
         nazo_mdoc::MdocError::Validity(_) => CredentialTrustError::InvalidValidity,
-        nazo_mdoc::MdocError::Certificate(_) => CredentialTrustError::UntrustedIssuer,
+        nazo_mdoc::MdocError::Certificate(_) | nazo_mdoc::MdocError::CertificateProfile(_) => {
+            CredentialTrustError::UntrustedIssuer
+        }
         _ => CredentialTrustError::InvalidEncoding,
     })?;
     // HAIP carries each credential in its own DeviceResponse. The core enforces
@@ -334,7 +293,7 @@ pub(super) fn verify(
         crypto.credential_trust_material(&presentation.additional_trust_anchors)?;
     let issuer_chain_authority_key_identifiers = verify_mdoc_issuer_certificate_chain(
         pending.certificates(),
-        pending.document(),
+        pending.leaf_certificate(),
         now,
         trust_material.trust_anchors_der(),
         &presentation.additional_trust_anchors,
@@ -349,10 +308,7 @@ pub(super) fn verify(
             .to_vec()
             .map_err(|_| CredentialTrustError::InvalidHolderBinding)?,
     );
-    let status = mso
-        .status
-        .map(|status| status::mdoc_reference_to_json(status.raw))
-        .transpose()?;
+    let status = mso.status.map(status::mdoc_reference_to_json).transpose()?;
     let mut namespaces = Map::new();
     for (namespace, items) in document.issuer_signed.name_spaces {
         let mut claims = Map::new();
@@ -387,21 +343,12 @@ pub(super) fn verify(
 
 fn verify_mdoc_issuer_certificate_chain(
     certificates: &[impl AsRef<[u8]>],
-    document: &nazo_mdoc::model::borrowed::IssuerSignedDocumentRef<'_>,
+    leaf: &x509_parser::certificate::X509Certificate<'_>,
     now: jiff::Timestamp,
     trust_anchors: &[Vec<u8>],
     scoped_trust_anchors: &[Vec<u8>],
     revocation_policy: &nazo_digital_credentials::CertificateRevocationPolicy,
 ) -> Result<Vec<Vec<u8>>, CredentialTrustError> {
-    let Some(leaf_der) = certificates.first() else {
-        return Err(CredentialTrustError::UntrustedIssuer);
-    };
-    let (remainder, leaf) = x509_parser::parse_x509_certificate(leaf_der.as_ref())
-        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-    if !remainder.is_empty() {
-        return Err(CredentialTrustError::UntrustedIssuer);
-    }
-    check_mdoc_document_signer_profile(&leaf)?;
     // ISO 18013-5 §9.3.1 separately requires MSO.signed within the DS validity
     // interval (checked by the core). The RFC 5280 path and revocation checks
     // use this presentation's one current-time observation, never MSO.signed.
@@ -417,29 +364,17 @@ fn verify_mdoc_issuer_certificate_chain(
     // Compare against the actual authenticated issuing CA, including an IACA
     // link when present. A matching name in some other loaded anchor is no proof.
     let mut identifiers = Vec::new();
-    super::certificates::append_authority_key_identifiers(&leaf, &mut identifiers);
-    check_mdoc_issuer_profiles(&leaf, certificates, anchor, |certificate| {
-        super::certificates::append_authority_key_identifiers(certificate, &mut identifiers);
-    })?;
-    if document.doc_type == MDL_DOCTYPE
-        && let Some(items) = document.issuer_signed.name_spaces.get(MDL_NAMESPACE)
-    {
-        for item in items.iter().filter(|item| {
-            matches!(
-                item.element_identifier,
-                "issuing_country" | "issuing_jurisdiction"
-            )
-        }) {
-            validate_mdl_issuer_attribute(
-                &leaf,
-                item.element_identifier,
-                item.element_value
-                    .as_text()
-                    .ok_or(CredentialTrustError::UntrustedIssuer)?,
-            )
-            .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-        }
-    }
+    super::certificates::append_authority_key_identifiers(leaf, &mut identifiers);
+    check_mdoc_issuer_profiles(
+        leaf,
+        certificates,
+        anchor,
+        trust_anchors,
+        scoped_trust_anchors,
+        |certificate| {
+            super::certificates::append_authority_key_identifiers(certificate, &mut identifiers);
+        },
+    )?;
     let scoped_anchor_authenticated = scoped_trust_anchors
         .iter()
         .any(|candidate| candidate.as_slice() == anchor);
@@ -452,44 +387,66 @@ fn verify_mdoc_issuer_certificate_chain(
     Ok(identifiers)
 }
 
-/// Apply the same Annex B profiles after the existing path owner selects the
-/// exact ordered chain and root. Parse each CA once for its profile, bindings
-/// and the verifier's authenticated metadata projection; signing needs no projection.
+/// Select rollover evidence from deployment trust material after the path engine
+/// authenticates the exact presented chain. ISO field relationships belong to
+/// nazo-mdoc; root admission, signatures and evidence availability belong here.
 pub(super) fn check_mdoc_issuer_profiles(
     leaf: &x509_parser::certificate::X509Certificate<'_>,
     certificates: &[impl AsRef<[u8]>],
     anchor_der: &[u8],
+    configured_roots: &[Vec<u8>],
+    scoped_roots: &[Vec<u8>],
     mut on_presented_ca: impl FnMut(&x509_parser::certificate::X509Certificate<'_>),
 ) -> Result<(), CredentialTrustError> {
-    let (_, root) = parse_x509(anchor_der, "mdoc IACA root")
-        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-    check_mdoc_iaca_profile(&root)?;
-    let root_presented = certificates
-        .last()
-        .is_some_and(|der| der.as_ref() == anchor_der);
-    let links = &certificates[1..certificates.len() - usize::from(root_presented)];
+    const INVALID: CredentialTrustError = CredentialTrustError::UntrustedIssuer;
+    let (_, root) = parse_x509(anchor_der, "mdoc IACA root").map_err(|_| INVALID)?;
+    check_iaca_profile(&root).map_err(|_| INVALID)?;
+    // A WebPKI trust anchor authenticates child signatures; its own signature
+    // is not part of that path check. The ISO root is explicitly self-signed.
+    nazo_crypto::certificate::verify_signature(&root, root.public_key()).map_err(|_| INVALID)?;
+    check_x5chain_root_exclusion(certificates, anchor_der).map_err(|_| INVALID)?;
+    let links = &certificates[1..];
     if let Some((first, rest)) = links.split_first() {
-        let (_, mut link) = parse_x509(first.as_ref(), "mdoc IACA link")
-            .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-        check_mdoc_issuer_binding(leaf, &link)?;
+        let (_, mut link) = parse_x509(first.as_ref(), "mdoc IACA link").map_err(|_| INVALID)?;
+        check_issuer_binding(leaf, &link).map_err(|_| INVALID)?;
+        let mut new_root = rollover_root(&link, configured_roots, scoped_roots)?;
         for der in rest {
-            let (_, issuer) = parse_x509(der.as_ref(), "mdoc IACA link")
-                .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
-            check_mdoc_iaca_link_profile(&link, &issuer, false)?;
+            let (_, issuer) = parse_x509(der.as_ref(), "mdoc IACA link").map_err(|_| INVALID)?;
+            let old_root = rollover_root(&issuer, configured_roots, scoped_roots)?;
+            check_iaca_link_profile(&link, &old_root, &new_root).map_err(|_| INVALID)?;
             on_presented_ca(&link);
             link = issuer;
+            new_root = old_root;
         }
-        check_mdoc_iaca_link_profile(&link, &root, true)?;
+        check_iaca_link_profile(&link, &root, &new_root).map_err(|_| INVALID)?;
         on_presented_ca(&link);
     } else {
-        check_mdoc_issuer_binding(leaf, &root)?;
-    }
-    // Loaded anchors are not presented issuer metadata. An explicitly transmitted
-    // root remains part of the already authenticated wire chain.
-    if root_presented {
-        on_presented_ca(&root);
+        check_issuer_binding(leaf, &root).map_err(|_| INVALID)?;
     }
     Ok(())
+}
+
+fn rollover_root<'a>(
+    link: &x509_parser::certificate::X509Certificate<'_>,
+    configured: &'a [Vec<u8>],
+    scoped: &'a [Vec<u8>],
+) -> Result<x509_parser::certificate::X509Certificate<'a>, CredentialTrustError> {
+    const INVALID: CredentialTrustError = CredentialTrustError::UntrustedIssuer;
+    for der in scoped.iter().chain(configured) {
+        let Ok((_, root)) = parse_x509(der, "mdoc rollover root") else {
+            continue;
+        };
+        if root.subject().as_raw() == link.subject().as_raw()
+            && root.public_key().raw == link.public_key().raw
+            && root.issuer().as_raw() == root.subject().as_raw()
+        {
+            check_iaca_profile(&root).map_err(|_| INVALID)?;
+            nazo_crypto::certificate::verify_signature(&root, root.public_key())
+                .map_err(|_| INVALID)?;
+            return Ok(root);
+        }
+    }
+    Err(INVALID)
 }
 
 pub(super) fn verify_certificate_chain_with_scoped_at<'a>(

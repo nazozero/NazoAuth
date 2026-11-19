@@ -1,5 +1,5 @@
 use jiff::Timestamp;
-use nazo_passkey::PasskeyCredential as WebauthnCredential;
+use nazo_passkey::{CredentialUpdate, PasskeyCredential as WebauthnCredential};
 use uuid::Uuid;
 
 use crate::{PublicAccount, TenantId, UserId};
@@ -33,15 +33,11 @@ pub struct PasskeyCredentialSummary {
 }
 
 /// Signed authentication facts committed before the replacement session is issued.
-/// The counter and the previously observed backup eligibility are compare-and-set
-/// guards. UV initialization is monotonic and needs independent authentication.
+/// Protocol state is committed against the library's observed counter and backup
+/// flags. UV initialization is monotonic and needs independent authentication.
 #[derive(Clone, Copy, Debug)]
 pub struct PasskeyAuthenticationUpdate {
-    pub expected_counter: u32,
-    pub new_counter: u32,
-    pub expected_backup_eligible: Option<bool>,
-    pub backup_eligible: bool,
-    pub backup_state: bool,
+    pub credential: CredentialUpdate,
     pub initialize_user_verification: bool,
 }
 

@@ -74,9 +74,8 @@ hmac = "0.13.0"
 hkdf = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
-iri-string = { version = "0.7.14", default-features = false }
 jsonwebtoken = { version = "12.0.0", default-features = false }
-nazo-mdoc = { version = "0.3.0", git = "https://github.com/nazozero/nazo-mdoc", rev = "920b717f9916a7dda1ecacd6bacf3bde84d75495", default-features = false }
+nazo-mdoc = { version = "0.4.0", git = "https://github.com/nazozero/nazo-mdoc", rev = "3084a05895b8193eea479f4d8433b15d2f60e689", default-features = false, features = ["certificate-profile"] }
 lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
@@ -105,7 +104,7 @@ nazo-valkey = { version = "0.3.9", path = "crates/state-store-valkey" }
 pem = "4.0.0"
 pkcs8 = { version = "0.11.0", features = ["alloc"] }
 p256 = "0.14.0"
-nazo-passkey = { version = "0.2.0", git = "https://github.com/nazozero/nazo-passkey", rev = "092f672175e5facdd24062536df34a75c6145f98", features = ["aws-lc"] }
+nazo-passkey = { version = "0.3.0", git = "https://github.com/nazozero/nazo-passkey", rev = "eafa0ae0e93ecb96a1dbad51c2a4fafdeb1d7921", features = ["aws-lc"] }
 process-wrap = { version = "10.0.1", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
 proptest = "1.12.0"
 rand = "0.10.4"

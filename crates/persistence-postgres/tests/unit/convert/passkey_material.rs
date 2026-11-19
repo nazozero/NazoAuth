@@ -117,7 +117,8 @@ fn legacy_jsonb_es256_and_ed25519_credentials_authenticate_without_registration(
         let result = wa
             .finish_authentication(&state, &response, &credential)
             .unwrap();
-        assert_eq!(result.new_counter, 13);
+        assert_eq!(result.update.new_counter, 13);
+        assert_eq!(result.update.expected_counter, 12);
         assert!(result.user_verified);
         assert!(
             !result.user_verification_eligible,

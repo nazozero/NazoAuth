@@ -27,7 +27,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | Directory | Cargo package | Responsibility |
 | --- | --- | --- |
 | `authorization-server-core` | `nazo-auth` | Framework-independent OAuth, OIDC, FAPI and CIBA authorization-server policy, protocol types, grants, claims, metadata capability projection, sender constraints, and security profiles. It does not depend on Actix, Diesel, Fred, database rows, or configuration loading. |
-| `digital-credentials` | `nazo-digital-credentials` | Framework-independent credential and mdoc data, cryptographic, certificate, compression, and validation primitives shared by OpenID4VC issuance, verification, and key management. |
+| `digital-credentials` | `nazo-digital-credentials` | Framework-independent credential contracts, JSON claim models, status, revocation and application trust policy shared by OpenID4VC issuance, verification and key management. ISO mdoc parsing, cryptography and certificate profiles belong to `nazo-mdoc`. |
 | `identity` | `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. It depends on `nazo-scim-events` for SCIM event types, not on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
 | `resource-server` | `nazo-resource-server` | Standalone JWT access-token and sender-constraint verification. It is independent of the authorization server, identity, and every Web framework. |
 | `http-signatures` | `nazo-http-signatures` | Reusable HTTP Message Signatures, structured-field, content-digest, signing, and verification primitives. Authorization-server FAPI policy remains in `nazo-auth`. |
@@ -157,6 +157,11 @@ without a runtime dispatch layer.
 Each key generation also owns decoded OpenID4VC certificate DER shared by verifier
 requests and pinned signing leases; path selection, validity and revocation checks
 remain at the request boundary, and scoped trust anchors are borrowed directly.
+
+The `nazo-mdoc/certificate-profile` feature supplies ISO certificate profiles
+and borrowed leaf evidence. The application selects roots, authenticates paths
+and root signatures, and executes revocation/status policy through existing
+owners. JSON dataset mapping and signing-key leases stay in the application.
 
 The WebAuthn dependency enables `nazo-passkey/aws-lc` to reuse native AWS-LC for
 ES256 verification. Its WASM target retains RustCrypto ES256, and Ed25519 keeps

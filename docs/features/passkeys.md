@@ -155,12 +155,16 @@ initialization and backup state. Missing historical security facts remain
 unknown; they are never inferred from the current configuration.
 
 Authentication updates the sign counter and signed backup facts together before
-creating a session, using a compare-and-set on the prior counter and backup
-eligibility. UV initialization, when independently authorized, is part of that
+creating a session. The protocol library returns `CredentialUpdate` and a
+`CounterStatus` after signature verification. NazoAuth rejects `NonIncreasing`
+under its counter-risk policy. Persistence commits the accepted update using a
+compare-and-set on the prior counter, backup eligibility and backup state. UV initialization, when independently authorized, is part of that
 same update and cannot be reverted by a concurrent authentication. A CAS conflict
 fails login and retains the existing counter-conflict audit behavior. Zero-only
 counters remain supported; one-use Valkey challenges provide replay protection
-for such authenticators.
+for such authenticators. Comparing the prior backup state also prevents a
+zero-counter authentication from overwriting a concurrent backup-state change.
+The stored credential format and database schema are unchanged.
 
 Stored attestation evidence distinguishes no attestation, self attestation and
 verified statements with an untrusted certificate. A valid attestation signature

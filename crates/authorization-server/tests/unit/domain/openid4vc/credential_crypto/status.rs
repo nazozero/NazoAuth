@@ -97,7 +97,7 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
         let issued = nazo_mdoc::parser::parse_issued_borrowed(&bytes).unwrap();
         let mso = issued.issuer_auth.mso().unwrap();
         assert_eq!(
-            mdoc_reference_to_json(mso.status.unwrap().raw).unwrap(),
+            mdoc_reference_to_json(mso.status.unwrap()).unwrap(),
             input.status.clone().unwrap()
         );
         // The same resolver does not authorize issuance without the explicit policy.
@@ -148,11 +148,35 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
 }
 
 fn project_mdoc_status(raw: Cbor) -> Result<Value, CredentialTrustError> {
-    let mut encoded = Vec::new();
-    ciborium::into_writer(&raw, &mut encoded).unwrap();
-    let borrowed = nazo_mdoc::model::borrowed::CborValueRef::parse(&encoded)
+    // Exercise the same typed MSO parser as verification. Deliberately encode
+    // malformed status samples without the issuance builder's validation.
+    let certs = certificate_fixture("issuer.example");
+    let (encoded, _) = super::super::tests::valid_mdoc_presentation(&certs, Timestamp::now(), None);
+    let bytes = URL_SAFE_NO_PAD.decode(encoded).unwrap();
+    let parsed = nazo_mdoc::parser::parse_borrowed(&bytes).unwrap();
+    let payload = parsed.documents[0]
+        .issuer_signed
+        .issuer_auth
+        .cose_sign1
+        .payload
+        .unwrap();
+    let Cbor::Tag(24, embedded) = ciborium::from_reader(payload).unwrap() else {
+        panic!("MSO payload tag");
+    };
+    let Cbor::Bytes(inner) = *embedded else {
+        panic!("MSO payload bytes")
+    };
+    let mut mso: Cbor = ciborium::from_reader(inner.as_slice()).unwrap();
+    mso.as_map_mut()
+        .unwrap()
+        .push((Cbor::Text("status".into()), raw));
+    let mut inner = Vec::new();
+    ciborium::into_writer(&mso, &mut inner).unwrap();
+    let mut payload = Vec::new();
+    ciborium::into_writer(&Cbor::Tag(24, Box::new(Cbor::Bytes(inner))), &mut payload).unwrap();
+    let status = nazo_mdoc::model::borrowed::MsoRef::parse(&payload)
         .map_err(|_| CredentialTrustError::InvalidStatus)?;
-    mdoc_reference_to_json(borrowed)
+    mdoc_reference_to_json(status.status.ok_or(CredentialTrustError::InvalidStatus)?)
 }
 
 #[test]

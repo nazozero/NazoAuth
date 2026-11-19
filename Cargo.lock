@@ -2735,14 +2735,12 @@ version = "0.3.9"
 dependencies = [
  "base64 0.23.1",
  "flate2",
- "iri-string",
  "jiff 1.0.1",
  "nazo-crypto",
  "rand 0.10.4",
  "rcgen",
  "serde",
  "serde_json",
- "sha1",
  "sha2",
  "thiserror",
  "url",
@@ -2845,8 +2843,8 @@ dependencies = [
 
 [[package]]
 name = "nazo-mdoc"
-version = "0.3.0"
-source = "git+https://github.com/nazozero/nazo-mdoc?rev=920b717f9916a7dda1ecacd6bacf3bde84d75495#920b717f9916a7dda1ecacd6bacf3bde84d75495"
+version = "0.4.0"
+source = "git+https://github.com/nazozero/nazo-mdoc?rev=3084a05895b8193eea479f4d8433b15d2f60e689#3084a05895b8193eea479f4d8433b15d2f60e689"
 dependencies = [
  "ciborium",
  "const-oid 0.10.3",
@@ -2861,11 +2859,13 @@ dependencies = [
  "p384",
  "p521",
  "serde",
+ "sha1",
  "sha2",
  "signature",
  "thiserror",
  "time",
  "x509-cert 0.3.0",
+ "x509-parser",
 ]
 
 [[package]]
@@ -3020,8 +3020,8 @@ dependencies = [
 
 [[package]]
 name = "nazo-passkey"
-version = "0.2.0"
-source = "git+https://github.com/nazozero/nazo-passkey?rev=092f672175e5facdd24062536df34a75c6145f98#092f672175e5facdd24062536df34a75c6145f98"
+version = "0.3.0"
+source = "git+https://github.com/nazozero/nazo-passkey?rev=eafa0ae0e93ecb96a1dbad51c2a4fafdeb1d7921#eafa0ae0e93ecb96a1dbad51c2a4fafdeb1d7921"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",

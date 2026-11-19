@@ -59,6 +59,7 @@ opentelemetry-appender-tracing = "0.33.1"
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
 opentelemetry_sdk = { version = "0.33.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
 process-wrap = { workspace = true }
+nazo-mdoc = { workspace = true, features = ["issue"] }
 nazo-passkey = { workspace = true }
 rand = { workspace = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json", "stream", "query", "form"] }
@@ -88,7 +89,6 @@ zeroize = { workspace = true }
 [dev-dependencies]
 cookie = { workspace = true, features = ["percent-encode"] }
 jiff-diesel.workspace = true
-nazo-mdoc = { workspace = true, features = ["issue"] }
 nazoauth = { workspace = true, features = ["conformance", "test-support"] }
 ciborium = { workspace = true }
 coset = { workspace = true }

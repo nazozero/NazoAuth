@@ -22,36 +22,21 @@ const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
 /// Project only the supported authenticated MSO mechanism. General claim
 /// projection must never decide whether an authenticated status field exists.
 pub(super) fn mdoc_reference_to_json(
-    raw: nazo_mdoc::model::borrowed::CborValueRef<'_>,
+    status: nazo_mdoc::model::borrowed::MsoStatusRef<'_>,
 ) -> Result<Value, CredentialTrustError> {
-    // Map uniqueness and CBOR wire types have already been checked by the core.
-    let mut mechanisms = raw.map().map_err(|_| INVALID)?;
+    // The core parsed idx/uri and rejected duplicate keys. NazoAuth accepts one
+    // status-list mechanism without delegated-signer or unknown members.
+    let reference = status.status_list.ok_or(INVALID)?;
+    let mut mechanisms = status.raw.map().map_err(|_| INVALID)?;
     if mechanisms.len() != 1 {
         return Err(INVALID);
     }
-    let (mechanism, reference) = mechanisms.next().ok_or(INVALID)?.map_err(|_| INVALID)?;
-    if mechanism.as_text() != Some("status_list") {
+    let (_, fields) = mechanisms.next().ok_or(INVALID)?.map_err(|_| INVALID)?;
+    if fields.map().map_err(|_| INVALID)?.len() != 2 {
         return Err(INVALID);
-    }
-    let reference = reference.map().map_err(|_| INVALID)?;
-    if reference.len() != 2 {
-        return Err(INVALID);
-    }
-    let mut index = None;
-    let mut uri = None;
-    for entry in reference {
-        let (name, value) = entry.map_err(|_| INVALID)?;
-        match name.as_text() {
-            Some("idx") => {
-                index =
-                    Some(u64::try_from(value.as_integer().ok_or(INVALID)?).map_err(|_| INVALID)?)
-            }
-            Some("uri") => uri = Some(value.as_text().ok_or(INVALID)?),
-            _ => return Err(INVALID),
-        }
     }
     Ok(serde_json::json!({
-        "status_list": {"idx": index.ok_or(INVALID)?, "uri": uri.ok_or(INVALID)?}
+        "status_list": {"idx": reference.idx, "uri": reference.uri}
     }))
 }
 

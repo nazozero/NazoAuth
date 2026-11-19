@@ -320,6 +320,30 @@ pub(super) fn valid_mdoc_presentation(
     valid_mdoc_presentation_with_holder(certs, signed_at, status, &holder)
 }
 
+// Build with an admitted DS, then supply the deliberately nonconforming
+// certificate with the same key. The production builder must not be weakened
+// to manufacture negative verifier fixtures.
+fn mdoc_presentation_with_unchecked_certificate(certs: &CertificateFixture) -> (String, Vec<u8>) {
+    let admitted = certificate_fixture_with_key(
+        "issuer.example",
+        KeyPair::from_pem(&certs.leaf_key.serialize_pem()).unwrap(),
+    );
+    let (encoded, transcript) = valid_mdoc_presentation(&admitted, Timestamp::now(), None);
+    let encoded = resign_mdoc(&encoded, certs, |document, _| {
+        document
+            .issuer_signed
+            .issuer_auth
+            .cose_sign1
+            .unprotected
+            .rest
+            .iter_mut()
+            .find(|(label, _)| *label == coset::Label::Int(33))
+            .unwrap()
+            .1 = ciborium::Value::Bytes(certs.leaf_der.clone());
+    });
+    (encoded, transcript)
+}
+
 fn valid_mdoc_presentation_with_holder(
     certs: &CertificateFixture,
     signed_at: jiff::Timestamp,
@@ -984,18 +1008,62 @@ fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
             Some(HolderBinding::Jwk { jwk: holder }),
             json!({"org.iso.18013.5.1":{"issuing_country":"US"}}),
         );
-        for case in ["valid", "missing_crldp", "missing_contact"] {
-            let certs = certificate_fixture_with_parameters(
+        for case in [
+            "valid",
+            "missing_crldp",
+            "missing_contact",
+            "not_self_signed",
+        ] {
+            let mut root_params = None;
+            let mut root_key = None;
+            let mut certs = certificate_fixture_with_wire_edit(
                 "issuer.example",
                 KeyPair::from_pem(&valid.leaf_key.serialize_pem()).unwrap(),
                 true,
-                |ca, _| match case {
-                    "valid" => {}
-                    "missing_crldp" => ca.crl_distribution_points.clear(),
-                    "missing_contact" => ca.custom_extensions.clear(),
-                    _ => unreachable!(),
+                |ca, _| {
+                    match case {
+                        "valid" | "not_self_signed" => {}
+                        "missing_crldp" => ca.crl_distribution_points.clear(),
+                        "missing_contact" => ca.custom_extensions.clear(),
+                        _ => unreachable!(),
+                    }
+                    root_params = Some(ca.clone());
+                },
+                |der, ca_key| {
+                    root_key = Some(KeyPair::from_pem(&ca_key.serialize_pem()).unwrap());
+                    der
                 },
             );
+            if case == "not_self_signed" {
+                let params = root_params.unwrap();
+                let other = CertifiedIssuer::self_signed(
+                    params.clone(),
+                    KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+                )
+                .unwrap();
+                let root = params
+                    .signed_by(root_key.as_ref().unwrap(), &other)
+                    .unwrap();
+                certs.ca_der = root.der().to_vec();
+                certs.ca_pem = root.pem();
+                let (_, root) = x509_parser::parse_x509_certificate(&certs.ca_der).unwrap();
+                let (_, signer) = x509_parser::parse_x509_certificate(other.der()).unwrap();
+                nazo_mdoc::certificate::check_iaca_profile(&root).unwrap();
+                nazo_crypto::certificate::verify_signature(&root, signer.public_key()).unwrap();
+                assert!(
+                    nazo_crypto::certificate::verify_signature(&root, root.public_key()).is_err()
+                );
+                assert!(
+                    verify_certificate_chain_at(
+                        std::slice::from_ref(&certs.leaf_der),
+                        std::slice::from_ref(&certs.ca_der),
+                        Timestamp::now().as_second(),
+                    )
+                    .unwrap()
+                    .is_some(),
+                    "the path engine treats the root as an anchor without checking its self-signature"
+                );
+            }
             let candidate = crypto_with_certificate(
                 crypto.keyset.clone(),
                 &certs,
@@ -1024,6 +1092,50 @@ fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
             };
             assert_eq!((issuance, verification), (expected, expected), "{case}");
         }
+    });
+}
+
+#[test]
+fn mdoc_x5chain_excludes_the_authenticated_iaca_root() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
+        let encoded = resign_mdoc(&encoded, &certs, |document, _| {
+            document
+                .issuer_signed
+                .issuer_auth
+                .cose_sign1
+                .unprotected
+                .rest
+                .iter_mut()
+                .find(|(label, _)| *label == coset::Label::Int(33))
+                .unwrap()
+                .1 = ciborium::Value::Array(vec![
+                ciborium::Value::Bytes(certs.leaf_der.clone()),
+                ciborium::Value::Bytes(certs.ca_der.clone()),
+            ]);
+        });
+        let bytes = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
+        nazo_mdoc::verifier::verify_presentation_borrowed(
+            &bytes,
+            &SessionTranscript::from_cbor(&transcript).unwrap(),
+            &nazo_mdoc::verifier::VerificationOptions {
+                now: to_protocol_time(Timestamp::now()).unwrap(),
+                max_documents: 1,
+            },
+        )
+        .expect("issuer and device evidence authenticate before root selection");
+        assert_eq!(
+            crypto.verify_mdoc(&PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: encoded.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.into()),
+                additional_trust_anchors: vec![].into(),
+            }),
+            Err(CredentialTrustError::UntrustedIssuer),
+        );
     });
 }
 
@@ -1097,7 +1209,8 @@ fn mdoc_verification_checks_root_profile_beyond_an_iaca_link() {
                     expected_nonce: "verifier-nonce".into(),
                     expected_audience: "https://verifier.example".into(),
                     mdoc_session_transcript: Some(transcript.into()),
-                    additional_trust_anchors: vec![root.der().to_vec()].into(),
+                    additional_trust_anchors: vec![root.der().to_vec(), certs.ca_der.clone()]
+                        .into(),
                 })
                 .map(|_| ());
             assert_eq!(
@@ -1123,6 +1236,8 @@ fn mdoc_issuance_and_verification_require_iaca_link_profiles() {
         );
         for case in [
             "valid",
+            "missing_new_root",
+            "wrong_new_root_key",
             "missing_crldp",
             "missing_contact",
             "missing_crl_sign",
@@ -1236,6 +1351,11 @@ fn mdoc_issuance_and_verification_require_iaca_link_profiles() {
             }
             let link = link_params.signed_by(key.as_ref().unwrap(), &root).unwrap();
             let chain = vec![certs.leaf_der.clone(), link.der().to_vec()];
+            let rollover_roots = match case {
+                "missing_new_root" => root.pem(),
+                "wrong_new_root_key" => format!("{}{}", root.pem(), valid.ca_pem),
+                _ => format!("{}{}", root.pem(), certs.ca_pem),
+            };
             assert!(
                 verify_certificate_chain_at(
                     &chain,
@@ -1252,7 +1372,7 @@ fn mdoc_issuance_and_verification_require_iaca_link_profiles() {
                     public: Openid4vcPublicMaterial {
                         signing_kid: signing_kid.clone(),
                         certificate_chain_pem: format!("{}{}", certs.leaf_pem, link.pem()),
-                        trust_anchors_pem: root.pem(),
+                        trust_anchors_pem: rollover_roots,
                         revocation_snapshot: None,
                     },
                     iaca_private_materials: Default::default(),
@@ -1334,6 +1454,16 @@ fn mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link() {
     parent_params.key_identifier_method =
         rcgen::KeyIdMethod::PreSpecified(sha1::Sha1::digest(parent_key.public_key_raw()).to_vec());
     let root = CertifiedIssuer::self_signed(root_params, root_key).unwrap();
+    // The corresponding self-signed middle root lives longer than its link to
+    // the oldest root. The new link is bounded by this root, never by that link.
+    let mut parent_root_params = parent_params.clone();
+    parent_root_params.use_authority_key_identifier_extension = false;
+    parent_root_params.not_after = newest_params.not_after;
+    let parent_root = CertifiedIssuer::self_signed(
+        parent_root_params,
+        KeyPair::from_pem(&parent_key.serialize_pem()).unwrap(),
+    )
+    .unwrap();
     let parent = CertifiedIssuer::signed_by(parent_params, parent_key, &root).unwrap();
     let newest = newest_params
         .signed_by(key.as_ref().unwrap(), &parent)
@@ -1344,13 +1474,32 @@ fn mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link() {
         newest.der().to_vec(),
         parent.der().to_vec(),
     ];
-    // The parent link is bounded by an older root. Its own self-signed root
-    // may live longer, so that link's expiry cannot bound the newer link.
-    // This exercises profile semantics independently of path-engine support
-    // for multiple self-issued intermediates with pathLenConstraint zero.
+    let roots = vec![
+        certs.ca_der.clone(),
+        parent_root.der().to_vec(),
+        root.der().to_vec(),
+    ];
+    assert!(
+        verify_certificate_chain_at(&chain, &roots, Timestamp::now().as_second())
+            .unwrap()
+            .is_none(),
+        "the current path engine rejects multiple pathLen=0 rollover links"
+    );
     assert_eq!(
-        super::mdoc::check_mdoc_issuer_profiles(&leaf, &chain, root.der(), |_| {}),
+        super::mdoc::check_mdoc_issuer_profiles(&leaf, &chain, root.der(), &roots, &[], |_| {}),
         Ok(()),
+    );
+    assert_eq!(
+        super::mdoc::check_mdoc_issuer_profiles(
+            &leaf,
+            &chain,
+            root.der(),
+            &[certs.ca_der, root.der().to_vec()],
+            &[],
+            |_| {},
+        ),
+        Err(CredentialTrustError::UntrustedIssuer),
+        "a cross-signed link cannot replace the missing corresponding root",
     );
 }
 
@@ -1377,11 +1526,23 @@ fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
     futures_executor::block_on(async {
         let (holder_jwk, _) = es256_jwk(36);
         let (crypto, _, _) = real_crypto_fixture().await;
-        for claims in [
-            json!({"org.iso.18013.5.1": {"family_name":"Lovelace"}}),
-            json!({"org.iso.18013.5.1": {"issuing_country": 840}}),
-            json!({"org.iso.18013.5.1": {"issuing_country":"us"}}),
-            json!({"org.iso.18013.5.1": {"issuing_country":"CA"}}),
+        for (claims, expected) in [
+            (
+                json!({"org.iso.18013.5.1": {"family_name":"Lovelace"}}),
+                CredentialTrustError::InvalidEncoding,
+            ),
+            (
+                json!({"org.iso.18013.5.1": {"issuing_country": 840}}),
+                CredentialTrustError::InvalidEncoding,
+            ),
+            (
+                json!({"org.iso.18013.5.1": {"issuing_country":"us"}}),
+                CredentialTrustError::InvalidEncoding,
+            ),
+            (
+                json!({"org.iso.18013.5.1": {"issuing_country":"CA"}}),
+                CredentialTrustError::UntrustedIssuer,
+            ),
         ] {
             assert_eq!(
                 crypto
@@ -1392,7 +1553,7 @@ fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
                         claims,
                     ))
                     .await,
-                Err(CredentialTrustError::InvalidEncoding)
+                Err(expected)
             );
         }
         let encoded = crypto
@@ -1437,17 +1598,14 @@ fn mdoc_date_tags_are_scoped_to_the_iso_mdl_schema() {
             );
         }
     }
-    for (element, value) in [
-        ("birth_date", json!("2025-02-29")),
-        ("birth_date", json!("2026-11-17T00:00:00Z")),
-        ("birth_date", json!("2026-1-7")),
-        ("birth_date", json!(42)),
-        ("issue_date", json!("2026-11-17T00:00:00.1Z")),
-        ("expiry_date", json!("2030-11-17T00:00:00+00:00")),
-        ("portrait_capture_date", json!("2026-11-17")),
+    for element in [
+        "birth_date",
+        "issue_date",
+        "expiry_date",
+        "portrait_capture_date",
     ] {
         assert_eq!(
-            mdoc_element_to_cbor(DOC, NS, element, &value),
+            mdoc_element_to_cbor(DOC, NS, element, &json!(42)),
             Err(CredentialTrustError::InvalidEncoding)
         );
     }
@@ -1464,11 +1622,6 @@ fn mdoc_date_tags_are_scoped_to_the_iso_mdl_schema() {
             ciborium::Value::Tag(1004, _)
         ));
     }
-    let invalid = json!([{"vehicle_category_code":"B", "issue_date":"2026-11-17T00:00:00Z"}]);
-    assert_eq!(
-        mdoc_element_to_cbor(DOC, NS, "driving_privileges", &invalid),
-        Err(CredentialTrustError::InvalidEncoding)
-    );
 }
 
 #[test]
@@ -1512,6 +1665,29 @@ fn mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values() 
             namespaces["org.example.custom"][0].element_value,
             ciborium::Value::Text("a custom literal".into())
         );
+        // JSON mapping only selects the CBOR representation. The independent
+        // protocol builder must reject invalid values before an HSM can sign.
+        for (element, value) in [
+            ("birth_date", json!("2025-02-29")),
+            ("birth_date", json!("2026-11-17T00:00:00Z")),
+            ("birth_date", json!("2026-1-7")),
+            ("birth_date", json!(42)),
+            ("issue_date", json!("2026-11-17T00:00:00.1Z")),
+            ("expiry_date", json!("2030-11-17T00:00:00+00:00")),
+            ("portrait_capture_date", json!("2026-11-17")),
+            (
+                "driving_privileges",
+                json!([{"vehicle_category_code":"B", "issue_date":"2026-11-17T00:00:00Z"}]),
+            ),
+        ] {
+            let mut invalid = input.clone();
+            invalid.payload.subject_claims["org.iso.18013.5.1"][element] = value;
+            assert_eq!(
+                crypto.sign(&invalid).await,
+                Err(CredentialTrustError::InvalidEncoding),
+                "{element}"
+            );
+        }
     });
 }
 
@@ -2304,7 +2480,7 @@ fn mdoc_verification_rejects_a_scoped_iaca_used_as_document_signer() {
             leaf_pem: ca.pem(),
             leaf_key: key,
         };
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, jiff::Timestamp::now(), None);
+        let (encoded, transcript) = mdoc_presentation_with_unchecked_certificate(&certs);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
@@ -2532,21 +2708,11 @@ fn mdoc_verification_requires_document_signer_profile() {
                     _ => unreachable!(),
                 },
             );
-            let (encoded, transcript) =
-                valid_mdoc_presentation(&certs, jiff::Timestamp::now(), None);
-            let bytes = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
-            assert!(
-                nazo_mdoc::verifier::verify_presentation(
-                    &bytes,
-                    &SessionTranscript::from_cbor(&transcript).unwrap(),
-                    &nazo_mdoc::verifier::VerificationOptions {
-                        now: to_protocol_time(jiff::Timestamp::now()).unwrap(),
-                        max_documents: 1,
-                    },
-                )
-                .is_ok(),
-                "{case}: reject the authenticated certificate profile, not a bad issuer or holder signature"
-            );
+            let (encoded, transcript) = mdoc_presentation_with_unchecked_certificate(&certs);
+            let (_, leaf) = x509_parser::parse_x509_certificate(&certs.leaf_der).unwrap();
+            let (_, issuer) = x509_parser::parse_x509_certificate(&certs.ca_der).unwrap();
+            nazo_crypto::certificate::verify_signature(&leaf, issuer.public_key())
+                .unwrap_or_else(|error| panic!("{case}: certificate signature: {error}"));
             let presentation = PresentedCredential {
                 format: CredentialFormat::MsoMdoc,
                 encoded: encoded.into(),
@@ -4033,6 +4199,12 @@ fn resign_mdoc(
     let secret = p256::SecretKey::from_pkcs8_der(&certs.leaf_key.serialize_der()).unwrap();
     let signing = SigningKey::from_slice(&secret.to_bytes()).unwrap();
     let signature: p256::ecdsa::Signature = signing.sign(&auth.tbs_data(&[]));
+    p256::ecdsa::signature::Verifier::verify(
+        signing.verifying_key(),
+        &auth.tbs_data(&[]),
+        &signature,
+    )
+    .expect("independently verified issuer signature on the changed MSO");
     auth.signature = signature.to_bytes().to_vec();
     URL_SAFE_NO_PAD.encode(response.to_device_response_cbor().unwrap())
 }
@@ -4143,7 +4315,7 @@ fn authenticated_mdl_disclosures_match_the_document_signer_country() {
                 replace_disclosed_mdoc_claim(document, mso, "given_name", "issuing_country", claim);
             });
             let bytes = URL_SAFE_NO_PAD.decode(&changed).unwrap();
-            assert!(
+            assert_eq!(
                 nazo_mdoc::verifier::verify_presentation(
                     &bytes,
                     &SessionTranscript::from_cbor(&transcript).unwrap(),
@@ -4153,7 +4325,8 @@ fn authenticated_mdl_disclosures_match_the_document_signer_country() {
                     },
                 )
                 .is_ok(),
-                "{name}: issuer, holder and digest must authenticate before the country comparison"
+                accepted,
+                "{name}: the protocol core owns disclosed mDL country constraints"
             );
             let presentation = PresentedCredential {
                 format: CredentialFormat::MsoMdoc,
@@ -4169,7 +4342,12 @@ fn authenticated_mdl_disclosures_match_the_document_signer_country() {
             } else if result.is_ok() {
                 unexpectedly_accepted.push(name);
             } else {
-                assert_eq!(result, Err(CredentialTrustError::UntrustedIssuer), "{name}");
+                let expected = if name == "wrong_country" {
+                    CredentialTrustError::UntrustedIssuer
+                } else {
+                    CredentialTrustError::InvalidEncoding
+                };
+                assert_eq!(result, Err(expected), "{name}");
             }
         }
         assert!(
@@ -4216,8 +4394,8 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
                 );
             });
             let bytes = URL_SAFE_NO_PAD.decode(&changed).unwrap();
-            // The error must come from the application's semantic projection,
-            // after issuer, digest, holder and session authentication succeeded.
+            // The core enforces the standard field's type; the application
+            // preserves that rejection while projecting the authenticated data.
             assert!(
                 nazo_mdoc::verifier::verify_presentation(
                     &bytes,
@@ -4227,7 +4405,7 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
                         max_documents: 1
                     },
                 )
-                .is_ok()
+                .is_err()
             );
             let presentation = PresentedCredential {
                 format: CredentialFormat::MsoMdoc,
@@ -4299,7 +4477,12 @@ fn mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state() {
                 if accepted {
                     result.unwrap();
                 } else {
-                    assert_eq!(result, Err(CredentialTrustError::InvalidEncoding));
+                    let expected = if jurisdiction.as_ref().is_some_and(Value::is_string) {
+                        CredentialTrustError::UntrustedIssuer
+                    } else {
+                        CredentialTrustError::InvalidEncoding
+                    };
+                    assert_eq!(result, Err(expected));
                 }
                 let changed = match jurisdiction.as_ref() {
                     None => encoded.clone(),
@@ -4327,7 +4510,12 @@ fn mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state() {
                 if accepted {
                     result.unwrap();
                 } else {
-                    assert_eq!(result, Err(CredentialTrustError::UntrustedIssuer));
+                    let expected = if jurisdiction.as_ref().is_some_and(Value::is_string) {
+                        CredentialTrustError::UntrustedIssuer
+                    } else {
+                        CredentialTrustError::InvalidEncoding
+                    };
+                    assert_eq!(result, Err(expected));
                 }
             }
         }
