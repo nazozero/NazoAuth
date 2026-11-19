@@ -1,0 +1,146 @@
+name: mdoc-iaca-paired-release-benchmark
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mdoc-iaca-benchmark-temporary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    if: github.event.pull_request.number == 293
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "2"
+      RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target-paired
+    steps:
+      - name: Checkout pre-optimization commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 806e8a7448082009f664bc81391aec077b31fe94
+          path: baseline
+          persist-credentials: false
+      - name: Checkout optimized code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ce5794ce83c52aa02184c1eca17f7373ffd1e544
+          path: candidate
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d5e4d57b030548f435d0befec15ff413a2c60eff # 1.100.0
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Build both revisions, preserving binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/paired-results"
+          rustc -Vv | tee "$GITHUB_WORKSPACE/paired-results/rustc.txt"
+          for variant in baseline candidate; do
+            echo "Compiling $variant..."
+            cd "$GITHUB_WORKSPACE/$variant"
+            cargo test --locked --release -p nazo-oauth-server --lib --no-run --message-format=json > "$GITHUB_WORKSPACE/paired-results/build-$variant.jsonl"
+            python3 - "$variant" <<'PY'
+          import json,pathlib,shutil,sys,os
+          variant=sys.argv[1]
+          root=pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          logs=(root/"paired-results"/f"build-{variant}.jsonl").read_text().splitlines()
+          candidates=[]
+          for line in logs:
+              try: m=json.loads(line)
+              except json.JSONDecodeError: continue
+              if m.get("reason")=="compiler-artifact" and m.get("target",{}).get("name")=="nazo_oauth_server" and m.get("executable"):
+                  candidates.append(pathlib.Path(m["executable"]))
+          if len(candidates)!=1: raise SystemExit(f"expected one test binary, got {candidates}")
+          dst=root/"paired-results"/f"{variant}-test"
+          shutil.copy2(candidates[0],dst)
+          dst.chmod(0o700)
+          print(f"{variant}: preserved {dst} ({dst.stat().st_size:,} bytes)",flush=True)
+          PY
+          done
+      - name: Six alternating pairs on same CPU and fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,platform,subprocess,tempfile
+          root=pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          out=root/"paired-results"
+          bins={name:out/f"{name}-test" for name in ("baseline","candidate")}
+          cpu=sorted(os.sched_getaffinity(0))[0]
+          def affinity():
+              os.sched_setaffinity(0,{cpu})
+          names={}
+          for name,binary in bins.items():
+              listing=subprocess.check_output([binary,"--list"],text=True)
+              matches=[line.removesuffix(": test") for line in listing.splitlines() if line.endswith("mdoc_embedded_api_latency: test")]
+              if len(matches)!=1: raise RuntimeError(f"{name}: expected one benchmark test, got {matches}")
+              names[name]=matches[0]
+          with tempfile.TemporaryDirectory(prefix="mdoc-private-") as secret:
+              fixture=str(pathlib.Path(secret)/"shared-fixture.json")
+              shared_env={**os.environ,"NAZO_MDOC_PERF_FIXTURE":fixture,"NAZO_MDOC_PERF_SAMPLES":"500"}
+              def run(label,n,prepare=False):
+                  target=out/f"round-{n}-{label}.json"
+                  env={**shared_env,"NAZO_MDOC_PERF_OUTPUT":str(target)}
+                  if prepare: env["NAZO_MDOC_PERF_PREPARE_ONLY"]="1"
+                  command=[str(bins[label]),"--exact",names[label],"--ignored","--test-threads=1"]
+                  response=subprocess.run(command,env=env,preexec_fn=affinity,capture_output=True,text=True)
+                  if response.returncode: raise RuntimeError(f"{label} failed: {response.stdout} {response.stderr}")
+                  return None if prepare else json.loads(target.read_text())
+              for name in bins: run(name,0,prepare=True)
+              rounds=[]
+              for n in range(1,7):
+                  for name in (("baseline","candidate") if n%2 else ("candidate","baseline")):
+                      result=run(name,n)
+                      rounds.append((n,name,result))
+                      print(f"round {n} {name}: sign p50 {result['sign']['p50_ns']/1000:.3f}us, verify p50 {result['verify']['p50_ns']/1000:.3f}us",flush=True)
+              fixture_hashes={r["fixture_sha256"] for _,_,r in rounds}
+              if len(fixture_hashes)!=1: raise RuntimeError("fixture changed between compared binaries")
+              def percentile(values,p): return values[(len(values)*p+99)//100-1]
+              aggregate={}
+              for label in bins:
+                  aggregate[label]={}
+                  for operation in ("sign","verify"):
+                      values=sorted(x for _,n,r in rounds if n==label for x in r[operation]["sorted_samples_ns"])
+                      aggregate[label][operation]={"n":len(values),"p50_ns":percentile(values,50),"p95_ns":percentile(values,95),"p99_ns":percentile(values,99),
+                          "round_p50_ns":[r[operation]["p50_ns"] for _,n,r in rounds if n==label]}
+              comparison={}
+              for op in ("sign","verify"):
+                  comparison[op]={}
+                  for p in ("p50_ns","p95_ns","p99_ns"):
+                      old=aggregate["baseline"][op][p]
+                      new=aggregate["candidate"][op][p]
+                      comparison[op][p]={"baseline_ns":old,"candidate_ns":new,"delta_ns":new-old,"percent":(new/old-1)*100}
+              evidence={"baseline_sha":"806e8a7448082009f664bc81391aec077b31fe94","candidate_sha":"ce5794ce83c52aa02184c1eca17f7373ffd1e544",
+                 "fixture_sha256":next(iter(fixture_hashes)),"platform":platform.platform(),"cpu_affinity":[cpu],
+                 "source":"Same ignored mdoc_embedded_api_latency harness in both commits",
+                 "samples_per_operation_per_build":3000,"rounds":6,"warmup_per_operation_per_round":100,
+                 "caveats":["In-memory key repo; no HTTP/database/status fetch","GitHub-hosted runner, susceptible to CPU contention","Release test harness; no end-to-end throughput inference"],
+                 "aggregate":aggregate,"comparison":comparison,
+                 "binary_sha256":{n:hashlib.sha256(b.read_bytes()).hexdigest() for n,b in bins.items()}}
+              (out/"comparison-summary.json").write_text(json.dumps(evidence,indent=2)+"\n")
+              lines=["## Paired mdoc IACA benchmark (Release, same runner)","","| Operation | Metric | Before (us) | After (us) | Change |",
+                     "|---|---|---:|---:|---:|"]
+              for op in ("sign","verify"):
+                  for p in ("p50_ns","p95_ns","p99_ns"):
+                      d=comparison[op][p]
+                      lines.append(f"| {op} | {p[:-3]} | {d['baseline_ns']/1000:.3f} | {d['candidate_ns']/1000:.3f} | {d['percent']:+.2f}% |")
+              lines+=["","Each build: 6 alternating rounds x 500 samples per operation, same synthetic fixture and pinned CPU.","Raw per-round samples and SHA256 digests attached as workflow artifact."]
+              print("\n".join(lines),flush=True)
+              with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f: f.write("\n".join(lines)+"\n")
+          PY
+      - name: Upload comparison and raw samples
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mdoc-iaca-paired-release
+          path: |
+            paired-results/comparison-summary.json
+            paired-results/round-*.json
+            paired-results/rustc.txt
+          if-no-files-found: warn
+          retention-days: 14
