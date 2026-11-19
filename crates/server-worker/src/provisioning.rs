@@ -61,6 +61,7 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
                 client.client_type == "confidential"
                     && client.redirect_uris.is_empty()
                     && client.grant_types.as_slice() == ["client_credentials"]
+                    && client.token_endpoint_auth_method == "client_secret_basic"
             }),
             "machine-only Free profile requires confidential client_credentials clients without redirects"
         );

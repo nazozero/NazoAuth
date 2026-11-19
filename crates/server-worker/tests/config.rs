@@ -33,6 +33,10 @@ fn free_profile_limits_routes_and_modules() {
     ] {
         assert!(!config.allows_route(&method, path), "{path}");
     }
+    let metadata = config.machine_metadata();
+    assert_eq!(metadata["grant_types_supported"], serde_json::json!(["client_credentials"]));
+    assert_eq!(metadata["token_endpoint"], "https://auth.example.com/token");
+    assert!(metadata.get("authorization_endpoint").is_none());
     config.modules.push(nazo_runtime_modules::ModuleId::SessionManagement);
     assert!(config.application("p".repeat(32)).is_err());
 }

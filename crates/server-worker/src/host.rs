@@ -49,6 +49,21 @@ async fn fetch(
     if !cached.prepared.configuration.allows_route(request.method(), request.uri().path()) {
         return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
+    if cached.prepared.configuration.machine_only
+        && request.method() == http::Method::GET
+        && request.uri().path() == "/.well-known/oauth-authorization-server"
+    {
+        // A machine-only deployment must not advertise browser grants.
+        let body = serde_json::to_vec(&cached.prepared.configuration.machine_metadata())
+            .map(Bytes::from)
+            .map_err(|_| worker::Error::RustError("OAuth metadata encoding failed".into()))?;
+        let mut result = response(StatusCode::OK, body);
+        result.headers_mut().insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+        return Ok(result);
+    }
     if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {
         let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
             return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));

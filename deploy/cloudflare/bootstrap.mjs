@@ -52,7 +52,8 @@ function configuration(input) {
     if (!input.clients.every(client => client.client_type === 'confidential' &&
         Array.isArray(client.redirect_uris) && client.redirect_uris.length === 0 &&
         Array.isArray(client.grant_types) && client.grant_types.length === 1 &&
-        client.grant_types[0] === 'client_credentials')) {
+        client.grant_types[0] === 'client_credentials' &&
+        client.token_endpoint_auth_method === 'client_secret_basic')) {
       throw new Error('Free machine-only profile needs confidential client_credentials clients');
     }
     if ((input.modules ?? []).length !== 0) {

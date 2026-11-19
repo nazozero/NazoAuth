@@ -80,20 +80,37 @@ impl WorkerConfiguration {
         Ok(settings)
     }
 
+    /// Metadata for the machine-only OAuth issuer, without browser grant claims.
+    #[must_use]
+    pub fn machine_metadata(&self) -> serde_json::Value {
+        let root = self.issuer.trim_end_matches('/');
+        serde_json::json!({
+            "issuer": self.issuer,
+            "token_endpoint": format!("{root}/token"),
+            "jwks_uri": format!("{root}/jwks.json"),
+            "revocation_endpoint": format!("{root}/revoke"),
+            "introspection_endpoint": format!("{root}/introspect"),
+            "response_types_supported": [],
+            "grant_types_supported": ["client_credentials"],
+            "token_endpoint_auth_methods_supported": ["client_secret_basic"]
+        })
+    }
+
     /// Restrict Workers Free to service endpoints without Argon2id password work.
     pub fn allows_route(&self, method: &http::Method, path: &str) -> bool {
         if !self.machine_only {
             return true;
         }
-        match *method {
-            http::Method::GET => matches!(
+        if method == http::Method::GET {
+            matches!(
                 path,
                 "/health" | "/live" | "/startup" | "/jwks.json"
                     | "/.well-known/oauth-authorization-server"
-                    | "/.well-known/oauth-protected-resource"
-            ),
-            http::Method::POST => matches!(path, "/token" | "/revoke" | "/introspect"),
-            _ => false,
+            )
+        } else if method == http::Method::POST {
+            matches!(path, "/token" | "/revoke" | "/introspect")
+        } else {
+            false
         }
     }
 

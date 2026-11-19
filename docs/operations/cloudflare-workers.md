@@ -113,7 +113,8 @@ Free and Paid now accept up to 64 MiB uncompressed (this Worker is approximately
 and 10 ms per Cron invocation; D1 has separate daily row-read/write quotas.
 
 The deployment button defaults to `machine_only: true`: service clients with
-Client Credentials, token management, OAuth metadata and JWKS. It rejects
+Client Credentials, token management, truthful machine-only OAuth metadata and
+JWKS. It rejects
 password users, Authorization Code and interactive login paths. The full
 interactive profile uses `machine_only: false` and **Workers Paid**, preserving
 Argon2id's security parameters. Client Credentials CPU usage on Free still
