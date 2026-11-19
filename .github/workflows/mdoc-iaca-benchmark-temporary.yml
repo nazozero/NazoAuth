@@ -19,10 +19,10 @@ jobs:
       RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
       CARGO_TARGET_DIR: ${{ github.workspace }}/target-paired
     steps:
-      - name: Checkout pre-optimization commit
+      - name: Checkout pre-refactor baseline
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 806e8a7448082009f664bc81391aec077b31fe94
+          ref: a23851b8ee64c91616c708a80960fd3713001292
           path: baseline
           persist-credentials: false
       - name: Checkout optimized code
@@ -115,7 +115,7 @@ jobs:
                       old=aggregate["baseline"][op][p]
                       new=aggregate["candidate"][op][p]
                       comparison[op][p]={"baseline_ns":old,"candidate_ns":new,"delta_ns":new-old,"percent":(new/old-1)*100}
-              evidence={"baseline_sha":"806e8a7448082009f664bc81391aec077b31fe94","candidate_sha":"ce5794ce83c52aa02184c1eca17f7373ffd1e544",
+              evidence={"baseline_sha":"a23851b8ee64c91616c708a80960fd3713001292","candidate_sha":"ce5794ce83c52aa02184c1eca17f7373ffd1e544",
                  "fixture_sha256":next(iter(fixture_hashes)),"platform":platform.platform(),"cpu_affinity":[cpu],
                  "source":"Same ignored mdoc_embedded_api_latency harness in both commits",
                  "samples_per_operation_per_build":3000,"rounds":6,"warmup_per_operation_per_round":100,
