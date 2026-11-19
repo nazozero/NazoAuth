@@ -49,6 +49,12 @@ async fn fetch(
     if !cached.prepared.configuration.allows_route(request.method(), request.uri().path()) {
         return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
+    if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {
+        let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
+            return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));
+        };
+        request.extensions_mut().insert(facts);
+    }
     if cached.prepared.configuration.machine_only
         && request.method() == http::Method::GET
         && request.uri().path() == "/.well-known/oauth-authorization-server"
@@ -63,12 +69,6 @@ async fn fetch(
             http::HeaderValue::from_static("application/json; charset=utf-8"),
         );
         return Ok(result);
-    }
-    if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {
-        let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
-            return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));
-        };
-        request.extensions_mut().insert(facts);
     }
     let now = jiff::Timestamp::now().as_second();
     if now >= cached.refresh_after.get() && !cached.refreshing.replace(true) {
