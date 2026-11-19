@@ -90,10 +90,67 @@ dependency does not enable a runtime. `local-sqlite` enables the same adapter SQ
 for native offline provisioning and contract tests; its driver is selected only
 on non-WASM targets.
 
+## Deploy to Cloudflare button
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
+
+Use the repository **root**. Cloudflare's button cannot clone only `deploy/cloudflare`:
+the Rust workspace and its dependencies live outside that directory.
+
+The button creates a Git copy, provisions the `NAZO_DB` D1 binding, runs the
+checked-in SQL migrations and deploys the Worker. The application is intentionally
+**not reachable** yet (`workers_dev = false`, no public route). Never expose an
+unprovisioned identity server or install a public bootstrap endpoint.
+
+The current Worker bundle is approximately 3.20 MiB gzip, exceeding the 3 MB
+Workers Free bundle limit. Password hashing also needs more than the Free plan's
+10 ms per-request CPU budget. **Use Workers Paid**; D1 still includes an allowance.
+Cloudflare Workers Builds has a 20-minute timeout and does not preinstall Rust:
+the repository-root `build` script installs Rust 1.100.0 and `worker-build`
+0.9.0. Confirm build completion in the Cloudflare dashboard.
+
+To initialize a fresh D1 deployment, clone the new repository created by the
+button, install the local build dependencies (`npm run build`, requires Node,
+curl, and Python 3), and create a private JSON input **outside the Git
+repository** from `deploy/cloudflare/bootstrap.example.json`. Set the actual
+issuer HTTPS origin, the separately hosted frontend HTTPS origin, clients,
+and at least one user with an original password. The template password is
+deliberately rejected. Then run:
+
+```sh
+npm run bootstrap -- /private/bootstrap.json /private/nazoauth-credentials.json
+```
+
+This command creates unique tenant IDs and two independent 32-byte secrets,
+runs the native NazoAuth provisioner offline, saves the signing wrapping key
+and issued client credentials to a new private `0600` file, checks that D1
+contains no existing keys/clients/users/modules, imports the seed rows, writes
+the non-secret issuer configuration into root `wrangler.toml`, then deploys
+the Worker with three secret bindings via `--secrets-file`. All temporary seed
+and secret files are deleted when the command exits. It refuses to provision a
+nonempty D1. Preserve the private output offline: losing the wrapping key
+prevents recovering persisted signing keys. If import or deploy fails, retain
+the recovery file and investigate the remote D1 state; do not reinitialize it.
+
+Before accepting live requests, install the direct-ingress zone WAF rule in
+[Authenticated ingress](#authenticated-ingress), set the intended HTTPS
+`routes` custom domain in root `wrangler.toml`, and deploy again:
+
+```sh
+npm run deploy
+```
+
+The issuer hostname must match `NAZO_CONFIG.issuer`. A separately hosted
+login/consent frontend is required. Later Git pushes build/deploy via Workers
+Builds; `npm run deploy` remains idempotent for D1 schema migrations and
+preserves existing Worker secrets. Do not publish the private bootstrap JSON
+or credentials in a Git repository or CI log.
+
 ## Provision a fresh deployment
 
-Create a D1 database and copy `deploy/cloudflare/wrangler.toml` for the deployment.
-Set its database ID and public route; the checked-in zero ID is a placeholder.
+Manual installations: create a D1 database and use the repository-root
+`wrangler.toml`. Set its database ID and public route; the checked-in zero ID
+is a placeholder for Deploy to Cloudflare auto-provisioning.
 Configure the ingress rule below before exposing the route. Use Workers Paid to
 budget password hashing and the full application module.
 
@@ -165,17 +222,18 @@ cargo run --locked --release -p nazo-server-worker --features provisioning \
   --bin nazo-worker-provision -- seed.sqlite < provisioning.json > credentials.json
 python3 deploy/cloudflare/export-seed.py seed.sqlite > seed.sql
 cd deploy/cloudflare
-npx wrangler d1 migrations apply nazoauth --remote
-npx wrangler d1 execute nazoauth --remote --file ../../seed.sql
-npx wrangler secret put NAZO_SIGNING_KEY
-npx wrangler secret put NAZO_CLIENT_SECRET_PEPPER
-npx wrangler secret put NAZO_DUMMY_PASSWORD_HASH
+npm run db:migrate
+npx wrangler d1 execute NAZO_DB --remote --config ../../wrangler.toml --file ../../seed.sql
+npx wrangler secret put NAZO_SIGNING_KEY --config ../../wrangler.toml
+npx wrangler secret put NAZO_CLIENT_SECRET_PEPPER --config ../../wrangler.toml
+npx wrangler secret put NAZO_DUMMY_PASSWORD_HASH --config ../../wrangler.toml
 ```
 
 Set `NAZO_DUMMY_PASSWORD_HASH` from the generated `dummy_password_hash`,
 `NAZO_SIGNING_KEY` from the original Base64 wrapping key, and
 `NAZO_CLIENT_SECRET_PEPPER` from the original pepper. Set `NAZO_SIGNING_KEY_ID`
-and copy the exact provisioned configuration into `NAZO_CONFIG`. Input, SQLite,
+and copy the exact provisioned configuration into `NAZO_CONFIG` in the root
+`wrangler.toml`. Input, SQLite,
 SQL and credential output are private deployment material. Import seed rows only
 into a fresh migrated database. The command refuses to overwrite an existing file.
 
