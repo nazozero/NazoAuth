@@ -226,8 +226,10 @@ failure never falls back to another environment's graph. This handles
 [binding-only deployments that can retain an isolate](https://developers.cloudflare.com/workers/runtime-apis/bindings/#making-changes-to-bindings).
 
 Body admission precedes stream polling. The adapter checks the manifest's budget
-before copying a JavaScript chunk into WASM. `Bytes` owns that allocation, which
-subsequent Rust transport layers retain. Multipart chunks remain incremental.
+before copying a JavaScript chunk into WASM, then moves the owned chunk into
+`Bytes` without another copy. Single-chunk buffered bodies retain that allocation;
+multi-chunk buffered bodies require aggregation copies in the shared facade.
+Multipart chunks remain incremental.
 Gzip/deflate uses platform decoding only for body modes requesting it; unsupported
 or invalid encodings take the shared body-error path. Fetch headers may already
 have normalized repeated values, a separate platform constraint from the repeated
@@ -238,7 +240,7 @@ not completely zero-copy across heaps. Password verification holds one
 memory-hard workspace at a time per isolate because it never suspends while the
 workspace is allocated.
 
-One D1 database serializes its write workload. Independent issuers/tenants can
+One D1 database processes queries one at a time. Independent issuers/tenants can
 use independent deployments; never split one authority's transaction across
 databases. Measure the actual region, crypto algorithms, login/token mix and D1
 latency. The [D1 FAQ](https://developers.cloudflare.com/d1/reference/faq/) describes
