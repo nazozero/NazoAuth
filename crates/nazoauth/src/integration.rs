@@ -1,6 +1,6 @@
 //! HTTP transport facts and the endpoint registration contract.
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{Arc, OnceLock},
 };
 
@@ -14,10 +14,15 @@ pub use nazo_oauth_server::contracts::token_client_auth::ClientCertificateFacts;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
-/// Facts obtained from the actual connection, before NazoAuth applies trust policy.
+/// Facts obtained from the connection or an authenticated host ingress, before
+/// NazoAuth applies proxy, token-binding and certificate policy.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ConnectionFacts {
     pub peer_addr: Option<SocketAddr>,
+    /// Original client address authenticated by the host's ingress boundary.
+    /// This is distinct from the socket peer and never establishes proxy or TLS
+    /// certificate trust. Ordinary forwarding headers cannot populate it.
+    pub authenticated_client_ip: Option<IpAddr>,
     pub server_name: Option<Arc<str>>,
     pub client_certificate: Option<Arc<ClientCertificateFacts>>,
 }

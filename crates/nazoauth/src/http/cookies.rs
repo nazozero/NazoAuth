@@ -23,14 +23,14 @@ pub fn make_cookie(
 
 #[must_use]
 pub fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
-    let mut cookie = Cookie::build((name.to_owned(), String::new()))
+    Cookie::build((name.to_owned(), String::new()))
         .path("/")
         .same_site(SameSite::Lax)
         .http_only(true)
         .secure(secure)
-        .build();
-    cookie.make_removal();
-    cookie
+        .max_age(CookieDuration::ZERO)
+        .expires(cookie::time::OffsetDateTime::UNIX_EPOCH)
+        .build()
 }
 
 #[must_use]

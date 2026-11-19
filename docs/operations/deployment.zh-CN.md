@@ -1,7 +1,10 @@
 # 部署指南
 
-NazoAuth 提供两条明确的部署契约：源码开发使用 Compose；独立 Linux 生产部署
+NazoAuth 原生宿主提供两条部署契约：源码开发使用 Compose；独立 Linux 生产部署
 使用经过签名验证的 `nazoauthctl`，支持 Podman、Docker 和宿主机 systemd。
+
+[Cloudflare Workers 适配器](cloudflare-workers.md) 提供使用主 D1 数据库的独立 WASM
+宿主。该指南说明预配置、支持的能力、可信入口配置及平台限制。
 
 ## 默认 UI 与自定义 UI
 

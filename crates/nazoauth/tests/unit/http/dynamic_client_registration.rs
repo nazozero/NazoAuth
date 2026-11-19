@@ -412,6 +412,51 @@ fn untrusted_peer_cannot_spoof_forwarded_source_ip() {
 }
 
 #[test]
+fn authenticated_host_source_is_independent_of_forwarding_headers_and_proxy_trust() {
+    for mode in [
+        ClientIpHeaderMode::None,
+        ClientIpHeaderMode::Forwarded,
+        ClientIpHeaderMode::XForwardedFor,
+    ] {
+        let config = ClientIpConfig::new(&[IpCidr::parse("192.0.2.0/24").unwrap()], mode);
+        for peer in [None, Some("192.0.2.10:443".parse().unwrap())] {
+            let request = http::Request::builder()
+                .extension(crate::integration::ConnectionFacts {
+                    peer_addr: peer,
+                    authenticated_client_ip: Some("198.51.100.7".parse().unwrap()),
+                    ..Default::default()
+                })
+                .header("forwarded", "for=203.0.113.9")
+                .header("x-forwarded-for", "203.0.113.9")
+                .header("x-real-ip", "203.0.113.9")
+                .header("cf-connecting-ip", "203.0.113.9")
+                .body(Bytes::new())
+                .unwrap();
+            assert_eq!(client_ip_with_config(&request, &config), "198.51.100.7");
+            assert_eq!(
+                request_from_trusted_proxy_cidrs(
+                    &request,
+                    &[IpCidr::parse("192.0.2.0/24").unwrap()],
+                ),
+                peer.is_some(),
+                "source facts cannot establish proxy/certificate trust"
+            );
+        }
+    }
+}
+
+#[test]
+fn claimed_platform_source_without_authenticated_facts_is_unknown() {
+    let config = ClientIpConfig::new(&[], ClientIpHeaderMode::None);
+    let request = http::Request::builder()
+        .header("cf-connecting-ip", "203.0.113.9")
+        .header("x-real-ip", "203.0.113.9")
+        .body(Bytes::new())
+        .unwrap();
+    assert_eq!(client_ip_with_config(&request, &config), "unknown");
+}
+
+#[test]
 fn trusted_proxy_chain_selects_nearest_untrusted_hop() {
     futures_executor::block_on(async {
         let config = ClientIpConfig::new(

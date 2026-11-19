@@ -54,6 +54,7 @@ pub(crate) fn capture_direct_tls_client_certificate(
         });
     extensions.insert(ConnectionFacts {
         peer_addr: None,
+        authenticated_client_ip: None,
         server_name,
         client_certificate,
     });

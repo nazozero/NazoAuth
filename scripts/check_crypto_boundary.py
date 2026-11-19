@@ -26,6 +26,14 @@ BACKEND_PACKAGES = {
 
 _BACKEND_ROOTS = frozenset(name.replace("-", "_") for name in BACKEND_PACKAGES)
 
+# web-sys also contains non-cryptographic browser APIs. The concrete Workers
+# HTTP adapter needs these stream types, never WebCrypto or generic web access.
+_WORKER_HTTP_MANIFEST = "crates/http-worker/Cargo.toml"
+_WORKER_HTTP_STREAM_FEATURES = frozenset({"ReadableStream", "ReadableWritablePair"})
+_WORKER_HTTP_STREAM_PATHS = frozenset(
+    f"web_sys::{name}" for name in _WORKER_HTTP_STREAM_FEATURES
+)
+
 TLS_EXCEPTIONS = {
     "crates/server/src/bootstrap/transport.rs": {
         "rustls::crypto::CryptoProvider",
@@ -119,6 +127,7 @@ def manifest_violations(root: Path, read_manifest) -> list:
         name = manifest.get("package", {}).get("name", "")
         relative = manifest_path.relative_to(root).as_posix()
         is_crypto = manifest_path.parent.resolve() == crypto_dir
+        is_worker_http = relative == _WORKER_HTTP_MANIFEST and name == "nazo-http-worker"
         if name == "nazo-crypto" and not is_crypto:
             violations.append(
                 f"{relative}:0: crypto identity: package 'nazo-crypto' must live in crates/crypto"
@@ -144,7 +153,13 @@ def manifest_violations(root: Path, read_manifest) -> list:
             continue
         for package, spec in dependencies:
             context = spec["_kind"] + (f" target {spec['_target']}" if spec["_target"] else "")
-            if package in BACKEND_PACKAGES:
+            worker_stream_dependency = (
+                is_worker_http and package == "web-sys"
+                and spec["_kind"] == "normal"
+                and spec["_target"] == 'cfg(target_arch = "wasm32")'
+                and set(spec.get("features", [])) <= _WORKER_HTTP_STREAM_FEATURES
+            )
+            if package in BACKEND_PACKAGES and not worker_stream_dependency:
                 violations.append(
                     f"{relative}:0: backend dependency: {spec['_alias']} ({package}) "
                     f"as {context} dependency"
@@ -362,6 +377,10 @@ def source_violations(root: Path, read_manifest) -> list:
         crate_dir = manifest_path.parent
         manifest = read_manifest(manifest_path)
         is_crypto = crate_dir.resolve() == crypto_dir
+        is_worker_http = (
+            manifest_path.relative_to(root).as_posix() == _WORKER_HTTP_MANIFEST
+            and manifest.get("package", {}).get("name") == "nazo-http-worker"
+        )
         dependency_aliases = {
             alias.replace("-", "_"): package.replace("-", "_")
             for alias, package in _all_dependency_packages(manifest, workspace).items()
@@ -393,6 +412,10 @@ def source_violations(root: Path, read_manifest) -> list:
             reported = set()
             for position, candidate in candidates:
                 resolved = contracts.resolved_rust_path(candidate, aliases)
+                # The SDK re-exports web-sys; that spelling does not grant a
+                # second route around the same restricted WebCrypto boundary.
+                if resolved == "worker::web_sys" or resolved.startswith("worker::web_sys::"):
+                    resolved = resolved.removeprefix("worker::")
                 root_name = resolved.partition("::")[0]
                 if resolved.startswith("x509_parser::") and resolved.endswith(
                     "::verify_signature"
@@ -402,7 +425,11 @@ def source_violations(root: Path, read_manifest) -> list:
                         f"native verify_signature call: {resolved} outside nazo-crypto"
                     )
                 detail = None
-                if root_name in _BACKEND_ROOTS:
+                worker_stream_path = is_worker_http and any(
+                    resolved == path or resolved.startswith(path + "::")
+                    for path in _WORKER_HTTP_STREAM_PATHS
+                )
+                if root_name in _BACKEND_ROOTS and not worker_stream_path:
                     detail = f"backend path {resolved}"
                 elif resolved.startswith(_PROVIDER_PREFIX):
                     allowed = TLS_EXCEPTIONS.get(relative, set())

@@ -232,6 +232,51 @@ class CryptoBoundaryTest(unittest.TestCase):
         )
         self.assertViolation("x509 verification feature")
 
+    def worker_http(self, *, features='"ReadableStream", "ReadableWritablePair"', target=True):
+        section = '[target.\'cfg(target_arch = "wasm32")\'.dependencies]' if target else '[dependencies]'
+        manifest = _write(
+            self._tmp, "crates/http-worker/Cargo.toml",
+            '[package]\nname = "nazo-http-worker"\nversion = "0.1.0"\n'
+            f'{section}\nweb-sys = {{ version = "0.3", features = [{features}] }}\n',
+        )
+        source = _write(
+            self._tmp, "crates/http-worker/src/lib.rs",
+            "use web_sys::ReadableStream as Stream;\n"
+            "fn decode(stream: Stream, pair: web_sys::ReadableWritablePair) {}\n",
+        )
+        return manifest, source
+
+    def test_worker_http_stream_types_pass(self):
+        self.worker_http()
+        self.assertClean()
+
+    def test_worker_http_cannot_enable_webcrypto(self):
+        self.worker_http(features='"ReadableStream", "Crypto", "SubtleCrypto"')
+        self.assertViolation("backend dependency: web-sys")
+
+    def test_worker_http_stream_dependency_is_wasm_only(self):
+        self.worker_http(target=False)
+        self.assertViolation("backend dependency: web-sys")
+
+    def test_worker_http_cannot_use_webcrypto_through_alias_or_sdk(self):
+        _, source = self.worker_http()
+        _append(source, "use web_sys::Crypto as DirectCrypto;\n")
+        _append(source, "use worker::web_sys::SubtleCrypto as SdkCrypto;\n")
+        self.assertViolation("backend path web_sys::Crypto")
+        self.assertViolation("backend path web_sys::SubtleCrypto")
+
+    def test_worker_http_stream_exception_does_not_extend_to_other_packages(self):
+        manifest, _ = self.worker_http()
+        manifest.write_text(manifest.read_text().replace('"nazo-http-worker"', '"other-http"'))
+        self.assertViolation("backend dependency: web-sys")
+        self.assertViolation("backend path web_sys::ReadableStream")
+
+    def test_worker_http_inherited_webcrypto_features_remain_forbidden(self):
+        manifest, _ = self.worker_http()
+        _append(self._tmp / "Cargo.toml", 'web-sys = { version = "0.3", features = ["Crypto"] }\n')
+        manifest.write_text(manifest.read_text().replace('version = "0.3",', 'workspace = true,'))
+        self.assertViolation("backend dependency: web-sys")
+
     def test_crypto_local_dependency_fails(self):
         _write(
             self._tmp,

@@ -1,8 +1,12 @@
 # Deployment Guide
 
-NazoAuth has two explicit deployment contracts: Compose for source-based
+The native NazoAuth host has two deployment contracts: Compose for source-based
 development, and the signed `nazoauthctl` lifecycle for standalone Linux
 production on Podman, Docker, or a host systemd service.
+
+The [Cloudflare Workers adapter](cloudflare-workers.md) provides a separate WASM
+host with a primary D1 binding. Its guide defines provisioning, supported
+capabilities, authenticated ingress and platform limits.
 
 Both Direct TLS listeners support TLS 1.3 and TLS 1.2. To satisfy FAPI 1
 section 8.5, TLS 1.2 accepts only `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`

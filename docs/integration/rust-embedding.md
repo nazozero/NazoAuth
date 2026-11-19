@@ -216,6 +216,11 @@ rules remain internal to the facade.
    connection. Trusted-proxy interpretation and token binding remain inside
    NazoAuth. The declaration applies to the whole resource, including unsupported
    methods, because admission checks may precede method resolution.
+   A host with an authenticated ingress source can supply
+   `authenticated_client_ip` when the platform does not expose a socket peer.
+   Source-IP budgets and auditing use that fact before considering proxy headers.
+   It does not establish a trusted socket peer or certificate trust. Ordinary
+   client-supplied forwarding headers cannot populate this field.
 4. Forward the body with `NazoAuth::handle_stream`. Its input is an ordinary
    `Request<S>` where `S: Stream<Item = Result<Bytes, E>>` and
    `E: Error + Send + Sync + 'static`. The stream may be local and need not be

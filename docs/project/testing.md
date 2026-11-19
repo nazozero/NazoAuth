@@ -176,6 +176,51 @@ execute the same assertions. Signature tampering and token revocation must
 remain failures on both platforms. This gate supplements the native workspace
 and HTTP/security suites; it does not certify a concrete WASM host deployment.
 
+### Cloudflare Workers host and adapters
+
+The [Workers workflow](../../.github/workflows/cloudflare-workers.yml) checks the
+concrete host separately from the portable inner-package gate. It verifies the
+production dependency graph, the D1 adapter's semantic SQL contracts, transport
+conformance, and the bundled application in local workerd. The
+[deployment guide](../operations/cloudflare-workers.md) describes the supported
+profile and the authenticated ingress requirement.
+
+```sh
+python scripts/verify_static_contracts.py --check
+python scripts/check_crypto_boundary.py
+python -m unittest tests.unit.test_worker_portability
+python scripts/check_worker_portability.py
+cargo test --locked -p nazo-oauth-server-d1 -p nazo-http-worker -p nazo-server-worker \
+  --features nazo-oauth-server-d1/local-sqlite
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+  cargo test --locked --target wasm32-unknown-unknown -p nazo-http-worker --test ingress
+cargo clippy --locked --target wasm32-unknown-unknown -p nazo-http-worker --all-targets -- -D warnings
+cargo install worker-build --version 0.9.0 --locked
+npm ci --prefix deploy/cloudflare
+npm run bundle --prefix deploy/cloudflare
+npm test --prefix deploy/cloudflare
+```
+
+Install the lockfile-matched `wasm-bindgen-cli` as described above before running
+the WASM ingress target. Its tests execute the production forwarding helpers
+against JavaScript streams: canonical request heads, duplicate-header
+normalization, explicit authenticated source facts, decoded body limits,
+malformed compression, incremental multipart reads, and unchanged response
+`Bytes` allocations. Native `cargo test` excludes that target's WASM-only code;
+it does not provide ingress execution evidence. Node lacks Cloudflare's
+`FixedLengthStream`, so the SDK's outgoing Fetch conversion is exercised by the
+real workerd host suite.
+
+`local-sqlite` tests execute the adapter's production SQL and migrations against
+SQLite, including concurrent single-use decisions, atomic audit rollback,
+tenant isolation, replay state, session replacement, and expiry cleanup. The
+workerd suite uses the actual WASM application and local D1 binding for login,
+authorization, token issuance, refresh, UserInfo, DPoP, revocation, logout,
+concurrent redemption and isolate replacement. It also records local request
+latencies. These local measurements do not establish deployed Cloudflare
+throughput, latency or database capacity; qualify those against an isolated
+deployment and its selected plan.
+
 ### Audit backlog scale checks
 
 The ordinary workspace suite checks audit claims at zero and 10,000 pending

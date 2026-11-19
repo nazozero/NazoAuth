@@ -1,0 +1,62 @@
+name: cloudflare-workers
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: "4"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d5e4d57b030548f435d0befec15ff413a2c60eff # 1.100.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: cloudflare-workers
+      - name: Check adapter and host boundaries
+        run: |
+          python3 scripts/verify_static_contracts.py --check
+          python3 -m unittest tests.unit.test_worker_portability
+          python3 scripts/check_worker_portability.py
+      - name: Test semantic SQL and transport contracts
+        run: >-
+          cargo test --locked -p nazo-oauth-server-d1 -p nazo-http-worker -p nazo-server-worker
+          --features nazo-oauth-server-d1/local-sqlite,nazo-server-worker/provisioning
+      - name: Check password verifier configuration
+        run: cargo test --locked -p nazo-crypto --features password --test contract password::
+      - name: Install locked Worker build and runtime tools
+        run: |
+          cargo install worker-build --version 0.9.0 --locked
+          cargo install wasm-bindgen-cli --version 0.2.130 --locked
+          npm ci --prefix deploy/cloudflare
+      - name: Execute WASM ingress conformance
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+          CARGO_PROFILE_TEST_OPT_LEVEL: "2"
+        run: cargo test --locked --target wasm32-unknown-unknown -p nazo-http-worker --test ingress
+      - name: Build and execute the actual WASM Worker
+        run: |
+          export WASM_BINDGEN_BIN="$(command -v wasm-bindgen)"
+          npm run bundle --prefix deploy/cloudflare
+          npm test --prefix deploy/cloudflare

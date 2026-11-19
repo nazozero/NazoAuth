@@ -1,0 +1,201 @@
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
+
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use bytes::Bytes;
+use http::{Response, StatusCode};
+use http_body_util::Full;
+use nazo_key_management::SigningKeyWrappingKeyRing;
+use nazo_oauth_server_d1::{D1Provider, Database};
+use worker::{Env, HttpRequest, event, js_sys::Reflect, wasm_bindgen::JsValue};
+use zeroize::Zeroizing;
+
+use crate::{Ingress, WorkerApplication, WorkerConfiguration};
+
+struct Cached {
+    bindings: [JsValue; 7],
+    prepared: WorkerApplication,
+    refresh_after: Cell<i64>,
+    refreshing: Cell<bool>,
+}
+
+thread_local! {
+    static APPLICATION: RefCell<Option<Rc<Cached>>> = const { RefCell::new(None) };
+}
+
+#[event(fetch)]
+async fn fetch(
+    mut request: HttpRequest,
+    env: Env,
+    _: worker::Context,
+) -> worker::Result<Response<Full<Bytes>>> {
+    let cached = match application(&env).await {
+        Ok(cached) => cached,
+        Err(_) => {
+            // Binding values, SQL, request data and key material never enter logs.
+            worker::console_error!("NazoAuth Worker initialization failed");
+            return Ok(unavailable());
+        }
+    };
+    if !cached
+        .prepared
+        .configuration
+        .accepts_authority(request.uri(), request.headers())
+    {
+        return Ok(response(StatusCode::MISDIRECTED_REQUEST, Bytes::new()));
+    }
+    if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {
+        let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
+            return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));
+        };
+        request.extensions_mut().insert(facts);
+    }
+    let now = jiff::Timestamp::now().as_second();
+    if now >= cached.refresh_after.get() && !cached.refreshing.replace(true) {
+        struct Reset<'a>(&'a Cell<bool>);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.set(false);
+            }
+        }
+        let _reset = Reset(&cached.refreshing);
+        if cached.prepared.keys.refresh().await.is_err() {
+            worker::console_error!("NazoAuth Worker signing-key refresh failed");
+            return Ok(unavailable());
+        }
+        cached.refresh_after.set(now + 60);
+    }
+    Ok(nazo_http_worker::serve(&cached.prepared.application, request).await)
+}
+
+async fn application(env: &Env) -> anyhow::Result<Rc<Cached>> {
+    let bindings = binding_values(env)?;
+    if let Some(cached) = APPLICATION.with_borrow(|cached| {
+        cached
+            .as_ref()
+            .filter(|cached| cached.bindings == bindings)
+            .cloned()
+    }) {
+        return Ok(cached);
+    }
+    let configuration: WorkerConfiguration =
+        serde_json::from_str(&env.var("NAZO_CONFIG")?.to_string())?;
+    let encoded_key = Zeroizing::new(env.secret("NAZO_SIGNING_KEY")?.to_string());
+    let mut key = Zeroizing::new([0_u8; 32]);
+    anyhow::ensure!(
+        STANDARD.decode_slice(encoded_key.as_bytes(), key.as_mut_slice())? == 32,
+        "signing wrapping key must decode to exactly 32 bytes"
+    );
+    let wrapping_keys =
+        SigningKeyWrappingKeyRing::new(env.var("NAZO_SIGNING_KEY_ID")?.to_string(), *key, None)?;
+    let prepared = WorkerApplication::build(
+        configuration,
+        Database::from_binding(env.d1("NAZO_DB")?),
+        env.secret("NAZO_CLIENT_SECRET_PEPPER")?.to_string(),
+        wrapping_keys,
+        env.secret("NAZO_DUMMY_PASSWORD_HASH")?.to_string(),
+    )
+    .await?;
+    let initialized = Rc::new(Cached {
+        bindings,
+        prepared,
+        refresh_after: Cell::new(jiff::Timestamp::now().as_second() + 60),
+        refreshing: Cell::new(false),
+    });
+    // Do not share an in-flight I/O future across Cloudflare request contexts.
+    // Concurrent cold requests may prepare independently; only the completed
+    // graph is retained, and all subsequent requests borrow it without a lock.
+    Ok(APPLICATION.with_borrow_mut(|cached| {
+        if let Some(existing) = cached
+            .as_ref()
+            .filter(|cached| cached.bindings == initialized.bindings)
+        {
+            return existing.clone();
+        }
+        *cached = Some(initialized.clone());
+        initialized
+    }))
+}
+
+fn binding_values(env: &Env) -> anyhow::Result<[JsValue; 7]> {
+    // Binding-only deployments may reuse an isolate. Compare the actual values
+    // in JS (including D1 object identity), without copying secrets or parsing
+    // configuration on every request. Never reuse a graph for changed bindings.
+    let mut values = std::array::from_fn(|_| JsValue::UNDEFINED);
+    for (value, name) in values.iter_mut().zip([
+        "NAZO_CONFIG",
+        "NAZO_DB",
+        "NAZO_SIGNING_KEY_ID",
+        "NAZO_SIGNING_KEY",
+        "NAZO_CLIENT_SECRET_PEPPER",
+        "NAZO_DUMMY_PASSWORD_HASH",
+    ]) {
+        *value = Reflect::get(env, &JsValue::from_str(name))
+            .map_err(|_| anyhow::anyhow!("Worker binding is unavailable"))?;
+        anyhow::ensure!(!value.is_undefined(), "Worker binding is missing");
+    }
+    // A platform version captures bindings even when the same JS capability
+    // object can refer to a different per-request I/O channel after deployment.
+    let metadata = env.get_binding::<worker::WorkerVersionMetadata>("NAZO_VERSION")?;
+    values[6] = Reflect::get(metadata.as_ref(), &JsValue::from_str("id"))
+        .map_err(|_| anyhow::anyhow!("Worker version is unavailable"))?;
+    anyhow::ensure!(
+        values[6].is_string() && values[6] != JsValue::from_str(""),
+        "Worker version ID is missing"
+    );
+    Ok(values)
+}
+
+fn unavailable() -> Response<Full<Bytes>> {
+    response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        Bytes::from_static(b"Service unavailable"),
+    )
+}
+
+fn response(status: StatusCode, body: Bytes) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(body));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    response
+}
+
+#[event(scheduled)]
+async fn scheduled(_: worker::ScheduledEvent, env: Env, context: worker::ScheduleContext) {
+    context.wait_until(async move {
+        let result = async {
+            let configuration: WorkerConfiguration =
+                serde_json::from_str(&env.var("NAZO_CONFIG")?.to_string())?;
+            let provider = D1Provider::new(
+                Database::from_binding(env.d1("NAZO_DB")?),
+                configuration.tenant.tenant_id,
+            );
+            let started = jiff::Timestamp::now().as_second();
+            let mut total = 0;
+            // Drain a bounded backlog outside requests. One 1,000-row pass per
+            // minute would fall behind even moderate DPoP/replay traffic.
+            for _ in 0..64 {
+                let removed = provider.prune_expired(1_000).await?;
+                total += removed;
+                if removed < 1_000 || jiff::Timestamp::now().as_second() - started >= 20 {
+                    break;
+                }
+            }
+            Ok::<_, anyhow::Error>(total)
+        }
+        .await;
+        match result {
+            Ok(removed) => worker::console_log!("NazoAuth expired state removed: {}", removed),
+            Err(_) => worker::console_error!("NazoAuth scheduled state cleanup failed"),
+        }
+    });
+}

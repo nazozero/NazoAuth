@@ -1,0 +1,15 @@
+{
+  "name": "nazoauth-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "bundle": "wrangler deploy --dry-run --outdir bundled",
+    "test": "node --test test/*.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "miniflare": "5.20261118.0-beta",
+    "wrangler": "4.165.0"
+  }
+}

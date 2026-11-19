@@ -41,6 +41,9 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. It is not a generic plugin or miscellaneous-module crate. |
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
+| `http-worker` | `nazo-http-worker` | Cloudflare Workers transport conversion, bounded streaming and authenticated ingress facts through the same facade. |
+| `authorization-server-d1` | `nazo-oauth-server-d1` | Primary D1 persistence and transient-state ports, atomic SQL changes, expiry and required audit. |
+| `server-worker` | `nazo-server-worker` | Workers bindings/secrets, deployment profile, prepared application lifecycle and scheduled maintenance; native offline provisioning is feature gated. |
 | `authorization-server` | `nazo-oauth-server` | Host-independent application capabilities: authorization and token flows, domain operations, typed contracts, semantic ports, and worker operations. It does not load process configuration, register Actix routes, open connections, or schedule native background tasks. |
 | `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL provider: binds an existing pool and repositories to application persistence ports. Native startup, migration/operator execution, and pool construction belong to `nazo-server`. It has no Valkey dependency. |
 | `authorization-server-valkey` | `nazo-oauth-server-valkey` | Valkey provider: composes tenant-scoped transient-state ports and namespace bindings from a supplied client, with no persistent-database dependency. The native launcher owns configuration and connection startup. |
@@ -48,8 +51,8 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `nazoauth` | `nazoauth` | Framework-neutral embedding API, application composition and HTTP protocol adaptation. It owns route identity, request interpretation, security presentation and response bytes, including OpenID4VC endpoints. Its integration contract uses standard HTTP values and connection facts. |
 | `server` | `nazo-server` | Native host and `nazoauth` executable: process configuration, launchers, tenant/bootstrap resources, HTTP listener wiring, CLI/operator tasks, TLS, process adapters, local storage and background scheduling. It binds concrete infrastructure to the neutral facade. |
 
-The historical Axum/Tower and tonic adapters are removed. Only Actix transport
-integration is maintained. The generic resource-server core may use the
+The historical Axum/Tower and tonic adapters are removed. Actix and Cloudflare
+Workers consume the same facade contract. The generic resource-server core may use the
 framework-neutral `http` types without becoming a Web-framework adapter.
 
 ## Dependency Direction

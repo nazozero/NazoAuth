@@ -19,6 +19,9 @@ EXACT_RUST_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 # Canonical package roles: the single architectural dependency model shared by
 # this gate, the persistence graph guard, and the crypto boundary guard.
 PACKAGE_ROLES = {
+    "nazo-http-worker": "http-adapter",
+    "nazo-oauth-server-d1": "adapter",
+    "nazo-server-worker": "host",
     "nazo-oauth-server": "application",
     "nazo-auth": "domain",
     "nazo-crypto": "domain",

@@ -83,6 +83,10 @@ release on a local or SSH host. Choose Docker, Podman, or a host binary. The
 current distribution uses the PostgreSQL and Valkey adapters. Prepare a public
 HTTPS issuer, PostgreSQL with separate runtime and lifecycle roles, and Valkey.
 
+For a WASM deployment with Cloudflare D1, see the
+[Cloudflare Workers adapter](docs/operations/cloudflare-workers.md) and its
+supported deployment profile.
+
 <details>
 <summary><strong>Install on an SSH host</strong></summary>
 

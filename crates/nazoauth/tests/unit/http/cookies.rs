@@ -18,6 +18,10 @@ fn cookies_preserve_exact_security_attributes() {
     assert_eq!(cookie.http_only(), Some(true));
     assert_eq!(cookie.same_site(), Some(SameSite::Lax));
     assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(0)));
+    assert_eq!(
+        cookie.expires_datetime(),
+        Some(cookie::time::OffsetDateTime::UNIX_EPOCH)
+    );
 }
 
 #[test]

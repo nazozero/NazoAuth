@@ -120,9 +120,13 @@ pub fn client_ip_with_context(
     header_mode: ClientIpHeaderMode,
     trusted_proxy_cidrs: &[IpCidr],
 ) -> String {
-    let Some(peer_ip) = request
+    let facts = request
         .extensions()
-        .get::<crate::integration::ConnectionFacts>()
+        .get::<crate::integration::ConnectionFacts>();
+    if let Some(client_ip) = facts.and_then(|facts| facts.authenticated_client_ip) {
+        return client_ip.to_string();
+    }
+    let Some(peer_ip) = facts
         .and_then(|facts| facts.peer_addr)
         .map(|address| address.ip())
     else {

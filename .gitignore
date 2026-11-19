@@ -1,5 +1,10 @@
 # Rust build output
 /target/
+/crates/server-worker/build/
+/deploy/cloudflare/node_modules/
+/deploy/cloudflare/.wrangler/
+/deploy/cloudflare/.dev.vars*
+/deploy/cloudflare/bundled/
 /artifacts/
 **/__pycache__/
 
