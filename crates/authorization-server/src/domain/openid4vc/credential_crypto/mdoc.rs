@@ -155,9 +155,9 @@ pub(super) async fn sign(
         None => builder.prepare(CoseAlgorithm::ES256, chain),
     }
     .map_err(|error| match error {
-            nazo_mdoc::MdocError::CertificateProfile(_) => CredentialTrustError::UntrustedIssuer,
-            _ => CredentialTrustError::InvalidEncoding,
-        })?;
+        nazo_mdoc::MdocError::CertificateProfile(_) => CredentialTrustError::UntrustedIssuer,
+        _ => CredentialTrustError::InvalidEncoding,
+    })?;
     let signature = signing_material
         .lease
         .sign(SignRequest {
@@ -280,7 +280,9 @@ pub(super) fn verify(
             now: to_protocol_time(now)?,
             max_documents: 1,
         },
-        material.as_ref().and_then(|material| material.mdoc_signer()),
+        material
+            .as_ref()
+            .and_then(|material| material.mdoc_signer()),
     )
     .map_err(|error| match error {
         nazo_mdoc::MdocError::DeviceAuth(_)
