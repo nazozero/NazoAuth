@@ -197,13 +197,23 @@ async fn hidden_committed_trust_ack_is_503_for_approve_reject_and_revoke_with_re
                     .unwrap();
             }
             let req = TestRequest::post()
-                .cookie(actix_web::cookie::Cookie::new(
-                    state.settings.session.session_cookie_name.clone(),
-                    sid.clone(),
-                ))
-                .cookie(actix_web::cookie::Cookie::new(
-                    state.settings.session.csrf_cookie_name.clone(),
-                    csrf.clone(),
+                .insert_header((
+                    "cookie",
+                    format!(
+                        "{}; {}",
+                        cookie::Cookie::new(
+                            state.settings.session.session_cookie_name.clone(),
+                            sid.clone(),
+                        )
+                        .stripped()
+                        .encoded(),
+                        cookie::Cookie::new(
+                            state.settings.session.csrf_cookie_name.clone(),
+                            csrf.clone(),
+                        )
+                        .stripped()
+                        .encoded()
+                    ),
                 ))
                 .insert_header(("x-csrf-token", csrf.clone()))
                 .to_http_request();
@@ -419,7 +429,7 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
            DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION {function}();
      "#)).await.unwrap();
     let failure=futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
-         let req=TestRequest::get().cookie(actix_web::cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone())).to_http_request();
+         let req=TestRequest::get().insert_header(("cookie", cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone()).stripped().encoded().to_string())).to_http_request();
          let response=super::super::admin_mtls_trust_bundle(sessions.clone(),service.clone(),req).await;
          assert_eq!(response.status(),actix_web::http::StatusCode::SERVICE_UNAVAILABLE);
          assert!(!response.headers().contains_key("content-disposition"));
@@ -436,7 +446,7 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
         .await
         .unwrap();
     let success=futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
-         let req=TestRequest::get().cookie(actix_web::cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone())).to_http_request();
+         let req=TestRequest::get().insert_header(("cookie", cookie::Cookie::new(state.settings.session.session_cookie_name.clone(),sid.clone()).stripped().encoded().to_string())).to_http_request();
          let response=super::super::admin_mtls_trust_bundle(sessions,service,req).await;
          if unhealthy_anchor {
              assert_eq!(response.status(),actix_web::http::StatusCode::SERVICE_UNAVAILABLE);

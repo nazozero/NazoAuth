@@ -8,9 +8,9 @@ use std::{
 
 use actix_web::{
     HttpRequest,
-    cookie::Cookie,
     web::{Data, Json, Path},
 };
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -306,28 +306,36 @@ impl LiveOpenid4vcAdminFixture {
     fn get_request(&self, sid: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::get()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     }
 
     fn post_request(&self, sid: &str, csrf: Option<&str>, uri: &str) -> HttpRequest {
+        let session = &self.state.settings.session;
+        let session_cookie = Cookie::new(session.session_cookie_name.as_str(), sid);
         let mut request = actix_web::test::TestRequest::post().uri(uri);
-        request = request.cookie(Cookie::new(
-            self.state.settings.session.session_cookie_name.clone(),
-            sid.to_owned(),
-        ));
-        if let Some(csrf) = csrf {
-            request = request
-                .cookie(Cookie::new(
-                    self.state.settings.session.csrf_cookie_name.clone(),
-                    csrf.to_owned(),
-                ))
-                .insert_header(("x-csrf-token", csrf));
-        }
-        request.to_http_request()
+        let cookies = if let Some(csrf) = csrf {
+            request = request.insert_header(("x-csrf-token", csrf));
+            format!(
+                "{}; {}",
+                session_cookie.stripped().encoded(),
+                Cookie::new(session.csrf_cookie_name.as_str(), csrf)
+                    .stripped()
+                    .encoded()
+            )
+        } else {
+            session_cookie.stripped().encoded().to_string()
+        };
+        request.insert_header(("cookie", cookies)).to_http_request()
     }
 
     async fn endpoint_with_admission(&self, enabled: bool) -> Data<CredentialDatasetAdminService> {

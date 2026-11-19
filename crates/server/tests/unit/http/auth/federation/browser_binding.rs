@@ -16,9 +16,15 @@ fn binding_http_config(secure: bool) -> FederationHttpConfig {
 fn binding_request(config: &FederationHttpConfig, seed: Option<&[u8; 32]>) -> HttpRequest {
     let mut request = actix_web::test::TestRequest::get();
     if let Some(seed) = seed {
-        request = request.cookie(actix_web::cookie::Cookie::new(
-            federation_binding_cookie_name(config),
-            URL_SAFE_NO_PAD.encode(seed),
+        request = request.insert_header((
+            "cookie",
+            cookie::Cookie::new(
+                federation_binding_cookie_name(config),
+                URL_SAFE_NO_PAD.encode(seed),
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ));
     }
     request.to_http_request()
@@ -90,9 +96,12 @@ fn binding_cookie_requires_exact_canonical_32_byte_encoding_and_configured_name(
             format!(" {}", URL_SAFE_NO_PAD.encode(test_browser_binding_seed())),
         ] {
             let req = actix_web::test::TestRequest::get()
-                .cookie(actix_web::cookie::Cookie::new(
-                    federation_binding_cookie_name(&config),
-                    value,
+                .insert_header((
+                    "cookie",
+                    cookie::Cookie::new(federation_binding_cookie_name(&config), value)
+                        .stripped()
+                        .encoded()
+                        .to_string(),
                 ))
                 .to_http_request();
             assert!(read_federation_binding_seed(&req, &config).is_none());
@@ -103,9 +112,15 @@ fn binding_cookie_requires_exact_canonical_32_byte_encoding_and_configured_name(
             "__Host-nazo_federation_binding"
         };
         let req = actix_web::test::TestRequest::get()
-            .cookie(actix_web::cookie::Cookie::new(
-                wrong_name,
-                URL_SAFE_NO_PAD.encode(test_browser_binding_seed()),
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(
+                    wrong_name,
+                    URL_SAFE_NO_PAD.encode(test_browser_binding_seed()),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request();
         assert!(read_federation_binding_seed(&req, &config).is_none());
@@ -128,7 +143,7 @@ fn successful_start_cookie_has_secure_host_or_dev_attributes_and_renews_300_seco
             .unwrap()
             .to_str()
             .unwrap();
-        let cookie = actix_web::cookie::Cookie::parse(header.to_owned()).unwrap();
+        let cookie = cookie::Cookie::parse(header.to_owned()).unwrap();
         assert_eq!(
             cookie.name(),
             if secure {
@@ -146,7 +161,7 @@ fn successful_start_cookie_has_secure_host_or_dev_attributes_and_renews_300_seco
         assert!(cookie.domain().is_none());
         assert_eq!(cookie.http_only(), Some(true));
         assert_eq!(cookie.secure().unwrap_or(false), secure);
-        assert_eq!(cookie.same_site(), Some(actix_web::cookie::SameSite::Lax));
+        assert_eq!(cookie.same_site(), Some(cookie::SameSite::Lax));
         assert_eq!(cookie.max_age().unwrap().whole_seconds(), 300);
         assert_eq!(response.headers().get_all(header::SET_COOKIE).count(), 1);
     }
@@ -162,9 +177,12 @@ async fn missing_or_bad_cookie_calls_no_state_store_and_valid_cookie_preserves_o
         for invalid in [None, Some("bad-cookie".to_owned())] {
             let mut req = actix_web::test::TestRequest::get();
             if let Some(value) = invalid {
-                req = req.cookie(actix_web::cookie::Cookie::new(
-                    federation_binding_cookie_name(&config),
-                    value,
+                req = req.insert_header((
+                    "cookie",
+                    cookie::Cookie::new(federation_binding_cookie_name(&config), value)
+                        .stripped()
+                        .encoded()
+                        .to_string(),
                 ));
             }
             let response = if social {
@@ -537,7 +555,7 @@ async fn existing_browser_cookie_supports_parallel_oidc_and_social_starts_withou
                 .unwrap()
                 .to_str()
                 .unwrap();
-            let cookie = actix_web::cookie::Cookie::parse(header.to_owned()).unwrap();
+            let cookie = cookie::Cookie::parse(header.to_owned()).unwrap();
             assert_eq!(cookie.max_age().unwrap().whole_seconds(), 300);
             assert!(
                 !response
@@ -595,9 +613,12 @@ async fn invalid_start_cookie_is_replaced_with_a_fresh_canonical_owner_seed() {
     let config = crate::test_support::federation_http_config(&state);
     let service = crate::test_support::federation_service(&state);
     let req = actix_web::test::TestRequest::get()
-        .cookie(actix_web::cookie::Cookie::new(
-            federation_binding_cookie_name(&config),
-            "invalid",
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(federation_binding_cookie_name(&config), "invalid")
+                .stripped()
+                .encoded()
+                .to_string(),
         ))
         .to_http_request();
     let response = super::super::federation_provider_start(
@@ -613,9 +634,12 @@ async fn invalid_start_cookie_is_replaced_with_a_fresh_canonical_owner_seed() {
     let encoded =
         cookie_value_from_response(&response, federation_binding_cookie_name(&config)).unwrap();
     let req = actix_web::test::TestRequest::get()
-        .cookie(actix_web::cookie::Cookie::new(
-            federation_binding_cookie_name(&config),
-            encoded,
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(federation_binding_cookie_name(&config), encoded)
+                .stripped()
+                .encoded()
+                .to_string(),
         ))
         .to_http_request();
     let seed = read_federation_binding_seed(&req, &config).unwrap();
@@ -663,9 +687,12 @@ async fn simultaneous_cold_starts_fail_closed_when_last_set_cookie_displaces_the
         let value =
             cookie_value_from_response(response, federation_binding_cookie_name(&config)).unwrap();
         let req = actix_web::test::TestRequest::get()
-            .cookie(actix_web::cookie::Cookie::new(
-                federation_binding_cookie_name(&config),
-                value,
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(federation_binding_cookie_name(&config), value)
+                    .stripped()
+                    .encoded()
+                    .to_string(),
             ))
             .to_http_request();
         read_federation_binding_seed(&req, &config).unwrap()

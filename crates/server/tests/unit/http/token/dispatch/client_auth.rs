@@ -228,9 +228,15 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
         actix_web::test::TestRequest::post()
             .uri(path)
             .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
-            .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.session_cookie_name.clone(),
-                session_id.clone(),
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    session_id.clone(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     };

@@ -107,7 +107,7 @@ impl diesel::query_builder::QueryId for PrincipalFence<'_> {
 impl diesel::query_builder::Query for PrincipalFence<'_> {
     type SqlType = sql_types::Untyped;
 }
-impl<Conn> diesel::RunQueryDsl<Conn> for PrincipalFence<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for PrincipalFence<'_> {}
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PrincipalFence<'_> {
     fn walk_ast<'b>(
         &'b self,

@@ -7,7 +7,8 @@ use crate::{
     schema::users,
     settings::Settings,
 };
-use actix_web::{HttpRequest, cookie::Cookie, web::Data};
+use actix_web::{HttpRequest, web::Data};
+use cookie::Cookie;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel::{prelude::*, sql_query};
 use diesel_async::RunQueryDsl;
@@ -159,9 +160,15 @@ impl LiveAdminUsersFixture {
     pub(crate) fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::get()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
+            .insert_header((
+                "cookie",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request()
     }
@@ -169,13 +176,23 @@ impl LiveAdminUsersFixture {
     pub(crate) fn admin_post_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::post()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        self.state.settings.session.session_cookie_name.clone(),
+                        sid.to_owned(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        self.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.to_owned(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header(("x-csrf-token", csrf))
             .to_http_request()

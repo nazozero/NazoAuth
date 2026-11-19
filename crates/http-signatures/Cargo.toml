@@ -8,10 +8,10 @@ repository.workspace = true
 
 [dependencies]
 base64.workspace = true
-httpsig = "0.0.26"
+httpsig = "0.0.27"
 nazo-crypto = { workspace = true, features = ["jose"] }
 serde_json.workspace = true
-sfv = "0.16.0"
+sfv = "0.16.1"
 sha2.workspace = true
 thiserror.workspace = true
 url.workspace = true

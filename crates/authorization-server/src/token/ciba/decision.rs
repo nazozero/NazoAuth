@@ -22,7 +22,7 @@ impl CibaApplication {
         format!(
             "{}/ciba/{}",
             self.handles.config.frontend_base_url.trim_end_matches('/'),
-            urlencoding::encode(auth_req_id)
+            urlencoding::Encoded(auth_req_id)
         )
     }
     pub async fn verification(

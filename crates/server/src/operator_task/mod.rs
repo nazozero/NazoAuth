@@ -43,7 +43,6 @@ use std::{
 };
 
 use anyhow::{Context as _, bail};
-use fs2::FileExt as _;
 use jiff::Timestamp;
 use nazo_operator_protocol::{ControlOperation, ControlOperationPayload, MAX_COMPACT_JWS_BYTES};
 
@@ -489,22 +488,19 @@ async fn acquire_task_lock_with_timeout(
 ) -> anyhow::Result<std::fs::File> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        match lock.try_lock_exclusive() {
+        match lock.try_lock() {
             Ok(()) => return Ok(lock),
-            Err(error) if task_lock_is_contended(&error) => {
+            Err(fs::TryLockError::WouldBlock) => {
                 if tokio::time::Instant::now() >= deadline {
                     bail!("operator task lock acquisition timed out");
                 }
                 tokio::time::sleep(TASK_LOCK_RETRY_INTERVAL).await;
             }
-            Err(error) => return Err(error).context("failed to acquire operator task lock"),
+            Err(fs::TryLockError::Error(error)) => {
+                return Err(error).context("failed to acquire operator task lock");
+            }
         }
     }
-}
-
-fn task_lock_is_contended(error: &std::io::Error) -> bool {
-    error.kind() == std::io::ErrorKind::WouldBlock
-        || cfg!(windows) && error.raw_os_error() == Some(33)
 }
 
 #[cfg(debug_assertions)]

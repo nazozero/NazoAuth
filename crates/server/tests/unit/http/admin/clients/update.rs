@@ -8,10 +8,10 @@ use crate::settings::Settings;
 use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use actix_web::cookie::Cookie;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -298,13 +298,23 @@ impl LiveAdminClientUpdateFixture {
     fn admin_patch_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
         actix_web::test::TestRequest::patch()
             .uri(uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        self.state.settings.session.session_cookie_name.clone(),
+                        sid.to_owned(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        self.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.to_owned(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header(("x-csrf-token", csrf))
             .to_http_request()
@@ -773,9 +783,15 @@ async fn admin_patch_client_rejects_missing_csrf_before_admin_lookup() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::patch()
         .uri("/admin/clients/client-1")
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "session-id",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
     let sessions = admin_session_handles(
@@ -812,13 +828,23 @@ async fn admin_patch_client_fails_closed_when_admin_session_lookup_is_unavailabl
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::patch()
         .uri("/admin/clients/client-1")
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
-        ))
-        .cookie(Cookie::new(
-            state.settings.session.csrf_cookie_name.clone(),
-            "csrf-token",
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    "session-id",
+                )
+                .stripped()
+                .encoded(),
+                Cookie::new(
+                    state.settings.session.csrf_cookie_name.clone(),
+                    "csrf-token",
+                )
+                .stripped()
+                .encoded()
+            ),
         ))
         .insert_header(("x-csrf-token", "csrf-token"))
         .to_http_request();

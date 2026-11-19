@@ -593,7 +593,7 @@ async fn task_lock_acquisition_is_bounded() {
         .write(true)
         .open(&path)
         .unwrap();
-    holder.lock_exclusive().unwrap();
+    holder.lock().unwrap();
     let contender = OpenOptions::new()
         .read(true)
         .write(true)

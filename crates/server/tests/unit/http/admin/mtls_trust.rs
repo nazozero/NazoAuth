@@ -50,9 +50,15 @@ fn test_state() -> TestInfrastructure {
 
 fn request_with_session_cookie(state: &TestInfrastructure) -> HttpRequest {
     TestRequest::default()
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "missing-session",
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "missing-session",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request()
 }

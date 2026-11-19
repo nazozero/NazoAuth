@@ -136,9 +136,12 @@ async fn authorized_response(
         endpoint(state),
         TestRequest::get()
             .uri(&format!("/oauth/authorize?{query}"))
-            .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.session_cookie_name.clone(),
-                sid,
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(state.settings.session.session_cookie_name.clone(), sid)
+                    .stripped()
+                    .encoded()
+                    .to_string(),
             ))
             .to_http_request(),
     )

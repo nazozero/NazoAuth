@@ -147,7 +147,7 @@ fn certificate_fixture_with_wire_edit(
     edit: impl FnOnce(&mut CertificateParams, &mut CertificateParams),
     wire_edit: impl FnOnce(Vec<u8>, &KeyPair) -> Vec<u8>,
 ) -> CertificateFixture {
-    let now = time::OffsetDateTime::now_utc();
+    let now = Timestamp::now();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("CA key");
     let mut ca_params = CertificateParams::default();
     ca_params.distinguished_name = DistinguishedName::new();
@@ -162,8 +162,14 @@ fn certificate_fixture_with_wire_edit(
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     ca_params.key_identifier_method =
         rcgen::KeyIdMethod::PreSpecified(sha1::Sha1::digest(ca_key.public_key_raw()).to_vec());
-    ca_params.not_before = now - time::Duration::minutes(1);
-    ca_params.not_after = now + time::Duration::days(365);
+    ca_params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now - SignedDuration::from_mins(1)).as_nanosecond(),
+    )
+    .unwrap();
+    ca_params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (now + SignedDuration::from_hours(365 * 24)).as_nanosecond(),
+    )
+    .unwrap();
     let mut leaf_params = CertificateParams::new(vec![host.to_owned()]).expect("leaf SAN");
     leaf_params.distinguished_name = DistinguishedName::new();
     leaf_params
@@ -176,8 +182,8 @@ fn certificate_fixture_with_wire_edit(
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.use_authority_key_identifier_extension = include_aki;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = now - time::Duration::minutes(1);
-    leaf_params.not_after = now + time::Duration::days(365);
+    leaf_params.not_before = ca_params.not_before;
+    leaf_params.not_after = ca_params.not_after;
     // ISO 18013-5 Annex B.1.4: critical ExtendedKeyUsage with id-kp-mdlDS.
     // DER SEQUENCE { OBJECT IDENTIFIER 1.0.18013.5.1.2 }.
     let mut eku = rcgen::CustomExtension::from_oid_content(
@@ -1184,7 +1190,15 @@ fn mdoc_issuance_and_verification_require_iaca_link_profiles() {
                             }),
                         ));
                 }
-                "expiry_past_root" => link_params.not_after += time::Duration::days(1),
+                "expiry_past_root" => {
+                    let not_after =
+                        Timestamp::from_nanosecond(link_params.not_after.unix_timestamp_nanos())
+                            .unwrap();
+                    link_params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+                        (not_after + SignedDuration::from_hours(24)).as_nanosecond(),
+                    )
+                    .unwrap();
+                }
                 "critical_extra_eku" => {
                     let mut eku = rcgen::CustomExtension::from_oid_content(
                         &[2, 5, 29, 37],
@@ -1306,7 +1320,12 @@ fn mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link() {
     let root_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
     let mut root_params = newest_params.clone();
     root_params.use_authority_key_identifier_extension = false;
-    root_params.not_after -= time::Duration::days(180);
+    let not_after =
+        Timestamp::from_nanosecond(root_params.not_after.unix_timestamp_nanos()).unwrap();
+    root_params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (not_after - SignedDuration::from_hours(180 * 24)).as_nanosecond(),
+    )
+    .unwrap();
     root_params.key_identifier_method =
         rcgen::KeyIdMethod::PreSpecified(sha1::Sha1::digest(root_key.public_key_raw()).to_vec());
     let parent_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
@@ -2025,9 +2044,18 @@ fn mdoc_verification_rejects_expired_ds_even_when_mso_is_current() {
             KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
             true,
             |ca, leaf| {
-                ca.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(1);
-                leaf.not_before = time::OffsetDateTime::now_utc() - time::Duration::hours(2);
-                leaf.not_after = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+                ca.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+                    (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24)).as_nanosecond(),
+                )
+                .unwrap();
+                leaf.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+                    (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2)).as_nanosecond(),
+                )
+                .unwrap();
+                leaf.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+                    (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1)).as_nanosecond(),
+                )
+                .unwrap();
             },
         );
         let signed = now - jiff::SignedDuration::from_mins(90);
@@ -2091,14 +2119,18 @@ fn mdoc_verification_rejects_unrepresentable_signed_time_after_authentication() 
             KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
             true,
             |ca, leaf| {
-                let start = time::OffsetDateTime::from_unix_timestamp(
-                    (now - SignedDuration::from_hours(24)).as_second(),
+                let start = now - SignedDuration::from_hours(24);
+                ca.not_before =
+                    time::OffsetDateTime::from_unix_timestamp_nanos(start.as_nanosecond()).unwrap();
+                ca.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+                    (start + jiff::SignedDuration::from_hours(365 * 24)).as_nanosecond(),
                 )
                 .unwrap();
-                ca.not_before = start;
-                ca.not_after = start + time::Duration::days(365);
-                leaf.not_before = start;
-                leaf.not_after = start + time::Duration::days(30);
+                leaf.not_before = ca.not_before;
+                leaf.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+                    (start + jiff::SignedDuration::from_hours(30 * 24)).as_nanosecond(),
+                )
+                .unwrap();
             },
         );
         let (encoded, transcript) = valid_mdoc_presentation(&certs, signed, None);
@@ -2256,8 +2288,14 @@ fn mdoc_verification_rejects_a_scoped_iaca_used_as_document_signer() {
         let mut params = CertificateParams::default();
         params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
         params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-        params.not_before = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
-        params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(1);
+        params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1)).as_nanosecond(),
+        )
+        .unwrap();
+        params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (jiff::Timestamp::now() + jiff::SignedDuration::from_hours(24)).as_nanosecond(),
+        )
+        .unwrap();
         let ca = params.self_signed(&key).unwrap();
         let certs = CertificateFixture {
             ca_der: ca.der().to_vec(),
@@ -2363,7 +2401,15 @@ fn mdoc_verification_requires_document_signer_profile() {
                             ));
                     }
                     "excess_ku" => leaf.key_usages.push(KeyUsagePurpose::KeyCertSign),
-                    "long_validity" => leaf.not_after = leaf.not_before + time::Duration::days(458),
+                    "long_validity" => {
+                        let not_before =
+                            Timestamp::from_nanosecond(leaf.not_before.unix_timestamp_nanos())
+                                .unwrap();
+                        leaf.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+                            (not_before + SignedDuration::from_hours(458 * 24)).as_nanosecond(),
+                        )
+                        .unwrap();
+                    }
                     "wrong_country" => leaf.distinguished_name.push(
                         DnType::CountryName,
                         rcgen::DnValue::PrintableString("CA".try_into().unwrap()),
@@ -2936,8 +2982,14 @@ fn expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_s
     let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
-    params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(2);
-    params.not_after = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2 * 24)).as_nanosecond(),
+    )
+    .unwrap();
+    params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+        (jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24)).as_nanosecond(),
+    )
+    .unwrap();
     let expired = CertifiedIssuer::self_signed(
         params,
         KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
@@ -3361,9 +3413,15 @@ fn signed_unused_configured_anchor_cannot_supply_a_dcql_aki() {
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         params.use_authority_key_identifier_extension = true;
-        let now = time::OffsetDateTime::now_utc();
-        params.not_before = now - time::Duration::minutes(1);
-        params.not_after = now + time::Duration::days(365);
+        let now = jiff::Timestamp::now();
+        params.not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (now - jiff::SignedDuration::from_mins(1)).as_nanosecond(),
+        )
+        .unwrap();
+        params.not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (now + jiff::SignedDuration::from_hours(365 * 24)).as_nanosecond(),
+        )
+        .unwrap();
         let unused = params
             .self_signed(&KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap())
             .unwrap();

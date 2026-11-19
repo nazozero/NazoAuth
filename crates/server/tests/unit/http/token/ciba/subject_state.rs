@@ -46,13 +46,17 @@ async fn ciba_decision_storage_failure_maps_to_non_cacheable_server_error() {
     .await;
     let request = actix_web::test::TestRequest::post()
         .uri(&format!("/auth/ciba/{id}"))
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            sid,
-        ))
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.csrf_cookie_name.clone(),
-            "csrf",
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                cookie::Cookie::new(state.settings.session.session_cookie_name.clone(), sid,)
+                    .stripped()
+                    .encoded(),
+                cookie::Cookie::new(state.settings.session.csrf_cookie_name.clone(), "csrf",)
+                    .stripped()
+                    .encoded()
+            ),
         ))
         .set_json(json!({"decision":"approve","csrf_token":"csrf"}))
         .to_request();
@@ -147,9 +151,15 @@ async fn ciba_verification_loads_the_bound_user_and_rejects_a_session_mismatch()
 
     let request = actix_web::test::TestRequest::get()
         .uri(&format!("/auth/ciba/{auth_req_id}"))
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            session_id,
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                session_id,
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_request();
     let response = actix_web::test::call_service(&app, request).await;
@@ -161,9 +171,15 @@ async fn ciba_verification_loads_the_bound_user_and_rejects_a_session_mismatch()
 
     let request = actix_web::test::TestRequest::get()
         .uri(&format!("/auth/ciba/{auth_req_id}"))
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            other_session_id,
+        .insert_header((
+            "cookie",
+            cookie::Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                other_session_id,
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_request();
     let response = actix_web::test::call_service(&app, request).await;
@@ -187,13 +203,23 @@ async fn ciba_browser_decision_rejects_invalid_csrf_before_session_lookup() {
 
     let request = actix_web::test::TestRequest::post()
         .uri("/auth/ciba/not-stored")
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-csrf-check",
-        ))
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.csrf_cookie_name.clone(),
-            "csrf-cookie",
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                cookie::Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    "session-csrf-check",
+                )
+                .stripped()
+                .encoded(),
+                cookie::Cookie::new(
+                    state.settings.session.csrf_cookie_name.clone(),
+                    "csrf-cookie",
+                )
+                .stripped()
+                .encoded()
+            ),
         ))
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .set_payload(r#"{"decision":"approve","csrf_token":"csrf-body-mismatch"}"#)
@@ -239,13 +265,23 @@ async fn ciba_browser_decision_commits_user_context_and_rejects_replay() {
     let decision_request = || {
         actix_web::test::TestRequest::post()
             .uri(&format!("/auth/ciba/{auth_req_id}"))
-            .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.session_cookie_name.clone(),
-                session_id.clone(),
-            ))
-            .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.csrf_cookie_name.clone(),
-                "csrf-session-token",
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    cookie::Cookie::new(
+                        state.settings.session.session_cookie_name.clone(),
+                        session_id.clone(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    cookie::Cookie::new(
+                        state.settings.session.csrf_cookie_name.clone(),
+                        "csrf-session-token",
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header((header::CONTENT_TYPE, "application/json"))
             .set_payload(r#"{"decision":"approve","csrf_token":"csrf-session-token"}"#)

@@ -491,13 +491,23 @@ async fn device_denial_consumes_pending_request_after_audited_user_decision() {
     ));
     let request = TestRequest::post()
         .uri("/device/decision")
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            session_id,
-        ))
-        .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session.csrf_cookie_name.clone(),
-            "device-csrf",
+        .insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                cookie::Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    session_id,
+                )
+                .stripped()
+                .encoded(),
+                cookie::Cookie::new(
+                    state.settings.session.csrf_cookie_name.clone(),
+                    "device-csrf",
+                )
+                .stripped()
+                .encoded()
+            ),
         ))
         .to_http_request();
 
@@ -676,9 +686,15 @@ async fn device_http_boundaries_preserve_validation_csrf_and_verification_repres
         handles.clone(),
         sessions.clone(),
         TestRequest::get()
-            .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.csrf_cookie_name.clone(),
-                "csrf-probe",
+            .insert_header((
+                "cookie",
+                cookie::Cookie::new(
+                    state.settings.session.csrf_cookie_name.clone(),
+                    "csrf-probe",
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ))
             .to_http_request(),
         Query(HashMap::from([("user_code".into(), "not-found".into())])),
@@ -698,9 +714,15 @@ async fn device_http_boundaries_preserve_validation_csrf_and_verification_repres
     for session_cookie in [false, true] {
         let mut request = TestRequest::post();
         if session_cookie {
-            request = request.cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.session_cookie_name.clone(),
-                "unused-session",
+            request = request.insert_header((
+                "cookie",
+                cookie::Cookie::new(
+                    state.settings.session.session_cookie_name.clone(),
+                    "unused-session",
+                )
+                .stripped()
+                .encoded()
+                .to_string(),
             ));
         }
         let response = device_decision(

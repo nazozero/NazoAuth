@@ -134,8 +134,7 @@ pub fn parse_query<T: DeserializeOwned>(request: &Request) -> Result<T, Response
 }
 
 pub fn parse_path<T: std::str::FromStr>(value: &str) -> Result<T, Response> {
-    percent_encoding::percent_decode_str(value)
-        .decode_utf8()
+    urlencoding::decode(value)
         .map_err(|_| super::empty_response(StatusCode::NOT_FOUND))?
         .parse()
         .map_err(|_| super::empty_response(StatusCode::NOT_FOUND))

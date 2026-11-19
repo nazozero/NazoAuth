@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_support::admin_mutations::{LiveAdminUsersFixture, admin_user_dependencies};
-use actix_web::cookie::Cookie;
+use cookie::Cookie;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -228,9 +228,15 @@ async fn admin_patch_user_rejects_missing_csrf_before_auth_or_mutation() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/users/user-id")
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "session-id",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
 
@@ -254,9 +260,15 @@ async fn admin_create_user_rejects_missing_csrf_before_hashing_or_mutation() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/users")
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "session-id",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "session-id",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request();
 

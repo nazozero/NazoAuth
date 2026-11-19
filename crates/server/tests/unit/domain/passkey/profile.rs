@@ -11,12 +11,12 @@ use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabasePasskeyFixture, DatabaseUserFixture, TestInfrastructure};
 use actix_web::{
     HttpRequest, HttpResponse,
-    cookie::Cookie,
     http::{StatusCode, header},
     web::{Data, Json, Path},
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -168,9 +168,15 @@ fn test_state() -> TestInfrastructure {
 
 fn request_with_session_but_no_csrf(state: &TestInfrastructure) -> HttpRequest {
     actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(
-            state.settings.session.session_cookie_name.clone(),
-            "active-session",
+        .insert_header((
+            "cookie",
+            Cookie::new(
+                state.settings.session.session_cookie_name.clone(),
+                "active-session",
+            )
+            .stripped()
+            .encoded()
+            .to_string(),
         ))
         .to_http_request()
 }
@@ -397,13 +403,23 @@ impl LivePasskeyFixture {
 
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
         actix_web::test::TestRequest::default()
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                csrf.to_owned(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        self.state.settings.session.session_cookie_name.clone(),
+                        sid.to_owned(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        self.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.to_owned(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header(("x-csrf-token", csrf))
             .to_http_request()
@@ -758,13 +774,23 @@ async fn registration_finish_persists_credential_and_consumes_ceremony_once() {
         &app,
         actix_web::test::TestRequest::post()
             .uri("/auth/me/passkeys/registration/finish")
-            .cookie(Cookie::new(
-                fixture.state.settings.session.session_cookie_name.clone(),
-                sid.clone(),
-            ))
-            .cookie(Cookie::new(
-                fixture.state.settings.session.csrf_cookie_name.clone(),
-                csrf.clone(),
+            .insert_header((
+                "cookie",
+                format!(
+                    "{}; {}",
+                    Cookie::new(
+                        fixture.state.settings.session.session_cookie_name.clone(),
+                        sid.clone(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    Cookie::new(
+                        fixture.state.settings.session.csrf_cookie_name.clone(),
+                        csrf.clone(),
+                    )
+                    .stripped()
+                    .encoded()
+                ),
             ))
             .insert_header(("x-csrf-token", csrf.clone()))
             .set_json(json!({

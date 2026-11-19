@@ -555,17 +555,27 @@ mod ciba_device_contract {
             (false, Some("golden-csrf"), 401),
             (true, Some("golden-csrf"), 200),
         ] {
-            let mut request = TestRequest::post().uri("/device/decision");
-            if session {
-                request = request.cookie(actix_web::cookie::Cookie::new(
-                    state.settings.session.session_cookie_name.clone(),
-                    sid.clone(),
-                ));
-            }
-            request = request.cookie(actix_web::cookie::Cookie::new(
-                state.settings.session.csrf_cookie_name.clone(),
+            let csrf_cookie = cookie::Cookie::new(
+                state.settings.session.csrf_cookie_name.as_str(),
                 "golden-csrf",
-            ));
+            );
+            let cookies = if session {
+                format!(
+                    "{}; {}",
+                    cookie::Cookie::new(
+                        state.settings.session.session_cookie_name.as_str(),
+                        sid.as_str(),
+                    )
+                    .stripped()
+                    .encoded(),
+                    csrf_cookie.stripped().encoded()
+                )
+            } else {
+                csrf_cookie.stripped().encoded().to_string()
+            };
+            let request = TestRequest::post()
+                .uri("/device/decision")
+                .insert_header(("cookie", cookies));
             let form: DeviceDecisionForm = serde_json::from_value(
                 json!({"user_code":code,"decision":"deny","csrf_token":csrf}),
             )
@@ -617,12 +627,11 @@ mod ciba_device_contract {
                         .find(|(_, v)| v.starts_with(format!("{name}=").as_bytes()))
                         .expect("clearing cookie");
                     let cookie =
-                        actix_web::cookie::Cookie::parse(std::str::from_utf8(&raw.1).unwrap())
-                            .unwrap();
+                        cookie::Cookie::parse(std::str::from_utf8(&raw.1).unwrap()).unwrap();
                     assert_eq!(cookie.value(), "");
                     assert_eq!(cookie.path(), Some("/"));
                     assert_eq!(cookie.http_only(), Some(true));
-                    assert_eq!(cookie.same_site(), Some(actix_web::cookie::SameSite::Lax));
+                    assert_eq!(cookie.same_site(), Some(cookie::SameSite::Lax));
                     assert_eq!(
                         cookie.secure().unwrap_or(false),
                         state.settings.session.cookie_secure

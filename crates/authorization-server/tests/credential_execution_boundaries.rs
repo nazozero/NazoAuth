@@ -30,7 +30,15 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
             .clone();
         let leaf_key =
             KeyPair::from_pem(&keyset.database_local_private_key_pem(&kid).unwrap()).unwrap();
-        let now = time::OffsetDateTime::now_utc();
+        let now = Timestamp::now();
+        let not_before = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (now - SignedDuration::from_mins(1)).as_nanosecond(),
+        )
+        .unwrap();
+        let not_after = time::OffsetDateTime::from_unix_timestamp_nanos(
+            (now + SignedDuration::from_hours(1)).as_nanosecond(),
+        )
+        .unwrap();
         // Use genuine mdoc certificate profiles while keeping this test on a
         // plain futures executor: no Tokio runtime or native signer bridge.
         let certificate_profile = |params: &mut CertificateParams, common_name: &str| {
@@ -66,8 +74,8 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
         ca_params.key_identifier_method =
             KeyIdMethod::PreSpecified(Sha1::digest(ca_key.public_key_raw()).to_vec());
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-        ca_params.not_before = now - time::Duration::minutes(1);
-        ca_params.not_after = now + time::Duration::hours(1);
+        ca_params.not_before = not_before;
+        ca_params.not_after = not_after;
         let ca = CertifiedIssuer::self_signed(ca_params, ca_key).unwrap();
         let mut leaf_params = CertificateParams::new(vec!["issuer.example".to_owned()]).unwrap();
         certificate_profile(&mut leaf_params, "Boundary test Document Signer");
@@ -95,8 +103,8 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
                 }),
             ));
         leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-        leaf_params.not_before = now - time::Duration::minutes(1);
-        leaf_params.not_after = now + time::Duration::hours(1);
+        leaf_params.not_before = not_before;
+        leaf_params.not_after = not_after;
         let leaf = leaf_params.signed_by(&leaf_key, &ca).unwrap();
         let (_, ca_certificate) = x509_parser::parse_x509_certificate(ca.der()).unwrap();
         let (_, leaf_certificate) = x509_parser::parse_x509_certificate(leaf.der()).unwrap();

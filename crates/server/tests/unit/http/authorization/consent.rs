@@ -19,8 +19,8 @@ fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
 }
 
 use super::*;
-use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
+use cookie::Cookie;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -358,16 +358,24 @@ impl ConsentLiveFixture {
         } else {
             "/authorize/consent".to_owned()
         };
-        TestRequest::get()
-            .uri(&uri)
-            .cookie(Cookie::new(
-                self.state.settings.session.session_cookie_name.clone(),
-                sid.to_owned(),
-            ))
-            .cookie(Cookie::new(
-                self.state.settings.session.csrf_cookie_name.clone(),
-                "csrf-token".to_owned(),
-            ))
+        TestRequest::get().uri(&uri).insert_header((
+            "cookie",
+            format!(
+                "{}; {}",
+                Cookie::new(
+                    self.state.settings.session.session_cookie_name.clone(),
+                    sid.to_owned(),
+                )
+                .stripped()
+                .encoded(),
+                Cookie::new(
+                    self.state.settings.session.csrf_cookie_name.clone(),
+                    "csrf-token".to_owned(),
+                )
+                .stripped()
+                .encoded()
+            ),
+        ))
     }
 }
 

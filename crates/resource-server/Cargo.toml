@@ -9,7 +9,7 @@ repository.workspace = true
 [dependencies]
 base64.workspace = true
 jiff.workspace = true
-http = "1.5.0"
+http.workspace = true
 nazo-crypto = { workspace = true, features = ["jose"] }
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }

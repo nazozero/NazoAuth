@@ -30,14 +30,13 @@ mod wire;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::json;
-use std::fs::File;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use store::{Checkpoint, Store};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_rustls::rustls::pki_types::CertificateDer;
+use tokio_rustls::rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
@@ -160,10 +159,9 @@ fn env(name: &str) -> Result<String, anyhow::Error> {
 }
 
 fn tls_acceptor(cert_path: &str, key_path: &str) -> Result<TlsAcceptor> {
-    let certs = rustls_pemfile::certs(&mut std::io::BufReader::new(File::open(cert_path)?))
-        .collect::<std::result::Result<Vec<CertificateDer<'static>>, _>>()?;
-    let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(File::open(key_path)?))?
-        .ok_or_else(|| anyhow!("no private key in {key_path}"))?;
+    let certs =
+        CertificateDer::pem_file_iter(cert_path)?.collect::<std::result::Result<Vec<_>, _>>()?;
+    let key = PrivateKeyDer::from_pem_file(key_path)?;
     let config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)?;

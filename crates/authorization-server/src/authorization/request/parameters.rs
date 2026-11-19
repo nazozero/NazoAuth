@@ -57,21 +57,21 @@ pub(super) fn authorization_login_url_for_frontend(
     for (key, value) in q {
         next.push(if has_query { '&' } else { '?' });
         has_query = true;
-        next.push_str(&urlencoding::encode(key));
+        urlencoding::Encoded(key).append_to(&mut next);
         next.push('=');
-        next.push_str(&urlencoding::encode(value));
+        urlencoding::Encoded(value).append_to(&mut next);
     }
     if let Some(reauth_nonce) = reauth_nonce {
         next.push(if has_query { '&' } else { '?' });
         next.push_str(REAUTH_NONCE_PARAMETER);
         next.push('=');
-        next.push_str(&urlencoding::encode(reauth_nonce));
+        urlencoding::Encoded(reauth_nonce).append_to(&mut next);
     }
 
     let mut location = String::with_capacity(frontend_base_url.len() + next.len() + 16);
     location.push_str(frontend_base_url.trim_end_matches('/'));
     location.push_str("/auth?next=");
-    location.push_str(&urlencoding::encode(&next));
+    urlencoding::Encoded(&next).append_to(&mut location);
     location
 }
 

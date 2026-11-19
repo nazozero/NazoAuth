@@ -49,10 +49,10 @@ pub fn generate_totp_secret_base32() -> String {
 pub fn otpauth_uri(issuer: &str, account_name: &str, secret_base32: &str) -> String {
     format!(
         "otpauth://totp/{}:{}?secret={}&issuer={}&algorithm=SHA1&digits={}&period={}",
-        urlencoding::encode(issuer),
-        urlencoding::encode(account_name),
+        urlencoding::Encoded(issuer),
+        urlencoding::Encoded(account_name),
         secret_base32,
-        urlencoding::encode(issuer),
+        urlencoding::Encoded(issuer),
         MFA_TOTP_DIGITS,
         MFA_TOTP_PERIOD_SECONDS
     )

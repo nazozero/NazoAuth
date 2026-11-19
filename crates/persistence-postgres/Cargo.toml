@@ -14,7 +14,7 @@ base64.workspace = true
 rand.workspace = true
 rustls.workspace = true
 blake3.workspace = true
-bytes = "1.12.1"
+bytes.workspace = true
 jiff.workspace = true
 diesel = { workspace = true, features = ["postgres_backend", "uuid", "serde_json", "64-column-tables"] }
 diesel-async = { workspace = true, features = ["postgres", "deadpool", "migrations"] }
@@ -49,7 +49,7 @@ ed25519-dalek.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 jsonwebtoken.workspace = true
 rcgen.workspace = true
-syn = { version = "3.0.9", features = ["full", "visit"] }
+syn = { version = "3.0.10", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 url.workspace = true
 

@@ -12,23 +12,23 @@ pub fn make_cookie(
     max_age: u64,
     secure: bool,
 ) -> Cookie<'static> {
-    Cookie::build(name.to_owned(), value.to_owned())
+    Cookie::build((name.to_owned(), value.to_owned()))
         .path("/")
         .max_age(CookieDuration::seconds(max_age.min(i64::MAX as u64) as i64))
         .same_site(SameSite::Lax)
         .http_only(http_only)
         .secure(secure)
-        .finish()
+        .build()
 }
 
 #[must_use]
 pub fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
-    let mut cookie = Cookie::build(name.to_owned(), String::new())
+    let mut cookie = Cookie::build((name.to_owned(), String::new()))
         .path("/")
         .same_site(SameSite::Lax)
         .http_only(true)
         .secure(secure)
-        .finish();
+        .build();
     cookie.make_removal();
     cookie
 }

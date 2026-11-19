@@ -198,8 +198,11 @@ and registration dates are listed in [OpenID Certified](#openid-certified).
 | [SCIM](docs/features/scim.md) | [Security model](docs/security/threat-model.md) |
 | [Protocol coverage](docs/protocol/rfc-compliance-matrix.md) | [Performance measurements](docs/performance/README.md) |
 
-Report vulnerabilities through [SECURITY.md](SECURITY.md). Contribution rules
-are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Report vulnerabilities through [SECURITY.md](SECURITY.md). Pull requests for
+code, tests, and documentation are welcome without a CLA; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-Licensed under [AGPL-3.0-or-later](LICENSE).
-[Commercial licensing](COMMERCIAL-LICENSE.md) requires a separate agreement.
+Licensed under [AGPL-3.0-or-later](LICENSE), which permits commercial use,
+including paid distribution and services, when its conditions are met.
+[Separate commercial terms](COMMERCIAL-LICENSE.md) require a written agreement
+and are limited to material for which the licensors have the necessary rights.

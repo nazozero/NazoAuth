@@ -75,7 +75,7 @@ impl diesel::query_builder::QueryId for CreateFamily<'_> {
 impl diesel::query_builder::Query for CreateFamily<'_> {
     type SqlType = sql_types::Untyped;
 }
-impl<Conn> diesel::RunQueryDsl<Conn> for CreateFamily<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for CreateFamily<'_> {}
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for CreateFamily<'_> {
     fn walk_ast<'b>(
         &'b self,

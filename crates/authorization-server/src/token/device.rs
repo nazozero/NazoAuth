@@ -183,7 +183,7 @@ impl DeviceDecisionHandles {
             device_code,
             verification_uri_complete: format!(
                 "{verification_uri}?user_code={}",
-                urlencoding::encode(&user_code)
+                urlencoding::Encoded(&user_code)
             ),
             user_code,
             verification_uri,

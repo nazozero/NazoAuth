@@ -764,7 +764,7 @@ impl diesel::query_builder::Query for PlainRefreshLookup<'_> {
     type SqlType = sql_types::Untyped;
 }
 
-impl<Conn> diesel::RunQueryDsl<Conn> for PlainRefreshLookup<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for PlainRefreshLookup<'_> {}
 
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PlainRefreshLookup<'_> {
     fn walk_ast<'b>(
@@ -796,7 +796,7 @@ impl diesel::query_builder::Query for PreparedRefreshLookup<'_> {
     type SqlType = sql_types::Untyped;
 }
 
-impl<Conn> diesel::RunQueryDsl<Conn> for PreparedRefreshLookup<'_> {}
+impl diesel::query_dsl::RunQueryDslSupport for PreparedRefreshLookup<'_> {}
 
 impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PreparedRefreshLookup<'_> {
     fn walk_ast<'b>(
