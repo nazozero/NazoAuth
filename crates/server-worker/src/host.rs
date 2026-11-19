@@ -9,13 +9,13 @@ use http::{Response, StatusCode};
 use http_body_util::Full;
 use nazo_key_management::SigningKeyWrappingKeyRing;
 use nazo_oauth_server_d1::{D1Provider, Database};
-use worker::{Env, HttpRequest, event, js_sys::Reflect, wasm_bindgen::JsValue};
+use worker::{Env, HttpRequest, event, wasm_bindgen::JsValue};
 use zeroize::Zeroizing;
 
 use crate::{Ingress, WorkerApplication, WorkerConfiguration};
 
 struct Cached {
-    bindings: [JsValue; 7],
+    bindings: ([JsValue; 6], String),
     prepared: WorkerApplication,
     refresh_after: Cell<i64>,
     refreshing: Cell<bool>,
@@ -119,33 +119,25 @@ async fn application(env: &Env) -> anyhow::Result<Rc<Cached>> {
     }))
 }
 
-fn binding_values(env: &Env) -> anyhow::Result<[JsValue; 7]> {
+fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 6], String)> {
     // Binding-only deployments may reuse an isolate. Compare the actual values
     // in JS (including D1 object identity), without copying secrets or parsing
     // configuration on every request. Never reuse a graph for changed bindings.
-    let mut values = std::array::from_fn(|_| JsValue::UNDEFINED);
-    for (value, name) in values.iter_mut().zip([
-        "NAZO_CONFIG",
-        "NAZO_DB",
-        "NAZO_SIGNING_KEY_ID",
-        "NAZO_SIGNING_KEY",
-        "NAZO_CLIENT_SECRET_PEPPER",
-        "NAZO_DUMMY_PASSWORD_HASH",
-    ]) {
-        *value = Reflect::get(env, &JsValue::from_str(name))
-            .map_err(|_| anyhow::anyhow!("Worker binding is unavailable"))?;
-        anyhow::ensure!(!value.is_undefined(), "Worker binding is missing");
-    }
+    let values = [
+        env.var("NAZO_CONFIG")?.into(),
+        env.d1("NAZO_DB")?.into(),
+        env.var("NAZO_SIGNING_KEY_ID")?.into(),
+        env.secret("NAZO_SIGNING_KEY")?.into(),
+        env.secret("NAZO_CLIENT_SECRET_PEPPER")?.into(),
+        env.secret("NAZO_DUMMY_PASSWORD_HASH")?.into(),
+    ];
     // A platform version captures bindings even when the same JS capability
     // object can refer to a different per-request I/O channel after deployment.
-    let metadata = env.get_binding::<worker::WorkerVersionMetadata>("NAZO_VERSION")?;
-    values[6] = Reflect::get(metadata.as_ref(), &JsValue::from_str("id"))
-        .map_err(|_| anyhow::anyhow!("Worker version is unavailable"))?;
-    anyhow::ensure!(
-        values[6].is_string() && values[6] != JsValue::from_str(""),
-        "Worker version ID is missing"
-    );
-    Ok(values)
+    let version = env
+        .get_binding::<worker::WorkerVersionMetadata>("NAZO_VERSION")?
+        .id();
+    anyhow::ensure!(!version.is_empty(), "Worker version ID is missing");
+    Ok((values, version))
 }
 
 fn unavailable() -> Response<Full<Bytes>> {

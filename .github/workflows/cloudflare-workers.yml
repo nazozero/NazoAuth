@@ -44,7 +44,8 @@ jobs:
           cargo test --locked -p nazo-oauth-server-d1 -p nazo-http-worker -p nazo-server-worker
           --features nazo-oauth-server-d1/local-sqlite,nazo-server-worker/provisioning
       - name: Check password verifier configuration
-        run: cargo test --locked -p nazo-crypto --features password --test contract password::
+        run: >-
+          cargo test --locked -p nazo-crypto --features password --test contract password::
       - name: Install locked Worker build and runtime tools
         run: |
           cargo install worker-build --version 0.9.0 --locked

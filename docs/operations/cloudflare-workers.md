@@ -65,6 +65,12 @@ bounding each transaction and the scheduled work.
 The repository pins Rust 1.100.0. Worker bindings and `worker-build` use 0.9.0.
 The npm lockfile pins Wrangler, Miniflare and workerd.
 
+Worker 0.9.0 unconditionally depends on `chrono`, which has the informational
+[RUSTSEC-2026-0543 maintenance advisory](https://rustsec.org/advisories/RUSTSEC-2026-0543.html)
+and no patched release. The dependency policy permits only `worker@0.9.0` to
+introduce that advisory until **2026-12-19**. Replacing the SDK's date dependency
+removes this exception; other introducers or an expired deadline fail the gate.
+
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install worker-build --version 0.9.0 --locked
@@ -211,8 +217,8 @@ Completed graphs are reused without a per-request lock. In-flight initialization
 I/O is not shared across Worker request contexts; concurrent cold requests may
 prepare independently and then reuse the completed graph.
 
-The cache compares the platform-generated `NAZO_VERSION.id` and the six consumed
-binding values in JavaScript before reuse. The version ID also covers resource
+The cache checks the platform-generated `NAZO_VERSION.id` and compares the six
+consumed binding values in JavaScript before reuse. The version ID also covers resource
 rebinding that preserves a JavaScript object's identity; no manual deployment
 counter is needed. Secret values are not copied into Rust strings on
 the cache-hit path. A changed binding rebuilds the graph; an initialization
