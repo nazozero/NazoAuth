@@ -58,6 +58,7 @@ jobs:
         run: cargo test --locked --target wasm32-unknown-unknown -p nazo-http-worker --test ingress
       - name: Build and execute the actual WASM Worker
         run: |
-          export WASM_BINDGEN_BIN="$(command -v wasm-bindgen)"
+          WASM_BINDGEN_BIN="$(command -v wasm-bindgen)"
+          export WASM_BINDGEN_BIN
           npm run bundle --prefix deploy/cloudflare
           npm test --prefix deploy/cloudflare
