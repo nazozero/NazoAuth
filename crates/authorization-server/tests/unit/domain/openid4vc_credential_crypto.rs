@@ -4038,6 +4038,69 @@ fn verifier_requires_status_resolver_after_holder_authentication() {
 }
 
 #[test]
+fn mdoc_requires_device_signature_even_for_a_valid_mac_primitive() {
+    use hmac::{Hmac, KeyInit, Mac};
+
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
+        let mut presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.clone().into()),
+            additional_trust_anchors: vec![].into(),
+        };
+        assert!(crypto.verify(&presentation).await.is_ok());
+        let bytes = URL_SAFE_NO_PAD
+            .decode(presentation.encoded.as_bytes())
+            .unwrap();
+        let mut response = nazo_mdoc::parse(&bytes).unwrap();
+        let document = &mut response.documents[0];
+        let device = document.device_signed.as_mut().unwrap();
+        let payload = build_device_authentication_bytes(
+            &transcript,
+            &document.doc_type,
+            &device.name_spaces_bytes,
+        )
+        .unwrap();
+        let key = [42u8; 32];
+        let mut mac = coset::CoseMac0Builder::new()
+            .protected(
+                coset::HeaderBuilder::new()
+                    .algorithm(iana::Algorithm::HMAC_256_256)
+                    .build(),
+            )
+            .payload(payload.clone())
+            .create_tag(&[], |input| {
+                let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(&key).unwrap();
+                hmac.update(input);
+                hmac.finalize().into_bytes().to_vec()
+            })
+            .build();
+        mac.payload = None;
+        assert!(
+            nazo_mdoc::device_auth::verify_device_mac(&mac, &payload, &key)
+                .unwrap()
+                .is_valid
+        );
+        device.device_auth = DeviceAuth::Mac(mac);
+        presentation.encoded = URL_SAFE_NO_PAD.encode(response.to_cbor().unwrap()).into();
+        // Core reader capabilities never supply an ISO proximity session to
+        // NazoAuth's retained OpenID4VP Redirect request context.
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::InvalidSessionBinding)
+        );
+        assert_eq!(
+            crypto.verify(&presentation).await,
+            Err(CredentialTrustError::InvalidSessionBinding)
+        );
+    });
+}
+
+#[test]
 fn verifier_requires_status_resolver_for_mdoc() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
