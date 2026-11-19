@@ -159,8 +159,11 @@ requests and pinned signing leases; path selection, validity and revocation chec
 remain at the request boundary, and scoped trust anchors are borrowed directly.
 
 The `nazo-mdoc/certificate-profile` feature supplies ISO certificate profiles
-and borrowed leaf evidence. KeyManager prepares configured IACA root profiles
-and self-signatures with each immutable certificate generation. Request-scoped
+and borrowed leaf evidence. KeyManager also prepares the exact DS profile,
+key and validity interval for reuse by repeated issuance and matching
+presentations, without carrying those facts to untrusted certificates. It
+prepares configured IACA root profiles and self-signatures with each immutable
+certificate generation. Request-scoped
 roots are authenticated when used; the application selects certificate paths
 and applies current validity, revocation and status policy. JSON dataset mapping
 and signing-key leases stay in the application.

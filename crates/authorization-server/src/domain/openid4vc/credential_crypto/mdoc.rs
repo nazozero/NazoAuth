@@ -16,7 +16,7 @@ use nazo_mdoc::{
     },
     model::types::{CoseAlgorithm, ValidityInfo},
     session::SessionTranscript,
-    verifier::{VerificationOptions, verify_presentation_borrowed},
+    verifier::{VerificationOptions, verify_presentation_borrowed_with_signer},
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -149,12 +149,12 @@ pub(super) async fn sign(
             .collect::<Result<Vec<_>, CredentialTrustError>>()?;
         builder = builder.add_namespace(namespace, entries);
     }
-    let prepared = builder
-        .prepare(
-            CoseAlgorithm::ES256,
-            signing_material.certificate_chain_der().to_vec(),
-        )
-        .map_err(|error| match error {
+    let chain = signing_material.certificate_chain_der().to_vec();
+    let prepared = match signing_material.lease.certificates().mdoc_signer() {
+        Some(signer) => builder.prepare_with_signer(chain, signer),
+        None => builder.prepare(CoseAlgorithm::ES256, chain),
+    }
+    .map_err(|error| match error {
             nazo_mdoc::MdocError::CertificateProfile(_) => CredentialTrustError::UntrustedIssuer,
             _ => CredentialTrustError::InvalidEncoding,
         })?;
@@ -270,13 +270,17 @@ pub(super) fn verify(
     // enforce CBOR/profile structure here without re-encoding the signed bytes.
     let transcript = SessionTranscript::from_cbor(transcript_bytes)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let mut documents = verify_presentation_borrowed(
+    // A matching immutable DS needs no repeat profile/key admission. Unknown
+    // signers still pass the full strict-DER/profile path in the core.
+    let material = crypto.keyset.openid4vc_certificates();
+    let mut documents = verify_presentation_borrowed_with_signer(
         &bytes,
         &transcript,
         &VerificationOptions {
             now: to_protocol_time(now)?,
             max_documents: 1,
         },
+        material.as_ref().and_then(|material| material.mdoc_signer()),
     )
     .map_err(|error| match error {
         nazo_mdoc::MdocError::DeviceAuth(_)

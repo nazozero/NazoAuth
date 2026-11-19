@@ -364,6 +364,8 @@ pub struct Openid4vcCertificates {
     trust_anchors_der: Vec<Vec<u8>>,
     // Profile and self-signature were checked against this exact immutable DER.
     mdoc_iaca_root_admitted: Vec<bool>,
+    // Static DS validation belongs to the same generation as its DER/signing key.
+    mdoc_signer: Option<nazo_mdoc::certificate::PreparedDocumentSigner>,
 }
 
 impl Openid4vcCertificates {
@@ -372,6 +374,13 @@ impl Openid4vcCertificates {
             &material.certificate_chain_pem,
             "certificate chain",
         )?;
+        let mdoc_signer = certificate_chain_der.first().and_then(|der| {
+            nazo_mdoc::certificate::PreparedDocumentSigner::new(
+                der,
+                nazo_mdoc::model::types::CoseAlgorithm::ES256,
+            )
+            .ok()
+        });
         let mut trust_anchors_der = Vec::new();
         let mut mdoc_iaca_root_admitted = Vec::new();
         for der in
@@ -395,6 +404,7 @@ impl Openid4vcCertificates {
             certificate_chain_der,
             trust_anchors_der,
             mdoc_iaca_root_admitted,
+            mdoc_signer,
         })
     }
 
@@ -417,6 +427,12 @@ impl Openid4vcCertificates {
             .iter()
             .zip(&self.mdoc_iaca_root_admitted)
             .find_map(|(root, admitted)| (root.as_slice() == der).then_some(*admitted))
+    }
+
+    /// Prevalidated ISO DS evidence for this exact immutable signing leaf.
+    #[must_use]
+    pub fn mdoc_signer(&self) -> Option<&nazo_mdoc::certificate::PreparedDocumentSigner> {
+        self.mdoc_signer.as_ref()
     }
 }
 
