@@ -14,10 +14,10 @@ use nazo_crypto::certificate::{
     CustomExtension, DistinguishedName, DnType, DnValue, IsCa, KeyIdMethod, KeyUsagePurpose,
     PrintableString, RevokedCertParams, SerialNumber,
 };
-use nazo_digital_credentials::mdoc_certificate::{
-    check_mdoc_document_signer_profile, check_mdoc_iaca_profile, check_mdoc_issuer_binding,
-};
 use nazo_key_management::{KeyManager, Openid4vcMaterial, Openid4vcPublicMaterial};
+use nazo_mdoc::certificate::{
+    check_document_signer_profile, check_iaca_profile, check_issuer_binding,
+};
 use rustls::pki_types::{CertificateDer, pem::PemObject};
 use sha1::{Digest as _, Sha1};
 use sha2::Sha256;
@@ -107,9 +107,7 @@ pub(crate) async fn signed_mdoc_crl(
     if mdoc_crl_record_id(&leaf, &ca, &crl_base, true).as_deref() != Some(issuer_id) {
         bail!("mdoc issuer material does not match its CRL publication address");
     }
-    if check_mdoc_document_signer_profile(&leaf).is_err()
-        || check_mdoc_issuer_binding(&leaf, &ca).is_err()
-    {
+    if check_document_signer_profile(&leaf).is_err() || check_issuer_binding(&leaf, &ca).is_err() {
         return Ok(None);
     }
     let identity = nazo_digital_credentials::certificate_identity(certificates[0].as_ref());
@@ -200,9 +198,9 @@ fn mdoc_certificate_profile_matches(
             )
         })
     };
-    check_mdoc_document_signer_profile(leaf).is_ok()
-        && check_mdoc_iaca_profile(ca).is_ok()
-        && check_mdoc_issuer_binding(leaf, ca).is_ok()
+    check_document_signer_profile(leaf).is_ok()
+        && check_iaca_profile(ca).is_ok()
+        && check_issuer_binding(leaf, ca).is_ok()
         && country_matches(leaf)
         && has_ian(leaf)
         && has_ian(ca)
@@ -229,18 +227,12 @@ fn has_crl_uri(certificate: &x509_parser::certificate::X509Certificate<'_>, uri:
     let ParsedExtension::CRLDistributionPoints(points) = extension.parsed_extension() else {
         return false;
     };
-    !extension.critical
-        && !points.points.is_empty()
-        && points.points.iter().all(|point| {
-            point.reasons.is_none()
-                && point.crl_issuer.is_none()
-                && matches!(&point.distribution_point, Some(DistributionPointName::FullName(names))
-                    if names.iter().any(|name| matches!(name, GeneralName::URI(_))))
-        })
-        && points.points.iter().any(|point| {
-            matches!(&point.distribution_point, Some(DistributionPointName::FullName(names))
-                if names.iter().any(|name| matches!(name, GeneralName::URI(value) if *value == uri)))
-        })
+    // The shared certificate profile owns extension syntax and restrictions.
+    // This application check binds the admitted pair to its publication URL.
+    points.points.iter().any(|point| {
+        matches!(&point.distribution_point, Some(DistributionPointName::FullName(names))
+            if names.iter().any(|name| matches!(name, GeneralName::URI(value) if *value == uri)))
+    })
 }
 
 /// Bind the stored record and URL to the actual certificate pair. Historical
@@ -738,8 +730,8 @@ async fn import_mdoc_directory(
                 || private_public_key != ca.public_key().subject_public_key.data.as_ref()
                 || nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).is_err()
                 || nazo_crypto::certificate::verify_signature(&leaf, ca.public_key()).is_err()
-                || check_mdoc_document_signer_profile(&leaf).is_err()
-                || check_mdoc_issuer_binding(&leaf, &ca).is_err()
+                || check_document_signer_profile(&leaf).is_err()
+                || check_issuer_binding(&leaf, &ca).is_err()
             {
                 bail!("imported IACA key and certificate chain do not match");
             }
@@ -748,7 +740,7 @@ async fn import_mdoc_directory(
             let publication_key =
                 mdoc_crl_publication_id(ca.public_key().subject_public_key.data.as_ref());
             if id == publication_key {
-                check_mdoc_iaca_profile(&ca).context(
+                check_iaca_profile(&ca).context(
                     "new imported IACA does not match the mdoc root certificate profile",
                 )?;
             } else if !ca.is_ca() || ca.subject().as_raw() != ca.issuer().as_raw() {

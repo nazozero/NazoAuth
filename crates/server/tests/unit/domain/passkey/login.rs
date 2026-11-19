@@ -898,6 +898,111 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
 }
 
 #[actix_web::test]
+async fn passkey_login_rejects_authenticated_nonincreasing_counters_before_state_or_session_write()
+{
+    use nazo_identity::ports::PasskeyCeremonyPort as _;
+
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix).await;
+    let mut authenticator = FakeAuthenticator::new(format!("counter-policy-{suffix}").as_bytes());
+    authenticator.counter = 2;
+    let credential = fixture.register_credential(&user, &authenticator);
+    let row = fixture.insert_credential(&user, &credential).await;
+    let store = nazo_valkey::AuthenticationStore::new(&fixture.state.valkey_connection());
+    let webauthn = passkey_webauthn(&fixture.state.settings);
+
+    for received_counter in [2, 1] {
+        let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+        authenticator.counter = received_counter - 1;
+        let assertion = authenticator.authentication_response(
+            &challenge,
+            &fixture.state.settings.identity.passkey.origin,
+            Some(&passkey_user_handle(&user)),
+        );
+        let stored = store
+            .take_authentication(&ceremony_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let authenticated = webauthn
+            .finish_authentication(&stored.state, &assertion, &credential)
+            .expect("the assertion is cryptographically valid, including the counter bytes");
+        assert_eq!(
+            authenticated.counter_status,
+            nazo_passkey::CounterStatus::NonIncreasing
+        );
+        assert_eq!(authenticated.update.expected_counter, 2);
+        assert_eq!(authenticated.update.new_counter, received_counter);
+        store
+            .store_authentication(&ceremony_id, &stored, 300)
+            .await
+            .unwrap();
+
+        let response = passkey_login_finish(
+            fixture.state.clone(),
+            actix_web::test::TestRequest::default().to_http_request(),
+            Json(PasskeyLoginFinishRequest {
+                ceremony_id: ceremony_id.clone(),
+                response: assertion,
+            }),
+        )
+        .await;
+        assert!(!response.headers().contains_key(header::SET_COOKIE));
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["error"], "access_denied");
+        assert!(
+            store
+                .take_authentication(&ceremony_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let rows = load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap();
+        let unchanged = rows
+            .iter()
+            .find(|candidate| candidate.id == row.id)
+            .unwrap();
+        assert_eq!(unchanged.credential.counter, 2);
+        assert!(unchanged.last_used_at.is_none());
+    }
+
+    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+    authenticator.counter = 2;
+    let response = passkey_login_finish(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::default().to_http_request(),
+        Json(PasskeyLoginFinishRequest {
+            ceremony_id,
+            response: authenticator.authentication_response(
+                &challenge,
+                &fixture.state.settings.identity.passkey.origin,
+                Some(&passkey_user_handle(&user)),
+            ),
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key(header::SET_COOKIE));
+    let rows = load_user_passkeys(&fixture.state, &user.identity())
+        .await
+        .unwrap();
+    assert_eq!(
+        rows.iter()
+            .find(|candidate| candidate.id == row.id)
+            .unwrap()
+            .credential
+            .counter,
+        3
+    );
+}
+
+#[actix_web::test]
 async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
     for (required, verified) in [(false, false), (false, true), (true, true), (true, false)] {
         let Some(fixture) = LivePasskeyFixture::with_user_verification(required).await else {

@@ -1688,7 +1688,7 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
 }
 
 #[tokio::test]
-async fn passkey_counter_update_is_monotonic_compare_and_set() {
+async fn passkey_authentication_commits_observed_protocol_state_with_compare_and_set() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
     };
@@ -1708,13 +1708,13 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
             tenant.tenant_id,
             user_id,
             "AQID",
-            passkey_update(0, 1, None)
+            passkey_update(0, 1, None, None)
         ),
         repository.update_authentication(
             tenant.tenant_id,
             user_id,
             "AQID",
-            passkey_update(0, 1, None)
+            passkey_update(0, 1, None, None)
         )
     );
     assert!(matches!(
@@ -1727,19 +1727,7 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
                 tenant.tenant_id,
                 user_id,
                 "AQID",
-                passkey_update(0, 2, None)
-            )
-            .await
-            .unwrap_err(),
-        RepositoryError::Conflict
-    );
-    assert_eq!(
-        repository
-            .update_authentication(
-                tenant.tenant_id,
-                user_id,
-                "AQID",
-                passkey_update(1, 1, Some(false))
+                passkey_update(0, 2, None, None)
             )
             .await
             .unwrap_err(),
@@ -1760,11 +1748,11 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
             tenant.tenant_id,
             user_id,
             "BAUG",
-            passkey_update(0, 0, None),
+            passkey_update(0, 0, None, None),
         )
         .await
         .unwrap();
-    let mut initialize = passkey_update(0, 0, Some(false));
+    let mut initialize = passkey_update(0, 0, Some(false), Some(false));
     initialize.initialize_user_verification = true;
     repository
         .update_authentication(tenant.tenant_id, user_id, "BAUG", initialize)
@@ -1775,7 +1763,7 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
             tenant.tenant_id,
             user_id,
             "BAUG",
-            passkey_update(0, 0, Some(false)),
+            passkey_update(0, 0, Some(false), Some(false)),
         )
         .await
         .unwrap();
@@ -1798,16 +1786,16 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         )
         .await
         .unwrap();
-    let mut backed_up = passkey_update(0, 0, None);
-    backed_up.backup_eligible = true;
-    backed_up.backup_state = true;
+    let mut backed_up = passkey_update(0, 0, None, None);
+    backed_up.credential.backup_eligible = true;
+    backed_up.credential.backup_state = true;
     let (left, right) = tokio::join!(
         repository.update_authentication(tenant.tenant_id, user_id, "BwgJ", backed_up),
         repository.update_authentication(
             tenant.tenant_id,
             user_id,
             "BwgJ",
-            passkey_update(0, 0, None)
+            passkey_update(0, 0, None, None)
         ),
     );
     assert!(
@@ -1816,6 +1804,59 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
             (Ok(()), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(()))
         ),
         "legacy backup eligibility must be initialized once even with zero counters"
+    );
+
+    let mut backup_credential = test_passkey(&[10, 11, 12], 0);
+    backup_credential.backup_eligible = Some(true);
+    backup_credential.backup_state = Some(false);
+    repository
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            backup_credential,
+            "backup state".into(),
+        )
+        .await
+        .unwrap();
+    let mut backup_change = passkey_update(0, 0, Some(true), Some(false));
+    backup_change.credential.backup_eligible = true;
+    backup_change.credential.backup_state = true;
+    repository
+        .update_authentication(tenant.tenant_id, user_id, "CgsM", backup_change)
+        .await
+        .unwrap();
+    let mut stale_backup = backup_change;
+    stale_backup.credential.backup_state = false;
+    assert_eq!(
+        repository
+            .update_authentication(tenant.tenant_id, user_id, "CgsM", stale_backup)
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict,
+        "a zero-counter assertion observed before a backup change must not overwrite it"
+    );
+    let record = repository
+        .by_credential_id(tenant.tenant_id, user_id, "CgsM")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.credential.backup_state, Some(true));
+    // A later assertion may legitimately report that the credential is no
+    // longer backed up, provided it commits against the state it observed.
+    stale_backup.credential.expected_backup_state = Some(true);
+    repository
+        .update_authentication(tenant.tenant_id, user_id, "CgsM", stale_backup)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .by_credential_id(tenant.tenant_id, user_id, "CgsM")
+            .await
+            .unwrap()
+            .unwrap()
+            .credential
+            .backup_state,
+        Some(false)
     );
     cleanup(&pool, user_id).await;
 }
@@ -3806,13 +3847,17 @@ fn passkey_update(
     expected_counter: u32,
     new_counter: u32,
     expected_backup_eligible: Option<bool>,
+    expected_backup_state: Option<bool>,
 ) -> nazo_identity::ports::PasskeyAuthenticationUpdate {
     nazo_identity::ports::PasskeyAuthenticationUpdate {
-        expected_counter,
-        new_counter,
-        expected_backup_eligible,
-        backup_eligible: false,
-        backup_state: false,
+        credential: nazo_passkey::CredentialUpdate {
+            expected_counter,
+            new_counter,
+            expected_backup_eligible,
+            expected_backup_state,
+            backup_eligible: false,
+            backup_state: false,
+        },
         initialize_user_verification: false,
     }
 }

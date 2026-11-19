@@ -97,9 +97,13 @@ rotation, historical CRLs and import preservation. Store external conformance re
 
 `nazo-mdoc` owns the mdoc/CBOR/COSE boundary. Its presentation verifier returns
 `PendingTrustDocumentRef` only after issuer signature, disclosed-item digests,
-MSO validity and holder authentication succeed. The type is not a final trust
+MSO validity, supplied mDL field types and holder authentication succeed. The
+selected `certificate-profile` feature enforces the DS profile and exposes the
+same borrowed parsed leaf for application trust checks. The type is not a final trust
 decision. NazoAuth completes its existing certificate path, revocation and MSO
 status checks before `CredentialVerifierPort` returns `VerifiedCredential`.
+The core retains strict X.509 DER decoding alongside the borrowed Profile view:
+the borrowed parser alone accepts some BER encodings and trailing inner fields.
 Authenticated claims are projected from borrowed CBOR directly into the final
 owned JSON result. Signed envelopes, item salts and MSO digest maps remain in
 the decoded presentation buffer. The holder key is materialized for the result;
@@ -116,15 +120,28 @@ There is no assessment override or second device-signature calculation.
 | Holder authentication and current-session failure | Core consumes the validated borrowed transcript and original namespace bytes; NazoAuth treats holder or unsupported document-count failures as whole-response rejection | `signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing` |
 | One document per DeviceResponse | NazoAuth selects the HAIP `max_documents = 1` profile at the parsing boundary | Multi-document response cannot hide a session mismatch or be accepted as an optional credential |
 | Issuer X.509 trust and time | Core checks MSO `signed` within the DS validity interval; NazoAuth's AWS-LC-backed path owner uses the same current time as MSO validity and certificate revocation | `mdoc_verification_rejects_expired_ds_even_when_mso_is_current`, certificate-path and historical whole-leap-second regressions |
-| Document Signer certificate profile | Shared `nazo-digital-credentials::mdoc_certificate` checks additional Annex B fields at signing, verification and native material admission; the existing path engine and core retain their own checks | `mdoc_verification_requires_document_signer_profile`, `mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding` and keyctl material regressions |
-| IACA root profile | Signing and verification check the actual authenticated root through the same shared profile; material admission also checks self-signature, current time, tenant and publication address | `mdoc_issuance_and_verification_require_authenticated_iaca_profile`, `mdoc_verification_checks_root_profile_beyond_an_iaca_link`, `mdoc_import_binds_the_active_root_and_enforces_its_profile` |
-| IACA rollover link profile | Every intermediate in the authenticated ordered path uses the Annex B.1.3 profile, including issuer-key binding and the changed-DN directory name | `mdoc_issuance_and_verification_require_iaca_link_profiles`, `mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link` |
-| mDL issuer attributes | Disclosed `issuing_country` matches DS country; disclosed `issuing_jurisdiction` matches DS state when that state exists | `authenticated_mdl_disclosures_match_the_document_signer_country`, `mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state` |
+| Document Signer certificate profile | `nazo-mdoc::certificate` owns Annex B fields; its selected feature checks them in protocol signing/verification, and native material admission calls that same implementation | `mdoc_verification_requires_document_signer_profile`, `mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding` and keyctl material regressions |
+| IACA root profile | `nazo-mdoc::certificate` checks fields; NazoAuth authenticates the selected root and rollover evidence with its existing signature engine, and owns time, tenant and publication policy | `mdoc_issuance_and_verification_require_authenticated_iaca_profile`, `mdoc_verification_checks_root_profile_beyond_an_iaca_link`, `mdoc_import_binds_the_active_root_and_enforces_its_profile` |
+| IACA rollover link profile | NazoAuth supplies corresponding old/new root evidence from configured trust material; `nazo-mdoc` binds exact names, SPKI, AKI, expiry and changed-DN SAN under Annex B.1.3 | `mdoc_issuance_and_verification_require_iaca_link_profiles`, `mdoc_link_profiles_do_not_infer_a_root_lifetime_from_a_cross_signed_link` |
+| mDL issuer attributes | The core binds supplied `issuing_country` to DS country and `issuing_jurisdiction` to DS state when present; NazoAuth requires country in its configured issuance dataset | `authenticated_mdl_disclosures_match_the_document_signer_country`, `mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state` |
 | Certificate revocation | Existing `CertificateRevocationPolicy` and authenticated path anchor | Missing/stale snapshots, known revocation and scoped-unknown status regressions |
-| MSO status presence and mechanism policy | Core preserves the complete authenticated CBOR status; NazoAuth accepts only the exact supported `status_list` shape | Unsupported, tagged, duplicate or additional mechanisms fail closed; status presence is never inferred from a lossy JSON conversion |
+| MSO status presence and mechanism policy | Core preserves authenticated CBOR and parses `status_list` fields once; NazoAuth uses those fields and accepts only the exact supported mechanism shape | Unsupported, tagged, duplicate or additional mechanisms fail closed; status presence is never inferred from a lossy JSON conversion |
 | Credential status verification | Existing bounded HTTPS resolver and draft-21 JWT/CWT validator | Revoked, suspended, unknown, unreachable, wrong-signature and wrong-IACA regressions |
 | External signing and certificate chain | Core prepare/finish plus one NazoAuth key-generation lease; the complete authenticated non-root chain is retained | `credential_execution_uses_completed_builder_and_pinned_lease_without_native_runtime` |
-| mDL date and binary element encoding | NazoAuth applies ISO field types only to `org.iso.18013.5.1` within `org.iso.18013.5.1.mDL` | `mdoc_date_tags_are_scoped_to_the_iso_mdl_schema`, `mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values` and binary-element tests |
+| mDL date and binary element encoding | `nazo-mdoc` validates ISO mDL supplied field types and date values; NazoAuth maps configured JSON strings/binary fields to those CBOR representations | `mdoc_date_tags_are_scoped_to_the_iso_mdl_schema`, `mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values` and binary-element tests |
+
+ISO Annex B.1.1 excludes the authenticated IACA root from `IssuerAuth.x5chain`.
+Signing removes the selected root before protocol preparation. Verification calls
+the core's exclusion check with the actual root returned by the path engine;
+a self-issued rollover link is not identified as a root from its name alone.
+
+Rollover verification requires the corresponding self-signed certificates for
+both keys. Keep them in the existing trust-anchor material, including intermediate
+rollover generations. A cross-signed link supplies neither the old root's lifetime
+nor proof of the new root's certificate fields. Missing evidence rejects that
+chain. The actual path must still pass RFC 5280 at the presentation time. The
+auxiliary root certificates establish rollover relationships, not an additional
+trust path or a new current-time requirement for unused roots.
 
 The issuer delegates digest-ID generation to the pinned `nazo-mdoc` builder,
 which selects random identifiers below `2^31`. The core verifier enforces this
@@ -138,7 +155,7 @@ Omitting a disclosure does not remove its authenticated MSO digest entry.
 The mDL JSON adapter encodes `birth_date` as Tag 1004; `issue_date` and
 `expiry_date` accept either a full calendar date with Tag 1004 or a complete
 UTC timestamp with Tag 0. `portrait_capture_date` requires Tag 0. Dates inside
-`driving_privileges` require Tag 1004. Dates are validated before signing;
+`driving_privileges` require Tag 1004. The core validates supplied dates before signing and after authentication;
 timestamps use whole seconds and the `Z` UTC suffix. This follows
 [ISO/IEC 18013-5:2021 §§7.2.1 and 7.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
 and [RFC 8943](https://www.rfc-editor.org/rfc/rfc8943.html).

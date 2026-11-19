@@ -108,17 +108,9 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
         let leaf = leaf_params.signed_by(&leaf_key, &ca).unwrap();
         let (_, ca_certificate) = x509_parser::parse_x509_certificate(ca.der()).unwrap();
         let (_, leaf_certificate) = x509_parser::parse_x509_certificate(leaf.der()).unwrap();
-        nazo_digital_credentials::mdoc_certificate::check_mdoc_iaca_profile(&ca_certificate)
-            .unwrap();
-        nazo_digital_credentials::mdoc_certificate::check_mdoc_document_signer_profile(
-            &leaf_certificate,
-        )
-        .unwrap();
-        nazo_digital_credentials::mdoc_certificate::check_mdoc_issuer_binding(
-            &leaf_certificate,
-            &ca_certificate,
-        )
-        .unwrap();
+        nazo_mdoc::certificate::check_iaca_profile(&ca_certificate).unwrap();
+        nazo_mdoc::certificate::check_document_signer_profile(&leaf_certificate).unwrap();
+        nazo_mdoc::certificate::check_issuer_binding(&leaf_certificate, &ca_certificate).unwrap();
         keyset.set_openid4vc_material_for_test(Openid4vcPublicMaterial {
             signing_kid: kid.clone(),
             certificate_chain_pem: format!("{}{}", leaf.pem(), ca.pem()),

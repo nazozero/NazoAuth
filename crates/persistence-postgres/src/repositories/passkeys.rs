@@ -155,15 +155,10 @@ impl PasskeyRepository {
         credential_id: &str,
         update: PasskeyAuthenticationUpdate,
     ) -> Result<(), RepositoryError> {
-        let expected_sign_count = update.expected_counter;
-        let new_sign_count = update.new_counter;
-        let zero_counter = expected_sign_count == 0 && new_sign_count == 0;
-        if !zero_counter && new_sign_count <= expected_sign_count {
-            return Err(RepositoryError::Conflict);
-        }
+        let credential = update.credential;
         let mut facts = serde_json::json!({
-            "backup_eligible": update.backup_eligible,
-            "backup_state": update.backup_state,
+            "backup_eligible": credential.backup_eligible,
+            "backup_state": credential.backup_state,
         });
         if update.initialize_user_verification {
             // A concurrent authentication must never revert an initialized UV.
@@ -177,12 +172,20 @@ impl PasskeyRepository {
                 .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
                 .filter(user_passkey_credentials::credential_id.eq(credential_id))
-                .filter(user_passkey_credentials::sign_count.eq(i64::from(expected_sign_count)))
+                .filter(
+                    user_passkey_credentials::sign_count.eq(i64::from(credential.expected_counter)),
+                )
                 .filter(
                     diesel::dsl::sql::<diesel::sql_types::Jsonb>(
                         "COALESCE(credential -> 'backup_eligible', 'null'::jsonb)",
                     )
-                    .eq(serde_json::json!(update.expected_backup_eligible)),
+                    .eq(serde_json::json!(credential.expected_backup_eligible)),
+                )
+                .filter(
+                    diesel::dsl::sql::<diesel::sql_types::Jsonb>(
+                        "COALESCE(credential -> 'backup_state', 'null'::jsonb)",
+                    )
+                    .eq(serde_json::json!(credential.expected_backup_state)),
                 ),
         )
         .set((
@@ -191,7 +194,7 @@ impl PasskeyRepository {
                 "credential - 'id' - 'counter' || ",
             )
             .bind::<diesel::sql_types::Jsonb, _>(facts)),
-            user_passkey_credentials::sign_count.eq(i64::from(new_sign_count)),
+            user_passkey_credentials::sign_count.eq(i64::from(credential.new_counter)),
             user_passkey_credentials::last_used_at.eq(now),
             user_passkey_credentials::updated_at.eq(now),
         ))

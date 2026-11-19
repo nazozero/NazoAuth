@@ -3,8 +3,9 @@ use std::{error::Error, fmt};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jiff::Timestamp;
 use nazo_passkey::{
-    AuthenticationChallenge, AuthenticationResponse, AuthenticationState, RegistrationChallenge,
-    RegistrationOptions, RegistrationResponse, RegistrationState, ResidentKeyRequirement, Webauthn,
+    AuthenticationChallenge, AuthenticationResponse, AuthenticationState, CounterStatus,
+    RegistrationChallenge, RegistrationOptions, RegistrationResponse, RegistrationState,
+    ResidentKeyRequirement, Webauthn,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -366,17 +367,22 @@ where
                 });
                 PasskeyError::LoginFailed
             })?;
+        // NazoAuth rejects clone-risk counter evidence before committing state or
+        // issuing a session. The protocol library reports the authenticated fact.
+        if outcome.counter_status == CounterStatus::NonIncreasing {
+            self.audit.record(PasskeyAuditEvent::LoginFailureUser {
+                user_id: account.user_id(),
+                reason: PasskeyAuditReason::CounterConflict,
+            });
+            return Err(PasskeyError::LoginFailed);
+        }
         self.credentials
             .update_authentication(
                 stored.tenant_id,
                 stored.user_id,
                 &credential_id,
                 PasskeyAuthenticationUpdate {
-                    expected_counter: credential.counter,
-                    new_counter: outcome.new_counter,
-                    expected_backup_eligible: credential.backup_eligible,
-                    backup_eligible: outcome.backup_eligible,
-                    backup_state: outcome.backup_state,
+                    credential: outcome.update,
                     initialize_user_verification: outcome.user_verified
                         && credential.uv_initialized != Some(true)
                         && initialization_session.is_some_and(|session| {

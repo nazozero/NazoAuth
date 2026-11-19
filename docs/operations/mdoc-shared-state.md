@@ -39,13 +39,26 @@ the MSO validity check. An expired DS is not made acceptable by an earlier
 MSO signing time. The authenticated signing time retains a whole leap second;
 it is not forced through a Unix-time conversion that would lose that value.
 
-Signing and verification apply the same supported Annex B DS and IACA root
-profiles to their authenticated certificate path. The actual selected root must
+Signing and verification use `nazo-mdoc`'s supported Annex B DS and IACA profiles.
+The protocol core validates DS fields once and returns a borrowed leaf view.
+NazoAuth supplies the authenticated path and verifies root self-signatures with
+its existing X.509 engine. The actual selected root must
 carry its required issuer contact and CRL distribution point; a trusted key or
 a valid unrelated root does not replace those fields. This also applies when
 an existing database generation is loaded directly for signing. Credential
 status when present and holder authentication remain separate checks. A
 successful COSE signature alone does not complete these responsibilities.
+
+An imported rollover chain requires the corresponding old and new self-signed
+IACA certificates in the existing trust-anchor set. Retain intermediate root
+generations as evidence when validating link relationships. The core checks each link's exact issuer,
+subject, SPKI, AKI, old-root expiry and conditional new-name SAN. Missing root
+evidence rejects the chain. An authenticated root transmitted in `x5chain` is
+rejected under Annex B.1.1; signing continues to emit only non-root certificates.
+The current X.509 engine accepts direct-root paths and paths with one IACA link;
+it rejects multiple self-issued links with `pathLenConstraint=0`. Configure the
+newer root directly for later rollovers; Profile checks do not bypass that path
+validation limit.
 
 The standard is identified in the [HAIP normative references](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#ISO.18013-5).
 Freshly issued test certificates and backdated MSO signing times can violate
