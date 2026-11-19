@@ -1084,15 +1084,15 @@ fn mdoc_issuance_and_verification_require_authenticated_iaca_profile() {
             // issuer checks, so a rejecting issuer cannot mask a verifier gap.
             let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
             let presentation = PresentedCredential {
-                    format: CredentialFormat::MsoMdoc,
-                    encoded: encoded.into(),
-                    expected_nonce: "verifier-nonce".into(),
-                    expected_audience: "https://verifier.example".into(),
-                    mdoc_session_transcript: Some(transcript.into()),
-                    // A valid unrelated root cannot stand in for the authenticated
-                    // root, even when it is the first configured scoped anchor.
-                    additional_trust_anchors: vec![valid.ca_der.clone(), certs.ca_der.clone()].into(),
-                };
+                format: CredentialFormat::MsoMdoc,
+                encoded: encoded.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.into()),
+                // A valid unrelated root cannot stand in for the authenticated
+                // root, even when it is the first configured scoped anchor.
+                additional_trust_anchors: vec![valid.ca_der.clone(), certs.ca_der.clone()].into(),
+            };
             let verification = candidate.verify_mdoc(&presentation).map(|_| ());
             // A verifier without the configured IACA must check this scoped root.
             let scoped_verification = scoped_verifier

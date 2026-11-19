@@ -82,7 +82,12 @@ pub(super) async fn sign(
         signing_material.trust_anchor_der(),
         signing_material.lease.certificates().trust_anchors_der(),
         &[],
-        |der| signing_material.lease.certificates().mdoc_iaca_root_admitted(der),
+        |der| {
+            signing_material
+                .lease
+                .certificates()
+                .mdoc_iaca_root_admitted(der)
+        },
         |_| {},
     )?;
     // The configured mDL dataset requires a country. The protocol core validates
