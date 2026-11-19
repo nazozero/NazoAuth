@@ -75,7 +75,7 @@ hkdf = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "12.0.0", default-features = false }
-nazo-mdoc = { version = "0.4.0", git = "https://github.com/nazozero/nazo-mdoc", rev = "e1aec30d4b13b85310cfb3dff865291ce7bc8aac", default-features = false, features = ["certificate-profile"] }
+nazo-mdoc = { version = "0.4.0", git = "https://github.com/nazozero/nazo-mdoc", rev = "9ca1af6689b8dfeb266adc98b03b1e4a02cfcb0e", default-features = false, features = ["certificate-profile"] }
 lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
