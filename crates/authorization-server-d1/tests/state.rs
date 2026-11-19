@@ -109,6 +109,7 @@ fn concurrent_replay_has_one_winner_and_scopes_by_tenant_and_key_tuple() {
 #[test]
 fn database_clock_rejects_expired_and_future_replay_windows() {
     let (database, provider) = fixture();
+    let nonce = Uuid::new_v4().to_string();
     let now = Timestamp::now().as_second();
     assert!(!block_on(provider.consume_jar("client", "expired", now - 1)).unwrap());
     assert!(
@@ -135,13 +136,13 @@ fn database_clock_rejects_expired_and_future_replay_windows() {
         ))
         .unwrap()
     );
-    block_on(DpopStateStorePort::issue_nonce(&provider, "nonce", 60)).unwrap();
-    assert!(block_on(DpopStateStorePort::validate_nonce(&provider, "nonce")).unwrap());
-    assert!(block_on(DpopStateStorePort::validate_nonce(&provider, "nonce")).unwrap());
+    block_on(DpopStateStorePort::issue_nonce(&provider, &nonce, 60)).unwrap();
+    assert!(block_on(DpopStateStorePort::validate_nonce(&provider, &nonce)).unwrap());
+    assert!(block_on(DpopStateStorePort::validate_nonce(&provider, &nonce)).unwrap());
     database
         .execute_sql("UPDATE nazo_state SET expires_at=unixepoch()-1")
         .unwrap();
-    assert!(!block_on(DpopStateStorePort::validate_nonce(&provider, "nonce")).unwrap());
+    assert!(!block_on(DpopStateStorePort::validate_nonce(&provider, &nonce)).unwrap());
     assert!(
         block_on(provider.consume_client_attestation_proof(
             "client",
@@ -287,13 +288,14 @@ fn malformed_authorization_code_never_becomes_issuance_authority() {
 #[test]
 fn reauthentication_nonce_is_consumed_once_without_losing_microseconds() {
     let (_, provider) = fixture();
+    let nonce = Uuid::new_v4().to_string();
     let micros = Timestamp::now().as_microsecond();
-    block_on(provider.store_reauth_nonce("nonce", micros, 60)).unwrap();
+    block_on(provider.store_reauth_nonce(&nonce, micros, 60)).unwrap();
     assert_eq!(
-        block_on(provider.take_reauth_nonce("nonce")).unwrap(),
+        block_on(provider.take_reauth_nonce(&nonce)).unwrap(),
         Some(micros)
     );
-    assert_eq!(block_on(provider.take_reauth_nonce("nonce")).unwrap(), None);
+    assert_eq!(block_on(provider.take_reauth_nonce(&nonce)).unwrap(), None);
 }
 
 #[test]
@@ -528,9 +530,10 @@ fn fixed_window_counter_is_atomic_and_resets_after_expiry() {
 #[test]
 fn storage_failures_remain_errors_on_security_paths() {
     let (database, provider) = fixture();
+    let nonce = Uuid::new_v4().to_string();
     database.execute_sql("DROP TABLE nazo_state").unwrap();
     assert!(block_on(provider.consume_replay("key", "proof", 60)).is_err());
-    assert!(block_on(DpopStateStorePort::validate_nonce(&provider, "nonce")).is_err());
+    assert!(block_on(DpopStateStorePort::validate_nonce(&provider, &nonce)).is_err());
     assert!(block_on(provider.load(&SessionId::new("session"))).is_err());
     assert!(
         block_on(provider.increment(RequestRateLimitBucket::Authentication, "source", 60)).is_err()

@@ -23,14 +23,11 @@ pub fn make_cookie(
 
 #[must_use]
 pub fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
-    Cookie::build((name.to_owned(), String::new()))
-        .path("/")
-        .same_site(SameSite::Lax)
-        .http_only(true)
-        .secure(secure)
-        .max_age(CookieDuration::ZERO)
-        .expires(cookie::time::OffsetDateTime::UNIX_EPOCH)
-        .build()
+    // Issuance and deletion share the same scope and security policy. An empty
+    // value and zero lifetime remove the cookie without consulting a host clock.
+    let mut cookie = make_cookie(name, "", true, 0, secure);
+    cookie.set_expires(cookie::time::OffsetDateTime::UNIX_EPOCH);
+    cookie
 }
 
 #[must_use]

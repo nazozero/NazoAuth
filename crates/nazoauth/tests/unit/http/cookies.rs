@@ -5,23 +5,28 @@ use super::*;
 
 #[test]
 fn cookies_preserve_exact_security_attributes() {
-    let cookie = make_cookie("sid", "value", true, 60, true);
-    assert_eq!(cookie.path(), Some("/"));
-    assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(60)));
-    assert_eq!(cookie.secure(), Some(true));
-    assert_eq!(cookie.http_only(), Some(true));
-    assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+    // The host permits insecure cookies only for its loopback HTTP profile.
+    // Deletion must preserve the selected policy in either profile.
+    for secure in [true, false] {
+        let cookie = make_cookie("sid", "value", true, 60, secure);
+        assert_eq!(cookie.path(), Some("/"));
+        assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(60)));
+        assert_eq!(cookie.secure(), Some(secure));
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
 
-    let cookie = clear_cookie("sid", true);
-    assert_eq!(cookie.path(), Some("/"));
-    assert_eq!(cookie.secure(), Some(true));
-    assert_eq!(cookie.http_only(), Some(true));
-    assert_eq!(cookie.same_site(), Some(SameSite::Lax));
-    assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(0)));
-    assert_eq!(
-        cookie.expires_datetime(),
-        Some(cookie::time::OffsetDateTime::UNIX_EPOCH)
-    );
+        let cookie = clear_cookie("sid", secure);
+        assert_eq!(cookie.path(), Some("/"));
+        assert!(cookie.value().is_empty());
+        assert_eq!(cookie.secure(), Some(secure));
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+        assert_eq!(cookie.max_age(), Some(CookieDuration::seconds(0)));
+        assert_eq!(
+            cookie.expires_datetime(),
+            Some(cookie::time::OffsetDateTime::UNIX_EPOCH)
+        );
+    }
 }
 
 #[test]
