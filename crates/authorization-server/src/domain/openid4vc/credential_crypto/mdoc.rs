@@ -272,6 +272,8 @@ pub(super) fn verify(
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     // A matching immutable DS needs no repeat profile/key admission. Unknown
     // signers still pass the full strict-DER/profile path in the core.
+    // This API requires DeviceSignature, including when another consumer enables
+    // the core's reader-session feature. OpenID4VP owns no ISO EReaderKey session.
     let material = crypto.keyset.openid4vc_certificates();
     let mut documents = verify_presentation_borrowed_with_signer(
         &bytes,
