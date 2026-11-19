@@ -47,3 +47,11 @@ perf-results-mirror/
 /docs/performance/reports/
 /docs/performance/archive/
 /docs/operations/reports/
+
+# Cloudflare bootstrap inputs/credentials belong outside the repository.
+/.dev.vars*
+!/.dev.vars.example
+/provisioning.json
+/credentials.json
+/seed.sqlite
+/seed.sql

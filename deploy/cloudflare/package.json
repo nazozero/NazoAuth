@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "bundle": "wrangler deploy --dry-run --outdir bundled",
+    "dev": "wrangler dev --config ../../wrangler.toml",
+    "bundle": "wrangler deploy --dry-run --outdir bundled --config ../../wrangler.toml",
+    "db:migrate": "wrangler d1 migrations apply NAZO_DB --remote --config ../../wrangler.toml",
     "test": "node --test test/*.mjs",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy --config ../../wrangler.toml"
   },
   "devDependencies": {
     "miniflare": "5.20261118.0-beta",

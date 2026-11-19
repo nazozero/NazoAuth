@@ -79,6 +79,13 @@ Implicit、Hybrid、密码授权、未签名 Request Object 和 CIBA push 不受
 使用 Cloudflare D1 的 WASM 部署方式见
 [Cloudflare Workers 适配器指南](docs/operations/cloudflare-workers.md)，请按其中的能力范围与入口配置部署。
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
+
+此按钮自动创建 Worker、D1 并执行迁移，但不会立即开放认证入口。必须先安全生成
+签名密钥、初始用户及客户端，配置 HTTPS 域名和 WAF 后才能启用。当前 WASM 代码大小及
+密码哈希 CPU 预算要求 **Workers Paid**。详见
+[Cloudflare 一键部署操作](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button)。
+
 <details>
 <summary><strong>在 SSH 主机上安装</strong></summary>
 

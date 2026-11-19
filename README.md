@@ -87,6 +87,14 @@ For a WASM deployment with Cloudflare D1, see the
 [Cloudflare Workers adapter](docs/operations/cloudflare-workers.md) and its
 supported deployment profile.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
+
+The deploy button provisions the Worker and D1 schema. It does not expose an
+issuer: signing keys, initial accounts/clients, the HTTPS domain and the zone
+WAF policy must be configured before enabling traffic. The current WASM bundle
+requires **Workers Paid** (gzip size and password hashing CPU). See the
+[Cloudflare setup instructions](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button).
+
 <details>
 <summary><strong>Install on an SSH host</strong></summary>
 

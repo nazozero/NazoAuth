@@ -1,5 +1,5 @@
 name = "nazoauth"
-main = "../../crates/server-worker/build/worker/shim.mjs"
+main = "crates/server-worker/build/worker/shim.mjs"
 compatibility_date = "2026-11-19"
 workers_dev = false
 # Set your public zone route/custom domain after configuring the ingress rule.
@@ -13,7 +13,7 @@ crons = ["* * * * *"]
 
 [build]
 command = "worker-build --release --locked"
-cwd = "../../crates/server-worker"
+cwd = "crates/server-worker"
 
 [observability]
 enabled = true
@@ -21,13 +21,14 @@ enabled = true
 [limits]
 cpu_ms = 30000
 
-# Copy this file for each deployment, fill the binding ID, and provision its
-# tenant/profile/keys before accepting traffic. Never put secrets in vars.
+# Deploy button provisions NAZO_DB. Worker remains unpublished to a public route
+# until the operator provisions credentials, configures a domain and installs WAF.
+# Never put secrets in vars.
 [[d1_databases]]
 binding = "NAZO_DB"
 database_name = "nazoauth"
 database_id = "00000000-0000-0000-0000-000000000000"
-migrations_dir = "../../crates/authorization-server-d1/migrations"
+migrations_dir = "crates/authorization-server-d1/migrations"
 
 [vars]
 NAZO_CONFIG = '''{"tenant":{"tenant_id":"00000000-0000-0000-0000-000000000001","realm_id":"00000000-0000-0000-0000-000000000002","organization_id":"00000000-0000-0000-0000-000000000003"},"issuer":"https://auth.example.com","frontend_base_url":"https://app.example.com","ingress":"direct_cloudflare","cors_allowed_origins":["https://app.example.com"],"modules":["session_management"]}'''
