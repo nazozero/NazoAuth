@@ -15,6 +15,8 @@ pub struct WorkerConfiguration {
     pub cors_allowed_origins: Vec<String>,
     #[serde(default)]
     pub modules: Vec<ModuleId>,
+    #[serde(default)]
+    pub machine_only: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
@@ -32,6 +34,10 @@ impl WorkerConfiguration {
         ensure!(
             client_secret_pepper.len() >= 32,
             "client-secret pepper must contain at least 32 bytes"
+        );
+        ensure!(
+            !self.machine_only || self.modules.is_empty(),
+            "machine-only Free profile cannot enable browser session modules"
         );
         for module in &self.modules {
             ensure!(
@@ -72,6 +78,23 @@ impl WorkerConfiguration {
         }
         settings.validate()?;
         Ok(settings)
+    }
+
+    /// Restrict Workers Free to service endpoints without Argon2id password work.
+    pub fn allows_route(&self, method: &http::Method, path: &str) -> bool {
+        if !self.machine_only {
+            return true;
+        }
+        match *method {
+            http::Method::GET => matches!(
+                path,
+                "/health" | "/live" | "/startup" | "/jwks.json"
+                    | "/.well-known/oauth-authorization-server"
+                    | "/.well-known/oauth-protected-resource"
+            ),
+            http::Method::POST => matches!(path, "/token" | "/revoke" | "/introspect"),
+            _ => false,
+        }
     }
 
     /// Admit the configured issuer authority before selecting its tenant graph.

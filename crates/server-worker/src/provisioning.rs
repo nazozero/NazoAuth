@@ -54,6 +54,17 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
         users,
     } = input;
     configuration.application(client_secret_pepper.clone())?;
+    if configuration.machine_only {
+        ensure!(users.is_empty(), "machine-only Free profile does not provision password users");
+        ensure!(
+            clients.iter().all(|client| {
+                client.client_type == "confidential"
+                    && client.redirect_uris.is_empty()
+                    && client.grant_types.as_slice() == ["client_credentials"]
+            }),
+            "machine-only Free profile requires confidential client_credentials clients without redirects"
+        );
+    }
     let encoded_key = Zeroizing::new(signing_key_base64);
     let mut key = Zeroizing::new([0_u8; 32]);
     ensure!(

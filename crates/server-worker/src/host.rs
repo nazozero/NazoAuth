@@ -46,6 +46,9 @@ async fn fetch(
     {
         return Ok(response(StatusCode::MISDIRECTED_REQUEST, Bytes::new()));
     }
+    if !cached.prepared.configuration.allows_route(request.method(), request.uri().path()) {
+        return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
+    }
     if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {
         let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
             return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));
@@ -173,12 +176,19 @@ async fn scheduled(_: worker::ScheduledEvent, env: Env, context: worker::Schedul
             );
             let started = jiff::Timestamp::now().as_second();
             let mut total = 0;
+            // Workers Free Cron events have a 10 ms CPU limit; avoid the
+            // full-profile multi-pass cleanup loop.
+            let (passes, batch) = if configuration.machine_only {
+                (1, 500)
+            } else {
+                (64, 1_000)
+            };
             // Drain a bounded backlog outside requests. One 1,000-row pass per
             // minute would fall behind even moderate DPoP/replay traffic.
-            for _ in 0..64 {
-                let removed = provider.prune_expired(1_000).await?;
+            for _ in 0..passes {
+                let removed = provider.prune_expired(batch).await?;
                 total += removed;
-                if removed < 1_000 || jiff::Timestamp::now().as_second() - started >= 20 {
+                if removed < batch || jiff::Timestamp::now().as_second() - started >= 20 {
                     break;
                 }
             }

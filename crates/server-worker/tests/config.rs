@@ -8,7 +8,33 @@ fn configuration() -> WorkerConfiguration {
         ingress: Ingress::DirectCloudflare,
         cors_allowed_origins: vec![],
         modules: vec![],
+        machine_only: false,
     }
+}
+
+#[test]
+fn free_profile_limits_routes_and_modules() {
+    let mut config = configuration();
+    config.machine_only = true;
+    for (method, path) in [
+        (http::Method::GET, "/.well-known/oauth-authorization-server"),
+        (http::Method::GET, "/jwks.json"),
+        (http::Method::POST, "/token"),
+        (http::Method::POST, "/revoke"),
+    ] {
+        assert!(config.allows_route(&method, path), "{path}");
+    }
+    for (method, path) in [
+        (http::Method::POST, "/auth/login"),
+        (http::Method::POST, "/auth/register"),
+        (http::Method::GET, "/authorize"),
+        (http::Method::GET, "/userinfo"),
+        (http::Method::GET, "/.well-known/openid-configuration"),
+    ] {
+        assert!(!config.allows_route(&method, path), "{path}");
+    }
+    config.modules.push(nazo_runtime_modules::ModuleId::SessionManagement);
+    assert!(config.application("p".repeat(32)).is_err());
 }
 
 #[test]
