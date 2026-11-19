@@ -2845,7 +2845,7 @@ dependencies = [
 [[package]]
 name = "nazo-mdoc"
 version = "0.4.0"
-source = "git+https://github.com/nazozero/nazo-mdoc?rev=25055bc6e0ae701981bacfec0cc7742a9a338e25#25055bc6e0ae701981bacfec0cc7742a9a338e25"
+source = "git+https://github.com/nazozero/nazo-mdoc?rev=9efc9247d85d3ffec265702e05906998446e5a23#9efc9247d85d3ffec265702e05906998446e5a23"
 dependencies = [
  "ciborium",
  "const-oid 0.10.3",
