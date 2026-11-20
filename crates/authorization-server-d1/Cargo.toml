@@ -41,7 +41,6 @@ rusqlite = { version = "0.38.0", features = ["bundled"], optional = true }
 
 [dev-dependencies]
 futures-executor.workspace = true
-blake3.workspace = true
 
 [lints]
 workspace = true

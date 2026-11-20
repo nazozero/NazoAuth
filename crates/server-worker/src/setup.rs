@@ -98,7 +98,7 @@ async fn claim(
         Database::from_binding(db),
         config.tenant.tenant_id,
     );
-    let digest = blake3::hash(token.as_bytes()).to_hex().to_string();
+    let digest = nazo_oauth_server::crypto::blake3_hex(token);
     match provider
         .claim_passkey_setup(&digest, user_id, &session_id, now)
         .await

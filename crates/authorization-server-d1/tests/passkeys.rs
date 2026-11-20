@@ -287,7 +287,7 @@ fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
         let (db, provider) = fixture().await;
         let tenant = TenantId::new(TENANT).unwrap();
         let user = UserId::new(USER).unwrap();
-        let ticket = blake3::hash(b"valid secret never persisted").to_hex().to_string();
+        let ticket = "a".repeat(64);
         let now = jiff::Timestamp::now();
 
         db.execute_sql(
@@ -338,7 +338,7 @@ fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
         assert!(provider.load(&SessionId::new("setup-replayed")).await.unwrap().is_none());
         // After first enrollment, no different setup ticket can issue a new login.
         provider.insert(tenant, user, credential(), "First".into()).await.unwrap();
-        let other = blake3::hash(b"another secret").to_hex().to_string();
+        let other = "b".repeat(64);
         assert!(
             !provider
                 .claim_passkey_setup(&other, user, "setup-after-registration", now)
