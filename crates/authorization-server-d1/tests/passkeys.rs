@@ -6,11 +6,11 @@ use std::sync::{Arc, Barrier};
 
 use futures_executor::block_on;
 use nazo_identity::{
-    TenantId, UserId,
+    SessionId, TenantId, UserId,
     passkey::{StoredPasskeyAuthentication, StoredPasskeyRegistration, passkey_user_handle},
     ports::{
         PasskeyAccountRepositoryPort, PasskeyAuthenticationUpdate, PasskeyCeremonyPort,
-        PasskeyRepositoryPort, RepositoryError,
+        PasskeyRepositoryPort, RepositoryError, SessionStorePort,
     },
 };
 use nazo_passkey::{
@@ -278,4 +278,76 @@ fn registration_and_authentication_challenges_are_single_use_and_expire() {
         block_on(provider.store_authentication("invalid-ttl", &stored_login, 301)),
         Err(RepositoryError::Consistency(_))
     ));
+}
+
+
+#[test]
+fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
+    block_on(async {
+        let (db, provider) = fixture().await;
+        let tenant = TenantId::new(TENANT).unwrap();
+        let user = UserId::new(USER).unwrap();
+        let ticket = blake3::hash(b"valid secret never persisted").to_hex().to_string();
+        let now = jiff::Timestamp::now();
+
+        db.execute_sql(
+            "CREATE TRIGGER reject_setup_audit BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_setup_claimed' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END",
+        )
+        .unwrap();
+        assert!(
+            provider
+                .claim_passkey_setup(&ticket, user, "setup-1", now)
+                .await
+                .is_err()
+        );
+        assert!(
+            provider
+                .load(&SessionId::new("setup-1"))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        db.execute_sql("DROP TRIGGER reject_setup_audit").unwrap();
+
+        assert!(
+            provider
+                .claim_passkey_setup(&ticket, user, "setup-2", now)
+                .await
+                .unwrap()
+        );
+        let session = provider
+            .load(&SessionId::new("setup-2"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(session.record().amr().contains(&"bootstrap".to_owned()));
+        assert!(
+            nazo_identity::recent_credential_management_authentication(
+                session.record().auth_time(),
+                session.record().amr(),
+                false,
+                now.as_second(),
+            )
+        );
+        assert!(
+            !provider
+                .claim_passkey_setup(&ticket, user, "setup-replayed", now)
+                .await
+                .unwrap()
+        );
+        assert!(provider.load(&SessionId::new("setup-replayed")).await.unwrap().is_none());
+        let auditor = db.execute_sql(
+            "SELECT CASE WHEN COUNT(*)=1 THEN 1 ELSE RAISE(ABORT,'wrong setup audit count') END FROM nazo_audit WHERE event_type='passkey_setup_claimed'",
+        );
+        assert!(auditor.is_ok());
+        // After first enrollment, no different setup ticket can issue a new login.
+        provider.insert(tenant, user, credential(), "First".into()).await.unwrap();
+        let other = blake3::hash(b"another secret").to_hex().to_string();
+        assert!(
+            !provider
+                .claim_passkey_setup(&other, user, "setup-after-registration", now)
+                .await
+                .unwrap()
+        );
+    });
 }
