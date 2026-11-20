@@ -1,5 +1,6 @@
 import { publicMfa } from './public-mfa.mjs';
 import { publicIdentityServices } from './public-identity-services.mjs';
+import { publicAdminWorkflows } from './public-admin-workflows.mjs';
 import { publicCredentials } from './public-credentials.mjs';
 import {
   constants, createHash, createPrivateKey, createPublicKey, generateKeyPairSync,
@@ -444,6 +445,31 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
         if (!deleted) ensure((await deleteRegistration(registration)).status === 204, 'Revocation failed while cleaning up dynamic acceptance client');
       }
     });
+    if (input.full_profile) await step('remote_jwks_fetch_and_metadata_validation', async () => {
+      const headers = { authorization: 'Bearer ' + input.dcr_initial_access_token };
+      const metadata = { client_name: 'Remote JWKS acceptance ' + runId,
+        redirect_uris: [], grant_types: ['client_credentials'], scope: 'service',
+        token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_signing_alg: 'RS256',
+        jwks_uri: issuer + '/jwks.json' };
+      const registered = json(await postJson('/register', metadata, headers), 201);
+      const uri = new URL(registered.registration_client_uri);
+      ensure(uri.origin === issuer && uri.pathname.startsWith('/register/'), 'Invalid remote-JWKS client configuration URI');
+      try {
+        ensure(registered.jwks_uri === metadata.jwks_uri, 'Missing persisted remote JWKS metadata');
+        const bad = await postJson('/register', { ...metadata, jwks_uri: issuer + '/ui/' }, headers);
+        if (bad.status === 201) {
+          const unexpected = json(bad, 201);
+          const target = new URL(unexpected.registration_client_uri);
+          ensure(target.origin === issuer && target.pathname.startsWith('/register/'), 'Invalid cleanup URI');
+          await request(target.pathname, { method: 'DELETE', headers: { authorization: 'Bearer ' + unexpected.registration_access_token } });
+        }
+        ensure(json(bad, 400).error === 'invalid_client_metadata', 'Invalid remote JWKS document was accepted');
+      } finally {
+        ensure((await request(uri.pathname, { method: 'DELETE', headers: {
+          authorization: 'Bearer ' + registered.registration_access_token,
+        } })).status === 204, 'Revocation failed for remote-JWKS acceptance client');
+      }
+    });
   }
 
   if (discoveryPassed && input.private_key_client && input.modules?.includes('jwt_bearer_grant')) {
@@ -820,6 +846,9 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
         const mfa = await publicMfa({ issuer, input, request, postJson, json, step });
         try {
           phase = 'identity_services';
+          await publicAdminWorkflows({ issuer, input, request, postJson, postForm, json, step,
+            authenticatedForm, session: mfa.session, baselineSession: session,
+            signingKeys, verifyJwt, authorize, redeem });
           await publicIdentityServices({ issuer, input, request, postJson, postForm, json, step,
             authenticatedForm, session: mfa.session, baselineSession: session, signingKeys, verifyJwt });
           if (input.digital_credentials) {

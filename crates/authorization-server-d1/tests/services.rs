@@ -277,7 +277,9 @@ fn logout_outbox_deduplicates_and_fences_reclaimed_delivery() {
         p.fail(
             next[0].id,
             next[0].attempts,
-            Some(Timestamp::now()),
+            // SQLite's clock has millisecond precision. Make this retry
+            // unambiguously due instead of racing a sub-millisecond timestamp.
+            Some(Timestamp::now() - SignedDuration::from_secs(1)),
             "temporary",
         )
         .await
