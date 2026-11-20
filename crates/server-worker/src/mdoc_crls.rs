@@ -293,6 +293,6 @@ fn validate_publication(
     Ok(())
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 #[path = "../tests/unit/mdoc_crls.rs"]
 mod tests;

@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use super::*;
 
 // Only public certificate/CRL artifacts are retained. The native IACA signing
