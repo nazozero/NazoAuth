@@ -12,7 +12,8 @@ binding = "NAZO_VERSION"
 crons = ["* * * * *"]
 
 [build]
-command = "cd crates/server-worker && worker-build --release --locked"
+command = "worker-build --release --locked"
+cwd = "../../crates/server-worker"
 
 [observability]
 enabled = true
