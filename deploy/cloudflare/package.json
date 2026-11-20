@@ -10,6 +10,10 @@
     "deploy": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js deploy --config wrangler.toml"
   },
   "devDependencies": {
+    "@babel/generator": "7.29.14",
+    "@babel/parser": "7.29.14",
+    "@babel/traverse": "7.29.14",
+    "esbuild": "0.28.2",
     "miniflare": "5.20261118.0-beta",
     "wrangler": "4.165.0"
   }

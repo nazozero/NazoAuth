@@ -49,12 +49,13 @@ pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Ve
             "OpenID4VC scoped credential trust must contain 1 through {MAX_SCOPED_CREDENTIAL_TRUST_ANCHORS} certificates"
         );
     }
+    let now = x509_parser::time::ASN1Time::from_timestamp(jiff::Timestamp::now().as_second())?;
     let mut anchors = Vec::with_capacity(certificates.len());
     for der in certificates {
         let (remainder, parsed) = x509_parser::parse_x509_certificate(&der).map_err(|error| {
             anyhow::anyhow!("failed to parse OpenID4VC scoped credential trust anchor: {error}")
         })?;
-        if !remainder.is_empty() || !parsed.is_ca() || !parsed.validity().is_valid() {
+        if !remainder.is_empty() || !parsed.is_ca() || !parsed.validity().is_valid_at(now) {
             anyhow::bail!(
                 "OpenID4VC scoped credential trust anchors must be currently valid CA certificates"
             );

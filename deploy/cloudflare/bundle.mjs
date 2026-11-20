@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, renameSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { verifyPublishedBundle } from "./prune-worker.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const output = fileURLToPath(new URL("./bundled", import.meta.url));
@@ -13,6 +14,7 @@ try {
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
   if (process.exitCode === 0) {
+    verifyPublishedBundle(staging);
     // A successful bundle replaces its complete module graph. Older hashed
     // WASM files must never become part of a later release directory.
     rmSync(output, { recursive: true, force: true });

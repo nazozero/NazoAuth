@@ -165,7 +165,11 @@ fn sorted_unique(mut values: Vec<String>) -> Vec<String> {
 }
 
 fn x509_is_current(x509: &X509Certificate<'_>) -> Option<()> {
-    x509.validity().is_valid().then_some(())
+    // x509-parser's implicit clock uses std::time, which is unavailable in
+    // wasm32-unknown-unknown. Keep the shared validity check with our JS clock.
+    let now =
+        x509_parser::time::ASN1Time::from_timestamp(jiff::Timestamp::now().as_second()).ok()?;
+    x509.validity().is_valid_at(now).then_some(())
 }
 
 fn parse_current_x509(der: &[u8]) -> Option<X509Certificate<'_>> {

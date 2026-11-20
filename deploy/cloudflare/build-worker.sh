@@ -9,4 +9,5 @@ if [ -z "${WASM_BINDGEN_BIN:-}" ] && command -v wasm-bindgen >/dev/null 2>&1; th
 fi
 
 cd "$(dirname "$0")/../../crates/server-worker"
-exec worker-build --release --locked --no-default-features
+worker-build --release --locked --no-default-features
+exec node ../../deploy/cloudflare/prune-worker.mjs build

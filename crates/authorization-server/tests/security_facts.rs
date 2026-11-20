@@ -188,3 +188,115 @@ fn unbound_request_without_proof_does_not_touch_dpop_state() {
     assert_eq!(result, Ok(None));
     assert_eq!(state.0.load(Ordering::SeqCst), 0);
 }
+
+// Public certificates only. Their wide, disjoint windows keep these tests
+// independent of certificate issuance and the unavailable native WASM clock.
+fn validity_certificates() -> [(&'static str, bool); 3] {
+    [
+        (
+            include_str!("../../crypto/tests/fixtures/certificates/root.pem"),
+            true,
+        ),
+        (
+            include_str!("fixtures/certificate-validity/expired.pem"),
+            false,
+        ),
+        (
+            include_str!("fixtures/certificate-validity/future.pem"),
+            false,
+        ),
+    ]
+}
+
+fn certificate_der(pem: &str) -> Vec<u8> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    STANDARD
+        .decode(
+            pem.lines()
+                .filter(|line| !line.starts_with("-----"))
+                .collect::<String>(),
+        )
+        .expect("public certificate fixture")
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn mtls_identity_uses_portable_clock_and_rejects_noncurrent_certificates() {
+    use nazo_oauth_server::security::mtls::certificate_chain_identity;
+    use std::sync::Arc;
+
+    for (pem, current) in validity_certificates() {
+        let der = certificate_der(pem);
+        let facts = certificate_chain_identity(Arc::new(vec![der.clone().into()]));
+        assert_eq!(facts.is_some(), current);
+        if let Some(facts) = facts {
+            assert!(facts.thumbprint.is_some());
+            assert!(facts.subject_dn.is_some());
+            assert!(!facts.deployment_trusted_chain);
+        }
+        let mut trailing = der;
+        trailing.push(0);
+        assert!(certificate_chain_identity(Arc::new(vec![trailing.into()])).is_none());
+    }
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn registered_x5c_uses_portable_clock_and_rejects_noncurrent_certificates() {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use nazo_key_management::inspect_client_jwks;
+    use nazo_oauth_server::security::mtls::certificate_x5c_thumbprint;
+
+    for (pem, current) in validity_certificates() {
+        let x5c = STANDARD.encode(certificate_der(pem));
+        assert_eq!(certificate_x5c_thumbprint(&x5c).is_some(), current);
+        let capabilities =
+            inspect_client_jwks(&serde_json::json!({"keys": [{"x5c": [x5c]}]}), true).unwrap();
+        assert_eq!(capabilities.has_current_mtls_certificate, current);
+    }
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn mtls_trust_uses_portable_clock_and_rejects_noncurrent_certificates() {
+    use nazo_key_management::{MtlsTrustAnchorError, validate_mtls_trust_anchor};
+
+    for (pem, current) in validity_certificates() {
+        let result = validate_mtls_trust_anchor(pem);
+        if current {
+            let anchor = result.expect("current CA fixture");
+            assert_eq!(
+                certificate_der(&anchor.certificate_pem),
+                certificate_der(pem)
+            );
+        } else {
+            assert_eq!(result, Err(MtlsTrustAnchorError::NotCurrent));
+        }
+    }
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn credential_trust_uses_portable_clock_and_rejects_noncurrent_certificates() {
+    use nazo_oauth_server::domain::openid4vc::parse_scoped_credential_trust_anchors;
+
+    for (pem, current) in validity_certificates() {
+        let result = parse_scoped_credential_trust_anchors(pem);
+        assert_eq!(result.is_ok(), current);
+        if let Ok(anchors) = result {
+            assert_eq!(anchors, vec![certificate_der(pem)]);
+        }
+    }
+}

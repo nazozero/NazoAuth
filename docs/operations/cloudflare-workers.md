@@ -23,7 +23,10 @@ The bootstrap helper creates one initial user with an unknown random password,
 and hands the operator a single-use, 24-hour setup ticket; the ticket grants a
 five-minute registration session on the issuer's HTTPS origin. The password-enabled
 profile (`machine_only: false`, `passkey_only: false`) retains the shared Argon2id
-verifier and can be selected on either Free or Paid. Measure its CPU distribution
+verifier and can be selected on either Free or Paid. Selection enables the
+adapter; it does not provide enough CPU for every operation. Password checks and
+backup-code generation/verification retain the native Argon2id work factors and
+can exceed Free's guaranteed per-request budget. Measure their CPU distribution
 and actual platform failures at the intended sustained load.
 
 Both interactive profiles can serve the bundled NazoAuthWeb application from
@@ -132,7 +135,7 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | Runtime module lifecycle | Deployment configuration and persisted module selection must agree. Native live enable/disable/drain controls are not wired to the Worker lifecycle. Changing selection requires a coordinated operator deployment and state transition. |
 | Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
 | mdoc CRL publication | Configure an offline-signed public CRL for the current DS/IACA pair. Every CRL request reads the authoritative D1 public material and verifies its exact digest, issuer/certificate binding, signature, publication interval and current DS revocation status. Expired or changed authority material fails closed; the IACA private key stays offline. |
-| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Evaluate the published CPU budget against measured CPU distributions and actual platform failures at the intended sustained load. |
+| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Free's occasional CPU overage allowance is not guaranteed capacity for password or backup-code operations. Retain the shared work factors and assess actual platform failures under sustained load. |
 
 Unconfigured services and remaining host adapters are not evidence that
 the protocol cannot run on Workers. Durable state must continue to satisfy the
@@ -192,15 +195,27 @@ npm run bundle --prefix deploy/cloudflare
 ```
 
 The bundle command runs the dedicated `build-worker.sh` entry with
-`worker-build --release --locked --no-default-features` and Wrangler's dry run.
+`worker-build --release --locked --no-default-features`, release pruning and
+Wrangler's dry run.
 It does not publish a Worker. The module graph is under
 `crates/server-worker/build`; Wrangler's bundle is under
 `deploy/cloudflare/bundled`. A successful dry run replaces the complete bundle
 directory, removing historical hashed WASM modules; a failed build preserves the
-previous bundle. `deploy/cloudflare/shim.mjs` exports only the application's
-default fetch/scheduled entrypoint, excluding unused SDK helper exports from
-the JavaScript entrypoint. SDK-generated WASM ABI helpers may remain in the
-WASM module; this JavaScript export boundary does not remove every SDK symbol.
+previous bundle. The final JavaScript/WASM pair is checked before replacement:
+it must reference its single current WASM module, expose only the application's
+default entrypoint and retain every WASM export referenced by JavaScript.
+
+`prune-worker.mjs` builds a joint JavaScript/WASM reachability graph with
+Binaryen 133 `wasm-metadce`, then removes unreachable generated SDK bindings and
+reoptimizes with `wasm-opt`. It obtains these tools from worker-build's complete
+Binaryen distribution, or the distribution selected by `WASM_OPT_BIN` or
+`WASM_METADCE_BIN`. Unknown SDK initialization effects, escaped export objects
+and dynamic WASM export access fail the build instead of guessing what is live.
+Memory, globals and tables are retained; SDK helpers reached through indirect
+function-table calls also remain. Recognized SDK wrapper shapes are eligible
+for analysis; runtime reachability decides removal. The generated `build/prune-report.json` records
+raw/gzip sizes and export changes; fewer exports do not guarantee a smaller
+compressed binary.
 
 The WASM production graph excludes Actix, native HTTP servers, PostgreSQL/Valkey
 drivers, native TLS and native Tokio execution features. The SDK's Tokio library
@@ -262,7 +277,11 @@ Client Credentials, token management, OAuth metadata and JWKS). During offline
 initialization choose `passkey_only: true` and `machine_only: false` for a
 **passwordless, interactive** OAuth/OIDC deployment with Passkey login and
 Authorization Code/PKCE. Browser password login is then explicitly blocked.
-The password-enabled profile is also selectable on Free. Every profile needs
+The password-enabled profile is also selectable on Free. Argon2id operations
+must not lower their work factors to fit that plan. Occasional successful
+over-budget requests do not establish reliable capacity for password login,
+MFA enrollment, backup-code regeneration or exhaustive backup-code verification.
+Every profile needs
 **real edge CPU and outcome measurements at the intended sustained load** before
 production SLO acceptance. A CPU sample above 10 ms does not by itself establish
 a platform rejection; see [public CPU and failure measurements](#public-cpu-and-failure-measurements).
@@ -713,6 +732,11 @@ Report CPU sample count, median, p90/p95/p99, maximum and count above 10 ms,
 with HTTP statuses and `exceededCpu`/`exceededMemory` outcomes separately.
 Report the client's actual Cloudflare 1102 pages as another independent count.
 Missing or sampled telemetry is not proof of zero rejections.
+Keep expensive password/MFA phases identifiable and retain the results of mixed
+workloads as well as isolated protocol runs. A later successful run does not
+erase earlier platform failures. When a negative security test receives a
+platform error, report that error; it neither proves acceptance of the invalid
+credential nor verifies the expected application-level rejection.
 Cloudflare's [CPU limit documentation](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)
 excludes network/database waiting from CPU time and allows occasional over-limit
 execution. A log above 10 ms therefore does not by itself establish a platform

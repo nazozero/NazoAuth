@@ -98,10 +98,10 @@ export async function publicAdminWorkflows({
       ensure(pending?.user_id === user.id && pending.site_name === siteName && pending.status === 0,
         'administrator access request projection differs');
       const path = '/admin/access-requests/' + created.id + '/approve';
-      ensure((await postUser(path, metadata)).status === 403, 'ordinary user approved an access request');
-      ensure((await postJson(path, metadata, { origin: issuer, cookie: session.cookie })).status === 403,
-        'access approval accepted missing CSRF proof');
       approvalAttempted = true;
+      ensure((await postUser(path, metadata)).status === 403, 'ordinary user approved an access request');
+      ensure(json(await postJson(path, metadata, { origin: issuer, cookie: session.cookie }), 400).error === 'invalid_request',
+        'missing CSRF proof returned an unexpected error');
       const approved = json(await postAdmin(path, metadata));
       ensure(approved.id === created.id && approved.user_id === user.id && approved.status === 1
         && uuid.test(approved.approved_client_id) && !Object.hasOwn(approved, 'client_secret'),

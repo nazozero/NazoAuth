@@ -4,10 +4,11 @@
 import { createHash, randomBytes, randomUUID, sign, verify, X509Certificate } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  createCredentialWallet, credentialProof, encryptCredentialEnvelope, verifyCertificateJwt,
+  assertCredentialStatus, createCredentialWallet, credentialProof, encryptCredentialEnvelope,
+  preAuthorizedCredentialSelector, verifyCertificateJwt,
 } from './public-credentials.mjs';
 
-const ensure = (condition, message) => { if (!condition) throw new Error(message); };
+const ensure = (condition, message) => { if (!condition) throw new Error('Acceptance mdoc: ' + message); };
 const sha256 = value => createHash('sha256').update(value).digest();
 const b64 = value => Buffer.from(value).toString('base64url');
 const rawBytes = new WeakMap();
@@ -261,11 +262,10 @@ export async function runPublicMdoc(input, { request, session, saveWallet } = {}
   const configuration = input.mdoc_configuration_id ?? input.configuration_id;
   ensure(input.issuer === issuer && configuration && input.doctype && input.trust_anchor_pem
     && input.claims && input.wallet_client_id, 'mdoc acceptance fixture is incomplete');
-  const status = (response, expected) => ensure(response.status === expected,
-    `mdoc endpoint returned HTTP ${response.status}; expected ${expected}`);
+  const status = assertCredentialStatus;
   const json = (response, expected = 200) => {
     status(response, expected);
-    try { return JSON.parse(response.text); } catch { throw new Error('mdoc endpoint returned invalid JSON'); }
+    try { return JSON.parse(response.text); } catch { throw new Error('Acceptance mdoc: endpoint returned invalid JSON'); }
   };
   const post = (path, body, headers = {}, form = false) => request(path, { method: 'POST',
     headers: { origin: issuer, 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json', ...headers },
@@ -294,7 +294,7 @@ export async function runPublicMdoc(input, { request, session, saveWallet } = {}
   status(await post('/token', tokenBody, {}, true), 400);
   const authorization = { authorization: 'Bearer ' + token.access_token };
   const nonce = json(await request('/openid4vci/nonce', { method: 'POST' })).c_nonce;
-  const body = { credential_configuration_id: configuration,
+  const body = { ...preAuthorizedCredentialSelector(token, configuration, issuer),
     proofs: { jwt: [credentialProof(wallet, issuer, nonce, input.wallet_client_id)] } };
   const issued = json(await post('/openid4vci/credential', body, authorization));
   const credential = issued.credentials?.[0]?.credential;

@@ -43,7 +43,8 @@ export async function publicMfa({ issuer, input, request, postJson, json, step }
     const pending = json(await action('/auth/me/mfa/totp/begin', {}));
     seed = pending.secret_base32;
     ensure(typeof seed === 'string' && pending.digits === 6 && pending.period === 30, 'TOTP enrollment parameters differ');
-    ensure((await action('/auth/me/mfa/totp/confirm', { code: 'invalid' })).status === 400, 'invalid TOTP confirmation accepted');
+    ensure(json(await action('/auth/me/mfa/totp/confirm', { code: 'invalid' }), 400).error === 'invalid_grant',
+      'invalid TOTP confirmation returned an unexpected error');
     const confirmed = update(await action('/auth/me/mfa/totp/confirm', { code: totp(seed) }));
     enabled = confirmed.mfa_enabled === true;
     backups = confirmed.backup_codes || [];
@@ -56,11 +57,14 @@ export async function publicMfa({ issuer, input, request, postJson, json, step }
       ensure(pending.mfa_required === true, 'password login bypassed the configured second factor');
       const profile = json(await request('/auth/me', { headers: headers() }));
       ensure(profile.mfa_required === true, 'pending session was projected as an authenticated account');
-      ensure((await request('/admin/users', { headers: headers() })).status !== 200, 'pending session reached an admin operation');
-      ensure((await action('/auth/mfa/verify', { code: 'invalid' })).status === 400, 'invalid MFA challenge accepted');
+      ensure(json(await request('/admin/users', { headers: headers() }), 403).error === 'access_denied',
+        'pending session authorization returned an unexpected error');
+      ensure(json(await action('/auth/mfa/verify', { code: 'invalid' }), 400).error === 'invalid_grant',
+        'invalid MFA challenge returned an unexpected error');
       update(await action('/auth/mfa/verify', { code: backups[0], remember_device: true }));
       ensure(json(await request('/auth/me', { headers: headers() })).mfa_required === false, 'MFA did not complete the session');
-      ensure((await action('/auth/me/mfa/step-up', { code: backups[0] })).status === 400, 'backup code replay accepted');
+      ensure(json(await action('/auth/me/mfa/step-up', { code: backups[0] }), 400).error === 'invalid_grant',
+        'backup code replay returned an unexpected error');
       const remembered = update(await login());
       ensure(remembered.mfa_required === false, 'remembered MFA proof did not survive password login');
       // Remembered devices are not interactive recent MFA for admin mutation.
@@ -71,11 +75,17 @@ export async function publicMfa({ issuer, input, request, postJson, json, step }
   return {
     get session() { return session; },
     async cleanup() {
-      if (enabled) await step('mfa_backup_regeneration_and_disable', async () => {
+      if (enabled) await step('mfa_backup_regeneration_and_retirement', async () => {
+        const retiredCode = backups[3];
         const regenerated = update(await action('/auth/me/mfa/backup-codes/regenerate', { code: backups[2] }));
-        ensure(regenerated.backup_codes?.length === 10, 'backup regeneration failed');
-        ensure((await action('/auth/me/mfa/step-up', { code: backups[3] })).status === 400, 'retired backup code remained usable');
+        ensure(regenerated.backup_codes?.length === 10 && new Set(regenerated.backup_codes).size === 10, 'backup regeneration failed');
+        // Retain the replacement proof before the negative request. A platform
+        // refusal must not discard the only usable backup codes or skip cleanup.
         backups = regenerated.backup_codes;
+        ensure(json(await action('/auth/me/mfa/step-up', { code: retiredCode }), 400).error === 'invalid_grant',
+          'retired backup code returned an unexpected error');
+      });
+      if (enabled) await step('mfa_disable_and_session_cleanup', async () => {
         update(await action('/auth/me/mfa/disable', { code: backups[0] }));
         enabled = false;
         ensure(json(await request('/auth/me', { headers: headers() })).mfa_enabled === false, 'MFA disablement did not persist');

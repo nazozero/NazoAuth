@@ -61,7 +61,7 @@ function fixture({ wrongAdministrator = false, wrongUser = false, loseApproval =
     }
     if (url.pathname.startsWith('/admin/')) {
       if (headers.cookie !== session.cookie) return response(403, { error: 'access_denied' });
-      if (method !== 'GET' && headers['x-csrf-token'] !== session.csrf) return response(403, { error: 'invalid_request' });
+      if (method !== 'GET' && headers['x-csrf-token'] !== session.csrf) return response(400, { error: 'invalid_request' });
     }
     if (url.pathname === '/auth/me/access-requests') {
       assert.equal(headers.cookie, baselineSession.cookie);

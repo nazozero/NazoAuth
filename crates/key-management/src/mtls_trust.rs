@@ -61,7 +61,9 @@ pub fn validate_mtls_trust_anchor(
     if !remainder.is_empty() {
         return Err(MtlsTrustAnchorError::InvalidPem);
     }
-    if !certificate.validity().is_valid() {
+    let now = x509_parser::time::ASN1Time::from_timestamp(Timestamp::now().as_second())
+        .map_err(|_| MtlsTrustAnchorError::NotCurrent)?;
+    if !certificate.validity().is_valid_at(now) {
         return Err(MtlsTrustAnchorError::NotCurrent);
     }
     certificate

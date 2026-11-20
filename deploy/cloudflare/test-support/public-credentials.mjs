@@ -13,6 +13,47 @@ const sha256 = value => createHash('sha256').update(value).digest();
 const ensure = (condition, message) => { if (!condition) throw new Error('Acceptance credentials: ' + message); };
 const integer = value => { const bytes = Buffer.alloc(4); bytes.writeUInt32BE(value); return bytes; };
 const jsonPart = value => JSON.parse(Buffer.from(value, 'base64url'));
+const credentialErrors = new Set([
+  'invalid_request', 'invalid_token', 'invalid_grant', 'invalid_client', 'unauthorized_client',
+  'invalid_credential_request', 'unknown_credential_configuration', 'unknown_credential_identifier',
+  'invalid_proof', 'invalid_nonce', 'invalid_encryption_parameters', 'credential_request_denied',
+  'insufficient_scope', 'server_error', 'temporarily_unavailable',
+]);
+const credentialDescriptions = new Set([
+  'Credential request body is malformed.', 'Encrypted credential request is malformed.',
+  'Exactly one credential identifier is required.', 'Credential identifier is required for this access token.',
+  'Credential identifier is not authorized.', 'Credential configuration is not authorized.',
+  'Credential configuration is unknown.', 'Credential proof is missing.', 'Credential proof is invalid.',
+  'Credential proof nonce is invalid.', 'Credential holder binding is invalid.',
+  'Credential response encryption requires an encrypted request.',
+  'Credential request encryption is invalid.', 'Credential response encryption parameters are unsupported.',
+  'Credential response encryption key is invalid.', 'Credential issuance is not authorized.',
+  'Credential authorization provenance is missing.', 'Access token is revoked.', 'Access token is invalid.',
+  'Access token subject is inactive.', 'Credential proof validation is unavailable.', 'Credential issuance failed.',
+]);
+
+export function assertCredentialStatus(response, expected) {
+  if (response.status === expected) return;
+  let body;
+  try { body = JSON.parse(response.text); } catch {}
+  const safe = [credentialErrors.has(body?.error) && body.error,
+    credentialDescriptions.has(body?.error_description) && body.error_description].filter(Boolean);
+  ensure(false, `Credential endpoint returned HTTP ${response.status}; expected ${expected}${safe.length ? '; ' + safe.join('; ') : ''}`);
+}
+
+export function preAuthorizedCredentialSelector(token, configuration, issuer) {
+  // The issuer's opaque token-response identifier is authoritative. A wallet
+  // must not reconstruct it or substitute the configuration id when provided.
+  const details = token.authorization_details;
+  ensure(Array.isArray(details), 'Token response omitted credential authorization details');
+  const matches = details.filter(detail => detail.type === 'openid_credential'
+    && detail.credential_configuration_id === configuration && detail.locations?.includes(issuer));
+  ensure(matches.length === 1 && Array.isArray(matches[0].credential_identifiers)
+    && matches[0].credential_identifiers.length === 1
+    && typeof matches[0].credential_identifiers[0] === 'string' && matches[0].credential_identifiers[0].length > 0,
+  'Token response did not identify one authorized credential for this issuer');
+  return { credential_identifier: matches[0].credential_identifiers[0] };
+}
 
 function signEs256(header, claims, privateKey) {
   const input = [header, claims].map(value => encode(JSON.stringify(value))).join('.');
@@ -145,11 +186,10 @@ export async function runPublicCredentials(input, { request, session, saveWallet
   ensure(input.issuer === issuer && input.trust_anchor_pem && input.configuration_id && input.vct,
     'Credential acceptance fixture is incomplete');
   const json = (response, status = 200) => {
-    ensure(response.status === status, `Credential endpoint returned HTTP ${response.status}; expected ${status}`);
+    assertCredentialStatus(response, status);
     try { return JSON.parse(response.text); } catch { throw new Error('Acceptance credentials: Credential endpoint returned invalid JSON'); }
   };
-  const status = (response, expected) => ensure(response.status === expected,
-    `Credential endpoint returned HTTP ${response.status}; expected ${expected}`);
+  const status = assertCredentialStatus;
   const post = (path, body, headers = {}, form = false) => request(path, {
     method: 'POST', headers: { origin: issuer, 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json', ...headers },
     body: form ? new URLSearchParams(body).toString() : JSON.stringify(body),
@@ -188,7 +228,7 @@ export async function runPublicCredentials(input, { request, session, saveWallet
   const token = await preAuthorizedGrant(input.configuration_id);
   const authorization = { authorization: 'Bearer ' + token.access_token };
   const nonce = json(await request('/openid4vci/nonce', { method: 'POST' })).c_nonce;
-  const credentialBody = { credential_configuration_id: input.configuration_id,
+  const credentialBody = { ...preAuthorizedCredentialSelector(token, input.configuration_id, issuer),
     proofs: { jwt: [credentialProof(wallet, issuer, nonce, input.wallet_client_id)] } };
   const issued = json(await post('/openid4vci/credential', credentialBody, authorization));
   const credential = issued.credentials?.[0]?.credential;
@@ -223,7 +263,7 @@ export async function runPublicCredentials(input, { request, session, saveWallet
     };
     const prepare = async () => {
       const nonce = json(await request('/openid4vci/nonce', { method: 'POST' })).c_nonce;
-      const body = { credential_configuration_id: input.deferred_configuration_id,
+      const body = { ...preAuthorizedCredentialSelector(deferredToken, input.deferred_configuration_id, issuer),
         proofs: { jwt: [credentialProof(wallet, issuer, nonce, input.wallet_client_id)] },
         credential_response_encryption: encryption };
       // The native profile requires encrypted transport when requesting an
