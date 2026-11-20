@@ -38,6 +38,10 @@ function fixture({ wrongAdministrator = false, wrongUser = false, loseApproval =
     assert.ok(omitted);
     return view;
   };
+  const anchorView = ({ certificate_pem: omitted, ...view }) => {
+    assert.ok(omitted);
+    return view;
+  };
   const list = (items, search) => {
     const page = Number(search.get('page') || 1);
     const size = Number(search.get('page_size') || 100);
@@ -110,16 +114,16 @@ function fixture({ wrongAdministrator = false, wrongUser = false, loseApproval =
     }
     if (url.pathname === '/auth/me/mtls-trust-requests') {
       assert.equal(headers.cookie, baselineSession.cookie);
-      if (method === 'GET') return response(200, { total: anchors.length, items: anchors });
+      if (method === 'GET') return response(200, { total: anchors.length, items: anchors.map(anchorView) });
       assert.equal(body.client_id, client.client_id);
       assert.equal(client.require_mtls_bound_tokens, true);
       const certificate = new X509Certificate(body.certificate_pem);
       const created = { id: randomUUID(), client_id: client.client_id, user_id: user.id, status: 0,
         certificate_sha256: createHash('sha256').update(certificate.raw).digest('hex'), certificate_pem: certificate.toString() };
       anchors.push(created);
-      return response(201, created);
+      return response(201, anchorView(created));
     }
-    if (url.pathname === '/admin/mtls-trust-requests') return list(anchors, url.searchParams);
+    if (url.pathname === '/admin/mtls-trust-requests') return list(anchors.map(anchorView), url.searchParams);
     const trustDecision = url.pathname.match(/^\/admin\/mtls-trust-requests\/([^/]+)\/(approve|reject|revoke)$/);
     if (trustDecision) {
       const anchor = anchors.find(value => value.id === trustDecision[1]);
@@ -130,7 +134,7 @@ function fixture({ wrongAdministrator = false, wrongUser = false, loseApproval =
       anchor.status = { approve: 1, reject: 2, revoke: 3 }[action];
       anchor[action === 'revoke' ? 'revoked_at' : 'resolved_at'] = new Date().toISOString();
       if (action === 'approve' && loseTrustApproval) throw new Error('HTTPS request failed or timed out');
-      return response(200, anchor);
+      return response(200, anchorView(anchor));
     }
     if (url.pathname === '/admin/mtls-trust-anchors.pem') return response(200,
       anchors.filter(value => value.status === 1 && client.is_active).map(value => value.certificate_pem).join(''),

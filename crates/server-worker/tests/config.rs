@@ -248,6 +248,48 @@ fn dynamic_registration_requires_a_separate_initial_access_secret() {
     }
 }
 
+#[cfg(feature = "provisioning")]
+#[test]
+fn worker_import_rejects_iaca_private_material_before_storage_access() {
+    for private in [
+        serde_json::json!({}),
+        serde_json::json!({"issuer": "private fixture rejected before parsing"}),
+    ] {
+        let has_private = !private.as_object().unwrap().is_empty();
+        let secrets = serde_json::from_value(serde_json::json!({
+            "openid4vc_import": {
+                "expected_revision": 1,
+                "material": {
+                    "public": {"signing_kid": "fixture", "certificate_chain_pem": "", "trust_anchors_pem": "", "revocation_snapshot": null},
+                    "iaca_private_materials": private
+                },
+                "signing_key_pem": null
+            }
+        })).unwrap();
+        let result = futures_executor::block_on(nazo_server_worker::WorkerApplication::build(
+            configuration(),
+            nazo_oauth_server_d1::Database::in_memory().unwrap(),
+            "p".repeat(32),
+            wrapping_keys(),
+            "invalid-dummy-verifier".into(),
+            None,
+            secrets,
+        ));
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("invalid fixture was accepted"),
+        };
+        assert_eq!(
+            error.to_string(),
+            if has_private {
+                "IACA private keys must remain outside the Worker"
+            } else {
+                "dummy verifier must use the deployment's Argon2id password policy"
+            }
+        );
+    }
+}
+
 #[test]
 fn issuer_with_unroutable_path_is_rejected() {
     let mut config = configuration();

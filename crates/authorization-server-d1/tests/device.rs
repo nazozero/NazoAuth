@@ -13,6 +13,7 @@ use nazo_auth::{
     DeviceStatePortError, DeviceStateReplacement, DeviceStateStorePort,
 };
 use nazo_identity::TenantId;
+use nazo_identity::ports::AuthorizedApplicationRepositoryPort;
 use nazo_oauth_server_d1::D1Provider;
 use serde_json::json;
 use support::{CLIENT, TENANT, USER, fixture};
@@ -581,6 +582,107 @@ fn grant_receipt_and_grant_are_atomic_with_current_principal_checks() {
         );
         assert_eq!(result.authorization_details, request.authorization_details);
         database.execute_sql(&format!("CREATE TEMP TABLE valid_device_receipt(value INTEGER CHECK(value=1)); INSERT INTO valid_device_receipt SELECT expires_at*1000000>={} FROM nazo_state WHERE kind='device_decision';", request.expires_at.as_microsecond())).unwrap();
+    });
+}
+
+#[test]
+fn device_completion_records_history_once_and_rolls_back_ignored_effects() {
+    block_on(async {
+        for trigger in [
+            "CREATE TRIGGER ignore_device_effect BEFORE INSERT ON nazo_audit WHEN NEW.event_type='device_grant_authorized' BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER ignore_device_effect BEFORE INSERT ON nazo_grants BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER ignore_device_effect BEFORE INSERT ON nazo_grant_activity BEGIN SELECT RAISE(IGNORE); END;",
+        ] {
+            let (db, provider) = fixture().await;
+            let request = payload();
+            db.execute_sql(trigger).unwrap();
+            assert!(
+                provider
+                    .upsert_grant(grant("device-history", &request))
+                    .await
+                    .is_err()
+            );
+            db.execute_sql(
+                "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_grants)
+                AND NOT EXISTS(SELECT 1 FROM nazo_state WHERE kind='device_decision')
+                AND NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='device_grant_authorized')
+                THEN 1 ELSE json_extract('device effects survived rollback','$') END;",
+            )
+            .unwrap();
+            db.execute_sql("DROP TRIGGER ignore_device_effect").unwrap();
+            provider
+                .upsert_grant(grant("device-history", &request))
+                .await
+                .unwrap();
+            provider
+                .upsert_grant(grant("device-history", &request))
+                .await
+                .unwrap();
+            let apps = provider
+                .applications_for_user(TenantId::new(TENANT).unwrap(), USER)
+                .await
+                .unwrap();
+            assert_eq!(apps.len(), 1);
+            assert_eq!(apps[0].authorization_count, Some(1));
+            assert!(apps[0].last_authorized_at.is_some());
+            provider
+                .upsert_grant(grant("different-device-history", &request))
+                .await
+                .unwrap();
+            assert_eq!(
+                provider
+                    .applications_for_user(TenantId::new(TENANT).unwrap(), USER)
+                    .await
+                    .unwrap()[0]
+                    .authorization_count,
+                Some(2)
+            );
+        }
+    });
+}
+
+#[test]
+fn device_history_update_requires_the_exact_increment_even_at_the_same_timestamp() {
+    block_on(async {
+        let (db, provider) = fixture().await;
+        let request = payload();
+        provider
+            .upsert_grant(grant("initial-history", &request))
+            .await
+            .unwrap();
+        // Model two writes within SQLite's clock precision, while an ignored
+        // counter update leaves the old positive count in place.
+        db.execute_sql(
+            "CREATE TRIGGER align_history_clock AFTER INSERT ON nazo_audit
+            WHEN NEW.event_type='device_grant_authorized' BEGIN
+              UPDATE nazo_grant_activity SET last_authorized_at=NEW.occurred_at;
+            END;
+            CREATE TRIGGER ignore_history_count BEFORE UPDATE ON nazo_grant_activity
+            WHEN NEW.authorization_count<>OLD.authorization_count BEGIN SELECT RAISE(IGNORE); END;",
+        )
+        .unwrap();
+        assert!(
+            provider
+                .upsert_grant(grant("next-history", &request))
+                .await
+                .is_err()
+        );
+        db.execute_sql("SELECT CASE WHEN (SELECT COUNT(*) FROM nazo_audit WHERE event_type='device_grant_authorized')=1
+            AND (SELECT COUNT(*) FROM nazo_state WHERE kind='device_decision')=1
+            THEN 1 ELSE json_extract('ignored history update committed','$') END;
+            DROP TRIGGER align_history_clock; DROP TRIGGER ignore_history_count;").unwrap();
+        provider
+            .upsert_grant(grant("next-history", &request))
+            .await
+            .unwrap();
+        assert_eq!(
+            provider
+                .applications_for_user(TenantId::new(TENANT).unwrap(), USER)
+                .await
+                .unwrap()[0]
+                .authorization_count,
+            Some(2)
+        );
     });
 }
 

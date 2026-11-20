@@ -14,6 +14,7 @@ use nazo_identity::{
 };
 use nazo_oauth_server::ports::persistence::ServerPersistenceProvider;
 use nazo_oauth_server_d1::{D1Provider, Database};
+use serde_json::json;
 use std::sync::{Arc, Barrier};
 use support::{CLIENT, TENANT, USER};
 use uuid::Uuid;
@@ -51,7 +52,14 @@ impl Fixture {
             .await
             .unwrap()
             .user_id();
-        database.execute_sql(&format!("UPDATE nazo_users SET principal=json_set(principal,'$.role',json('{{\"Admin\":{{\"level\":1}}}}')) WHERE id='{}'; UPDATE nazo_clients SET require_mtls_bound_tokens=1 WHERE id='{CLIENT}';",admin.as_uuid())).unwrap();
+        database.execute_statement("UPDATE nazo_users SET principal=json_set(principal,'$.role',json('{\"Admin\":{\"level\":1}}')) WHERE id=?1",vec![json!(admin.as_uuid())]).await.unwrap();
+        database
+            .execute_statement(
+                "UPDATE nazo_clients SET require_mtls_bound_tokens=1 WHERE id=?1",
+                vec![json!(CLIENT)],
+            )
+            .await
+            .unwrap();
         let fixture = Self {
             database,
             provider,
@@ -290,10 +298,11 @@ fn request_requires_current_ownership_client_profile_user_and_validity() {
         );
         fixture
             .database
-            .execute_sql(&format!(
-                "UPDATE nazo_users SET active=0 WHERE id='{}'",
-                fixture.admin.as_uuid()
-            ))
+            .execute_statement(
+                "UPDATE nazo_users SET active=0 WHERE id=?1",
+                vec![json!(fixture.admin.as_uuid())],
+            )
+            .await
             .unwrap();
         assert_eq!(
             fixture
@@ -302,7 +311,18 @@ fn request_requires_current_ownership_client_profile_user_and_validity() {
                 .await,
             Err(RepositoryError::Conflict)
         );
-        fixture.database.execute_sql(&format!("UPDATE nazo_users SET active=1 WHERE id='{}';UPDATE nazo_mtls_trust_requests SET not_before=-2,not_after=-1",fixture.admin.as_uuid())).unwrap();
+        fixture
+            .database
+            .execute_statement(
+                "UPDATE nazo_users SET active=1 WHERE id=?1",
+                vec![json!(fixture.admin.as_uuid())],
+            )
+            .await
+            .unwrap();
+        fixture
+            .database
+            .execute_sql("UPDATE nazo_mtls_trust_requests SET not_before=-2,not_after=-1")
+            .unwrap();
         assert_eq!(
             fixture
                 .provider

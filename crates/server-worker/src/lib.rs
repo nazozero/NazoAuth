@@ -3,13 +3,14 @@
 
 mod composition;
 mod config;
+mod mdoc_crls;
 mod outbound;
 #[cfg(all(feature = "provisioning", not(target_arch = "wasm32")))]
 pub mod provisioning;
 mod services;
 
 pub use composition::WorkerApplication;
-pub use config::{Ingress, WorkerConfiguration, WorkerSecrets, WorkerServices};
+pub use config::{Ingress, WorkerConfiguration, WorkerMdocCrl, WorkerSecrets, WorkerServices};
 
 #[cfg(target_arch = "wasm32")]
 mod host;

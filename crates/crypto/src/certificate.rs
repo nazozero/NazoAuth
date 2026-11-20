@@ -46,6 +46,29 @@ pub fn verify_signature(
     }
 }
 
+/// Checks only the CRL signature against the given issuer key. The caller owns
+/// issuer binding, CRL extensions, publication time and revocation policy.
+pub fn verify_crl_signature(
+    crl: &x509_parser::revocation_list::CertificateRevocationList<'_>,
+    issuer_public_key: &x509_parser::x509::SubjectPublicKeyInfo<'_>,
+) -> crate::Result<()> {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        crl.verify_signature(issuer_public_key)
+            .map_err(|_| CryptoError::InvalidSignature)
+    }
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        portable::verify_signed_data(
+            &crl.signature_algorithm,
+            issuer_public_key,
+            crl.tbs_cert_list.as_ref(),
+            crl.signature_value.data.as_ref(),
+        )
+        .map_err(|_| CryptoError::InvalidSignature)
+    }
+}
+
 /// Validates an ordered document-signing certificate path against one explicit
 /// trust anchor. The chain excludes that anchor. WebPKI owns path length, name
 /// constraints, critical extensions, validity and signatures; KeyUsage is

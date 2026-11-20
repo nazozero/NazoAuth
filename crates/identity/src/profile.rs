@@ -162,8 +162,8 @@ pub struct AuthorizedApplicationView {
     pub client_id: String,
     pub client_name: String,
     pub last_scopes: Vec<String>,
-    pub last_authorized_at: jiff::Timestamp,
-    pub authorization_count: i32,
+    pub last_authorized_at: Option<jiff::Timestamp>,
+    pub authorization_count: Option<i32>,
 }
 
 impl From<AuthorizedApplication> for AuthorizedApplicationView {

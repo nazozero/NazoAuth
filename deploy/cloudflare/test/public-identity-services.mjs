@@ -39,8 +39,14 @@ test('SET verification rejects tampering, recipient substitution, wrong JOSE typ
 
 function fixture({ failScimPatch = false, wrongAdministrator = false } = {}) {
   const mtls = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const applications = [
+    { client_id: 'legacy-client', client_name: 'Legacy application', last_scopes: ['openid'],
+      authorization_count: null, last_authorized_at: null },
+    { client_id: 'new-client', client_name: 'Recorded application', last_scopes: ['openid', 'profile'],
+      authorization_count: 2, last_authorized_at: new Date().toISOString() },
+  ];
   const administrator = { id: randomUUID(), email: 'admin-acceptance@example.com', role: 'admin', admin_level: 2,
-    mfa_enabled: true, authorized_app_count: 0, avatar_url: null };
+    mfa_enabled: true, authorized_app_count: applications.length, avatar_url: null };
   const session = { cookie: 'session=private-fixture; csrf=private-csrf', csrf: 'private-csrf' };
   const input = { issuer, user: { user_id: randomUUID() }, administrator: {
     user_id: wrongAdministrator ? randomUUID() : administrator.id, email: administrator.email,
@@ -83,7 +89,8 @@ function fixture({ failScimPatch = false, wrongAdministrator = false } = {}) {
     if (typeof init.body === 'string') body = currentHeaders['content-type'] === 'application/x-www-form-urlencoded'
       ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body);
     if (path === '/auth/me') return response(200, administrator);
-    if (path === '/auth/me/applications') return currentHeaders.cookie ? response(200, { total: 0, items: [] }) : response(401);
+    if (path === '/auth/me/applications') return currentHeaders.cookie
+      ? response(200, { total: applications.length, items: applications }) : response(401);
     if (path === '/admin/users' && method === 'POST') {
       assert.equal(currentHeaders['x-csrf-token'], session.csrf);
       target = { id: randomUUID(), email: body.email, role: 'user', admin_level: 0, is_active: true };
@@ -110,7 +117,8 @@ function fixture({ failScimPatch = false, wrongAdministrator = false } = {}) {
       assert.equal(body.tls_client_certificate_bound_access_tokens, true);
       assert.equal(body.tls_client_auth_subject_dn, input.mtls.subject_dn);
       assert.equal(body.backchannel_token_delivery_mode, 'poll');
-      assert.equal(body.id_token_signed_response_alg, 'ES256');
+      assert.equal(body.id_token_signed_response_alg, 'PS256');
+      assert.equal(body.backchannel_authentication_request_signing_alg, 'ES256');
       assert.equal(body.jwks.keys[0].x, input.mtls.public_jwk.x);
       registration = { ...body, client_id: randomUUID(), registration_access_token: 'private-rat' };
       registration.registration_client_uri = issuer + '/register/' + registration.client_id;
@@ -182,7 +190,10 @@ function fixture({ failScimPatch = false, wrongAdministrator = false } = {}) {
     if (path === '/userinfo') return init.nazo_mtls ? response(200, { sub: administrator.id })
       : response(401, { error: 'invalid_token' });
     if (path === '/revoke') { assert.equal(init.nazo_mtls, true); return response(200); }
-    if (path === '/scim/v2/ServiceProviderConfig') return response(200, { patch: { supported: true } });
+    if (path === '/scim/v2/ServiceProviderConfig') return response(200, {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
+      patch: { supported: false }, filter: { supported: false },
+    });
     if (path === '/scim/v2/Users' && method === 'POST') {
       assert.equal(body.userName, body.emails[0].value);
       scimUser = { ...body, id: randomUUID() };

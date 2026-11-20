@@ -5,6 +5,7 @@ import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 const ensure = (value, message) => { if (!value) throw new Error('Acceptance ' + message); };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fingerprint = pem => createHash('sha256').update(new X509Certificate(pem).raw).digest('hex');
+const bundleFingerprints = text => (text.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || []).map(fingerprint);
 
 /**
  * session is the dedicated administrator's recent-MFA session;
@@ -181,29 +182,33 @@ export async function publicAdminWorkflows({
           client_id: client.client_id, certificate_pem: input.mtls_trust_anchors[index],
         }), 201);
         ensure(uuid.test(created.id) && created.client_id === client.client_id && created.user_id === user.id
-          && created.status === 0 && created.certificate_sha256 === fingerprints[index], 'invalid owned trust request');
+          && created.status === 0 && created.certificate_sha256 === fingerprints[index]
+          && !Object.hasOwn(created, 'certificate_pem'), 'invalid owned trust request');
         return created;
       };
       const anchor = await create(0);
       const path = '/admin/mtls-trust-requests/' + anchor.id;
       ensure((await postUser(path + '/approve', {})).status === 403, 'requester approved their trust request');
       const approved = json(await postAdmin(path + '/approve', { admin_note: 'Acceptance CA approval' }));
-      ensure(approved.id === anchor.id && approved.status === 1 && approved.resolved_at,
+      ensure(approved.id === anchor.id && approved.status === 1 && approved.resolved_at
+        && !Object.hasOwn(approved, 'certificate_pem'),
         'independent administrator did not approve the owned CA');
       const rejected = await create(1);
       const denied = json(await postAdmin('/admin/mtls-trust-requests/' + rejected.id + '/reject', { admin_note: 'Acceptance CA rejection' }));
-      ensure(denied.id === rejected.id && denied.status === 2, 'CA rejection did not persist');
+      ensure(denied.id === rejected.id && denied.status === 2 && !Object.hasOwn(denied, 'certificate_pem'),
+        'CA rejection did not persist');
       const bundle = await request('/admin/mtls-trust-anchors.pem', { headers: adminHeaders });
+      const exported = bundleFingerprints(bundle.text);
       ensure(bundle.status === 200 && bundle.headers.get('content-type')?.startsWith('application/x-pem-file')
         && bundle.headers.get('cache-control')?.includes('no-store')
-        && bundle.text.includes(approved.certificate_pem) && !bundle.text.includes(rejected.certificate_pem),
+        && exported.includes(fingerprints[0]) && !exported.includes(fingerprints[1]),
       'trust bundle does not distinguish approved and rejected CAs');
       const listed = await pages('/admin/mtls-trust-requests', value => value.id === anchor.id);
       ensure(listed?.status === 1 && listed.client_id === client.client_id, 'approved CA is absent from administrator list');
       const revoked = json(await postAdmin(path + '/revoke', { reason: 'Acceptance CA cleanup' }));
       ensure(revoked.id === anchor.id && revoked.status === 3 && revoked.revoked_at, 'CA revocation did not persist');
       const retiredBundle = await request('/admin/mtls-trust-anchors.pem', { headers: adminHeaders });
-      ensure(retiredBundle.status === 200 && !retiredBundle.text.includes(approved.certificate_pem),
+      ensure(retiredBundle.status === 200 && !bundleFingerprints(retiredBundle.text).includes(fingerprints[0]),
         'revoked CA remains in the exported trust bundle');
     });
   } finally {

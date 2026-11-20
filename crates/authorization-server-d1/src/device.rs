@@ -309,10 +309,35 @@ impl DeviceGrantRepositoryPort for D1Provider {
                 json!(encode(&write.resource_indicators).map_err(grant_error)?),
                 json!(encode(&write.authorization_details).map_err(grant_error)?),
             ]);
+            let mut audit_params = params.to_vec();
+            audit_params.push(json!(nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION));
+            let mut guard_params = grant_params.clone();
+            guard_params.push(json!(nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION));
             let principals = "EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?6 AND active=1) AND EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?7 AND active=1)";
             let results = self.database.batch(vec![
                 Statement::new(format!("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) SELECT ?1,'device_decision',?2,'null',?3,?5 WHERE ?4>{NOW} AND ({principals}) ON CONFLICT(tenant_id,kind,key) DO NOTHING RETURNING version"), params.clone()),
+                Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
+                    SELECT ?1,?3,'device_grant_authorized','authorization',{NOW},json_object(
+                      'schema_version',?8,'event_category','authorization','tenant_id',?1,'user_id',?6,
+                      'client_id',c.client_id,'decision','approve','outcome','success',
+                      'authorization_count',COALESCE((SELECT authorization_count FROM nazo_grant_activity WHERE tenant_id=?1 AND user_id=?6 AND client_id=?7),0)+1)
+                    FROM nazo_clients c WHERE c.tenant_id=?1 AND c.id=?7
+                      AND EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_decision' AND key=?2 AND version=?3)"),audit_params),
                 Statement::new("INSERT INTO nazo_grants(tenant_id,user_id,client_id,scopes,resources,details,revision) SELECT ?1,?6,?7,?8,?9,?10,?3 WHERE EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_decision' AND key=?2 AND version=?3) ON CONFLICT(tenant_id,user_id,client_id) DO UPDATE SET scopes=excluded.scopes,resources=excluded.resources,details=excluded.details,revision=excluded.revision", grant_params),
+                // Receipt, grant, canonical completion audit and history are one
+                // transaction. An ignored write must not acknowledge approval.
+                Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_decision' AND key=?2 AND version=?3) OR (
+                    EXISTS(SELECT 1 FROM nazo_audit a JOIN nazo_clients c ON c.tenant_id=a.tenant_id AND c.id=?7
+                      WHERE a.tenant_id=?1 AND a.event_id=?3 AND a.event_type='device_grant_authorized' AND a.category='authorization'
+                        AND json_extract(a.payload,'$.schema_version')=?11 AND json_extract(a.payload,'$.tenant_id')=?1
+                        AND json_extract(a.payload,'$.user_id')=?6 AND json_extract(a.payload,'$.client_id')=c.client_id
+                        AND json_extract(a.payload,'$.decision')='approve' AND json_extract(a.payload,'$.outcome')='success')
+                    AND EXISTS(SELECT 1 FROM nazo_grants g JOIN nazo_grant_activity h ON h.tenant_id=g.tenant_id AND h.user_id=g.user_id AND h.client_id=g.client_id
+                      JOIN nazo_audit a ON a.tenant_id=g.tenant_id AND a.event_id=g.revision
+                      WHERE g.tenant_id=?1 AND g.user_id=?6 AND g.client_id=?7 AND g.revision=?3
+                        AND g.scopes=?8 AND g.resources=?9 AND g.details=?10
+                        AND h.last_authorized_at=a.occurred_at AND h.authorization_count=json_extract(a.payload,'$.authorization_count')))
+                    THEN 1 ELSE json_extract('device grant completion was not accepted','$') END",guard_params),
                 Statement::new(format!("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_decision' AND key=?2 AND version=?3) THEN 'committed' WHEN NOT ({principals}) THEN 'principal' WHEN ?4<={NOW} THEN 'expired' WHEN EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_decision' AND key=?2) THEN 'committed' ELSE 'conflict' END AS outcome"), params),
             ]).await.map_err(grant_error)?;
             match outcome(&results).map_err(grant_error)? {

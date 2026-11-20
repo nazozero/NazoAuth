@@ -496,7 +496,24 @@ impl D1Provider {
             return Ok(true);
         }
         if key.client_epoch.is_none() {
-            return Ok(true);
+            if key.user_epoch.is_some() {
+                return Ok(true);
+            }
+            // Standalone OpenID4VCI pre-authorized grants, like native tokens
+            // predating principal epochs, use individual JTI revocation here.
+            // Their issuer-owned access record and active subject are checked
+            // by the shared credential service, not fabricated as OAuth epochs.
+            return Ok(self
+                .database
+                .query::<Flag>(
+                    "SELECT EXISTS(SELECT 1 FROM nazo_revocations WHERE tenant_id=?1 AND jti_hash=?2) AS value",
+                    vec![json!(self.tenant_id), json!(digest(key.jti))],
+                )
+                .await?
+                .first()
+                .ok_or(TokenPortError::CorruptData)?
+                .value
+                != 0);
         }
         Ok(self.database.query::<Flag>("SELECT EXISTS(SELECT 1 FROM nazo_revocations WHERE tenant_id=?1 AND jti_hash=?2) OR NOT EXISTS(SELECT 1 FROM nazo_clients c LEFT JOIN nazo_users u ON ?7='user' AND u.tenant_id=c.tenant_id AND u.id=COALESCE(?6,(SELECT user_id FROM nazo_subjects WHERE tenant_id=?1 AND subject=?5)) WHERE c.tenant_id=?1 AND c.client_id=?3 AND c.active=1 AND c.epoch=?4 AND ((?7='client' AND ?6 IS NULL AND ?8 IS NULL) OR (?7='user' AND u.active=1 AND u.epoch=?8))) AS value",vec![json!(self.tenant_id),json!(digest(key.jti)),json!(key.client_id),json!(key.client_epoch),json!(key.subject),json!(key.user_id),json!(key.subject_type),json!(key.user_epoch)]).await?.first().ok_or(TokenPortError::CorruptData)?.value!=0)
     }

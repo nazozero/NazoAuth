@@ -52,8 +52,8 @@ fn grant_row() -> nazo_auth::AdminGrantView {
         email: "user@example.com".to_owned(),
         client_id: "client-1".to_owned(),
         client_name: "Client One".to_owned(),
-        last_authorized_at: Timestamp::now(),
-        authorization_count: 3,
+        last_authorized_at: Some(Timestamp::now()),
+        authorization_count: Some(3),
         last_scopes: vec!["openid".to_owned(), "payments".to_owned()],
         last_authorization_details: json!([{"type": "payment_initiation"}]),
     }

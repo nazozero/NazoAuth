@@ -280,7 +280,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
     let response = await request('/authorize?' + new URLSearchParams(fields), { headers: { cookie: currentSession.cookie } });
     ensure(response.status === 302, 'Authorization did not redirect');
     let location = new URL(response.headers.get('location'), issuer);
-    if (location.pathname === '/consent') {
+    if (location.origin === issuer && ['/consent', '/ui/consent'].includes(location.pathname)) {
       const consent = json(await request('/authorize/consent?' + new URLSearchParams({ request_id: location.searchParams.get('request_id') }), {
         headers: { cookie: currentSession.cookie },
       }));
@@ -450,7 +450,9 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
       const metadata = { client_name: 'Remote JWKS acceptance ' + runId,
         redirect_uris: [], grant_types: ['client_credentials'], scope: 'service',
         token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_signing_alg: 'RS256',
-        jwks_uri: issuer + '/jwks.json' };
+        // The direct ingress profile rejects Worker subrequests to this issuer.
+        // Use the independent, explicitly admitted public key origin instead.
+        jwks_uri: 'https://www.googleapis.com/oauth2/v3/certs' };
       const registered = json(await postJson('/register', metadata, headers), 201);
       const uri = new URL(registered.registration_client_uri);
       ensure(uri.origin === issuer && uri.pathname.startsWith('/register/'), 'Invalid remote-JWKS client configuration URI');
@@ -568,13 +570,21 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
 
   if (discoveryPassed && input.browser_client) {
     await step('same_origin_browser_pages_and_token_preflight', async () => {
-      for (const path of ['/auth', '/auth/setup', '/consent']) {
-        const page = await request(path);
+      for (const [path, target] of [['/auth', '/ui/auth'], ['/consent', '/ui/consent'], ['/', '/ui/']]) {
+        const alias = await request(path + '?state=acceptance-ui-routing');
+        ensure(alias.status === 307 && alias.headers.get('location') === target + '?state=acceptance-ui-routing'
+          && alias.headers.get('cache-control') === 'no-store', 'Invalid browser page alias');
+        const page = await request(target);
         ensure(page.status === 200 && page.headers.get('content-type')?.includes('text/html')
-          && page.headers.get('cache-control') === 'no-store'
-          && page.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"),
-        'Invalid browser page response or security policy');
+          && page.headers.get('cache-control') === 'no-cache'
+          && page.headers.get('content-security-policy')?.includes("frame-ancestors 'none'")
+          && page.text.includes('/ui/assets/'), 'Invalid full browser page response or security policy');
       }
+      const setup = await request('/auth/setup');
+      ensure(setup.status === 200 && setup.headers.get('content-type')?.includes('text/html')
+        && setup.headers.get('cache-control') === 'no-store'
+        && setup.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"),
+      'Invalid browser setup response or security policy');
       const preflight = await request('/token', { method: 'OPTIONS', headers: { origin: issuer,
         'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type,dpop' } });
       ensure(preflight.status === 200 && preflight.headers.get('access-control-allow-origin') === issuer,

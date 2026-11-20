@@ -131,6 +131,7 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | Deployment administration and recovery | Controller registry, recovery roots and cross-tenant administration routes are compiled out of the Worker. The D1 user port can update administrators across tenant rows within one database transaction, but the single-issuer host does not expose that control-plane operation. Dynamic hostname/tenant registry replacement and native audit anchors are not adapted; this does not prohibit a future multi-host Worker composition. |
 | Runtime module lifecycle | Deployment configuration and persisted module selection must agree. Native live enable/disable/drain controls are not wired to the Worker lifecycle. Changing selection requires a coordinated operator deployment and state transition. |
 | Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
+| mdoc CRL publication | Configure an offline-signed public CRL for the current DS/IACA pair. Every CRL request reads the authoritative D1 public material and verifies its exact digest, issuer/certificate binding, signature, publication interval and current DS revocation status. Expired or changed authority material fails closed; the IACA private key stays offline. |
 | Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Evaluate the published CPU budget against measured CPU distributions and actual platform failures at the intended sustained load. |
 
 Unconfigured services and remaining host adapters are not evidence that
@@ -197,7 +198,9 @@ It does not publish a Worker. The module graph is under
 `deploy/cloudflare/bundled`. A successful dry run replaces the complete bundle
 directory, removing historical hashed WASM modules; a failed build preserves the
 previous bundle. `deploy/cloudflare/shim.mjs` exports only the application's
-default fetch/scheduled entrypoint, excluding unused SDK helper exports.
+default fetch/scheduled entrypoint, excluding unused SDK helper exports from
+the JavaScript entrypoint. SDK-generated WASM ABI helpers may remain in the
+WASM module; this JavaScript export boundary does not remove every SDK symbol.
 
 The WASM production graph excludes Actix, native HTTP servers, PostgreSQL/Valkey
 drivers, native TLS and native Tokio execution features. The SDK's Tokio library
@@ -211,9 +214,12 @@ are not part of the Worker. Tenant user/client administration and the shared
 protocol modules remain compiled. `check_worker_portability.py` checks both
 production graphs: the native server cannot acquire Workers/D1/JavaScript runtime
 dependencies, and the Worker cannot acquire native execution adapters,
-certificate provisioning or deployment controls. Native image builds exclude
-Worker/Web assets and generated output and do not run either frontend or Worker
-build steps.
+certificate provisioning or deployment controls. Native image build contexts
+retain Worker crate Rust sources and manifests needed to resolve the workspace,
+while excluding Worker/Web assets and generated output. They do not run frontend
+or Worker build steps. The native runtime image copies only the executable and
+source identity from the product build; release packaging uses the prebuilt
+native executable. Worker artifacts do not enter either runtime image.
 
 ### Bundled Web application
 
@@ -328,6 +334,12 @@ Builds; `npm run deploy` remains idempotent for D1 schema migrations and
 preserves existing Worker secrets. Do not publish the private bootstrap JSON
 or credentials in a Git repository or CI log.
 
+Migration `0013_access_request_pending.sql` enforces the native rule of at most
+one pending access request per tenant and user. If an existing database contains
+duplicate pending requests, the migration fails explicitly. An authorized
+administrator must resolve them through the normal approval or rejection flow
+before retrying; the migration does not reject or delete applications itself.
+
 ## Provision a fresh deployment
 
 Manual installations: create a D1 database or let Wrangler auto-provision it.
@@ -366,6 +378,7 @@ The `services` object contains only declared host capabilities and public policy
 | `deferred_credential_configurations` | Configuration IDs using the shared deferred-issuance flow |
 | `wallet_authorization_origins` | Allowed wallet authorization origins for presentation requests |
 | `client_attestation_jwks`, `key_attestation_jwks`, `client_attestation_issuer` | Optional shared attestation-verification policy |
+| `mdoc_crls` | Public map from the 64-character issuer publication ID to `{ "der_base64": "...", "public_material_blake3": "..." }`; each CRL is standard Base64 DER, at most 128 KiB |
 
 `NAZO_SERVICE_SECRETS` is a separate secret binding containing a JSON object:
 
@@ -388,14 +401,32 @@ OpenID4VC certificate provisioning remains an operator operation. Import a
 prepared key/certificate generation using `openid4vc_import` with
 `expected_revision`, `material` and optional `signing_key_pem`. `material` has
 `public` certificate/trust material (`signing_kid`, `certificate_chain_pem`,
-`trust_anchors_pem`, optional `revocation_snapshot`) and
-`iaca_private_materials` for configurations that need them. The shared key manager
+`trust_anchors_pem`, optional `revocation_snapshot`) and an empty
+`iaca_private_materials` map. The Worker rejects imports containing IACA private
+keys; retain those keys in the offline native provisioning environment. The shared key manager
 validates and commits that generation to the encrypted D1 key repository with
 compare-and-set semantics. Repeated initialization can acknowledge the identical
 material, but cannot overwrite another generation by changing the expected
 revision. After a successful import, remove `openid4vc_import` from the secret
 binding and retain the normal encrypted key lifecycle. The Worker does not invoke
 native certificate-provisioning tools or generate a new trust root at startup.
+
+For mdoc CRL publication, sign the CRL offline and configure its public artifact
+under `services.mdoc_crls`. Compute `public_material_blake3` from
+`blake3(serde_json::to_vec(&Openid4vcPublicMaterial))`, using the shared Rust type
+and its timestamp serialization. A generic JSON object serializer can change
+field order and produces a different digest. The issuer ID and both DS/IACA
+distribution points must identify
+`{issuer}/.well-known/mdoc/{issuer_id}.crl`. The CRL must be a complete v2 list
+with its IACA authority-key identifier and positive CRL number; its publication
+window must fit inside the authoritative revocation snapshot. The current DS
+must appear exactly when that snapshot records it revoked, with the same
+revocation time. Update the public artifact together with any authority or
+revocation change. Unknown publication IDs return 404; a configured artifact
+that no longer matches, is invalid or has expired returns 503. The operator owns
+CRL renewal and increasing publication numbers: the Worker validates the signed
+number, but does not implement the native automatic CRL-number lifecycle or
+persist a monotonic-number fence. No IACA signing operation runs in the Worker.
 
 Generate a 32-byte random signing wrapping key, encode it with standard Base64,
 and select its non-secret ID. Generate an independent client-secret pepper of

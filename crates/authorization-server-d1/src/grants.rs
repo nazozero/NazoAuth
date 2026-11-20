@@ -17,10 +17,12 @@ use crate::{
 };
 
 const VIEW: &str = "SELECT g.user_id,u.email,c.client_id,json_extract(c.registration,'$.client_name') AS client_name,
-    a.last_authorized_at,a.authorization_count,g.scopes,g.details
+    CASE WHEN h.last_authorization_unknown=1 THEN NULL ELSE a.last_authorized_at END AS last_authorized_at,
+    a.authorization_count,CASE WHEN h.client_id IS NULL THEN 0 ELSE 1 END AS history_incomplete,g.scopes,g.details
     FROM nazo_grants g JOIN nazo_users u ON u.tenant_id=g.tenant_id AND u.id=g.user_id
     JOIN nazo_clients c ON c.tenant_id=g.tenant_id AND c.id=g.client_id
-    LEFT JOIN nazo_grant_activity a ON a.tenant_id=g.tenant_id AND a.user_id=g.user_id AND a.client_id=g.client_id";
+    LEFT JOIN nazo_grant_activity a ON a.tenant_id=g.tenant_id AND a.user_id=g.user_id AND a.client_id=g.client_id
+    LEFT JOIN nazo_grant_history_unknown h ON h.tenant_id=g.tenant_id AND h.user_id=g.user_id AND h.client_id=g.client_id";
 #[derive(Deserialize)]
 struct GrantView {
     user_id: Uuid,
@@ -29,18 +31,28 @@ struct GrantView {
     client_name: Option<String>,
     last_authorized_at: Option<i64>,
     authorization_count: Option<i32>,
+    history_incomplete: i64,
     scopes: String,
     details: String,
 }
 impl GrantView {
     fn view(self) -> Result<AdminGrantView, DbError> {
+        if self.history_incomplete == 0
+            && (self.last_authorized_at.is_none() || self.authorization_count.is_none())
+        {
+            return Err(DbError::CorruptData);
+        }
         Ok(AdminGrantView {
             user_id: self.user_id,
             email: self.email,
             client_name: self.client_name.unwrap_or_else(|| self.client_id.clone()),
             client_id: self.client_id,
-            last_authorized_at: timestamp(self.last_authorized_at.ok_or(DbError::CorruptData)?)?,
-            authorization_count: self.authorization_count.ok_or(DbError::CorruptData)?,
+            last_authorized_at: self.last_authorized_at.map(timestamp).transpose()?,
+            authorization_count: if self.history_incomplete == 0 {
+                self.authorization_count
+            } else {
+                None
+            },
             last_scopes: serde_json::from_str(&self.scopes).map_err(|_| DbError::CorruptData)?,
             last_authorization_details: serde_json::from_str(&self.details)
                 .map_err(|_| DbError::CorruptData)?,

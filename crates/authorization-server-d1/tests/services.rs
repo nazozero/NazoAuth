@@ -65,7 +65,7 @@ fn grant_history_counts_atomic_approvals_and_restarts_after_revoke() {
         grant(&p, Timestamp::now()).await;
         let apps = p.applications_for_user(tenant(), USER).await.unwrap();
         assert_eq!(apps.len(), 1);
-        assert_eq!(apps[0].authorization_count, 2);
+        assert_eq!(apps[0].authorization_count, Some(2));
         assert_eq!(apps[0].last_scopes, json!(["openid"]));
         db.execute_sql(&format!("UPDATE nazo_users SET principal=json_set(principal,'$.role',json('{{\"Admin\":{{\"level\":2}}}}')) WHERE tenant_id='{TENANT}' AND id='{USER}'")).unwrap();
         let result = p
@@ -84,11 +84,44 @@ fn grant_history_counts_atomic_approvals_and_restarts_after_revoke() {
         grant(&p, Timestamp::now()).await;
         assert_eq!(
             p.applications_for_user(tenant(), USER).await.unwrap()[0].authorization_count,
-            1
+            Some(1)
         );
         let page = p.admin_grants().page(TENANT, 10, 0).await.unwrap();
         assert_eq!(page.total, 1);
         assert_eq!(page.grants.len(), 1);
+    });
+}
+
+#[test]
+fn legacy_grant_without_completion_history_remains_visible_without_invented_statistics() {
+    block_on(async {
+        let (db, p) = fixture().await;
+        db.execute_sql(&format!(
+            "INSERT INTO nazo_grants(tenant_id,user_id,client_id,scopes,resources,details,revision)
+            VALUES('{TENANT}','{USER}','{CLIENT}','[\"openid\"]','[]','[]','legacy-device-grant');"
+        ))
+        .unwrap();
+        // Missing history on an unmarked new write remains corruption.
+        assert!(p.applications_for_user(tenant(), USER).await.is_err());
+        db.execute_sql(include_str!("../migrations/0012_grant_history.sql"))
+            .unwrap();
+        let apps = p.applications_for_user(tenant(), USER).await.unwrap();
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].last_authorized_at, None);
+        assert_eq!(apps[0].authorization_count, None);
+        let now = Timestamp::now();
+        grant(&p, now).await;
+        let apps = p.applications_for_user(tenant(), USER).await.unwrap();
+        assert_eq!(
+            apps[0].last_authorized_at.unwrap().as_microsecond(),
+            now.as_microsecond()
+        );
+        // A new known approval cannot reconstruct the lost earlier count.
+        assert_eq!(apps[0].authorization_count, None);
+        assert_eq!(
+            p.admin_grants().page(TENANT, 10, 0).await.unwrap().grants[0].authorization_count,
+            None
+        );
     });
 }
 

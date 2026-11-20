@@ -29,7 +29,7 @@ applyWorkerOverlay(work);
 const npmArgs = ['exec', '--yes', `--package=node@${source.node}`, `--package=npm@${source.npm}`, '--', 'npm'];
 run('npm', [...npmArgs, 'ci', '--no-audit', '--no-fund']);
 run('npm', [...npmArgs, 'run', 'security:source']);
-run('npm', [...npmArgs, 'run', 'test:unit', '--', 'src/components/WorkerAuthentication.test.tsx', 'src/components/WorkerPendingSession.test.tsx', 'src/components/WorkerSecurity.test.tsx', 'src/components/WorkerRuntimeModulesPanel.test.tsx']);
+run('npm', [...npmArgs, 'run', 'test:unit', '--', 'src/components/WorkerAuthentication.test.tsx', 'src/components/WorkerPendingSession.test.tsx', 'src/components/WorkerSecurity.test.tsx', 'src/components/WorkerRuntimeModulesPanel.test.tsx', 'src/components/WorkerGrantHistory.test.tsx']);
 run('npm', [...npmArgs, 'run', 'build'], work, { ...process.env, VITE_BASE_PATH: source.base, VITE_API_BASE_URL: '' });
 run('npm', [...npmArgs, 'run', 'verify:dist']);
 run('npm', [...npmArgs, 'run', 'security:dist']);

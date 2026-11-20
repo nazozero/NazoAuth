@@ -38,6 +38,13 @@ impl WorkerApplication {
         dynamic_client_registration_initial_access_token: Option<String>,
         secrets: WorkerSecrets,
     ) -> anyhow::Result<Self> {
+        ensure!(
+            secrets
+                .openid4vc_import
+                .as_ref()
+                .is_none_or(|import| import.material.iaca_private_materials.is_empty()),
+            "IACA private keys must remain outside the Worker"
+        );
         let mut settings = configuration.application(pepper)?;
         if configuration
             .modules
@@ -197,14 +204,20 @@ impl WorkerApplication {
             scim_events: Arc::new(scim_events),
             certificate_verifier: None,
         };
-        let application = nazoauth::NazoAuthBuilder::new(
+        let mut builder = nazoauth::NazoAuthBuilder::new(
             settings,
             capabilities,
             uuid::Uuid::new_v4().to_string(),
         )
-        .with_avatar_storage(provider.as_ref().clone())
-        .build()
-        .await?;
+        .with_avatar_storage(provider.as_ref().clone());
+        if !configuration.services.mdoc_crls.is_empty() {
+            builder = builder.with_mdoc_crls(crate::mdoc_crls::PresignedMdocCrls::new(
+                keys.clone(),
+                &configuration.issuer,
+                &configuration.services.mdoc_crls,
+            )?);
+        }
+        let application = builder.build().await?;
         Ok(Self {
             configuration,
             application,

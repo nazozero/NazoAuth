@@ -193,8 +193,8 @@ fn profile_normalization_reuses_owned_text_and_scope_strings() {
             serde_json::Value::String(scope),
             serde_json::Value::Null,
         ]),
-        last_authorized_at: Timestamp::now(),
-        authorization_count: 1,
+        last_authorized_at: Some(Timestamp::now()),
+        authorization_count: Some(1),
     });
     assert_eq!(view.last_scopes, ["openid"]);
     assert_eq!(view.last_scopes[0].as_ptr(), allocation);

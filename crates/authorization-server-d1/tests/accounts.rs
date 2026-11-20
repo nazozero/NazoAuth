@@ -11,6 +11,7 @@ use nazo_identity::{
     },
 };
 use nazo_oauth_server_d1::{D1Provider, Database};
+use serde_json::{Value, json};
 use std::sync::{Arc, Barrier};
 use support::{CLIENT, TENANT, USER};
 use uuid::Uuid;
@@ -44,16 +45,26 @@ fn update(role: Option<&str>, level: Option<i32>, active: Option<bool>) -> Admin
 fn assert_sql(database: &Database, predicate: &str) {
     database.execute_sql(&format!("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1));INSERT INTO assertion SELECT CASE WHEN ({predicate}) THEN 1 ELSE 0 END;DROP TABLE assertion;")).unwrap();
 }
+async fn assert_statement(database: &Database, sql: &'static str, params: Vec<Value>) {
+    database
+        .execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1))")
+        .unwrap();
+    database.execute_statement(sql, params).await.unwrap();
+    database.execute_sql("DROP TABLE assertion").unwrap();
+}
 async fn admin(database: &Database, provider: &D1Provider, name: &str, level: u32) -> UserId {
     let account = provider.create_user(input(name)).await.unwrap();
     database.execute_sql(&format!("UPDATE nazo_users SET principal=json_set(principal,'$.role',json('{{\"Admin\":{{\"level\":{level}}}}}')) WHERE id='{}'",account.id())).unwrap();
     account.user_id()
 }
-fn family(database: &Database, user: UserId) {
+async fn family(database: &Database, user: UserId) {
     let user = user.as_uuid();
     let now = jiff::Timestamp::now().as_microsecond();
     let family = Uuid::new_v4();
-    database.execute_sql(&format!("INSERT INTO nazo_refresh_families(tenant_id,id,client_id,user_id,contract,contract_hash,member,member_id,token_hash,created_at,expires_at) VALUES('{TENANT}','{family}','{CLIENT}','{user}','{{}}','contract','{{}}','member','token',{now},{});INSERT INTO nazo_grants(tenant_id,user_id,client_id,scopes,resources,details,revision) VALUES('{TENANT}','{user}','{CLIENT}','[]','[]','[]','grant');",now+3_600_000_000)).unwrap();
+    database.execute_statement("INSERT INTO nazo_refresh_families(tenant_id,id,client_id,user_id,contract,contract_hash,member,member_id,token_hash,created_at,expires_at) VALUES(?1,?2,?3,?4,'{}','contract','{}','member','token',?5,?6)",
+        vec![json!(TENANT),json!(family),json!(CLIENT),json!(user),json!(now),json!(now+3_600_000_000)]).await.unwrap();
+    database.execute_statement("INSERT INTO nazo_grants(tenant_id,user_id,client_id,scopes,resources,details,revision) VALUES(?1,?2,?3,'[]','[]','[]','grant')",
+        vec![json!(TENANT),json!(user),json!(CLIENT)]).await.unwrap();
 }
 
 #[test]
@@ -137,19 +148,17 @@ fn administrative_create_requires_current_exact_context_and_atomic_required_audi
             .await
             .unwrap();
         assert_eq!(account.principal.admin_level(), None);
-        assert_sql(
+        assert_statement(
             &database,
-            &format!(
-                "(SELECT count(*) FROM nazo_audit WHERE event_type='admin_user_created' AND json_extract(payload,'$.admin_user_id')='{actor}' AND json_extract(payload,'$.user_id')='{}' AND json_extract(payload,'$.role')='user' AND json_extract(payload,'$.outcome')='success')=1",
-                account.id(),
-                actor = actor.as_uuid()
-            ),
-        );
+            "INSERT INTO assertion SELECT CASE WHEN (SELECT count(*) FROM nazo_audit WHERE event_type='admin_user_created' AND json_extract(payload,'$.admin_user_id')=?1 AND json_extract(payload,'$.user_id')=?2 AND json_extract(payload,'$.role')='user' AND json_extract(payload,'$.outcome')='success')=1 THEN 1 ELSE 0 END",
+            vec![json!(actor.as_uuid()),json!(account.id())],
+        ).await;
         database
-            .execute_sql(&format!(
-                "UPDATE nazo_users SET active=0,epoch=epoch+1 WHERE id='{actor}'",
-                actor = actor.as_uuid()
-            ))
+            .execute_statement(
+                "UPDATE nazo_users SET active=0,epoch=epoch+1 WHERE id=?1",
+                vec![json!(actor.as_uuid())],
+            )
+            .await
             .unwrap();
         assert!(
             provider
@@ -262,7 +271,7 @@ fn disabling_a_user_retires_authority_and_a_late_failure_rolls_back_all_effects(
     block_on(async {
         let (database, provider) = support::fixture().await;
         let actor = admin(&database, &provider, "admin", 3).await;
-        family(&database, id(USER));
+        family(&database, id(USER)).await;
         database.execute_sql("CREATE TRIGGER fail_grant_delete BEFORE DELETE ON nazo_grants BEGIN SELECT RAISE(ABORT,'late delete failed');END;").unwrap();
         assert!(
             provider
@@ -417,10 +426,11 @@ fn tenant_admin_operation_binds_both_rows_and_audits_in_one_database_transaction
             AdminUserUpdateOutcome::Denied(AdminPolicyError::InvalidRoleLevel)
         );
         database
-            .execute_sql(&format!(
-                "UPDATE nazo_users SET active=0 WHERE id='{actor}'",
-                actor = actor.as_uuid()
-            ))
+            .execute_statement(
+                "UPDATE nazo_users SET active=0 WHERE id=?1",
+                vec![json!(actor.as_uuid())],
+            )
+            .await
             .unwrap();
         assert_eq!(
             provider
@@ -436,13 +446,11 @@ fn tenant_admin_operation_binds_both_rows_and_audits_in_one_database_transaction
                 .unwrap(),
             AdminUserUpdateOutcome::Denied(AdminPolicyError::ActorNotAuthorized)
         );
-        assert_sql(
+        assert_statement(
             &database,
-            &format!(
-                "(SELECT count(*) FROM nazo_audit WHERE event_type='system_tenant_admin_updated' AND tenant_id='{target_tenant}')=2",
-                target_tenant = target_tenant.as_uuid()
-            ),
-        );
+            "INSERT INTO assertion SELECT CASE WHEN (SELECT count(*) FROM nazo_audit WHERE event_type='system_tenant_admin_updated' AND tenant_id=?1)=2 THEN 1 ELSE 0 END",
+            vec![json!(target_tenant.as_uuid())],
+        ).await;
     });
 }
 

@@ -14,7 +14,7 @@ function replaceOnce(source, before, after, contract) {
 export function applyWorkerOverlay(work) {
   for (const name of ['WorkerPasskey.tsx', 'WorkerMfaChallenge.tsx', 'WorkerSecurity.tsx', 'WorkerSecurity.css',
     'WorkerAuthentication.test.tsx', 'WorkerPendingSession.test.tsx', 'WorkerSecurity.test.tsx',
-    'WorkerRuntimeModulesPanel.tsx', 'WorkerRuntimeModulesPanel.test.tsx']) {
+    'WorkerRuntimeModulesPanel.tsx', 'WorkerRuntimeModulesPanel.test.tsx', 'WorkerGrantHistory.test.tsx']) {
     cpSync(resolve(adapters, name), resolve(work, 'src/components', name));
   }
   const authPath = resolve(work, 'src/pages/Auth.tsx');
@@ -87,6 +87,15 @@ export function applyWorkerOverlay(work) {
   const typesPath = resolve(work, 'src/types/auth.ts');
   let types = readFileSync(typesPath, 'utf8');
   types = replaceOnce(types, 'export interface AuthUser {', 'export interface AuthUser {\n  mfa_enabled?: boolean;\n  mfa_required?: boolean;', 'account MFA fields');
+  for (const name of ['AuthorizedApp', 'AdminGrantItem']) {
+    const start = types.indexOf(`export interface ${name} {`);
+    const end = types.indexOf('\n}', start);
+    if (start < 0 || end < 0) throw new Error(`NazoAuthWeb adapter contract changed: ${name} history fields`);
+    const original = types.slice(start, end);
+    let replacement = replaceOnce(original, 'last_authorized_at: string;', 'last_authorized_at: string | null;', `${name} last authorization`);
+    replacement = replaceOnce(replacement, 'authorization_count: number;', 'authorization_count: number | null;', `${name} authorization count`);
+    types = replaceOnce(types, original, replacement, `${name} history contract`);
+  }
   writeFileSync(typesPath, types);
 
   const profilePath = resolve(work, 'src/pages/Profile.tsx');
@@ -102,7 +111,43 @@ export function applyWorkerOverlay(work) {
           )}
 
           {activeTab === 'apps'`, 'profile security placement');
+  profile = replaceOnce(profile, '  const { t } = useI18n();', `  const { t, locale } = useI18n();
+  const historyUnavailable = locale === 'zh-CN' ? '历史未记录' : 'History unavailable';`, 'profile history language');
+  profile = replaceOnce(profile, '  const [loadingApps, setLoadingApps] = useState(false);', `  const [loadingApps, setLoadingApps] = useState(false);
+  const [appsErrorMsg, setAppsErrorMsg] = useState('');`, 'authorized-app read error state');
+  profile = replaceOnce(profile, `    const setError = activeTab === 'apps' ? setProfileErrorMsg : setRequestErrorMsg;
+    setLoading(true);`, `    const setError = activeTab === 'apps' ? setAppsErrorMsg : setRequestErrorMsg;
+    setError('');
+    setLoading(true);`, 'authorized-app read error owner');
+  profile = replaceOnce(profile, '                ) : apps.length === 0 ? (', `                ) : appsErrorMsg ? (
+                  <motion.div key="apps-error" className="profile-feedback error" role="alert">
+                    {appsErrorMsg}
+                  </motion.div>
+                ) : apps.length === 0 ? (`, 'authorized-app failure is not an empty list');
+  profile = replaceOnce(profile, "{item.authorization_count} {t('account.ui.times')}", "{item.authorization_count === null ? historyUnavailable : <>{item.authorization_count} {t('account.ui.times')}</>}", 'authorized-app unknown count');
+  profile = replaceOnce(profile, '{formatDateTime(item.last_authorized_at)}', '{item.last_authorized_at === null ? historyUnavailable : formatDateTime(item.last_authorized_at)}', 'authorized-app unknown time');
   writeFileSync(profilePath, profile);
+
+  const grantsPath = resolve(work, 'src/pages/admin/GrantsPanel.tsx');
+  let grants = readFileSync(grantsPath, 'utf8');
+  grants = replaceOnce(grants, '  const { t } = useI18n();', `  const { t, locale } = useI18n();
+  const historyUnavailable = locale === 'zh-CN' ? '历史未记录' : 'History unavailable';`, 'admin grant history language');
+  grants = replaceOnce(grants, '  const [loading, setLoading] = useState(true);', `  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);`, 'admin grant read error state');
+  grants = replaceOnce(grants, '      setLoading(true);', `      setLoading(true);
+      setLoadError(false);
+      setFeedback(current => current?.error ? null : current);`, 'admin grant reload resets read failure');
+  grants = replaceOnce(grants, `        if (controller.signal.aborted) return;
+        setFeedback({`, `        if (controller.signal.aborted) return;
+        setLoadError(true);
+        setFeedback({`, 'admin grant read failure owner');
+  grants = replaceOnce(grants, '      ) : items.length === 0 ? (', '      ) : loadError ? null : items.length === 0 ? (', 'admin grant failure is not an empty list');
+  grants = replaceOnce(grants, `                    {new Date(item.last_authorized_at).toLocaleString('zh-CN', {
+                      hour12: false,
+                    })}`, `                    {item.last_authorized_at === null ? historyUnavailable : new Date(item.last_authorized_at).toLocaleString(locale, {
+                      hour12: false,
+                    })}`, 'admin grant unknown time');
+  writeFileSync(grantsPath, grants);
 
   const adminPath = resolve(work, 'src/pages/admin/AdminPage.tsx');
   const admin = replaceOnce(readFileSync(adminPath, 'utf8'),
@@ -110,4 +155,24 @@ export function applyWorkerOverlay(work) {
     "import RuntimeModulesPanel from '../../components/WorkerRuntimeModulesPanel';",
     'deployment-managed module view');
   writeFileSync(adminPath, admin);
+
+  const homePath = resolve(work, 'src/pages/Home.tsx');
+  let home = readFileSync(homePath, 'utf8');
+  home = replaceOnce(home,
+    '核心通过独立接口连接持久存储与短期状态实现。一个部署可承载多个租户与域名，各自拥有明确的 issuer、账户和安全边界。',
+    '当前 Cloudflare Workers 部署运行一个 issuer 和租户，账户、应用及协议服务均归属此安全边界。模块通过部署配置管理。',
+    'Worker single-issuer deployment description (Chinese)');
+  home = replaceOnce(home,
+    'Independent interfaces connect the core to persistence and transient-state implementations. One deployment can serve multiple tenants and domains, each with its own issuer, accounts, and security boundary.',
+    'This Cloudflare Workers deployment serves one issuer and tenant. Accounts, applications, and protocol services share that security boundary. Modules are managed through deployment configuration.',
+    'Worker single-issuer deployment description (English)');
+  home = replaceOnce(home,
+    `<span>Docker</span>
+            <span>Podman</span>
+            <span>{zh ? '主机部署' : 'Host runtime'}</span>`,
+    `<span>Cloudflare Workers</span>
+            <span>D1</span>
+            <span>{zh ? '单 issuer' : 'One issuer'}</span>`,
+    'Worker deployment runtime labels');
+  writeFileSync(homePath, home);
 }

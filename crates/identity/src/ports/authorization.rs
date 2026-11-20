@@ -20,8 +20,10 @@ pub struct AuthorizedApplication {
     pub client_id: String,
     pub client_name: String,
     pub last_scopes: Value,
-    pub last_authorized_at: Timestamp,
-    pub authorization_count: i32,
+    /// Unknown for imported grants without authoritative historical metadata.
+    pub last_authorized_at: Option<Timestamp>,
+    /// None when the complete authorization generation cannot be reconstructed.
+    pub authorization_count: Option<i32>,
 }
 
 pub trait AuthorizedApplicationRepositoryPort: Send + Sync {

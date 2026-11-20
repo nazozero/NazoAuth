@@ -307,7 +307,7 @@ fn shared_registration_service_sends_verifies_creates_and_rejects_replay() {
         let mut input = RegisterLocalAccountInput {
             email: "registration@example.com".into(),
             verification_code: "wrong".into(),
-            password: "long enough fixture password".into(),
+            password: Uuid::new_v4().to_string(),
         };
         assert_eq!(
             service.register_local_account(input.clone()).await,

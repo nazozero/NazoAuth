@@ -172,18 +172,33 @@ impl AccessRequestRepositoryPort for D1Provider {
             let id = Uuid::new_v4();
             let mut result=self.database.batch(vec![
                 Statement::new(format!("INSERT INTO nazo_access_requests(tenant_id,id,user_id,site_name,site_url,request_description,status,created_at)
-                    SELECT ?1,?2,?3,?4,?5,?6,0,{NOW} WHERE EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?3)"),
+                    SELECT ?1,?2,?3,?4,?5,?6,0,{NOW} WHERE EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?3)
+                    AND NOT EXISTS(SELECT 1 FROM nazo_access_requests WHERE tenant_id=?1 AND user_id=?3 AND status=0)"),
                     vec![json!(request.tenant_id),json!(id),json!(request.user_id),json!(request.site_name),json!(request.site_url),json!(request.request_description)]),
                 Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?3)
+                    OR EXISTS(SELECT 1 FROM nazo_access_requests WHERE tenant_id=?1 AND user_id=?3 AND status=0 AND id<>?2)
                     OR EXISTS(SELECT 1 FROM nazo_access_requests WHERE tenant_id=?1 AND id=?2 AND user_id=?3 AND site_name=?4 AND site_url=?5 AND request_description=?6 AND status=0)
                     THEN 1 ELSE json_extract('access request insert was not accepted','$') END",
                     vec![json!(request.tenant_id),json!(id),json!(request.user_id),json!(request.site_name),json!(request.site_url),json!(request.request_description)]),
                 Statement::new(format!("SELECT {FIELDS},NULL AS requester_email FROM nazo_access_requests r WHERE r.tenant_id=?1 AND r.id=?2"),vec![json!(request.tenant_id),json!(id)]),
+                Statement::new("SELECT EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2) AS present,
+                    EXISTS(SELECT 1 FROM nazo_access_requests WHERE tenant_id=?1 AND user_id=?2 AND status=0) AS pending",
+                    vec![json!(request.tenant_id),json!(request.user_id)]),
             ]).await?;
-            let row = result
+            let state = result
                 .pop()
                 .and_then(|mut outcome| outcome.rows.pop())
-                .ok_or(RepositoryError::NotFound)?;
+                .ok_or(DbError::CorruptData)?;
+            let row = result.pop().and_then(|mut outcome| outcome.rows.pop());
+            let Some(row) = row else {
+                return Err(if state["present"] == 0 {
+                    RepositoryError::NotFound
+                } else if state["pending"] == 1 {
+                    RepositoryError::Conflict
+                } else {
+                    DbError::CorruptData.into()
+                });
+            };
             serde_json::from_value::<Row>(row)
                 .map_err(|_| DbError::CorruptData)?
                 .public()

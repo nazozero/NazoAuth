@@ -71,7 +71,7 @@ async fn fetch(
         }
         request.extensions_mut().insert(facts);
     }
-    if configuration.passkey_only
+    if !configuration.machine_only
         && request.method() == http::Method::GET
         && let Some(reply) = crate::setup::page(request.uri().path())
     {
@@ -102,7 +102,7 @@ async fn fetch(
         );
         return Ok(result);
     }
-    if cached.prepared.configuration.passkey_only
+    if !cached.prepared.configuration.machine_only
         && let Some(reply) = crate::setup::handle(&request, &env, &cached.prepared).await
     {
         return Ok(reply);

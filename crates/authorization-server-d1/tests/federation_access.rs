@@ -16,7 +16,7 @@ use nazo_identity::{
 };
 use nazo_oauth_server_d1::{D1Provider, Database};
 use nazo_persistence::AdminAccessRequestStore;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::{Arc, Barrier};
 use support::{TENANT, USER};
 use uuid::Uuid;
@@ -41,6 +41,12 @@ async fn fixture() -> (Database, D1Provider) {
 }
 fn assert_sql(db: &Database, predicate: &str) {
     db.execute_sql(&format!("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1));INSERT INTO assertion SELECT CASE WHEN ({predicate}) THEN 1 ELSE 0 END;DROP TABLE assertion;")).unwrap();
+}
+async fn assert_statement(db: &Database, sql: &'static str, params: Vec<Value>) {
+    db.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1))")
+        .unwrap();
+    db.execute_statement(sql, params).await.unwrap();
+    db.execute_sql("DROP TABLE assertion").unwrap();
 }
 fn admin(db: &Database) {
     db.execute_sql(&format!("UPDATE nazo_users SET principal=json_set(principal,'$.role',json('{{\"Admin\":{{\"level\":2}}}}')) WHERE id='{USER}'")).unwrap();
@@ -166,10 +172,11 @@ fn federation_never_links_an_email_collision_and_refreshes_only_provider_metadat
                 .email,
             "new@example.com"
         );
-        db.execute_sql(&format!(
-            "UPDATE nazo_users SET active=0 WHERE id='{}'",
-            account.principal.user_id.as_uuid()
-        ))
+        db.execute_statement(
+            "UPDATE nazo_users SET active=0 WHERE id=?1",
+            vec![json!(account.principal.user_id.as_uuid())],
+        )
+        .await
         .unwrap();
         assert!(
             !provider
@@ -698,16 +705,11 @@ fn access_approval_returns_actual_view_and_binds_delivery_to_current_secret() {
             .await
             .unwrap()
         );
-        assert_sql(
+        assert_statement(
             &db,
-            &format!(
-                "(SELECT count(*) FROM nazo_audit WHERE event_type='client_created' AND category='client_lifecycle' AND json_extract(payload,'$.request_id')='{}' AND json_extract(payload,'$.request_user_id')='{}' AND json_extract(payload,'$.approved_client_id')='{}')=1 AND (SELECT count(*) FROM nazo_client_registrations WHERE client_id='{}')=1",
-                pending.id,
-                owner.as_uuid(),
-                result.client.id,
-                result.client.id
-            ),
-        );
+            "INSERT INTO assertion SELECT CASE WHEN (SELECT count(*) FROM nazo_audit WHERE event_type='client_created' AND category='client_lifecycle' AND json_extract(payload,'$.request_id')=?1 AND json_extract(payload,'$.request_user_id')=?2 AND json_extract(payload,'$.approved_client_id')=?3)=1 AND (SELECT count(*) FROM nazo_client_registrations WHERE client_id=?3)=1 THEN 1 ELSE 0 END",
+            vec![json!(pending.id),json!(owner.as_uuid()),json!(result.client.id)],
+        ).await;
         db.execute_sql(
             "UPDATE nazo_clients SET secret_digest='rotated' WHERE client_id='approved'",
         )
@@ -826,10 +828,11 @@ fn access_authority_requires_current_active_admin_and_matching_tenant_context() 
             Err(RepositoryError::Consistency(_))
         ));
         admin(&db);
-        db.execute_sql(&format!(
-            "UPDATE nazo_users SET active=0 WHERE id='{}'",
-            owner.as_uuid()
-        ))
+        db.execute_statement(
+            "UPDATE nazo_users SET active=0 WHERE id=?1",
+            vec![json!(owner.as_uuid())],
+        )
+        .await
         .unwrap();
         assert!(matches!(
             provider
@@ -849,7 +852,7 @@ fn access_authority_requires_current_active_admin_and_matching_tenant_context() 
             .unwrap();
         assert_eq!(rejected.status, AccessRequestStatus::Rejected);
         let next = request(&provider, owner, "Wrong realm").await;
-        db.execute_sql(&format!("UPDATE nazo_users SET active=1,principal=json_set(principal,'$.tenant.realm_id','{}') WHERE id='{}'",Uuid::new_v4(),owner.as_uuid())).unwrap();
+        db.execute_statement("UPDATE nazo_users SET active=1,principal=json_set(principal,'$.tenant.realm_id',?1) WHERE id=?2",vec![json!(Uuid::new_v4()),json!(owner.as_uuid())]).await.unwrap();
         assert!(
             provider
                 .approve_with_required_audit(
@@ -882,7 +885,6 @@ fn access_rejection_is_atomic_and_admin_pages_search_literals() {
         admin(&db);
         let owner = applicant(&provider).await;
         let first = request(&provider, owner, "100%_literal").await;
-        request(&provider, owner, "Other").await;
         for sql in [
             "CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit BEGIN SELECT RAISE(IGNORE);END;",
             "CREATE TRIGGER suppress BEFORE UPDATE ON nazo_access_requests BEGIN SELECT RAISE(IGNORE);END;",
@@ -896,7 +898,7 @@ fn access_rejection_is_atomic_and_admin_pages_search_literals() {
             );
             assert_sql(
                 &db,
-                "NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='admin_access_request_rejected') AND (SELECT count(*) FROM nazo_access_requests WHERE status=0)=2",
+                "NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='admin_access_request_rejected') AND (SELECT count(*) FROM nazo_access_requests WHERE status=0)=1",
             );
             db.execute_sql("DROP TRIGGER suppress").unwrap();
         }
@@ -911,6 +913,7 @@ fn access_rejection_is_atomic_and_admin_pages_search_literals() {
                 .await,
             Err(RepositoryError::Conflict)
         ));
+        request(&provider, owner, "Other").await;
         let page = AdminAccessRequestStore::page(
             &provider,
             tenant(),

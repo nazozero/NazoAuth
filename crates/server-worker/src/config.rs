@@ -41,6 +41,16 @@ pub struct WorkerServices {
     pub client_attestation_jwks: Option<serde_json::Value>,
     pub key_attestation_jwks: Option<serde_json::Value>,
     pub client_attestation_issuer: Option<String>,
+    #[serde(default)]
+    pub mdoc_crls: std::collections::BTreeMap<String, WorkerMdocCrl>,
+}
+
+/// Public CRL signed by the offline IACA and bound to one exact authority view.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerMdocCrl {
+    pub der_base64: String,
+    pub public_material_blake3: String,
 }
 
 #[derive(Clone, Deserialize)]

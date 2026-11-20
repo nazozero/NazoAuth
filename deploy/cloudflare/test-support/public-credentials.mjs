@@ -8,7 +8,9 @@ import { isDeepStrictEqual } from 'node:util';
 
 const encode = value => Buffer.from(value).toString('base64url');
 const sha256 = value => createHash('sha256').update(value).digest();
-const ensure = (condition, message) => { if (!condition) throw new Error(message); };
+// These messages are fixed acceptance assertions, never response bodies or
+// key material. Keep their safe prefix visible through the runner's redactor.
+const ensure = (condition, message) => { if (!condition) throw new Error('Acceptance credentials: ' + message); };
 const integer = value => { const bytes = Buffer.alloc(4); bytes.writeUInt32BE(value); return bytes; };
 const jsonPart = value => JSON.parse(Buffer.from(value, 'base64url'));
 
@@ -144,7 +146,7 @@ export async function runPublicCredentials(input, { request, session, saveWallet
     'Credential acceptance fixture is incomplete');
   const json = (response, status = 200) => {
     ensure(response.status === status, `Credential endpoint returned HTTP ${response.status}; expected ${status}`);
-    try { return JSON.parse(response.text); } catch { throw new Error('Credential endpoint returned invalid JSON'); }
+    try { return JSON.parse(response.text); } catch { throw new Error('Acceptance credentials: Credential endpoint returned invalid JSON'); }
   };
   const status = (response, expected) => ensure(response.status === expected,
     `Credential endpoint returned HTTP ${response.status}; expected ${expected}`);
@@ -320,5 +322,13 @@ export async function publicCredentials({ issuer, request, step, input, session,
   await step('OpenID4VCI issuance and OpenID4VP encrypted presentation', async () => {
     summary = await runPublicCredentials({ issuer, ...input.digital_credentials }, { request, session, saveWallet });
   });
+  if (input.digital_credentials.mdoc) {
+    const { runPublicMdoc } = await import('./public-mdoc.mjs');
+    await step('OpenID4VCI mdoc issuance and OpenID4VP selective presentation', async () => {
+      const mdoc = await runPublicMdoc({ issuer, ...input.digital_credentials, ...input.digital_credentials.mdoc },
+        { request, session, saveWallet });
+      summary = { ...summary, mdoc };
+    });
+  }
   return summary;
 }

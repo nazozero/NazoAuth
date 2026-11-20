@@ -8,7 +8,6 @@ mod trust;
 
 use crate::{D1Provider, db::DbError};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rand::Rng as _;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -33,8 +32,7 @@ impl EncryptedStore {
     }
 
     fn seal(&self, aad: &[u8], plaintext: &[u8]) -> Result<String, DbError> {
-        let mut nonce = [0_u8; 12];
-        rand::rng().fill_bytes(&mut nonce);
+        let nonce: [u8; 12] = rand::random();
         nazo_crypto::aead::encrypt_prefixed(&self.key, &nonce, aad, plaintext, &nonce)
             .map(|value| STANDARD.encode(value))
             .map_err(|_| DbError::Unavailable)

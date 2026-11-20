@@ -33,6 +33,23 @@ _WORKER_HTTP_STREAM_FEATURES = frozenset({"ReadableStream", "ReadableWritablePai
 _WORKER_HTTP_STREAM_PATHS = frozenset(
     f"web_sys::{name}" for name in _WORKER_HTTP_STREAM_FEATURES
 )
+# The same ingress boundary decodes platform streams and copies byte chunks.
+# Its DecompressionStream constructor has no stable web-sys binding yet.
+_WORKER_HTTP_INGRESS_SOURCE = "crates/http-worker/src/ingress.rs"
+_WORKER_HTTP_INTEROP_PATHS = frozenset({
+    "js_sys::Array", "js_sys::Array::of1", "js_sys::Function",
+    "js_sys::Reflect", "js_sys::Reflect::get", "js_sys::Reflect::construct",
+    "js_sys::Uint8Array", "js_sys::global",
+})
+# The Workers SDK does not yet type the RFC 9440 certificate fields on cf.
+# Its ingress adapter reads those platform facts through Reflect.get; this is
+# JavaScript object access, not a crypto backend. Keep the exception tied to
+# that source boundary and read-only API, not the full js-sys crate or host.
+_WORKER_HOST_MANIFEST = "crates/server-worker/Cargo.toml"
+_WORKER_TLS_METADATA_SOURCE = "crates/server-worker/src/mtls.rs"
+_WORKER_TLS_METADATA_PATHS = frozenset({"js_sys::Reflect", "js_sys::Reflect::get"})
+_WORKER_OUTBOUND_SOURCE = "crates/server-worker/src/outbound.rs"
+_WORKER_OUTBOUND_PATHS = frozenset({"js_sys::Uint8Array::from"})
 
 TLS_EXCEPTIONS = {
     "crates/server/src/bootstrap/transport.rs": {
@@ -381,6 +398,10 @@ def source_violations(root: Path, read_manifest) -> list:
             manifest_path.relative_to(root).as_posix() == _WORKER_HTTP_MANIFEST
             and manifest.get("package", {}).get("name") == "nazo-http-worker"
         )
+        is_worker_host = (
+            manifest_path.relative_to(root).as_posix() == _WORKER_HOST_MANIFEST
+            and manifest.get("package", {}).get("name") == "nazo-server-worker"
+        )
         dependency_aliases = {
             alias.replace("-", "_"): package.replace("-", "_")
             for alias, package in _all_dependency_packages(manifest, workspace).items()
@@ -401,21 +422,24 @@ def source_violations(root: Path, read_manifest) -> list:
                     )
                 continue
             aliases = _rust_aliases(masked, dependency_aliases)
+            uses = list(_USES.finditer(masked))
             candidates = [
                 (m.start(), i)
-                for m in _USES.finditer(masked)
+                for m in uses
                 for i, _a in contracts.rust_use_bindings(m[1])
             ]
             candidates.extend(
                 (m.start(), m[0]) for m in _QUALIFIED.finditer(masked)
+                if not any(binding.start() <= m.start() < binding.end() for binding in uses)
             )
             reported = set()
             for position, candidate in candidates:
                 resolved = contracts.resolved_rust_path(candidate, aliases)
-                # The SDK re-exports web-sys; that spelling does not grant a
+                # The SDK re-exports JS bindings; that spelling does not grant a
                 # second route around the same restricted WebCrypto boundary.
-                if resolved == "worker::web_sys" or resolved.startswith("worker::web_sys::"):
-                    resolved = resolved.removeprefix("worker::")
+                for binding in ("web_sys", "js_sys"):
+                    if resolved == f"worker::{binding}" or resolved.startswith(f"worker::{binding}::"):
+                        resolved = resolved.removeprefix("worker::")
                 root_name = resolved.partition("::")[0]
                 if resolved.startswith("x509_parser::") and resolved.endswith(
                     "::verify_signature"
@@ -429,7 +453,22 @@ def source_violations(root: Path, read_manifest) -> list:
                     resolved == path or resolved.startswith(path + "::")
                     for path in _WORKER_HTTP_STREAM_PATHS
                 )
-                if root_name in _BACKEND_ROOTS and not worker_stream_path:
+                worker_metadata_path = (
+                    is_worker_host and relative == _WORKER_TLS_METADATA_SOURCE
+                    and resolved in _WORKER_TLS_METADATA_PATHS
+                )
+                worker_ingress_path = (
+                    is_worker_http and relative == _WORKER_HTTP_INGRESS_SOURCE
+                    and resolved in _WORKER_HTTP_INTEROP_PATHS
+                )
+                worker_outbound_path = (
+                    is_worker_host and relative == _WORKER_OUTBOUND_SOURCE
+                    and resolved in _WORKER_OUTBOUND_PATHS
+                )
+                if root_name in _BACKEND_ROOTS and not (
+                    worker_stream_path or worker_metadata_path
+                    or worker_ingress_path or worker_outbound_path
+                ):
                     detail = f"backend path {resolved}"
                 elif resolved.startswith(_PROVIDER_PREFIX):
                     allowed = TLS_EXCEPTIONS.get(relative, set())

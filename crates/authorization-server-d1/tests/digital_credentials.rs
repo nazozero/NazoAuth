@@ -163,6 +163,38 @@ fn dataset_authorization_encryption_validity_and_required_audit_are_real() {
 }
 
 #[test]
+fn repeated_plaintext_encryption_uses_fresh_nonces_and_keeps_authenticated_readback() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        admin(&database);
+        let store = provider.openid4vci_datasets(KEY);
+        let write = dataset_write();
+        let first = store
+            .upsert_managed_dataset(write.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        database
+            .execute_sql(
+                "CREATE TEMP TABLE first_cipher AS SELECT claims_ciphertext FROM nazo_vci_datasets",
+            )
+            .unwrap();
+        let second = store.upsert_managed_dataset(write).await.unwrap().unwrap();
+        assert_eq!(second.claims, first.claims);
+        assert_eq!(
+            store.dataset(TENANT, USER, "pid").await.unwrap(),
+            Some(first.claims)
+        );
+        // Twelve nonce bytes occupy the first sixteen standard Base64 chars.
+        // Re-encrypting the same plaintext under the same key/AAD must not reuse them.
+        assert_sql(
+            &database,
+            "(SELECT substr(n.claims_ciphertext,1,16)<>substr(f.claims_ciphertext,1,16) FROM nazo_vci_datasets n CROSS JOIN first_cipher f)",
+        );
+    });
+}
+
+#[test]
 fn dataset_suppressed_effect_source_or_audit_rolls_back_without_a_view() {
     block_on(async {
         for table in ["nazo_vci_datasets", "nazo_vci_dataset_events", "nazo_audit"] {
@@ -720,7 +752,8 @@ fn offers_preserve_provenance_verify_real_transaction_code_and_commit_once() {
     let (database, provider) = block_on(fixture());
     let store = issuer(&provider);
     let offer = offer();
-    let tx_hash = nazo_crypto::password::hash_argon2id(b"123456", 8, 1, 1).unwrap();
+    let tx_code = Uuid::new_v4().simple().to_string();
+    let tx_hash = nazo_crypto::password::hash_argon2id(tx_code.as_bytes(), 8, 1, 1).unwrap();
     let prepared = block_on(async {
         store
             .insert_offer(
@@ -759,7 +792,7 @@ fn offers_preserve_provenance_verify_real_transaction_code_and_commit_once() {
                 .is_some()
         );
         store
-            .prepare_pre_authorized_offer(TENANT, "pre-code", Some("123456"), "client", now())
+            .prepare_pre_authorized_offer(TENANT, "pre-code", Some(&tx_code), "client", now())
             .await
             .unwrap()
             .unwrap()

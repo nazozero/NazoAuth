@@ -110,8 +110,11 @@ export async function publicIdentityServices({
       && account.authorized_app_count === applications.total, 'Invalid authorized applications projection');
     ensure(applications.items.every(item => typeof item.client_id === 'string'
       && typeof item.client_name === 'string' && Array.isArray(item.last_scopes)
-      && Number.isSafeInteger(item.authorization_count) && item.authorization_count > 0
-      && Number.isFinite(Date.parse(item.last_authorized_at))), 'Invalid authorized application history');
+      && (item.authorization_count === null
+        || (Number.isSafeInteger(item.authorization_count) && item.authorization_count > 0))
+      && (item.last_authorized_at === null
+        || (typeof item.last_authorized_at === 'string' && Number.isFinite(Date.parse(item.last_authorized_at))))),
+    'Invalid authorized application history');
     status(await request('/auth/me/applications'), 401);
   });
 
@@ -207,7 +210,7 @@ export async function publicIdentityServices({
         token_endpoint_auth_method: 'tls_client_auth', tls_client_auth_subject_dn: input.mtls.subject_dn,
         tls_client_certificate_bound_access_tokens: true, scope: 'openid profile',
         backchannel_token_delivery_mode: 'poll', backchannel_authentication_request_signing_alg: 'ES256',
-        id_token_signed_response_alg: 'ES256', jwks: { keys: [publicJwk] },
+        id_token_signed_response_alg: 'PS256', jwks: { keys: [publicJwk] },
       }, { authorization: 'Bearer ' + input.dcr_initial_access_token }), 201);
       const location = new URL(registration.registration_client_uri);
       ensure(location.origin === issuer && location.pathname === '/register/' + encodeURIComponent(registration.client_id)
@@ -288,7 +291,11 @@ export async function publicIdentityServices({
     const mutationPassed = await step('scim_user_create_replace_patch_deactivate_and_delete', async () => {
       ensure(input.scim?.token, 'Missing dedicated SCIM acceptance credential');
       const discovery = json(await request('/scim/v2/ServiceProviderConfig', { headers: scimHeaders }));
-      ensure(discovery.patch?.supported === true, 'Discovery does not advertise SCIM PATCH');
+      // The native service exposes a documented replace/eq subset, and
+      // deliberately does not advertise complete RFC 7644 PATCH/filter support.
+      ensure(discovery.schemas?.includes('urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig')
+        && discovery.patch?.supported === false && discovery.filter?.supported === false,
+      'Discovery differs from the supported native SCIM subset');
       status(await request('/scim/v2/Users'), 401);
       const email = 'worker-scim-' + runId + '@example.com';
       const metadata = { schemas: [userSchema], userName: email, active: true,
@@ -349,7 +356,8 @@ export async function publicIdentityServices({
     ensure(!administrator.avatar_url, 'Session acceptance administrator already has an avatar');
     const capability = json(await request('/auth/me/avatar/uploads', { headers: { cookie: session.cookie } }));
     ensure(capability.upload_mode === 'multipart', 'Missing multipart avatar storage');
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ZQAAAABJRU5ErkJggg==', 'base64');
+    // Same fully decoded 1x1 RGBA fixture as the native avatar transport tests.
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
     let attempted = false;
     try {
       const body = new FormData();

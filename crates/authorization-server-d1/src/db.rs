@@ -180,6 +180,14 @@ impl Database {
                 "0011_mtls_trust.sql",
                 include_str!("../migrations/0011_mtls_trust.sql"),
             ),
+            (
+                "0012_grant_history.sql",
+                include_str!("../migrations/0012_grant_history.sql"),
+            ),
+            (
+                "0013_access_request_pending.sql",
+                include_str!("../migrations/0013_access_request_pending.sql"),
+            ),
         ] {
             let digest = blake3::hash(sql.as_bytes()).to_hex().to_string();
             let applied: Option<String> = transaction
@@ -220,6 +228,18 @@ impl Database {
             .lock()
             .map_err(|_| anyhow::anyhow!("SQLite connection lock failed"))?
             .execute_batch(sql)?;
+        Ok(())
+    }
+
+    /// Execute an offline fixture statement with data bound separately from SQL.
+    /// Uses the same numeric checks, result draining and transaction as D1 tests.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "local-sqlite"))]
+    pub async fn execute_statement(
+        &self,
+        sql: &'static str,
+        params: Vec<Value>,
+    ) -> anyhow::Result<()> {
+        self.batch(vec![Statement::new(sql, params)]).await?;
         Ok(())
     }
 
