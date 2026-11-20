@@ -1,5 +1,5 @@
 //! One-use, high-entropy offline enrollment ticket. No password verifier,
- //! account creation, or public identity bootstrap endpoint is involved.
+//! account creation, or public identity bootstrap endpoint is involved.
 use bytes::Bytes;
 use http::{Response, StatusCode, header};
 use http_body_util::Full;
@@ -29,11 +29,9 @@ pub async fn handle(
             );
             response
         }
-        ("GET", "/auth/setup.js") => reply(
-            StatusCode::OK,
-            SCRIPT,
-            "text/javascript; charset=utf-8",
-        ),
+        ("GET", "/auth/setup.js") => {
+            reply(StatusCode::OK, SCRIPT, "text/javascript; charset=utf-8")
+        }
         ("POST", "/auth/setup/claim") => claim(request, env, application).await,
         _ => return None,
     };
@@ -94,10 +92,7 @@ async fn claim(
     let Ok(db) = env.d1("NAZO_DB") else {
         return reply(StatusCode::SERVICE_UNAVAILABLE, "", "text/plain");
     };
-    let provider = D1Provider::new(
-        Database::from_binding(db),
-        config.tenant.tenant_id,
-    );
+    let provider = D1Provider::new(Database::from_binding(db), config.tenant.tenant_id);
     let digest = nazo_oauth_server::crypto::blake3_hex(token);
     match provider
         .claim_passkey_setup(&digest, user_id, &session_id, now)
@@ -112,7 +107,11 @@ async fn claim(
         &serde_json::json!({ "csrf_token": csrf_token, "expires_in": 300 }).to_string(),
         "application/json; charset=utf-8",
     );
-    let secure = if application.cookie_secure { "; Secure" } else { "" };
+    let secure = if application.cookie_secure {
+        "; Secure"
+    } else {
+        ""
+    };
     let session_cookie = format!(
         "{}={session_id}; Path=/; Max-Age=300; HttpOnly; SameSite=Strict{secure}",
         application.session_cookie_name,
@@ -130,7 +129,9 @@ async fn claim(
     response
         .headers_mut()
         .append(header::SET_COOKIE, session_cookie);
-    response.headers_mut().append(header::SET_COOKIE, csrf_cookie);
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, csrf_cookie);
     response
 }
 
@@ -142,7 +143,9 @@ fn constant_time_ticket(provided: &str, expected: &str) -> bool {
     provided
         .bytes()
         .zip(expected.bytes())
-        .fold(0_u8, |difference, (left, right)| difference | (left ^ right))
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        })
         == 0
 }
 

@@ -145,12 +145,12 @@ fn credential_registration_cas_and_lifecycle_audit_are_atomic() {
             Err(RepositoryError::Conflict)
         );
         db.execute_sql("CREATE TRIGGER fail_passkey_delete_audit BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_deleted' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END").unwrap();
-        assert!(provider.delete(tenant, user, row.id).await.is_err());
+        assert!(PasskeyRepositoryPort::delete(&provider, tenant, user, row.id).await.is_err());
         assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
         db.execute_sql("DROP TRIGGER fail_passkey_delete_audit")
             .unwrap();
-        assert!(provider.delete(tenant, user, row.id).await.unwrap());
-        assert!(!provider.delete(tenant, user, row.id).await.unwrap());
+        assert!(PasskeyRepositoryPort::delete(&provider, tenant, user, row.id).await.unwrap());
+        assert!(!PasskeyRepositoryPort::delete(&provider, tenant, user, row.id).await.unwrap());
         assert!(provider.list(tenant, user).await.unwrap().is_empty());
     })
 }
@@ -280,7 +280,6 @@ fn registration_and_authentication_challenges_are_single_use_and_expire() {
     ));
 }
 
-
 #[test]
 fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
     block_on(async {
@@ -335,9 +334,18 @@ fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
                 .await
                 .unwrap()
         );
-        assert!(provider.load(&SessionId::new("setup-replayed")).await.unwrap().is_none());
+        assert!(
+            provider
+                .load(&SessionId::new("setup-replayed"))
+                .await
+                .unwrap()
+                .is_none()
+        );
         // After first enrollment, no different setup ticket can issue a new login.
-        provider.insert(tenant, user, credential(), "First".into()).await.unwrap();
+        provider
+            .insert(tenant, user, credential(), "First".into())
+            .await
+            .unwrap();
         let other = "b".repeat(64);
         assert!(
             !provider

@@ -44,9 +44,12 @@ pub fn recent_credential_management_authentication(
         return recent_interactive_mfa(auth_time, amr, now);
     }
     (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
-        && amr
-            .iter()
-            .any(|method| matches!(method.as_str(), "pwd" | "passkey" | "federated" | "bootstrap"))
+        && amr.iter().any(|method| {
+            matches!(
+                method.as_str(),
+                "pwd" | "passkey" | "federated" | "bootstrap"
+            )
+        })
 }
 
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {

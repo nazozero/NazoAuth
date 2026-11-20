@@ -959,7 +959,9 @@ impl D1Provider {
         now: Timestamp,
     ) -> Result<bool, RepositoryError> {
         if ticket_digest.len() != 64 || !ticket_digest.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(RepositoryError::Consistency("invalid setup ticket digest".into()));
+            return Err(RepositoryError::Consistency(
+                "invalid setup ticket digest".into(),
+            ));
         }
         let claim_version = Uuid::new_v4().to_string();
         let mut session = SessionRecord::new(
@@ -994,9 +996,7 @@ impl D1Provider {
                 vec![json!(self.tenant_id), json!(ticket_digest), json!(claim_version), json!(event_id), json!(now.as_microsecond()), json!(encode(&evidence).map_err(repository_error)?)],
             ),
         ]).await.map_err(repository_error)?;
-        Ok(result[0].rows.len() == 1
-            && result[1].rows.len() == 1
-            && result[2].rows.len() == 1)
+        Ok(result[0].rows.len() == 1 && result[1].rows.len() == 1 && result[2].rows.len() == 1)
     }
 }
 
