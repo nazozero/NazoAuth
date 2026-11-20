@@ -50,7 +50,12 @@ button.addEventListener('click', async () => {
       ceremony_id: started.ceremony_id,
       response: assertion.toJSON(),
     });
-    status.textContent = '已登录。你可以返回刚才的应用继续授权。';
+    const next = new URLSearchParams(location.search).get('next');
+    if (next?.startsWith('/authorize?')) {
+      location.replace(next);
+      return;
+    }
+    status.textContent = '已登录。';
   } catch (error) {
     status.textContent = error.message;
   } finally {

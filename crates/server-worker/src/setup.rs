@@ -20,38 +20,40 @@ pub async fn handle(
     env: &Env,
     application: &WorkerApplication,
 ) -> Option<Response<Full<Bytes>>> {
-    let response = match (request.method().as_str(), request.uri().path()) {
-        ("GET", "/auth/setup") => {
-            let mut response = reply(StatusCode::OK, HTML, "text/html; charset=utf-8");
-            response.headers_mut().insert(
-                header::CONTENT_SECURITY_POLICY,
-                http::HeaderValue::from_static(
-                    "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
-                ),
-            );
-            response
-        }
-        ("GET", "/auth/setup.js") => {
-            reply(StatusCode::OK, SCRIPT, "text/javascript; charset=utf-8")
-        }
-        ("GET", "/auth/passkey") => {
-            let mut response = reply(StatusCode::OK, LOGIN_HTML, "text/html; charset=utf-8");
-            response.headers_mut().insert(
-                header::CONTENT_SECURITY_POLICY,
-                http::HeaderValue::from_static(
-                    "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
-                ),
-            );
-            response
-        }
-        ("GET", "/auth/passkey.js") => reply(
-            StatusCode::OK,
-            LOGIN_SCRIPT,
-            "text/javascript; charset=utf-8",
-        ),
-        ("POST", "/auth/setup/claim") => claim(request, env, application).await,
+    match (request.method().as_str(), request.uri().path()) {
+        ("POST", "/auth/setup/claim") => Some(claim(request, env, application).await),
+        _ => None,
+    }
+}
+
+pub(crate) fn page(path: &str) -> Option<Response<Full<Bytes>>> {
+    let (html, script) = match path {
+        "/auth/setup" => (HTML, false),
+        "/auth" | "/auth/passkey" => (LOGIN_HTML, false),
+        "/consent" => (include_str!("consent.html"), false),
+        "/auth/setup.js" => (SCRIPT, true),
+        "/auth/passkey.js" => (LOGIN_SCRIPT, true),
+        "/consent.js" => (include_str!("consent.js"), true),
         _ => return None,
     };
+    if script {
+        return Some(reply(
+            StatusCode::OK,
+            html,
+            "text/javascript; charset=utf-8",
+        ));
+    }
+    let mut response = reply(StatusCode::OK, html, "text/html; charset=utf-8");
+    let policy = if path == "/consent" {
+        // The decision endpoint performs the registered client's redirect.
+        "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+    } else {
+        "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    };
+    response.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        http::HeaderValue::from_static(policy),
+    );
     Some(response)
 }
 

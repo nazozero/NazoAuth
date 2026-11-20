@@ -40,9 +40,20 @@ pub fn generate_rsa_pkcs8_der(bits: usize) -> crate::Result<Vec<u8>> {
         .to_vec())
 }
 
-pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    let key = private_key(private_der)?;
-    let public = PublicKey::from(&key);
+pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<super::RsaPublicComponents> {
+    public_components(&private_key(private_der)?)
+}
+
+pub fn rsa_oaep256_keypair(
+    private_der: &[u8],
+) -> crate::Result<(RsaOaep256PrivateKey, super::RsaPublicComponents)> {
+    let inner = private_key(private_der)?;
+    let public = public_components(&inner)?;
+    Ok((RsaOaep256PrivateKey { inner }, public))
+}
+
+fn public_components(key: &PrivateKey) -> crate::Result<super::RsaPublicComponents> {
+    let public = PublicKey::from(key);
     Ok((
         public.n().to_be_bytes_trimmed_vartime().into_vec(),
         public.e().to_be_bytes_trimmed_vartime().into_vec(),

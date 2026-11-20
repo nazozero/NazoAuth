@@ -227,6 +227,13 @@ test('Workers Free one-use Passkey setup creates only a five-minute enrollment s
     assert.equal((await request('/auth/setup.js')).status, 200);
     assert.equal((await request('/auth/passkey')).status, 200);
     assert.equal((await request('/auth/passkey.js')).status, 200);
+    assert.match(await (await request('/auth?next=%2Fauthorize%3Fclient_id%3Dtest')).text(), /Passkey 登录/);
+    const consentPage = await request('/consent?request_id=test');
+    assert.equal(consentPage.status, 200);
+    assert.match(await consentPage.text(), /action="\/authorize\/decision"/);
+    const consentScript = await request('/consent.js');
+    assert.equal(consentScript.status, 200);
+    assert.match(consentScript.headers.get('content-type'), /javascript/);
 
     const claim = (ticket, origin = issuer) => request('/auth/setup/claim', {
       method: 'POST',

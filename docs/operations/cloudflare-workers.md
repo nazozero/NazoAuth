@@ -18,8 +18,9 @@ The offline provisioner creates one initial user with an unknown random password
 and hands the operator a single-use, 24-hour setup ticket; the ticket grants a
 five-minute registration session on the issuer's HTTPS origin. The full-password
 profile (`machine_only: false`, `passkey_only: false`) requires Workers Paid
-for Argon2id's CPU budget. Host login/consent separately and configure
-`frontend_base_url` for the selected interactive profile.
+for Argon2id's CPU budget. In Passkey-only mode, set `frontend_base_url` to
+the issuer origin to use the built-in login and consent pages at `/auth`
+and `/consent`. The password profile requires a separately hosted frontend.
 
 | Capability | Workers profile |
 | --- | --- |
@@ -134,7 +135,8 @@ To initialize a fresh D1 deployment, clone the repository associated with the
 button, install local dependencies (Rust 1.100, Node, curl, Python 3, Wrangler),
 and create a private JSON input **outside the Git repository** from
 `deploy/cloudflare/bootstrap.example.json`. Set the issuer to the intended HTTPS
-origin, the frontend to your separate login/consent UI, and real OAuth clients.
+origin, the frontend to that same origin for the built-in Passkey flow,
+and real OAuth clients.
 The example selects `passkey_only: true`, `machine_only: false` with **one**
 initial user containing only `email` and `username`, no password. Its
 WebAuthn enrollment is authorized by the generated single-use ticket. Machine
@@ -204,7 +206,7 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | --- | --- |
 | `tenant` | Non-nil `tenant_id`, `realm_id`, `organization_id` UUIDs |
 | `issuer` | Canonical HTTPS issuer at the origin root; request authority must match |
-| `frontend_base_url` | Separately hosted login/consent UI |
+| `frontend_base_url` | Issuer origin for the built-in Passkey UI or the origin of a separately hosted login/consent UI |
 | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
 | `modules` | Optional array of `request_objects`, `jarm`, `session_management` |

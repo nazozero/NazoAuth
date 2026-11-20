@@ -52,18 +52,8 @@ impl WorkerApplication {
             );
         }
         let repository = provider.signing_key_repository(tenant);
-        ensure!(
-            repository.load().await?.is_some(),
-            "provision signing keys before serving requests"
-        );
-        let keys = KeyManager::load_or_create_database(
-            key_settings(),
-            None,
-            tenant,
-            repository,
-            wrapping_keys,
-        )
-        .await?;
+        let keys =
+            KeyManager::load_database(key_settings(), tenant, repository, wrapping_keys).await?;
         let capabilities = Capabilities {
             persistence: ServerPersistenceBindings::new(provider.clone()),
             transient_state: ServerTransientStateBindings::new(provider.clone()),

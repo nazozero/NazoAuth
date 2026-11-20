@@ -1178,12 +1178,42 @@ impl KeyManager {
         repository: Arc<dyn crate::SigningKeyRepository>,
         wrapping_keys: crate::SigningKeyWrappingKeyRing,
     ) -> anyhow::Result<Self> {
-        let (loaded, database) = crate::database::load_or_create(
+        Self::load_database_inner(
+            settings,
+            external_signer,
+            tenant_id,
+            repository,
+            wrapping_keys,
+            true,
+        )
+        .await
+    }
+
+    /// Load a provisioned keyset and apply startup lifecycle maintenance.
+    pub async fn load_database(
+        settings: KeySettings,
+        tenant_id: uuid::Uuid,
+        repository: Arc<dyn crate::SigningKeyRepository>,
+        wrapping_keys: crate::SigningKeyWrappingKeyRing,
+    ) -> anyhow::Result<Self> {
+        Self::load_database_inner(settings, None, tenant_id, repository, wrapping_keys, false).await
+    }
+
+    async fn load_database_inner(
+        settings: KeySettings,
+        external_signer: Option<Arc<dyn ExternalKeySigner>>,
+        tenant_id: uuid::Uuid,
+        repository: Arc<dyn crate::SigningKeyRepository>,
+        wrapping_keys: crate::SigningKeyWrappingKeyRing,
+        create_if_missing: bool,
+    ) -> anyhow::Result<Self> {
+        let (loaded, database) = crate::database::load(
             &settings,
             external_signer,
             tenant_id,
             repository,
             wrapping_keys,
+            create_if_missing,
         )
         .await?;
         Ok(Self {

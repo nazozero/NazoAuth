@@ -31,34 +31,53 @@ async fn fetch(
     env: Env,
     _: worker::Context,
 ) -> worker::Result<Response<Full<Bytes>>> {
-    let cached = match application(&env).await {
-        Ok(cached) => cached,
-        Err(_) => {
-            // Binding values, SQL, request data and key material never enter logs.
-            worker::console_error!("NazoAuth Worker initialization failed");
-            return Ok(unavailable());
-        }
+    let Ok(bindings) = binding_values(&env) else {
+        return Ok(unavailable());
     };
-    if !cached
-        .prepared
-        .configuration
-        .accepts_authority(request.uri(), request.headers())
-    {
+    let prepared = APPLICATION.with_borrow(|cached| {
+        cached
+            .as_ref()
+            .filter(|cached| cached.bindings == bindings)
+            .cloned()
+    });
+    let cold_configuration;
+    let configuration = if let Some(cached) = &prepared {
+        &cached.prepared.configuration
+    } else {
+        let Ok(configuration) = configuration(&env) else {
+            return Ok(unavailable());
+        };
+        cold_configuration = configuration;
+        &cold_configuration
+    };
+    if !configuration.accepts_authority(request.uri(), request.headers()) {
         return Ok(response(StatusCode::MISDIRECTED_REQUEST, Bytes::new()));
     }
-    if !cached
-        .prepared
-        .configuration
-        .allows_route(request.method(), request.uri().path())
-    {
+    if !configuration.allows_route(request.method(), request.uri().path()) {
         return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
-    if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {
+    if configuration.ingress == Ingress::DirectCloudflare {
         let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
             return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));
         };
         request.extensions_mut().insert(facts);
     }
+    if configuration.passkey_only
+        && request.method() == http::Method::GET
+        && let Some(reply) = crate::setup::page(request.uri().path())
+    {
+        return Ok(reply);
+    }
+    let cached = match prepared {
+        Some(cached) => cached,
+        None => match application(&env, bindings, configuration.clone()).await {
+            Ok(cached) => cached,
+            Err(_) => {
+                worker::console_error!("NazoAuth Worker initialization failed");
+                return Ok(unavailable());
+            }
+        },
+    };
     if cached.prepared.configuration.machine_only
         && request.method() == http::Method::GET
         && request.uri().path() == "/.well-known/oauth-authorization-server"
@@ -97,18 +116,15 @@ async fn fetch(
     Ok(nazo_http_worker::serve(&cached.prepared.application, request).await)
 }
 
-async fn application(env: &Env) -> anyhow::Result<Rc<Cached>> {
-    let bindings = binding_values(env)?;
-    if let Some(cached) = APPLICATION.with_borrow(|cached| {
-        cached
-            .as_ref()
-            .filter(|cached| cached.bindings == bindings)
-            .cloned()
-    }) {
-        return Ok(cached);
-    }
-    let configuration: WorkerConfiguration =
-        serde_json::from_str(&env.var("NAZO_CONFIG")?.to_string())?;
+fn configuration(env: &Env) -> anyhow::Result<WorkerConfiguration> {
+    Ok(serde_json::from_str(&env.var("NAZO_CONFIG")?.to_string())?)
+}
+
+async fn application(
+    env: &Env,
+    bindings: ([JsValue; 6], String),
+    configuration: WorkerConfiguration,
+) -> anyhow::Result<Rc<Cached>> {
     let encoded_key = Zeroizing::new(env.secret("NAZO_SIGNING_KEY")?.to_string());
     let mut key = Zeroizing::new([0_u8; 32]);
     anyhow::ensure!(

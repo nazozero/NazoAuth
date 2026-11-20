@@ -23,7 +23,7 @@ pub fn generate_rsa_pkcs8_der(bits: usize) -> crate::Result<Vec<u8>> {
         .to_vec())
 }
 
-pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<super::RsaPublicComponents> {
     let key = KeyPair::from_pkcs8(private_der).map_err(|_| CryptoError::InvalidKey)?;
     let public = key.public_key();
     let public_der = AsDer::as_der(public)
@@ -34,6 +34,15 @@ pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<(Vec<u8>, Vec<
         public.modulus().big_endian_without_leading_zero().to_vec(),
         public.exponent().big_endian_without_leading_zero().to_vec(),
         public_der,
+    ))
+}
+
+pub fn rsa_oaep256_keypair(
+    private_der: &[u8],
+) -> crate::Result<(RsaOaep256PrivateKey, super::RsaPublicComponents)> {
+    Ok((
+        RsaOaep256PrivateKey::from_pkcs8(private_der)?,
+        rsa_public_components(private_der)?,
     ))
 }
 

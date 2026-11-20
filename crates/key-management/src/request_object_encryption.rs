@@ -7,19 +7,34 @@ use sha2::Digest as _;
 use crate::KeyManager;
 
 pub(crate) fn request_object_encryption_jwk(private_key_der: &[u8]) -> anyhow::Result<Value> {
-    let (n, e, public_der) = nazo_crypto::key_wrap::rsa_public_components(private_key_der)?;
+    Ok(encryption_jwk(
+        nazo_crypto::key_wrap::rsa_public_components(private_key_der)?,
+    ))
+}
+
+pub(crate) fn prepare_key(
+    private_key_der: &[u8],
+) -> anyhow::Result<(
+    std::sync::Arc<nazo_crypto::key_wrap::RsaOaep256PrivateKey>,
+    Value,
+)> {
+    let (key, components) = nazo_crypto::key_wrap::rsa_oaep256_keypair(private_key_der)?;
+    Ok((std::sync::Arc::new(key), encryption_jwk(components)))
+}
+
+fn encryption_jwk((n, e, public_der): nazo_crypto::key_wrap::RsaPublicComponents) -> Value {
     let kid = format!(
         "request-object-{}",
         URL_SAFE_NO_PAD.encode(&sha2::Sha256::digest(&public_der)[..12])
     );
-    Ok(serde_json::json!({
+    serde_json::json!({
         "kty": "RSA",
         "use": "enc",
         "alg": "RSA-OAEP-256",
         "kid": kid,
         "n": URL_SAFE_NO_PAD.encode(n),
         "e": URL_SAFE_NO_PAD.encode(e)
-    }))
+    })
 }
 
 #[derive(Clone)]
@@ -61,7 +76,7 @@ pub(crate) fn load_retained_keys(payload: &Value) -> anyhow::Result<Vec<Retained
             continue;
         }
         let der = private_key(&entry["private_pem"])?;
-        let jwk = request_object_encryption_jwk(&der)?;
+        let (key, jwk) = prepare_key(&der)?;
         let kid = jwk["kid"].as_str().unwrap().to_owned();
         if entry["kid"] != kid
             || loaded
@@ -72,9 +87,7 @@ pub(crate) fn load_retained_keys(payload: &Value) -> anyhow::Result<Vec<Retained
         }
         loaded.push(RetainedEncryptionKey {
             kid,
-            key: std::sync::Arc::new(nazo_crypto::key_wrap::RsaOaep256PrivateKey::from_pkcs8(
-                &der,
-            )?),
+            key,
             retire_at,
         });
     }
