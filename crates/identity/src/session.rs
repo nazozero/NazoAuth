@@ -310,6 +310,9 @@ impl SessionService {
                 mut record,
                 version,
             } = snapshot;
+            if record.amr().iter().any(|method| method == "bootstrap") {
+                return Ok(false);
+            }
             if !record.add_logged_in_client(client_id) {
                 return Ok(true);
             }
@@ -333,7 +336,20 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, Some(false), |id| {
+        self.resolve(session_id, now, Some(false), false, |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
+    }
+
+    /// An offline-bootstrap session authorizes Passkey enrollment only.
+    /// OAuth, profile reads, client binding and other session use reject it.
+    pub async fn current_for_passkey_enrollment(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+    ) -> Result<SessionResolution, RepositoryError> {
+        self.resolve(session_id, now, Some(false), true, |id| {
             self.accounts.public_account_by_id(self.tenant_id, id)
         })
         .await
@@ -345,7 +361,7 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution<crate::Principal>, RepositoryError> {
-        self.resolve(session_id, now, Some(false), |id| {
+        self.resolve(session_id, now, Some(false), false, |id| {
             self.accounts.principal_by_id(self.tenant_id, id)
         })
         .await
@@ -356,7 +372,7 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, Some(true), |id| {
+        self.resolve(session_id, now, Some(true), false, |id| {
             self.accounts.public_account_by_id(self.tenant_id, id)
         })
         .await
@@ -369,7 +385,7 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, None, |id| {
+        self.resolve(session_id, now, None, false, |id| {
             self.accounts.public_account_by_id(self.tenant_id, id)
         })
         .await
@@ -395,7 +411,8 @@ impl SessionService {
             replacement.amr(),
             replacement.oidc_sid(),
             now.as_second(),
-        ) || (require_pending_mfa && !replacement.pending_mfa())
+        ) || replacement.amr().iter().any(|method| method == "bootstrap")
+            || (require_pending_mfa && !replacement.pending_mfa())
         {
             return Ok(None);
         }
@@ -432,6 +449,7 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
         expected_pending_mfa: Option<bool>,
+        allow_bootstrap: bool,
         load_account: impl FnOnce(UserId) -> crate::ports::RepositoryFuture<'a, Option<A>>,
     ) -> Result<SessionResolution<A>, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
@@ -442,6 +460,9 @@ impl SessionService {
         {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);
+        }
+        if !allow_bootstrap && record.amr().iter().any(|method| method == "bootstrap") {
+            return Ok(SessionResolution::Missing);
         }
         if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
