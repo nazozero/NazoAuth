@@ -12,7 +12,7 @@ test('Cloudflare button uses the complete Rust workspace root', () => {
   const wrangler = read('../../../wrangler.toml');
   assert.match(rootPkg.scripts.build, /prepare-build\.sh/);
   assert.match(rootPkg.scripts.deploy, /publish\.sh/);
-  assert.match(wrangler, /^main = "crates\/server-worker\/build\/worker\/shim\.mjs"$/m);
+  assert.match(wrangler, /^main = "deploy\/cloudflare\/shim\.mjs"$/m);
   assert.match(wrangler, /^migrations_dir = "crates\/authorization-server-d1\/migrations"$/m);
   assert.match(wrangler, /^binding = "NAZO_DB"$/m);
   assert.match(wrangler, /^workers_dev = false$/m);
@@ -21,7 +21,9 @@ test('Cloudflare button uses the complete Rust workspace root', () => {
   assert.match(wrangler, /"machine_only":true/);
   assert.match(wrangler, /^binding = "NAZO_VERSION"$/m);
   const nested = JSON.parse(read('../package.json'));
-  assert.ok(nested.scripts.bundle.startsWith('cd ../.. && node deploy/cloudflare/'));
+  assert.equal(nested.scripts.bundle, 'node bundle.mjs');
+  assert.match(read('../shim.mjs'), /export \{ default \} from "\.\.\/\.\.\/crates\/server-worker\/build\/index\.js"/);
+  assert.match(read('../build-worker.sh'), /worker-build --release --locked --no-default-features/);
   assert.match(wrangler, /^cwd = "crates\/server-worker"$/m);
   assert.match(nested.scripts['db:migrate'], /NAZO_DB --remote --config wrangler\.toml/);
   assert.match(nested.scripts.deploy, /--config wrangler\.toml/);

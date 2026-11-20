@@ -47,26 +47,30 @@ impl SecurityAuditLedger for D1Provider {
         Box::pin(async { Err(RepositoryError::Unavailable) })
     }
     fn append(&self, event: SecurityAuditEvent) -> BoxFuture<'_, Result<(), RepositoryError>> {
-        Box::pin(async move {
-            self.database
-                .batch(vec![self.audit_statement(&event)?])
-                .await?;
-            Ok(())
-        })
+        Box::pin(async move { self.append_batch(std::slice::from_ref(&event)).await })
     }
     fn append_batch<'a>(
         &'a self,
         events: &'a [SecurityAuditEvent],
     ) -> BoxFuture<'a, Result<(), RepositoryError>> {
         Box::pin(async move {
-            self.database
-                .batch(
-                    events
-                        .iter()
-                        .map(|event| self.audit_statement(event))
-                        .collect::<Result<_, _>>()?,
-                )
-                .await?;
+            let mut writes = Vec::with_capacity(events.len() * 2);
+            let mut checks = Vec::with_capacity(events.len());
+            for event in events {
+                let write = self.audit_statement(event)?;
+                checks.push(Statement::new(
+                    "SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type=?3 AND category=?4 AND occurred_at=?5 AND payload=?6)
+                    THEN 1 ELSE json_extract('required audit was not accepted','$') END",
+                    write.params.clone(),
+                ));
+                writes.push(write);
+            }
+            // Inspect the final stored evidence inside the same transaction.
+            // A successful SQL statement alone is not a Required-audit ACK.
+            writes.extend(checks);
+            if !writes.is_empty() {
+                self.database.batch(writes).await?;
+            }
             Ok(())
         })
     }

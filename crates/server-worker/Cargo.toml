@@ -25,6 +25,7 @@ anyhow.workspace = true
 base64.workspace = true
 bytes.workspace = true
 futures-executor = { workspace = true, optional = true }
+futures-util.workspace = true
 http.workspace = true
 jiff.workspace = true
 nazoauth.workspace = true
@@ -35,6 +36,7 @@ nazo-identity.workspace = true
 nazo-key-management.workspace = true
 nazo-oauth-server.workspace = true
 nazo-oauth-server-d1.workspace = true
+nazo-openid4vci.workspace = true
 nazo-runtime-modules.workspace = true
 nazo-scim-events.workspace = true
 serde = { workspace = true, features = ["derive"] }

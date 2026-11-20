@@ -19,7 +19,7 @@ use nazo_identity::{
     AdminPolicyError, AdminUserUpdateOutcome, AuthenticationIdentity, IdentitySecurityEvent,
     IdentitySecurityEventType, IdentitySecurityOutcome, IdentitySecurityReason, Principal,
     ProfilePatch, PublicAccount, SubjectClaims, TenantContext, TenantId, UserId,
-    authorize_admin_update,
+    authorize_admin_update, authorize_tenant_admin_update,
     ports::{AdminUserUpdate, NewUser, RepositoryError, UserPage, UserRepositoryPort},
 };
 use uuid::Uuid;
@@ -639,10 +639,7 @@ impl UserRepository {
                     .iter()
                     .find(|account| account.user_id == actor_id);
                 let authorized = actor.is_some_and(|actor| {
-                    actor.tenant.tenant_id == control_tenant_id
-                        && actor.active
-                        && actor.admin_level()
-                            .is_some_and(|level| level >= 2)
+                    authorize_tenant_admin_update(actor, control_tenant_id, target_tenant_id, admin_level).is_ok()
                 });
                 let (outcome, reason) = if !authorized {
                     let persisted_actor = actor

@@ -22,6 +22,7 @@ fn configuration() -> WorkerConfiguration {
         modules: vec![],
         machine_only: false,
         passkey_only: false,
+        services: Default::default(),
     }
 }
 
@@ -72,6 +73,13 @@ fn free_passkey_profile_never_exposes_password_authentication() {
         (http::Method::GET, "/auth/setup"),
         (http::Method::POST, "/auth/passkey/begin"),
         (http::Method::POST, "/auth/passkey/finish"),
+        (http::Method::POST, "/auth/mfa/verify"),
+        (http::Method::OPTIONS, "/auth/mfa/verify"),
+        (http::Method::POST, "/auth/me/mfa/totp/begin"),
+        (http::Method::POST, "/auth/me/mfa/totp/confirm"),
+        (http::Method::POST, "/auth/me/mfa/step-up"),
+        (http::Method::POST, "/auth/me/mfa/backup-codes/regenerate"),
+        (http::Method::POST, "/auth/me/mfa/disable"),
         (http::Method::POST, "/auth/me/passkeys/registration/begin"),
         (http::Method::POST, "/auth/me/passkeys/registration/finish"),
         (http::Method::POST, "/auth/setup/claim"),
@@ -87,7 +95,9 @@ fn free_passkey_profile_never_exposes_password_authentication() {
     for (method, path) in [
         (http::Method::POST, "/auth/login"),
         (http::Method::POST, "/auth/register"),
-        (http::Method::POST, "/auth/me/mfa/totp/begin"),
+        (http::Method::GET, "/auth/mfa/verify"),
+        (http::Method::POST, "/auth/me/mfa/unknown"),
+        (http::Method::POST, "/auth/me/mfa/totp/begin/nested"),
         (http::Method::GET, "/admin/users"),
         (http::Method::GET, "/auth/me/applications"),
         (http::Method::POST, "/auth/setup"),
@@ -99,12 +109,20 @@ fn free_passkey_profile_never_exposes_password_authentication() {
 }
 
 #[test]
-fn unavailable_module_fails_before_composition() {
+fn all_shared_modules_are_admitted_by_the_host_profile() {
     let mut config = configuration();
-    config
-        .modules
-        .push(nazo_runtime_modules::ModuleId::Openid4vciIssuer);
-    assert!(config.application("p".repeat(32)).is_err());
+    config.modules = nazo_runtime_modules::ModuleId::ALL.to_vec();
+    assert!(config.application("p".repeat(32)).is_ok());
+    config.services.mtls = true;
+    assert!(config.application("p".repeat(32)).is_ok());
+    let metadata = config.machine_metadata();
+    assert_eq!(metadata["tls_client_certificate_bound_access_tokens"], true);
+    assert!(
+        metadata["token_endpoint_auth_methods_supported"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("tls_client_auth"))
+    );
 }
 
 #[test]
@@ -186,6 +204,7 @@ fn malformed_dummy_verifier_is_rejected_before_storage_initialization() {
             wrapping_keys(),
             malformed.into(),
             None,
+            Default::default(),
         ));
         let error = match result {
             Err(error) => error,
@@ -212,6 +231,7 @@ fn dynamic_registration_requires_a_separate_initial_access_secret() {
             wrapping_keys(),
             "invalid-dummy-verifier".into(),
             secret,
+            Default::default(),
         ));
         let error = match result {
             Err(error) => error,
@@ -297,7 +317,7 @@ fn registration_admission_follows_the_deployment_capabilities() {
     let mut config = configuration();
     config.passkey_only = true;
     assert!(!config.allows_route(&http::Method::POST, "/register"));
-    assert!(!config.allows_route(&http::Method::GET, "/device.js"));
+    assert!(!config.allows_route(&http::Method::GET, "/device"));
     config.modules = vec![
         ModuleId::DynamicClientRegistration,
         ModuleId::DeviceAuthorization,
@@ -307,7 +327,7 @@ fn registration_admission_follows_the_deployment_capabilities() {
         (http::Method::GET, "/register/client"),
         (http::Method::PUT, "/register/client"),
         (http::Method::DELETE, "/register/client"),
-        (http::Method::GET, "/device.js"),
+        (http::Method::GET, "/device"),
     ] {
         assert!(config.allows_route(&method, path), "{path}");
     }

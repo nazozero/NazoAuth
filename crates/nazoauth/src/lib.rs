@@ -6,7 +6,9 @@
 pub mod capabilities;
 mod composition;
 pub mod config;
+#[cfg(feature = "deployment-control")]
 mod control;
+#[cfg(feature = "deployment-control")]
 mod control_discovery;
 mod endpoints;
 mod http;

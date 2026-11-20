@@ -1,6 +1,6 @@
 {
   "issuer": "https://auth.example.com",
-  "frontend_base_url": "https://auth.example.com",
+  "frontend_base_url": "https://auth.example.com/ui/",
   "machine_only": false,
   "passkey_only": true,
   "modules": [],

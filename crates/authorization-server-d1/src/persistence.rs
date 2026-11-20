@@ -172,7 +172,7 @@ impl D1Provider {
             "invalid client authority"
         );
         validate_client_capabilities(client)?;
-        self.database.batch(vec![Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", vec![json!(self.tenant_id),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(encode(&client.registration)?),json!(secret_digest),json!(epoch),json!(client.is_active)])]).await?;
+        self.database.batch(vec![Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)", vec![json!(self.tenant_id),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(encode(&client.registration)?),json!(secret_digest),json!(epoch),json!(client.is_active),json!(client.require_mtls_bound_tokens)])]).await?;
         Ok(())
     }
 
@@ -217,6 +217,11 @@ impl D1Provider {
                     | ModuleId::AuthorizationDetails
                     | ModuleId::FrontchannelLogout
                     | ModuleId::HttpMessageSignatures
+                    | ModuleId::Ciba
+                    | ModuleId::Scim
+                    | ModuleId::ScimSecurityEvents
+                    | ModuleId::Openid4vciIssuer
+                    | ModuleId::Openid4vpVerifier
             )),
             "unsupported Workers module"
         );
@@ -419,8 +424,27 @@ impl nazo_auth::AuthorizationRepositoryPort for D1Provider {
                 .transpose()
         })
     }
-    fn mtls_trust_anchor_bundle(&self, _client_id: Uuid) -> AuthorizationFuture<'_, String> {
-        Box::pin(async { Err(AuthorizationPortError::Unavailable) })
+    fn mtls_trust_anchor_bundle(&self, client_id: Uuid) -> AuthorizationFuture<'_, String> {
+        Box::pin(async move {
+            let tenant_id =
+                TenantId::new(self.tenant_id).map_err(|_| AuthorizationPortError::CorruptData)?;
+            nazo_identity::ports::MtlsTrustAnchorStore::active_bundle(
+                self,
+                tenant_id,
+                Some(client_id),
+            )
+            .await
+            .map_err(|error| match error {
+                RepositoryError::Unavailable => AuthorizationPortError::Unavailable,
+                RepositoryError::Conflict | RepositoryError::AlreadyProcessed => {
+                    AuthorizationPortError::Conflict
+                }
+                RepositoryError::Consistency(_) => AuthorizationPortError::CorruptData,
+                RepositoryError::NotFound | RepositoryError::Unexpected(_) => {
+                    AuthorizationPortError::Unexpected
+                }
+            })
+        })
     }
     fn client_secret_digest_matches<'a>(
         &'a self,
@@ -627,34 +651,12 @@ impl D1Provider {
     }
 }
 
-/// Validate the capabilities backed by this D1 composition after shared registration policy.
+/// Client protocol admission belongs to the shared preparation policy. D1
+/// persists its typed result and checks only the shared storage invariant.
 pub(super) fn validate_client_capabilities(client: &OAuthClient) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !client.require_mtls_bound_tokens
-            && !matches!(
-                client.token_endpoint_auth_method.as_str(),
-                "tls_client_auth" | "self_signed_tls_client_auth"
-            ),
-        "Workers profile does not support mTLS clients"
-    );
-    anyhow::ensure!(
-        client.backchannel_logout_uri.is_none()
-            && client.jwks_uri.is_none()
-            && client.request_uris.is_empty()
-            && client.sector_identifier_uri.is_none(),
-        "Workers profile requires local client documents and no backchannel logout"
-    );
-    anyhow::ensure!(
-        client.grant_types.iter().all(|grant| matches!(
-            grant.as_str(),
-            "authorization_code"
-                | "refresh_token"
-                | "client_credentials"
-                | "urn:ietf:params:oauth:grant-type:token-exchange"
-                | "urn:ietf:params:oauth:grant-type:jwt-bearer"
-                | "urn:ietf:params:oauth:grant-type:device_code"
-        )),
-        "unsupported Workers grant type"
+        client.security_policy.validate().is_ok(),
+        "invalid client security policy"
     );
     Ok(())
 }

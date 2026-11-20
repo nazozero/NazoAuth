@@ -5,6 +5,9 @@
 /deploy/cloudflare/.wrangler/
 /deploy/cloudflare/.dev.vars*
 /deploy/cloudflare/bundled/
+/deploy/cloudflare/bundled-*/
+/deploy/cloudflare/web-build/
+/deploy/cloudflare/web-dist/
 /artifacts/
 **/__pycache__/
 

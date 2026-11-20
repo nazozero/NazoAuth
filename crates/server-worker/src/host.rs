@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 use crate::{Ingress, WorkerApplication, WorkerConfiguration};
 
 struct Cached {
-    bindings: ([JsValue; 7], String),
+    bindings: ([JsValue; 8], String),
     prepared: WorkerApplication,
     refresh_after: Cell<i64>,
     refreshing: Cell<bool>,
@@ -27,10 +27,12 @@ thread_local! {
 
 #[event(fetch)]
 async fn fetch(
-    mut request: HttpRequest,
+    request: worker::Request,
     env: Env,
     _: worker::Context,
 ) -> worker::Result<Response<Full<Bytes>>> {
+    let presented_certificate = crate::mtls::PresentedCertificate::capture(&request);
+    let mut request: HttpRequest = request.try_into()?;
     let Ok(bindings) = binding_values(&env) else {
         return Ok(unavailable());
     };
@@ -53,13 +55,20 @@ async fn fetch(
     if !configuration.accepts_authority(request.uri(), request.headers()) {
         return Ok(response(StatusCode::MISDIRECTED_REQUEST, Bytes::new()));
     }
+    if let Some(reply) = crate::ui::serve(&request, &env, configuration).await {
+        return reply;
+    }
     if !configuration.allows_route(request.method(), request.uri().path()) {
         return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
     if configuration.ingress == Ingress::DirectCloudflare {
-        let Ok(facts) = nazo_http_worker::direct_ingress_facts(&request) else {
+        let Ok(mut facts) = nazo_http_worker::direct_ingress_facts(&request) else {
             return Ok(response(StatusCode::FORBIDDEN, Bytes::new()));
         };
+        if configuration.services.mtls {
+            facts.client_certificate =
+                presented_certificate.and_then(crate::mtls::PresentedCertificate::facts);
+        }
         request.extensions_mut().insert(facts);
     }
     if configuration.passkey_only
@@ -122,7 +131,7 @@ fn configuration(env: &Env) -> anyhow::Result<WorkerConfiguration> {
 
 async fn application(
     env: &Env,
-    bindings: ([JsValue; 7], String),
+    bindings: ([JsValue; 8], String),
     configuration: WorkerConfiguration,
 ) -> anyhow::Result<Rc<Cached>> {
     let encoded_key = Zeroizing::new(env.secret("NAZO_SIGNING_KEY")?.to_string());
@@ -142,6 +151,11 @@ async fn application(
         env.secret("NAZO_DCR_INITIAL_ACCESS_TOKEN")
             .ok()
             .map(|token| token.to_string()),
+        env.secret("NAZO_SERVICE_SECRETS")
+            .ok()
+            .map(|value| serde_json::from_str(&value.to_string()))
+            .transpose()?
+            .unwrap_or_default(),
     )
     .await?;
     let initialized = Rc::new(Cached {
@@ -165,7 +179,7 @@ async fn application(
     }))
 }
 
-fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 7], String)> {
+fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 8], String)> {
     // Binding-only deployments may reuse an isolate. Compare the actual values
     // in JS (including D1 object identity), without copying secrets or parsing
     // configuration on every request. Never reuse a graph for changed bindings.
@@ -177,6 +191,9 @@ fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 7], String)> {
         env.secret("NAZO_CLIENT_SECRET_PEPPER")?.into(),
         env.secret("NAZO_DUMMY_PASSWORD_HASH")?.into(),
         env.secret("NAZO_DCR_INITIAL_ACCESS_TOKEN")
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED),
+        env.secret("NAZO_SERVICE_SECRETS")
             .map(JsValue::from)
             .unwrap_or(JsValue::UNDEFINED),
     ];
@@ -220,22 +237,41 @@ async fn scheduled(_: worker::ScheduledEvent, env: Env, context: worker::Schedul
                 Database::from_binding(env.d1("NAZO_DB")?),
                 configuration.tenant.tenant_id,
             );
-            let started = jiff::Timestamp::now().as_second();
-            let mut total = 0;
-            // Workers Free Cron events have a 10 ms CPU limit; avoid the
-            // full-profile multi-pass cleanup loop.
-            let (passes, batch) = if configuration.machine_only || configuration.passkey_only {
-                (1, 500)
-            } else {
-                (64, 1_000)
-            };
-            // Drain a bounded backlog outside requests. One 1,000-row pass per
-            // minute would fall behind even moderate DPoP/replay traffic.
-            for _ in 0..passes {
-                let removed = provider.prune_expired(batch).await?;
-                total += removed;
-                if removed < batch || jiff::Timestamp::now().as_second() - started >= 20 {
-                    break;
+            // One bounded pass per Cron event on every deployment profile.
+            // Enabling password login does not change the Workers plan budget.
+            let total = provider.prune_expired(500).await?;
+            if !configuration.services.outbound_origins.is_empty() {
+                let bindings = binding_values(&env)?;
+                let cached = APPLICATION.with_borrow(|cached| {
+                    cached
+                        .as_ref()
+                        .filter(|cached| cached.bindings == bindings)
+                        .cloned()
+                });
+                let application = match cached {
+                    Some(cached) => cached,
+                    None => application(&env, bindings, configuration.clone()).await?,
+                };
+                if configuration
+                    .modules
+                    .contains(&nazo_runtime_modules::ModuleId::Ciba)
+                    && application
+                        .prepared
+                        .ciba_ping
+                        .process_due_batch()
+                        .await
+                        .is_err()
+                {
+                    worker::console_error!("NazoAuth CIBA delivery batch failed");
+                }
+                if application
+                    .prepared
+                    .backchannel_logout
+                    .process_due_batch()
+                    .await
+                    .is_err()
+                {
+                    worker::console_error!("NazoAuth logout delivery batch failed");
                 }
             }
             Ok::<_, anyhow::Error>(total)

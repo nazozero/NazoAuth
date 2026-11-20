@@ -58,9 +58,13 @@ pub enum Endpoint {
     AdminApproveMtlsTrustRequest,
     AdminClientTemplates,
     AdminClients,
+    #[cfg(feature = "deployment-control")]
     AdminControllerApproval,
+    #[cfg(feature = "deployment-control")]
     AdminControllerSlotCommit,
+    #[cfg(feature = "deployment-control")]
     AdminControllerSlotRevoke,
+    #[cfg(feature = "deployment-control")]
     AdminControllerSlotRotate,
     AdminCreateClient,
     AdminCreateUser,
@@ -75,8 +79,11 @@ pub enum Endpoint {
     AdminPatchRuntimeModule,
     AdminPatchUser,
     AdminPutCredentialDataset,
+    #[cfg(feature = "deployment-control")]
     AdminRecoveryRoot,
+    #[cfg(feature = "deployment-control")]
     AdminRecoveryRootApproval,
+    #[cfg(feature = "deployment-control")]
     AdminRecoveryRootRotate,
     AdminRejectAccessRequest,
     AdminRejectMtlsTrustRequest,
@@ -102,9 +109,13 @@ pub enum Endpoint {
     ClientConfigurationGet,
     ClientConfigurationPut,
     CompleteDirectAvatarUpload,
+    #[cfg(feature = "deployment-control")]
     ControlDiscovery,
+    #[cfg(feature = "deployment-control")]
     ControllerRecoveryChallenge,
+    #[cfg(feature = "deployment-control")]
     ControllerRecoveryCommit,
+    #[cfg(feature = "deployment-control")]
     ControllerSlots,
     CreateAccessRequest,
     CreateCredentialOffer,
@@ -178,6 +189,7 @@ pub enum Endpoint {
     ScimServiceProviderConfig,
     SendCode,
     Startup,
+    #[cfg(feature = "deployment-control")]
     SystemSetTenantAdmin,
     Token,
     UnlinkMyFederationLink,
@@ -450,16 +462,24 @@ static ROUTES: &[Route] = &[
     route!("/.well-known/oauth-protected-resource/{*tail}", WellKnown, None, GET => OauthProtectedResourceMetadata(BodyMode::None)),
     route!("/.well-known/mdoc/{issuer_id}.crl", WellKnown, None, GET => MdocCrl(BodyMode::None)),
     route!("/.well-known/openid-credential-issuer", WellKnown, Openid4vci, GET => CredentialIssuerMetadata(BodyMode::None)),
+    #[cfg(feature = "deployment-control")]
     route!("/.well-known/nazoauth-control", WellKnown, ControlTenant, POST => ControlDiscovery(BodyMode::Json { limit: 2048 })),
     route!("/admin/runtime-modules", Admin, None, GET => AdminRuntimeModules(BodyMode::None)),
     route!("/admin/runtime-modules/events", Admin, None, GET => AdminRuntimeModuleEvents(BodyMode::None)),
     route!("/admin/runtime-modules/{module_id}", Admin, None, PATCH => AdminPatchRuntimeModule(BodyMode::Json { limit: 2097152 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/slots", Admin, ControlTenant, POST => AdminControllerSlotCommit(BodyMode::Json { limit: 8192 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/slots/rotate", Admin, ControlTenant, POST => AdminControllerSlotRotate(BodyMode::Json { limit: 8192 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/slots/revoke", Admin, ControlTenant, POST => AdminControllerSlotRevoke(BodyMode::Json { limit: 8192 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/approvals", Admin, ControlTenant, POST => AdminControllerApproval(BodyMode::Json { limit: 8192 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/recovery-root", Admin, ControlTenant, GET => AdminRecoveryRoot(BodyMode::None)),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/recovery-root/approvals", Admin, ControlTenant, POST => AdminRecoveryRootApproval(BodyMode::Json { limit: 8192 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/controller-registry/recovery-root/rotate", Admin, ControlTenant, POST => AdminRecoveryRootRotate(BodyMode::Json { limit: 8192 })),
     route!("/health", WellKnown, None, GET => Ready(BodyMode::None)),
     route!("/live", WellKnown, None, GET => Live(BodyMode::None)),
@@ -522,9 +542,11 @@ static ROUTES: &[Route] = &[
     route!("/auth/me/access-delivery", AuthApi, None, POST => AccessDelivery(BodyMode::Json { limit: 2097152 })),
     route!("/auth/ciba/{auth_req_id}", None, None, GET => CibaVerification(BodyMode::None), POST => CibaDecision(BodyMode::Json { limit: 2097152 })),
     route!("/auth/logout", None, None, POST => ProfileLogout(BodyMode::None)),
+    #[cfg(feature = "deployment-control")]
     route!("/controller-registry/slots", None, ControlTenant, GET => ControllerSlots(BodyMode::None)),
     route!("/admin/users", Admin, None, GET => AdminUsers(BodyMode::None), POST => AdminCreateUser(BodyMode::Json { limit: 2097152 })),
     route!("/admin/users/{user_id}", Admin, None, PATCH => AdminPatchUser(BodyMode::Json { limit: 2097152 })),
+    #[cfg(feature = "deployment-control")]
     route!("/admin/tenants/{tenant_id}/users/{user_id}/admin", Admin, ControlTenant, PATCH => SystemSetTenantAdmin(BodyMode::Json { limit: 2097152 })),
     route!("/admin/clients", Admin, None, GET => AdminClients(BodyMode::None), POST => AdminCreateClient(BodyMode::Json { limit: 2097152 })),
     route!("/admin/clients/templates", Admin, None, GET => AdminClientTemplates(BodyMode::None)),
@@ -541,7 +563,9 @@ static ROUTES: &[Route] = &[
     route!("/admin/access-requests/{request_id}/approve", Admin, None, POST => AdminApproveAccessRequest(BodyMode::Json { limit: 2097152 })),
     route!("/admin/access-requests/{request_id}/reject", Admin, None, POST => AdminRejectAccessRequest(BodyMode::Json { limit: 2097152 })),
     route!("/admin/openid4vci/credential-datasets/{subject_id}/{configuration_id}", Admin, Openid4vci, GET => AdminGetCredentialDataset(BodyMode::None), PUT => AdminPutCredentialDataset(BodyMode::Json { limit: 2097152 }), DELETE => AdminDeleteCredentialDataset(BodyMode::None)),
+    #[cfg(feature = "deployment-control")]
     route!("/controller-recovery/challenges", None, ControlTenant, POST => ControllerRecoveryChallenge(BodyMode::Json { limit: 8192 })),
+    #[cfg(feature = "deployment-control")]
     route!("/controller-recovery/recover", None, ControlTenant, POST => ControllerRecoveryCommit(BodyMode::Json { limit: 8192 })),
     route!("/register", None, None, POST => DynamicClientRegistration(BodyMode::Json { limit: 2097152 })),
     route!("/register/{client_id}", None, None, GET => ClientConfigurationGet(BodyMode::None), PUT => ClientConfigurationPut(BodyMode::Json { limit: 2097152 }), DELETE => ClientConfigurationDelete(BodyMode::None)),

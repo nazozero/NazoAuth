@@ -4,6 +4,9 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+/// Decode RFC 9440 certificate fields supplied by an independently authenticated
+/// ingress. Calling this does not establish deployment CA trust.
+pub use crate::endpoints::mtls::request_mtls_client_certificate_from_rfc9440 as client_certificate_from_rfc9440;
 use crate::http::apply_security_headers;
 pub use crate::routes::{BodyMode, Endpoint, Route, RouteMethod, route_for_path, routes};
 pub(crate) use crate::routes::{

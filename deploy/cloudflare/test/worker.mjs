@@ -329,8 +329,9 @@ test('Device Authorization preserves pending, slowdown, approval, denial and one
     client_id: client.client_id, device_code: device.device_code }, profileHeaders);
   const device = await expectJson(await create());
   assert.ok(device.device_code && device.user_code && device.expires_in > 0 && device.interval > 0);
-  assert.equal((await request('/device', { headers: profileHeaders })).status, 200);
-  assert.equal((await request('/device.js', { headers: profileHeaders })).status, 200);
+  const ui = await request('/device', { headers: profileHeaders });
+  assert.equal(ui.status, 307);
+  assert.equal(ui.headers.get('location'), '/ui/device');
   assert.equal((await expectJson(await poll(device), 400)).error, 'authorization_pending');
   assert.equal((await expectJson(await poll(device), 400)).error, 'slow_down');
   const session = await login();

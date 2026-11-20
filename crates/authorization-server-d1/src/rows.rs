@@ -15,6 +15,7 @@ pub(super) struct ClientRow {
     pub secret_digest: Option<String>,
     pub epoch: i64,
     pub active: i64,
+    pub require_mtls_bound_tokens: i64,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -96,7 +97,7 @@ impl ClientRow {
             realm_id: self.realm_id,
             organization_id: self.organization_id,
             is_active: self.active != 0,
-            require_mtls_bound_tokens: false,
+            require_mtls_bound_tokens: self.require_mtls_bound_tokens != 0,
             registration: ValidatedClientRegistration {
                 client_id: value.client_id,
                 client_name: value.client_name,

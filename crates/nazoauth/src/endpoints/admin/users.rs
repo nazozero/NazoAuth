@@ -94,11 +94,13 @@ pub struct CreateUserRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg(feature = "deployment-control")]
 pub struct SetTenantAdminRequest {
     pub admin_level: i32,
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "deployment-control")]
 pub async fn system_set_tenant_admin(
     audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
     admin_sessions: &AdminSessionHandles,

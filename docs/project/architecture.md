@@ -11,6 +11,21 @@ RPC, an event bus, a command bus, or layers whose only job is forwarding.
 The root manifest is a virtual workspace with resolver 3. The `nazoauth` package
 is the framework-neutral embedding facade. The `nazo-server` package owns the
 native composition root and releases the `nazoauth` executable.
+
+The default workspace build selects only `nazo-server`. Native release and image
+builds select that package and binary explicitly; they do not build the Worker or
+frontend. Their runtime dependency graph excludes the Workers SDK, D1 adapter and
+JavaScript/WASM runtime bindings. The image copies only the native executable and
+its source identity into the runtime stage; Worker/Web assets and generated output
+are excluded from its build context.
+
+The facade's default `deployment-control` feature contains deployment identity,
+controller registry, independent recovery and cross-tenant administrator routes.
+The native host and Actix adapter select it explicitly. The Worker uses the same
+facade without that feature, so those services and routes are absent from its
+compiled application. Tenant user/client administration and shared protocol
+capabilities remain available. The Worker host is built independently with
+`--no-default-features`; offline provisioning is a separate native feature.
 The [Rust embedding guide](../integration/rust-embedding.md) describes the public
 builder, standard HTTP transport contract and adapter conformance kit.
 Its CLI includes the version-coupled server and operator-task work; the
@@ -207,6 +222,10 @@ Optional protocol and product capabilities are compiled into the single
 binary. Runtime enablement is capability selection, not dynamic code loading.
 Routes remain statically registered so route shape and CORS/security middleware
 cannot drift during a transition.
+
+Deployment controls are a host build capability, separate from runtime modules.
+Disabling `deployment-control` removes that host's control routes at compilation;
+it does not change the shared protocol module lifecycle or tenant administration.
 
 Each `ModuleId` declares:
 

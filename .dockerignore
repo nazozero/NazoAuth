@@ -14,6 +14,12 @@ target/release-container/arm64/*
 runtime/
 perf/results/
 
+# The native image never consumes Worker/Web assets, output or Node tooling.
+crates/server-worker/build/
+crates/server-worker/src/*.html
+crates/server-worker/src/*.js
+deploy/cloudflare/
+
 # Local-only environment and editor files.
 .env
 .env.*

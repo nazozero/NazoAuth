@@ -1,4 +1,4 @@
-"""Verify the concrete Workers host's WASM production dependency closure."""
+"""Verify separate native and Workers production dependency closures."""
 
 import re
 import subprocess
@@ -7,43 +7,72 @@ import subprocess
 FORBIDDEN_PACKAGES = {
     "nazo-server", "nazo-http-actix", "nazo-postgres", "nazo-valkey",
     "nazo-oauth-server-postgres", "nazo-oauth-server-valkey",
+    "nazo-oauth-server-object-store",
     "actix-web", "actix-http", "actix-server", "axum", "hyper", "reqwest",
     "diesel", "diesel-async", "tokio-postgres", "rusqlite", "libsqlite3-sys",
     "fred", "redis", "rustls", "native-tls", "openssl-sys", "aws-lc-sys",
     "process-wrap",
 }
 FORBIDDEN_TOKIO_FEATURES = {"full", "rt", "rt-multi-thread", "net", "process", "fs", "time", "signal"}
+WORKER_PACKAGES = {
+    "nazo-server-worker", "nazo-http-worker", "nazo-oauth-server-d1",
+    "worker", "worker-sys", "worker-macros", "wasm-bindgen", "js-sys",
+    "web-sys", "wasm-streams", "rusqlite", "libsqlite3-sys",
+}
+
+
+def packages(tree: str):
+    for line in tree.splitlines():
+        match = re.match(r"(\S+) v\S+(?: \([^)]*\))?\s*(.*)", line)
+        if match is not None:
+            name, features = match.groups()
+            yield name, set(filter(None, features.replace("(*)", "").strip().split(",")))
 
 
 def violations(tree: str) -> list[str]:
     errors = []
-    for line in tree.splitlines():
-        match = re.match(r"(\S+) v\S+(?: \([^)]*\))?\s*(.*)", line)
-        if match is None:
-            continue
-        name, features = match.groups()
+    for name, active in packages(tree):
         if name in FORBIDDEN_PACKAGES:
             errors.append(f"native dependency in Worker: {name}")
         if name == "tokio":
-            active = set(features.replace(" (*)", "").split(","))
             for feature in sorted(active & FORBIDDEN_TOKIO_FEATURES):
                 errors.append(f"native Tokio execution feature in Worker: {feature}")
+        if name == "nazoauth" and "deployment-control" in active:
+            errors.append("native deployment-control facade in Worker")
+        if name == "nazo-crypto" and "certificate-issuance" in active:
+            errors.append("native certificate provisioning in Worker")
     return errors
 
 
-def main() -> None:
-    target = "wasm32-unknown-unknown"
-    tree = subprocess.check_output([
+def native_violations(tree: str) -> list[str]:
+    return [
+        f"Worker dependency in native server: {name}"
+        for name, _ in packages(tree) if name in WORKER_PACKAGES
+    ]
+
+
+def production_tree(package: str, target: str, *, no_default_features: bool = False) -> str:
+    return subprocess.check_output([
         "cargo", "tree", "--locked", "--target", target,
-        "-p", "nazo-server-worker", "--edges", "normal", "--prefix", "none",
+        *(["--no-default-features"] if no_default_features else []),
+        "-p", package, "--edges", "normal,no-proc-macro", "--prefix", "none",
         "--format", "{p} {f}",
     ], text=True)
-    errors = violations(tree)
+
+
+def main() -> None:
+    host = next(line.split(": ", 1)[1] for line in subprocess.check_output(
+        ["rustc", "-vV"], text=True).splitlines() if line.startswith("host: "))
+    native_tree = production_tree("nazo-server", host)
+    target = "wasm32-unknown-unknown"
+    tree = production_tree("nazo-server-worker", target, no_default_features=True)
+    errors = native_violations(native_tree) + violations(tree)
     if errors:
         raise SystemExit("\n".join(errors))
     subprocess.run([
-        "cargo", "check", "--locked", "--target", target, "-p", "nazo-server-worker",
+        "cargo", "check", "--locked", "--no-default-features", "--target", target, "-p", "nazo-server-worker",
     ], check=True)
+    print("Native production graph: no Worker, D1 or WASM runtime dependencies")
     print("Workers production graph: no native execution dependencies")
 
 

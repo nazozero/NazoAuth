@@ -139,6 +139,7 @@ fn protected_resource_suffix_and_mdoc_issuer_capture_are_preserved() {
 }
 
 #[test]
+#[cfg(feature = "deployment-control")]
 fn controller_slot_list_has_one_control_tenant_route_and_no_admin_get_alias() {
     let control = resolve(&Method::GET, "/controller-registry/slots").unwrap();
     assert_eq!(control.method.endpoint, Endpoint::ControllerSlots);
@@ -223,10 +224,12 @@ fn body_budgets_follow_the_actual_extractor_and_stream_contracts() {
         body(Method::PUT, "/register/client-a").limit(),
         Some(2 * 1024 * 1024)
     );
+    #[cfg(feature = "deployment-control")]
     assert_eq!(
         body(Method::POST, "/.well-known/nazoauth-control").limit(),
         Some(2 * 1024)
     );
+    #[cfg(feature = "deployment-control")]
     assert_eq!(
         body(Method::POST, "/controller-recovery/recover").limit(),
         Some(8 * 1024)

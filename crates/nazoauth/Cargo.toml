@@ -7,8 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [features]
+default = ["deployment-control"]
+# Independent native controller identity, recovery and cross-tenant administration.
+deployment-control = []
 # Focused native regression tests only; adapters use the public facade.
-test-support = []
+test-support = ["deployment-control"]
 conformance = []
 
 [dependencies]

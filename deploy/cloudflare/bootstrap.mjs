@@ -40,7 +40,12 @@ function configuration(input) {
     throw new Error('Bootstrap input must be a JSON object');
   }
   const issuer = requiredOrigin(input.issuer, 'issuer');
-  const frontend = requiredOrigin(input.frontend_base_url, 'frontend_base_url');
+  const frontendUrl = new URL(input.frontend_base_url ?? issuer + '/ui/');
+  requiredOrigin(frontendUrl.origin, 'frontend_base_url');
+  if (frontendUrl.username || frontendUrl.password || frontendUrl.search || frontendUrl.hash) {
+    throw new Error('frontend_base_url must be an HTTPS URL without credentials, query or fragment');
+  }
+  const frontend = frontendUrl.toString();
   if (!Array.isArray(input.clients) || !Array.isArray(input.users)) {
     throw new Error('clients and users must be arrays (empty arrays are allowed)');
   }
@@ -79,10 +84,11 @@ function configuration(input) {
   };
   const config = {
     tenant, issuer, frontend_base_url: frontend, ingress: 'direct_cloudflare',
-    cors_allowed_origins: input.cors_allowed_origins ?? [frontend],
+    cors_allowed_origins: input.cors_allowed_origins ?? [frontendUrl.origin],
     modules: input.modules ?? [], machine_only: machineOnly, passkey_only: passkeyOnly,
+    services: input.services ?? {},
   };
-  return { config, clients: input.clients, users: input.users };
+  return { config, clients: input.clients, users: input.users, scim_credentials: input.scim_credentials ?? [], service_secrets: input.service_secrets ?? {} };
 }
 
 function assertUnusedDatabase() {
@@ -133,7 +139,7 @@ function main() {
   const outputPath = privatePath(process.argv[3], 'output');
   if (inputPath === outputPath) throw new Error('Input and output must be distinct');
   if (statSync(inputPath).size > 1024 * 1024) throw new Error('Input exceeds 1 MiB');
-  const { config, clients, users } = configuration(JSON.parse(readFileSync(inputPath, 'utf8')));
+  const { config, clients, users, scim_credentials, service_secrets } = configuration(JSON.parse(readFileSync(inputPath, 'utf8')));
   // Wrangler resolves the auto-provisioned D1 by binding name, even if
   // Cloudflare's button did not write the database ID back to this TOML file.
   // Migrations are idempotent. Read the actual remote authority before importing.
@@ -148,7 +154,7 @@ function main() {
     const sqlite = join(temporary, 'seed.sqlite');
     const provision = {
       configuration: config, signing_key_id: keyId, signing_key_base64: key,
-      client_secret_pepper: pepper, clients,
+      client_secret_pepper: pepper, clients, scim_credentials,
       users: config.passkey_only
         ? users.map(user => ({ ...user, password: randomBytes(32).toString('base64url') }))
         : users,
@@ -158,6 +164,8 @@ function main() {
       '--features', 'provisioning', '--bin', 'nazo-worker-provision', '--', sqlite,
     ], { input: JSON.stringify(provision) }));
 
+    const services = { data_encryption_key: randomBytes(32).toString('base64'), ...service_secrets };
+    const dcrToken = config.modules.includes('dynamic_client_registration') ? randomBytes(32).toString('base64url') : undefined;
     const passkeySetup = config.passkey_only
       ? {
           token: randomBytes(32).toString('base64url'),
@@ -168,7 +176,8 @@ function main() {
     // Save recovery material before any remote write. The file must not exist.
     writeFileSync(outputPath, JSON.stringify({
       configuration: config, signing_key_id: keyId, signing_key_base64: key,
-      client_secret_pepper: pepper, ...issued,
+      client_secret_pepper: pepper, service_secrets: services,
+      dynamic_client_registration_initial_access_token: dcrToken, ...issued,
       ...(passkeySetup ? { passkey_setup: passkeySetup } : {}),
     }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 
@@ -184,6 +193,8 @@ function main() {
       NAZO_SIGNING_KEY: key,
       NAZO_CLIENT_SECRET_PEPPER: pepper,
       NAZO_DUMMY_PASSWORD_HASH: issued.dummy_password_hash,
+      NAZO_SERVICE_SECRETS: JSON.stringify(services),
+      ...(dcrToken ? { NAZO_DCR_INITIAL_ACCESS_TOKEN: dcrToken } : {}),
       ...(passkeySetup ? {
         NAZO_BOOTSTRAP_TOKEN: passkeySetup.token,
         NAZO_BOOTSTRAP_USER_ID: issued.user_ids[0],

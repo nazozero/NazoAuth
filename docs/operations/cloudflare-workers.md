@@ -10,40 +10,66 @@ redirects and response policy stay in the shared implementation.
 ## Deployment profile
 
 Each deployment serves one issuer and one tenant through one primary D1 binding.
-The checked-in template starts
-`machine_only: true` for confidential Client Credentials clients. Set
-`machine_only: false` and `passkey_only: true` in the **private bootstrap input**
-to enable interactive WebAuthn (Passkey) login without in-request password hashing.
-The offline provisioner creates one initial user with an unknown random password,
+The host rejects other request authorities before selecting an application graph.
+The native host's dynamic tenant directory, per-host runtime replacement and
+cross-tenant control plane are not part of this profile. Supporting multiple
+issuer hostnames would require those composition and lifecycle boundaries; it
+is not a platform prohibition on host-based routing.
+
+The checked-in template starts `machine_only: true` for confidential service
+clients. Set `machine_only: false` and `passkey_only: true` in the **private bootstrap input**
+to enable interactive WebAuthn (Passkey) login with password login disabled.
+The bootstrap helper creates one initial user with an unknown random password,
 and hands the operator a single-use, 24-hour setup ticket; the ticket grants a
 five-minute registration session on the issuer's HTTPS origin. The password-enabled
 profile (`machine_only: false`, `passkey_only: false`) retains the shared Argon2id
 verifier and can be selected on either Free or Paid. Measure its CPU distribution
-and actual platform failures at the intended sustained load. In Passkey-only mode,
-set `frontend_base_url` to
-the issuer origin to use the built-in login and consent pages at `/auth`
-and `/consent`. When Device Authorization is selected, `/device` serves the
-same-origin approval page and returns through Passkey login when needed.
-The password profile requires a separately hosted frontend.
+and actual platform failures at the intended sustained load.
+
+Both interactive profiles can serve the bundled NazoAuthWeb application from
+the issuer's `/ui/` path. Set `frontend_base_url` to `https://<issuer-host>/ui/`.
+The Worker redirects `/auth`, `/consent` and `/device` to their Web routes;
+the Device route also requires its module. The pinned Web build includes a
+Worker overlay for Passkey login, MFA challenges after password or Passkey
+authentication, pending-session handling, account Passkey registration/listing/
+deletion, and TOTP/backup-code management. It calls the shared server endpoints.
+The operator's single-use `/auth/setup` enrollment page remains separate from
+ordinary account registration. A separately hosted frontend is also possible.
+
+`passkey_only` remains a restricted HTTP deployment profile: it admits its
+Passkey/MFA account operations and selected authorization/token flows, not the
+complete administrator, federation, SCIM, CIBA or digital-credential API surface.
+Selecting a module does not expand that route allowlist. Use
+`machine_only: false`, `passkey_only: false` for the full Web and all adapted
+service routes; that profile offers both password and Passkey authentication.
+Serving the Web shell alone does not enable a server operation excluded by the
+selected profile.
 
 | Capability | Workers profile |
 | --- | --- |
 | Discovery and JWKS | Shared metadata and key lifecycle |
 | Authorization | Authorization code with PKCE and interactive consent |
 | Tokens | Code redemption, refresh, Client Credentials, revocation and UserInfo |
-| Client authentication and sender constraints | Client secret, `private_key_jwt`, DPoP proof, nonce and replay state |
-| Identity | Machine-only, password-enabled full profile, or Passkey-only with offline initial setup; passkey credentials, single-use challenges, sessions and logout share existing services |
-| Account profile | Current account, authorized-client count and validated profile updates; identity and authorization epochs are preserved |
+| Client authentication and sender constraints | Client secret, `private_key_jwt`, DPoP proof/nonce/replay state, and mTLS with trusted Cloudflare certificate metadata and client trust policy |
+| Identity | Machine-only, password-enabled full profile, or Passkey-only with offline initial setup; shared registration, Passkey ceremonies, MFA, sessions and logout use D1 adapters |
+| Account profile | Current account, validated updates, authorized-application history, MFA and Passkey management, and authenticated avatar upload/read/delete |
+| Tenant administration | User/client administration, application-access requests and approvals, one-use client delivery, grant revocation, and configured trust-policy/dataset management |
 | Optional modules | Explicit deployment selection; see the module matrix below |
 | Keys | Encrypted persistent key generations; shared `nazo-crypto` uses Workers WebCrypto for asynchronous Ed25519, ES256, RS256 and PS256 signing, and portable Rust backends for verification |
 | Audit | Required evidence commits with the accepting mutation; append-only D1 audit rows |
 
-Configuration rejects unavailable modules and unknown native fields. Persisted
-module selection must match the deployment. Discovery uses that selected
-snapshot. Unavailable storage/network operations return explicit failures.
-Client provisioning rejects unsupported grants, remote documents, mTLS and
-backchannel logout. Front-channel logout uses registered RP endpoints and does
-not require an outbound delivery worker. Cloudflare Workflows are not required.
+All 16 shared protocol modules have Worker host adapters for the full profile.
+Configuration rejects unknown native fields and invalid profile/module combinations. Persisted module
+selection must match the deployment. Discovery uses that selected snapshot.
+Module enablement and draining are deployment-managed; the Worker does not
+implement the native host's live module lifecycle control. Unconfigured external
+services return explicit failures.
+
+Shared client preparation checks the deployment's enabled grants and service
+capabilities before persistence. Remote documents and outbound notifications
+require explicitly admitted HTTPS origins; mTLS requires trusted ingress facts
+and a configured trust policy. Front-channel logout uses registered RP endpoints
+and does not require an outbound delivery worker. Cloudflare Workflows are not required.
 
 ### Optional module matrix
 
@@ -56,54 +82,58 @@ acceptance and protocol conformance remain separate verification activities.
 | --- | --- |
 | `device_authorization` | D1 device/user-code mappings, compare-and-set polling state, durable user decision and single-use redemption. Clients must allow `urn:ietf:params:oauth:grant-type:device_code` and set `security_policy.allow_cross_device_flows: true`. |
 | `token_exchange` | Shared local-token exchange with D1 token state, scope/target checks and revocation. Clients must allow the token-exchange grant. External issuer trust and delegated remote tokens are not implicitly enabled. |
-| `jwt_bearer_grant` | Shared JWT bearer grant with client subject binding and atomic assertion replay state. Clients register inline verification keys and the JWT bearer grant. |
-| `ciba` | Unavailable: D1 account lookup, CIBA state/decision contracts and ping delivery are not implemented. A verification UI and delivery configuration are also needed. |
+| `jwt_bearer_grant` | Shared JWT bearer grant with client subject binding and atomic assertion replay state. Clients register verification keys and the JWT bearer grant; remote JWKS additionally requires an admitted origin. |
+| `ciba` | Shared account lookup, poll/decision rules and token issuance with D1 compare-and-set state, deadlines and one-use redemption. The native `FapiCibaId1` policy remains in force: confidential clients, supported asymmetric client authentication, ES256/PS256 ID tokens, a signed request with a binding message, and mTLS-bound access tokens. The client also needs the CIBA grant and administrator-owned cross-device permission. Ping mode uses leased D1 deliveries, the shared retry worker and an admitted notification origin. |
 | `dynamic_client_registration` | Shared RFC 7591/7592 registration with D1 management-token authority, atomic required audit, credential rotation, compare-and-set updates and deactivation. Requires the separate `NAZO_DCR_INITIAL_ACCESS_TOKEN` secret. Deployment capability policy rejects unsupported metadata before resolution or persistence. |
-| `request_objects` | Inline signed Request Objects and PAR use shared validation and D1 one-use state. Remote `request_uri`, `jwks_uri` and sector documents are not bound. |
+| `request_objects` | Signed Request Objects and PAR use shared validation and D1 one-use state. Inline objects work without outbound access; remote `request_uri`, `jwks_uri` and sector documents use bounded fetch to explicitly admitted HTTPS origins. |
 | `jarm` | Shared signed authorization responses use persisted issuer keys. The client selects a supported response algorithm. |
 | `authorization_details` | Shared RAR parsing, consent, access-token and refresh handling; D1 persists the accepted details with the grant. |
-| `http_message_signatures` | Shared request verification, response signing and replay state for the signed resource endpoint. Client verification keys must be available inline. |
-| `scim` | Unavailable: SCIM repository and credential ports lack D1 implementations. |
-| `scim_security_events` | Unavailable: requires SCIM plus durable event-store and bounded remote polling adapters. |
+| `http_message_signatures` | Shared request verification, response signing and replay state for the signed resource endpoint. Verification uses the client's persisted JWK set; this resource path does not refresh remote JWKS on each request. |
+| `scim` | Shared SCIM validation with tenant-bound D1 credentials, filtered/paginated user CRUD, soft deletion, and required audit. Deactivation retires authorization epochs, refresh families and grants in the same transaction. Provision a scoped SCIM bearer credential separately from OAuth clients. |
+| `scim_security_events` | Requires SCIM. User mutation, shared SET event creation and required audit commit together. D1 retains events and receiver-specific acknowledgements/errors; the shared publisher signs the local polling response, with a bounded Worker delay for long polling. This endpoint does not poll a remote service. |
 | `native_sso` | Shared device-secret exchange and D1 source refresh-family checks. Requires `token_exchange`, allowed `device_sso` scope, the issuer audience and the code/refresh/exchange grants on participating clients. Revoking the source family prevents later exchange. |
-| `frontchannel_logout` | Registered RP iframe URLs and session identifiers are generated by the shared logout flow. Delivery is performed by the browser. Back-channel delivery remains unavailable. |
+| `frontchannel_logout` | Registered RP iframe URLs and session identifiers are generated by the shared logout flow. Delivery is performed by the browser; back-channel delivery has its own D1 outbox and outbound configuration. |
 | `session_management` | Shared session state, check-session iframe/status and RP-initiated logout; participating clients enable `security_policy.session_management`. |
-| `openid4vci_issuer` | Unavailable: offer, dataset, subject, nonce, credential, deferred-response and trust-policy persistence contracts need D1 adapters and issuer policy. |
-| `openid4vp_verifier` | Unavailable: presentation state, trust-policy and credential-status resolution need adapters and verifier policy. |
+| `openid4vci_issuer` | Shared issuance with D1 offers, managed datasets, subject policy, access grants, proof nonces, exact response retries, deferred responses and notifications. Requires credential configurations, management authority, encrypted state and suitable issuer signing/certificate material. Shared format, proof, attestation and holder-binding policy remains authoritative. |
+| `openid4vp_verifier` | Shared signed authorization requests, encrypted presentation responses, holder/issuer validation and result retrieval with D1 idempotency, replay state and trust policy. Requires verifier management authority, wallet origins, certificate/trust material, and admitted remote status-list origins where applicable. The Worker selects the shared required-revocation policy. |
 
 The machine-only profile permits `token_exchange`, `jwt_bearer_grant`,
 `http_message_signatures` and `dynamic_client_registration`; its registration
-policy permits service grants only. The interactive profiles permit the available
-browser modules as well. Selecting a module never grants a client permission
+policy permits service grants only. The full interactive profile exposes the
+shared service and browser routes. Selecting a module never grants a client permission
 to use it. Configuration and registration enforce both boundaries.
 
 When selecting dynamic registration, supply `NAZO_DCR_INITIAL_ACCESS_TOKEN`
 as a secret of at least 32 bytes before deploying that module selection.
 Keep it separate from the client-secret pepper and signing wrapping key.
 The graph refuses to start with the module enabled and a missing/short token.
-The default bootstrap input does not enable this module or generate this secret;
-configure it through the deployment's existing secret management when needed.
+The default bootstrap input does not enable this module. If the bootstrap input
+selects it, the helper generates and saves a separate initial access token;
+manual installations supply it through existing secret management.
 Registered clients receive their own management token. A successful configuration
 replacement rotates that token and any client secret; stale management tokens
 cannot update or delete the client. Client-owned updates cannot increase
 administrator-limited scopes or change administrator-owned audiences/policy.
 
-### Remaining host and service boundaries
+### Service prerequisites and remaining host boundaries
 
 | Area | Current boundary and work required |
 | --- | --- |
-| mTLS | `nazo-crypto` already provides portable X.509 signature and chain verification. The HTTP adapter does not supply trusted client-certificate facts, and the Worker does not bind a trust store or certificate verifier. Cloudflare-terminated mTLS needs those ingress facts, trust-store/verifier composition and hostname policy. Forwarded headers cannot supply this authority. |
-| Remote documents and federation | The Worker does not bind outbound document or federation clients, federation-link storage or federation replay state. A bounded HTTP adapter must retain shared URL, redirect, size, expiry and SSRF policy; enabling arbitrary `fetch` would not satisfy the contracts. |
-| Back-channel logout | The D1 logout outbox, durable delivery/retry state and bounded outbound delivery adapter are unbound. Workers HTTP fetch can supply the transport, while adapters must retain the shared claim, retry and completion contracts. Discovery support remains disabled. |
-| Email registration and verification | Registration accounts, code reservation/consumption and email delivery are unbound. An email service binding alone does not provide the missing atomic identity operations. |
-| MFA | TOTP enrollment/consumption, backup codes, remembered devices and their required audit mutations need D1 adapters. Password-based backup-code hashing also needs an appropriate CPU budget. |
-| Authorized-application list | `/auth/me` counts persisted grants. The detailed application list is unavailable because D1 does not retain the native authorization-history fields needed for exact counts and last-authorization data. A list must not fabricate them from current grants. |
-| Avatars and object storage | Avatar revision/claim state and the object-storage port are unbound. An R2 adapter is feasible, provided object publication and database selection retain the existing lifecycle. |
-| Administration and recovery | Native administration, controller registry, recovery roots, role management and native audit anchors are unbound. The server must not absorb the separate controller's recovery authority. |
+| mTLS | Enable `services.mtls` only with direct Cloudflare ingress and client-certificate collection configured for the issuer hostname. Facts come from platform `request.cf.tlsClientAuth`, including bounded RFC 9440 certificate data, revocation flags and a matching fingerprint. A platform-verified chain or the shared portable X.509 verifier with approved D1 trust anchors supplies trust; registered client selectors still apply. Ordinary request headers cannot confer certificate authority. |
+| Remote documents | A bounded Worker fetch adapter resolves JWKS, Request Objects, sector documents and credential status lists. `services.outbound_origins` admits exact HTTPS origins; redirects are not followed, credentials are not inherited, and time/body/media limits apply. Fetch does not expose native DNS resolution or IP pinning: the operator-controlled origin list is this host's network authority. |
+| Federation | D1 account/link and replay adapters reuse the shared OIDC/social provider flows, with bounded outbound HTTP. Configure provider credentials and endpoints in service secrets and admit their origins. SAML uses the shared authenticated gateway contract. Real provider login still requires the corresponding external account/application, credentials and callback registration. |
+| Back-channel logout | The shared logout service writes a D1 outbox; leased claims, retry/expiry and completion state drive bounded Worker HTTP delivery on scheduled events. Admit each RP notification origin. Discovery support is enabled only when outbound origins are configured; front-channel delivery remains browser-driven. |
+| Email registration and verification | Shared registration uses D1 account creation, owner-bound send reservations, a fixed verification-attempt budget and single-use challenge consumption. Delivery requires the configured HTTPS email relay, its admitted origin and secret. Concurrent sends and cleanup cannot overwrite or delete a later owner's challenge. |
+| MFA | D1 stores encrypted TOTP seeds, one-use counters, hashed backup codes, remembered-device bindings and required audit mutations. Configure the service data-encryption key. Shared recent-MFA and interactive-proof requirements apply to administration; a remembered device does not grant recent-MFA authority. Backup-code hashing retains the native Argon2id policy and needs measured CPU capacity. |
+| Authorized-application list | The shared profile lists current grants with canonical authorization audit history for counts and last authorization. Administrator grant revocation retires the associated token families and credential access in the same D1 transaction. |
+| Avatars and object storage | Authenticated multipart upload, binary proxy read and deletion use bounded immutable D1 image chunks and the shared account-revision compare-and-set lifecycle. R2/direct-to-storage uploads are not configured; adding them requires the corresponding direct-upload state and storage adapter. |
+| Tenant administration | User/client listing, creation and updates use shared preparation and hierarchy policy. D1 rechecks current actor context and prepared target metadata at transaction admission; mutations, dependent-token retirement and canonical required audit commit together. Client downgrade to public authentication retires its refresh families and secret. |
+| Deployment administration and recovery | Controller registry, recovery roots and cross-tenant administration routes are compiled out of the Worker. The D1 user port can update administrators across tenant rows within one database transaction, but the single-issuer host does not expose that control-plane operation. Dynamic hostname/tenant registry replacement and native audit anchors are not adapted; this does not prohibit a future multi-host Worker composition. |
+| Runtime module lifecycle | Deployment configuration and persisted module selection must agree. Native live enable/disable/drain controls are not wired to the Worker lifecycle. Changing selection requires a coordinated operator deployment and state transition. |
 | Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
-| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile requires a separately hosted frontend. Evaluate the published CPU budget against measured CPU distributions and actual platform failures at the intended sustained load. |
+| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Evaluate the published CPU budget against measured CPU distributions and actual platform failures at the intended sustained load. |
 
-Missing D1/service adapters above are implementation work, not evidence that
+Unconfigured services and remaining host adapters are not evidence that
 the protocol cannot run on Workers. Durable state must continue to satisfy the
 same tenant isolation, atomic consume, replay, audit and recovery contracts.
 
@@ -131,12 +161,14 @@ indexed batches outside request handling. Durable fences retain their
 contract-specific retention deadlines. No isolate cache owns sessions,
 authorization codes, revocations or replay decisions.
 
-The full profile's minute cron starts up to 64 cleanup passes of 1,000 rows
-each, stopping after 20 seconds or a short pass. The Workers Free machine-only
-and Passkey-only profiles make a single pass of at most 500 rows; cleanup does not run a
-multi-pass loop against Free's 10 ms Cron CPU budget. The limit bounds each
-transaction and scheduled invocation; deployed CPU and backlog measurements
-determine whether cleanup keeps up with the actual traffic.
+The minute cron runs one cleanup pass on every deployment profile, with at most
+500 candidates/deletions per state category. This is a per-category limit, not
+a total limit of 500 rows. Child state is reclaimed before parents to avoid
+unbounded foreign-key cascades. When outbound origins are configured, the same
+scheduled invocation also drives bounded CIBA ping and back-channel logout
+delivery batches. Password-route selection does not change the plan's Cron
+budget. Measure scheduled CPU, outcomes and backlog separately to establish
+whether maintenance and delivery keep up with traffic.
 
 ## Build
 
@@ -154,19 +186,52 @@ rustup target add wasm32-unknown-unknown
 cargo install worker-build --version 0.9.0 --locked
 npm ci --prefix deploy/cloudflare
 python3 scripts/check_worker_portability.py
+node deploy/cloudflare/build-web.mjs
 npm run bundle --prefix deploy/cloudflare
 ```
 
-The bundle command runs `worker-build --release --locked` and Wrangler's dry run.
+The bundle command runs the dedicated `build-worker.sh` entry with
+`worker-build --release --locked --no-default-features` and Wrangler's dry run.
 It does not publish a Worker. The module graph is under
 `crates/server-worker/build`; Wrangler's bundle is under
-`deploy/cloudflare/bundled`.
+`deploy/cloudflare/bundled`. A successful dry run replaces the complete bundle
+directory, removing historical hashed WASM modules; a failed build preserves the
+previous bundle. `deploy/cloudflare/shim.mjs` exports only the application's
+default fetch/scheduled entrypoint, excluding unused SDK helper exports.
 
 The WASM production graph excludes Actix, native HTTP servers, PostgreSQL/Valkey
 drivers, native TLS and native Tokio execution features. The SDK's Tokio library
 dependency does not enable a runtime. `local-sqlite` enables the same adapter SQL
 for native offline provisioning and contract tests; its driver is selected only
 on non-WASM targets.
+
+The facade is compiled without `deployment-control`: deployment identity,
+controller registry, independent recovery and cross-tenant administrator routes
+are not part of the Worker. Tenant user/client administration and the shared
+protocol modules remain compiled. `check_worker_portability.py` checks both
+production graphs: the native server cannot acquire Workers/D1/JavaScript runtime
+dependencies, and the Worker cannot acquire native execution adapters,
+certificate provisioning or deployment controls. Native image builds exclude
+Worker/Web assets and generated output and do not run either frontend or Worker
+build steps.
+
+### Bundled Web application
+
+`deploy/cloudflare/web-source.json` pins the NazoAuthWeb repository revision,
+application version and Node/npm versions. `build-web.mjs` checks out that exact
+revision into generated build output, applies only the local
+`deploy/cloudflare/web-adapter` overlay, runs its browser-component tests and
+the upstream source/distribution security checks, and builds with `/ui/` as
+the base path. The upstream repository is not changed. Build output includes
+`/ui/source.json` with source provenance and a generated `_headers` file whose
+script hashes match the final HTML.
+
+Wrangler binds `deploy/cloudflare/web-dist` as `ASSETS`. Hashed asset/icon paths
+are served by the asset service; the Worker owns the application shell and
+selected UI redirects. SPA fallback is restricted to `/ui/`, so an unknown
+protocol route never turns into a successful HTML page. Rebuild the Web assets
+before a local deployment when the pinned revision or overlay changes. The
+repository-root cloud build performs this step automatically.
 
 ## Deploy to Cloudflare button
 
@@ -205,7 +270,7 @@ To initialize a fresh D1 deployment, clone the repository associated with the
 button, install local dependencies (Rust 1.100, Node, curl, Python 3, Wrangler),
 and create a private JSON input **outside the Git repository** from
 `deploy/cloudflare/bootstrap.example.json`. Set the issuer to the intended HTTPS
-origin, the frontend to that same origin for the built-in Passkey flow,
+origin, the frontend to that origin's `/ui/` path for the bundled Web application,
 and real OAuth clients.
 The example selects `passkey_only: true`, `machine_only: false` with **one**
 initial user containing only `email` and `username`, no password. Its
@@ -218,13 +283,17 @@ full-profile deployments may provide users with original strong passwords. Then 
 npm run bootstrap -- /private/bootstrap.json /private/nazoauth-credentials.json
 ```
 
-This command creates unique tenant IDs and two independent 32-byte secrets,
+This command creates unique tenant IDs and independent signing-wrap,
+client-secret-pepper and service-data secrets,
 runs the native NazoAuth provisioner offline, saves the signing wrapping key
 and issued client credentials to a new private `0600` file, checks that D1
 contains no existing keys/clients/users/modules, imports the seed rows, writes
 the non-secret issuer configuration into root `wrangler.toml`, then deploys
-the Worker with three secret bindings and, for Passkey-only setup, three
-additional **temporary bootstrap secret bindings** via `--secrets-file`.
+the Worker with `NAZO_SIGNING_KEY`, `NAZO_CLIENT_SECRET_PEPPER`,
+`NAZO_DUMMY_PASSWORD_HASH` and `NAZO_SERVICE_SECRETS`. Selecting dynamic
+registration additionally creates `NAZO_DCR_INITIAL_ACCESS_TOKEN`. Passkey-only
+setup adds three **temporary bootstrap secret bindings**, all supplied through
+`--secrets-file`.
 After offline bootstrap, read the output file's `passkey_setup.url` and
 `passkey_setup.token` **only on the deployer's device**. Once the custom HTTPS
 route and direct-ingress WAF protections are configured, open the issuer's
@@ -249,8 +318,8 @@ npm run deploy
 
 The issuer hostname must match `NAZO_CONFIG.issuer`. Passkey browser
 registration must run on that exact secure origin (RP ID derives from the issuer
-hostname). With `frontend_base_url` set to that origin, the Passkey profile
-serves its own login and consent pages. A separately hosted frontend can instead
+hostname). With `frontend_base_url` set to that origin's `/ui/` path, both
+interactive profiles use the bundled Web application. A separately hosted frontend can instead
 use the same protocol endpoints.
 For unmerged PR acceptance select the actual `feat/cloudflare-workers-206`
 branch in Cloudflare Builds; the public one-click button defaults to `main`
@@ -278,12 +347,55 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | --- | --- |
 | `tenant` | Non-nil `tenant_id`, `realm_id`, `organization_id` UUIDs |
 | `issuer` | Canonical HTTPS issuer at the origin root; request authority must match |
-| `frontend_base_url` | Issuer origin for the built-in Passkey UI or the origin of a separately hosted login/consent UI |
+| `frontend_base_url` | `https://<issuer-host>/ui/` for the bundled Web application, or the base URL of a separately hosted frontend |
 | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
 | `modules` | Optional array of available module identifiers from the module matrix; persisted selection must match |
 | `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
-| `passkey_only` | Interactive Passkey profile; password routes are disabled |
+| `passkey_only` | Restricted interactive route profile with Passkey/MFA and selected OAuth flows; broader administration/service APIs and password routes are excluded. Use the full profile for all adapted routes. |
+| `services` | Non-secret configuration for admitted outbound origins, mTLS, email and digital credentials; fields below |
+
+The `services` object contains only declared host capabilities and public policy:
+
+| Field | Meaning |
+| --- | --- |
+| `outbound_origins` | Exact HTTPS origins admitted for remote documents, federation, email relay, logout/ping notifications and credential status lists; defaults to none |
+| `mtls` | Admit direct Cloudflare certificate metadata; requires `ingress: "direct_cloudflare"` and hostname certificate configuration |
+| `email_relay` | Optional `{ "endpoint": "https://mail.example/api/send", "from": "auth@example.com" }`; the endpoint's origin must also be admitted |
+| `credential_configurations` | Shared OpenID4VCI configuration map, keyed by credential configuration ID |
+| `deferred_credential_configurations` | Configuration IDs using the shared deferred-issuance flow |
+| `wallet_authorization_origins` | Allowed wallet authorization origins for presentation requests |
+| `client_attestation_jwks`, `key_attestation_jwks`, `client_attestation_issuer` | Optional shared attestation-verification policy |
+
+`NAZO_SERVICE_SECRETS` is a separate secret binding containing a JSON object:
+
+| Field | Meaning |
+| --- | --- |
+| `data_encryption_key` | Standard Base64 encoding of an independent 32-byte key for MFA seeds and protected service state; required when enabling OpenID4VC and needed for MFA enrollment |
+| `issuer_management_token`, `verifier_management_token` | Separate OpenID4VC issuer/verifier management credentials, each at least 32 bytes; enabling a role requires its token |
+| `email_relay_token` | Bearer credential for the configured HTTPS relay; at least 16 bytes |
+| `federation_provider_configs` | The shared provider-registry JSON array, including provider IDs, adapter types, endpoints, callback URLs and client credentials |
+| `saml_gateway` | Optional shared gateway `{ "issuer": "...", "audience": "...", "secret": "..." }` configuration |
+| `openid4vc_import` | Temporary operator import described below; remove after its generation is persisted |
+
+The email relay receives a JSON POST containing `from`, `to`, `subject` and
+`text` with a bearer authorization header; a successful HTTP response acknowledges
+delivery. Supply a relay implementing that contract. Credentials for a real mail
+provider or federation provider are external prerequisites, not generated by
+enabling the corresponding routes.
+
+OpenID4VC certificate provisioning remains an operator operation. Import a
+prepared key/certificate generation using `openid4vc_import` with
+`expected_revision`, `material` and optional `signing_key_pem`. `material` has
+`public` certificate/trust material (`signing_kid`, `certificate_chain_pem`,
+`trust_anchors_pem`, optional `revocation_snapshot`) and
+`iaca_private_materials` for configurations that need them. The shared key manager
+validates and commits that generation to the encrypted D1 key repository with
+compare-and-set semantics. Repeated initialization can acknowledge the identical
+material, but cannot overwrite another generation by changing the expected
+revision. After a successful import, remove `openid4vc_import` from the secret
+binding and retain the normal encrypted key lifecycle. The Worker does not invoke
+native certificate-provisioning tools or generate a new trust root at startup.
 
 Generate a 32-byte random signing wrapping key, encode it with standard Base64,
 and select its non-secret ID. Generate an independent client-secret pepper of
@@ -301,9 +413,9 @@ The native provisioner accepts one JSON document on stdin:
       "organization_id": "00000000-0000-0000-0000-000000000003"
     },
     "issuer": "https://auth.example.com",
-    "frontend_base_url": "https://app.example.com",
+    "frontend_base_url": "https://auth.example.com/ui/",
     "ingress": "direct_cloudflare",
-    "cors_allowed_origins": ["https://app.example.com"],
+    "cors_allowed_origins": ["https://auth.example.com"],
     "modules": ["session_management"]
   },
   "signing_key_id": "primary",
@@ -329,8 +441,28 @@ The native provisioner accepts one JSON document on stdin:
 
 Client input is validated by the existing administrative registration policy;
 identifiers and any client secrets are generated there. Passwords use the native
-host's Argon2id policy (19,456 KiB, two passes, one lane). Provisioned accounts are
-ordinary users with unverified email.
+host's Argon2id policy (19,456 KiB, two passes, one lane). Provisioned accounts
+default to ordinary users with unverified email and MFA disabled. The offline
+operator may explicitly assign `"role": { "Admin": { "level": 2 } }` to an
+initial administrator; the level must be positive. This field is not accepted
+by public registration. Enroll MFA on that administrator before operations that
+require recent interactive MFA.
+
+The native provisioning document also accepts `scim_credentials`, an array of
+objects with `token`, `scopes`, optional `event_audience` and optional RFC 3339
+`expires_at`. Use a separately generated token of at least 32 bytes, the shared
+`scim:read` / `scim:write` / `scim:events` scopes as appropriate, and an event
+receiver audience when polling SETs. D1 receives only the token digest; the
+provisioner returns credential IDs and does not return those input tokens.
+Preserve the private input or its credential-manager copy.
+
+The higher-level bootstrap input forwards `users[].role`, `scim_credentials`,
+`services` and `service_secrets` into this process. It generates a service
+data-encryption key unless one is explicitly provided and saves the service
+secrets with the other recovery material. Machine-only bootstrap intentionally
+starts with the minimal service-client configuration; additional service modules
+and advanced client registrations can use the native provisioner and a
+coordinated deployment.
 
 ```sh
 umask 077
@@ -343,11 +475,14 @@ npx wrangler d1 execute NAZO_DB --remote --config ../../wrangler.toml --file ../
 npx wrangler secret put NAZO_SIGNING_KEY --config ../../wrangler.toml
 npx wrangler secret put NAZO_CLIENT_SECRET_PEPPER --config ../../wrangler.toml
 npx wrangler secret put NAZO_DUMMY_PASSWORD_HASH --config ../../wrangler.toml
+npx wrangler secret put NAZO_SERVICE_SECRETS --config ../../wrangler.toml
 ```
 
 Set `NAZO_DUMMY_PASSWORD_HASH` from the generated `dummy_password_hash`,
 `NAZO_SIGNING_KEY` from the original Base64 wrapping key, and
-`NAZO_CLIENT_SECRET_PEPPER` from the original pepper. Set `NAZO_SIGNING_KEY_ID`
+`NAZO_CLIENT_SECRET_PEPPER` from the original pepper. Supply the service-secrets
+JSON separately, and set `NAZO_DCR_INITIAL_ACCESS_TOKEN` when selecting dynamic
+registration. Set `NAZO_SIGNING_KEY_ID`
 and copy the exact provisioned configuration into `NAZO_CONFIG` in the root
 `wrangler.toml`. Input, SQLite,
 SQL and credential output are private deployment material. Import seed rows only
@@ -357,7 +492,7 @@ into a fresh migrated database. The command refuses to overwrite an existing fil
 npm run deploy
 ```
 
-The Worker refuses to create missing keys in a request. The Free machine-only
+The Worker refuses to create missing issuer signing keys in a request. The machine-only
 profile allows OAuth server metadata, JWKS, service token issuance and token
 management, and does not expose interactive authorization or password endpoints.
 The password-enabled profile admits the shared HTTP routes; operations still
@@ -385,11 +520,14 @@ Same-zone Worker scripts can change `x-real-ip`, which can change
 defines these facts. Zone-rule and same-zone Worker administrators belong to the
 trusted deployment boundary.
 
-The adapter supplies `ConnectionFacts.authenticated_client_ip`, leaving socket
-peer, direct TLS SNI and client certificates absent. The neutral facade uses this
-explicit source for source-based policy. Ordinary forwarding/certificate headers
-cannot override it or grant mTLS authentication. Tenant admission uses the
-original URI authority.
+The adapter supplies `ConnectionFacts.authenticated_client_ip`, leaving native
+socket-peer and TLS-SNI values absent. The neutral facade uses this explicit
+source for source-based policy. With `services.mtls` enabled, the host separately
+captures Cloudflare's platform client-certificate metadata before HTTP conversion
+and supplies the parsed, fingerprint-matched certificate facts. Managed/approved
+certificate trust and registered client selectors remain independent checks.
+Ordinary forwarding/certificate headers cannot override either source of
+authority. Tenant admission uses the original URI authority.
 
 ## Concurrency and memory
 
@@ -435,6 +573,9 @@ cargo test --locked -p nazo-http-worker -p nazo-oauth-server-d1 \
   -p nazo-server-worker \
   --features nazo-oauth-server-d1/local-sqlite,nazo-server-worker/provisioning
 python3 scripts/check_worker_portability.py
+cargo test --locked -p nazoauth --test deployment_profile
+cargo test --locked -p nazoauth --no-default-features --test deployment_profile
+node deploy/cloudflare/build-web.mjs
 npm run bundle --prefix deploy/cloudflare
 npm test --prefix deploy/cloudflare
 ```
@@ -445,7 +586,11 @@ login/session cookies, authorization code and PKCE, refresh, UserInfo, revocatio
 DPoP nonce/replay, concurrent one-time consumption, binding changes, isolate
 restart and storage failure. It prints local cold-start and concurrent Client
 Credentials timings. SQL tests execute production statements for rollback,
-isolation, expiry and CAS. Transport tests use the shared facade conformance kit.
+isolation, expiry, required effects and CAS, including the identity and credential
+adapters. Transport tests use the shared facade conformance kit. The Web build
+runs its overlay tests, TypeScript build and source/distribution security checks.
+These local checks do not establish remote provider interoperability or public
+edge acceptance of every configured feature.
 
 The local workerd suite deliberately creates and destroys isolated databases.
 Do not reuse that fixture against a deployed D1 binding. Public acceptance has
@@ -459,9 +604,12 @@ node --test deploy/cloudflare/test/public-acceptance.mjs
 ```
 
 Ordinary `npm test` skips this test when `NAZO_WORKER_ACCEPTANCE_INPUT` is absent.
-The input is a private JSON object with the following fields. All clients must
-already belong to the selected tenant and allow the grants exercised by the run.
-The runner never provisions a database or replaces an existing account.
+The input is a private JSON object with the following fields. Provisioned fixture
+clients must belong to the selected tenant and allow the grants exercised by the
+run. When explicitly supplied with administrator, SCIM or DCR authority, the
+runner creates its own uniquely named users/clients and retires them afterward.
+It never initializes a database or replaces a real user's account. The dedicated
+administrator fixture is separate from the synthetic Passkey user.
 
 | Input | Required content |
 | --- | --- |
@@ -475,12 +623,19 @@ The runner never provisions a database or replaces an existing account.
 | `device_client` | Client with the Device grant, cross-device policy and requested scopes/resource |
 | `native_sso` | `source_client` and `destination_client` browser-client objects with the Native SSO permissions above |
 | `dcr_initial_access_token` | Dedicated initial access token when dynamic registration is selected; kept out of results |
+| `full_profile` | Set to `true` for the password-enabled deployment; used to check password-route admission |
+| `administrator` | Dedicated `{ user_id, email, password }` for an offline-provisioned administrator of level 2 or above, initially without MFA. The runner enrolls and exercises MFA, uses recent interactive MFA for its synthetic management targets, then disables MFA and logs out during cleanup. Requires the full profile. |
+| `scim` | Dedicated `{ token, audience }` with the scopes required for SCIM mutations and SET polling |
+| `mtls` | Private actual-TLS fixture: `certificate_pem`, `private_key_pem`, `subject_dn`, `public_jwk`, and base64url SHA-256 `thumbprint`. The issuer hostname must collect and trust the certificate. CIBA requests opt into this certificate-bearing transport; caller certificate headers are never used. |
+| `digital_credentials` | Explicit issuer/verifier management tokens, subject/configuration IDs, credential type/claims, accepted wallet endpoint and pinned trust-anchor certificate for the wallet acceptance flow |
 | `modules` | Enabled module names to include in the run |
 | `race_concurrency` | Optional one-use race width, bounded to 2–16; defaults to 4 |
 | `workload` | Optional `{ "requests": 128, "concurrency": 8 }` adds private-key Client Credentials samples after protocol tests; capped at 256 requests and concurrency 16 |
 
-The result contains paths, timestamps, HTTP statuses, durations and fixed failure
-descriptions. It excludes tokens, cookies, assertion bodies and private keys.
+The result contains normalized paths, timestamps, HTTP statuses, durations and
+fixed failure descriptions. Secret transaction identifiers in CIBA/credential
+paths are redacted. It excludes tokens, cookies, assertion bodies, MFA material,
+credential bodies and private keys.
 The optional authenticator file is a separate private `0600` file containing only
 the dedicated synthetic credential and counter. Reusing that path lets later runs
 authenticate without consuming another setup ticket. Never use a real user's

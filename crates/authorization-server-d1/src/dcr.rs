@@ -69,7 +69,7 @@ impl DynamicRegistrationClientStore for D1Provider {
                 "source_ip_hash": source_ip_hash,
             });
             self.database.batch(vec![
-                Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active) VALUES(?1,?2,?3,?4,?5,?6,?7,0,1)", vec![json!(self.tenant_id), json!(client.id), json!(client.client_id), json!(client.realm_id), json!(client.organization_id), json!(encode(&client.registration)?), json!(write.client_secret_hash)]),
+                Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,0,1,?8)", vec![json!(self.tenant_id), json!(client.id), json!(client.client_id), json!(client.realm_id), json!(client.organization_id), json!(encode(&client.registration)?), json!(write.client_secret_hash),json!(client.require_mtls_bound_tokens)]),
                 Statement::new("INSERT INTO nazo_client_registrations(tenant_id,client_id,token_hash) VALUES(?1,?2,?3)", vec![json!(self.tenant_id), json!(client.id), json!(token)]),
                 Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) VALUES(?1,?2,'dynamic_client_registered','client_lifecycle',{NOW},?3)"), vec![json!(self.tenant_id), json!(Uuid::new_v4()), json!(encode(&payload)?)]),
             ]).await?;
@@ -217,7 +217,7 @@ impl D1Provider {
                     return Err(Error::Unavailable);
                 }
                 json!({"event":"dynamic_client_configuration_updated", "registration":client.registration,
-                    "secret":secret, "token":token, "source":source, "deactivate":false})
+                    "secret":secret, "token":token, "source":source, "deactivate":false,"require_mtls_bound_tokens":client.require_mtls_bound_tokens})
             }
             Mutation::Rotate { secret, token } => {
                 if !valid_hash(token) {
@@ -291,6 +291,7 @@ impl D1Provider {
                    registration=CASE WHEN json_extract(?4,'$.registration') IS NULL THEN registration ELSE
                      json_set(json_extract(?4,'$.registration'),'$.client_id',client_id,'$.allowed_audiences',json_extract(registration,'$.allowed_audiences'),'$.security_policy',json_extract(registration,'$.security_policy')) END,
                    secret_digest=CASE WHEN json_extract(?4,'$.deactivate')=1 THEN NULL ELSE json_extract(?4,'$.secret') END,
+                   require_mtls_bound_tokens=COALESCE(json_extract(?4,'$.require_mtls_bound_tokens'),require_mtls_bound_tokens),
                    epoch=epoch+json_extract(?4,'$.deactivate'), active=1-json_extract(?4,'$.deactivate')
                  WHERE tenant_id=?1 AND id=?2 AND {admitted}"), effect_params()),
             Statement::new(format!(

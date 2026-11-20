@@ -368,22 +368,59 @@ fn required_audit_failure_rolls_back_insert_replacement_rotation_and_deletion() 
 }
 
 #[test]
-fn adapter_rejects_unbacked_client_documents_before_any_insert() {
+fn adapter_preserves_shared_prepared_documents_ciba_and_mtls_binding_through_management() {
     block_on(async {
         let (_, provider) = fixture().await;
-        let mut input = prepared("remote", false);
+        let mut input = prepared("remote", true);
         input.registration.request_uris = vec!["https://client.example/request.jwt".into()];
-        assert!(
-            DynamicRegistrationClientStore::insert(&provider, input, &hash("source"))
-                .await
-                .is_err()
-        );
-        assert!(
-            AdminClientRepositoryPort::by_client_id(&provider, TENANT, "remote")
-                .await
-                .unwrap()
-                .is_none()
-        );
+        input.registration.jwks_uri = Some("https://client.example/jwks".into());
+        input.registration.sector_identifier_uri = Some("https://client.example/sector".into());
+        input.registration.backchannel_logout_uri = Some("https://client.example/logout".into());
+        input
+            .registration
+            .grant_types
+            .push("urn:openid:params:grant-type:ciba".into());
+        input.require_mtls_bound_tokens = true;
+        let inserted = DynamicRegistrationClientStore::insert(&provider, input, &hash("source"))
+            .await
+            .unwrap();
+        assert!(inserted.require_mtls_bound_tokens);
+        let stored = AdminClientRepositoryPort::by_client_id(&provider, TENANT, "remote")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored, inserted);
+        let rotated = provider
+            .rotate_credentials(
+                TENANT,
+                stored.id,
+                Some("client-secret-v1:next:digest"),
+                &hash("initial"),
+                &hash("rotated"),
+            )
+            .await
+            .unwrap();
+        assert!(rotated.require_mtls_bound_tokens);
+        let mut changed = rotated.clone();
+        changed.require_mtls_bound_tokens = false;
+        let replaced = provider
+            .replace_registration(
+                &changed,
+                Some("client-secret-v1:next:digest"),
+                &hash("rotated"),
+                Some(&hash("final")),
+                &hash("source"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replaced, changed);
+        let snapshot = provider
+            .by_registration_access_token(TENANT, "remote", &hash("final"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!snapshot.client.require_mtls_bound_tokens);
+        assert_eq!(snapshot.client.registration, inserted.registration);
     });
 }
 

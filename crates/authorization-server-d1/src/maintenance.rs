@@ -30,7 +30,7 @@ impl D1Provider {
         }
         let params: std::sync::Arc<[serde_json::Value]> =
             vec![json!(self.tenant_id), json!(limit)].into();
-        let statements = vec![
+        let mut statements = vec![
             Statement::new(
                 "DELETE FROM nazo_state WHERE tenant_id=?1 AND (kind,key) IN (SELECT kind,key FROM nazo_state WHERE tenant_id=?1 AND expires_at<=unixepoch() ORDER BY expires_at LIMIT ?2) RETURNING 1 AS removed",
                 params.clone(),
@@ -70,13 +70,76 @@ impl D1Provider {
             ),
             Statement::new(
                 format!(
-                    "SELECT count(*) AS candidates FROM (SELECT id FROM nazo_refresh_families WHERE tenant_id=?1 AND expires_at<={NOW} ORDER BY expires_at LIMIT ?2)"
+                    "DELETE FROM nazo_mfa_devices WHERE tenant_id=?1 AND token_hash IN (SELECT token_hash FROM nazo_mfa_devices WHERE tenant_id=?1 AND expires_at<={NOW} ORDER BY expires_at LIMIT ?2) RETURNING 1 AS removed"
                 ),
-                params,
+                params.clone(),
             ),
         ];
+        // Each child category is reclaimed before its parent. A parent with
+        // remaining children is retained, avoiding unbounded FK cascades.
+        let extra = [
+            (
+                "nazo_email_codes",
+                "email_hash",
+                "expires_at<=unixepoch()".to_owned(),
+            ),
+            ("nazo_logout_outbox", "id", format!("expires_at<={NOW}")),
+            (
+                "nazo_scim_event_receipts",
+                "event_id,token_id",
+                format!(
+                    "event_id IN (SELECT id FROM nazo_scim_events WHERE tenant_id=?1 AND expires_at<={NOW} ORDER BY expires_at LIMIT ?2)"
+                ),
+            ),
+            (
+                "nazo_scim_events",
+                "id",
+                format!(
+                    "expires_at<={NOW} AND NOT EXISTS (SELECT 1 FROM nazo_scim_event_receipts r WHERE r.tenant_id=nazo_scim_events.tenant_id AND r.event_id=nazo_scim_events.id)"
+                ),
+            ),
+            ("nazo_vp_transactions", "id", format!("expires_at<={NOW}")),
+            ("nazo_vci_offers", "id", format!("expires_at<={NOW}")),
+            (
+                "nazo_vci_nonces",
+                "nonce_hash",
+                format!("expires_at<={NOW}"),
+            ),
+            (
+                "nazo_vci_responses",
+                "issuance_id",
+                format!("expires_at<={NOW}"),
+            ),
+            ("nazo_vci_deferred", "id", format!("expires_at<={NOW}")),
+            (
+                "nazo_vci_notifications",
+                "notification_id",
+                format!("expires_at<={NOW}"),
+            ),
+            (
+                "nazo_vci_access",
+                "token_id",
+                format!(
+                    "expires_at<={NOW}-{} AND NOT EXISTS (SELECT 1 FROM nazo_vci_responses c WHERE c.tenant_id=nazo_vci_access.tenant_id AND c.token_id=nazo_vci_access.token_id) AND NOT EXISTS (SELECT 1 FROM nazo_vci_deferred c WHERE c.tenant_id=nazo_vci_access.tenant_id AND c.token_id=nazo_vci_access.token_id) AND NOT EXISTS (SELECT 1 FROM nazo_vci_notifications c WHERE c.tenant_id=nazo_vci_access.tenant_id AND c.token_id=nazo_vci_access.token_id)",
+                    nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS * 1_000_000
+                ),
+            ),
+            (
+                "nazo_client_deliveries",
+                "user_id,token_hash",
+                format!("expires_at<={NOW}"),
+            ),
+        ];
+        for (table, key, condition) in extra {
+            statements.push(Statement::new(format!(
+                "DELETE FROM {table} WHERE tenant_id=?1 AND ({key}) IN (SELECT {key} FROM {table} WHERE tenant_id=?1 AND {condition} LIMIT ?2) RETURNING 1 AS removed"
+            ), params.clone()));
+        }
+        statements.push(Statement::new(format!(
+            "SELECT count(*) AS candidates FROM (SELECT id FROM nazo_refresh_families WHERE tenant_id=?1 AND expires_at<={NOW} ORDER BY expires_at LIMIT ?2)"
+        ), params));
         let results = self.database.batch(statements).await?;
-        let counts = results[..6]
+        let counts = results[..results.len() - 1]
             .iter()
             .map(|result| result.rows.len())
             .collect::<Vec<_>>();
@@ -87,8 +150,18 @@ impl D1Provider {
             spent_refresh_proofs: counts[3] as u64,
             refresh_tokens: counts[4] as u64,
             revocations: counts[5] as u64,
+            remembered_mfa_devices: counts[6] as u64,
+            logout_deliveries: counts[8] as u64,
+            scim_security_events: counts[10] as u64,
+            presentations: counts[11] as u64,
+            credential_offers: counts[12] as u64,
+            credential_nonces: counts[13] as u64,
+            credential_responses: counts[14] as u64,
+            deferred_credentials: counts[15] as u64,
+            credential_notifications: counts[16] as u64,
+            credential_access_grants: counts[17] as u64,
             saturated: counts.contains(&limit)
-                || results[6].rows[0]["candidates"]
+                || results[results.len() - 1].rows[0]["candidates"]
                     .as_u64()
                     .ok_or(DbError::CorruptData)?
                     == limit as u64,

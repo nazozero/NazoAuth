@@ -225,15 +225,14 @@ test('Workers Free one-use Passkey setup creates only a five-minute enrollment s
     })).status, 404);
     assert.equal((await request('/auth/setup')).status, 200);
     assert.equal((await request('/auth/setup.js')).status, 200);
-    assert.equal((await request('/auth/passkey')).status, 200);
-    assert.equal((await request('/auth/passkey.js')).status, 200);
-    assert.match(await (await request('/auth?next=%2Fauthorize%3Fclient_id%3Dtest')).text(), /Passkey 登录/);
+    const loginPage = await request('/auth/passkey');
+    assert.equal(loginPage.status, 307);
+    assert.equal(loginPage.headers.get('location'), '/ui/auth');
+    const authRedirect = await request('/auth?next=%2Fauthorize%3Fclient_id%3Dtest');
+    assert.equal(authRedirect.headers.get('location'), '/ui/auth?next=%2Fauthorize%3Fclient_id%3Dtest');
     const consentPage = await request('/consent?request_id=test');
-    assert.equal(consentPage.status, 200);
-    assert.match(await consentPage.text(), /action="\/authorize\/decision"/);
-    const consentScript = await request('/consent.js');
-    assert.equal(consentScript.status, 200);
-    assert.match(consentScript.headers.get('content-type'), /javascript/);
+    assert.equal(consentPage.status, 307);
+    assert.equal(consentPage.headers.get('location'), '/ui/consent?request_id=test');
 
     const claim = (ticket, origin = issuer) => request('/auth/setup/claim', {
       method: 'POST',

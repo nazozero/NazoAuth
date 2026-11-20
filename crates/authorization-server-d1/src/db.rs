@@ -52,6 +52,53 @@ pub struct Database {
     inner: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
 }
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "local-sqlite"))]
+fn mfa_migration_already_applied(transaction: &rusqlite::Transaction<'_>) -> anyhow::Result<bool> {
+    let definition: String = transaction.query_row(
+        "SELECT sql FROM sqlite_schema WHERE type='table' AND name='nazo_users'",
+        [],
+        |row| row.get(0),
+    )?;
+    let definition = definition
+        .split_whitespace()
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if definition.contains("check(mfa_enabled=0)") {
+        return Ok(false);
+    }
+    let tables: i64 = transaction.query_row(
+        "SELECT count(*) FROM sqlite_schema WHERE type='table'
+         AND name IN ('nazo_mfa_totp','nazo_mfa_backup_codes','nazo_mfa_devices')",
+        [],
+        |row| row.get(0),
+    )?;
+    anyhow::ensure!(
+        definition.contains("check(mfa_enabledin(0,1))") && tables == 3,
+        "unrecognized MFA schema without a migration receipt; refusing to reset MFA state",
+    );
+    Ok(true)
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "local-sqlite"))]
+fn mtls_migration_already_applied(transaction: &rusqlite::Transaction<'_>) -> anyhow::Result<bool> {
+    let columns: i64 = transaction.query_row(
+        "SELECT count(*) FROM pragma_table_info('nazo_clients') WHERE name='require_mtls_bound_tokens'",
+        [], |row| row.get(0),
+    )?;
+    let tables: i64 = transaction.query_row(
+        "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('nazo_mtls_trust_requests','nazo_mtls_trust_events')",
+        [], |row| row.get(0),
+    )?;
+    if columns == 0 && tables == 0 {
+        return Ok(false);
+    }
+    anyhow::ensure!(
+        columns == 1 && tables == 2,
+        "unrecognized mTLS schema without a migration receipt"
+    );
+    Ok(true)
+}
+
 impl Database {
     #[cfg(target_arch = "wasm32")]
     pub fn from_binding(database: worker::D1Database) -> Self {
@@ -81,10 +128,89 @@ impl Database {
     /// Apply the versioned deployment schema outside request handling.
     #[cfg(all(not(target_arch = "wasm32"), feature = "local-sqlite"))]
     pub fn execute_schema(&self) -> anyhow::Result<()> {
-        self.execute_sql(include_str!("../migrations/0001.sql"))?;
-        self.execute_sql(include_str!("../migrations/0002_state.sql"))?;
-        self.execute_sql(include_str!("../migrations/0003_passkeys.sql"))?;
-        self.execute_sql(include_str!("../migrations/0004_dynamic_registration.sql"))
+        use rusqlite::OptionalExtension as _;
+
+        let mut connection = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow::anyhow!("SQLite connection lock failed"))?;
+        let transaction = connection.transaction()?;
+        // This offline ledger is deliberately separate from Wrangler's
+        // d1_migrations. A failed migration and its receipt roll back together.
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS nazo_local_migrations (name TEXT PRIMARY KEY,
+             digest TEXT NOT NULL, applied_at INTEGER NOT NULL) STRICT, WITHOUT ROWID",
+        )?;
+        for (name, sql) in [
+            ("0001.sql", include_str!("../migrations/0001.sql")),
+            (
+                "0002_state.sql",
+                include_str!("../migrations/0002_state.sql"),
+            ),
+            (
+                "0003_passkeys.sql",
+                include_str!("../migrations/0003_passkeys.sql"),
+            ),
+            (
+                "0004_dynamic_registration.sql",
+                include_str!("../migrations/0004_dynamic_registration.sql"),
+            ),
+            (
+                "0005_ciba_scim.sql",
+                include_str!("../migrations/0005_ciba_scim.sql"),
+            ),
+            (
+                "0006_accounts.sql",
+                include_str!("../migrations/0006_accounts.sql"),
+            ),
+            (
+                "0007_digital_credentials.sql",
+                include_str!("../migrations/0007_digital_credentials.sql"),
+            ),
+            ("0008_mfa.sql", include_str!("../migrations/0008_mfa.sql")),
+            (
+                "0009_services.sql",
+                include_str!("../migrations/0009_services.sql"),
+            ),
+            (
+                "0010_federation_access.sql",
+                include_str!("../migrations/0010_federation_access.sql"),
+            ),
+            (
+                "0011_mtls_trust.sql",
+                include_str!("../migrations/0011_mtls_trust.sql"),
+            ),
+        ] {
+            let digest = blake3::hash(sql.as_bytes()).to_hex().to_string();
+            let applied: Option<String> = transaction
+                .query_row(
+                    "SELECT digest FROM nazo_local_migrations WHERE name=?1",
+                    [name],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(applied) = applied {
+                anyhow::ensure!(applied == digest, "applied migration {name} changed");
+                continue;
+            }
+            // Older offline stores and imported D1 databases have no local
+            // ledger. CREATE IF NOT EXISTS migrations can be replayed; the
+            // one-time MFA column replacement needs an explicit schema check.
+            let already_applied = match name {
+                "0008_mfa.sql" => mfa_migration_already_applied(&transaction)?,
+                "0011_mtls_trust.sql" => mtls_migration_already_applied(&transaction)?,
+                _ => false,
+            };
+            if !already_applied {
+                transaction.execute_batch(sql)?;
+            }
+            transaction.execute(
+                "INSERT INTO nazo_local_migrations(name,digest,applied_at) VALUES(?1,?2,unixepoch())",
+                rusqlite::params![name, digest],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Offline provisioning and migration execution; never used by a Worker request.

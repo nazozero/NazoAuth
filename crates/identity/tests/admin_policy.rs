@@ -1,6 +1,7 @@
 use nazo_identity::ports::AdminUserUpdate;
 use nazo_identity::{
     AdminPolicyError, Principal, TenantContext, TenantId, UserId, UserRole, authorize_admin_update,
+    authorize_tenant_admin_update,
 };
 use uuid::Uuid;
 
@@ -76,4 +77,40 @@ fn admin_policy_rejects_cross_tenant_and_resolves_safe_update() {
     assert_eq!(resolved.role, "admin");
     assert_eq!(resolved.admin_level, 2);
     assert!(!resolved.active);
+}
+
+#[test]
+fn tenant_admin_operation_requires_current_control_authority_and_a_distinct_target() {
+    let control = TenantId::new(Uuid::from_u128(1)).unwrap();
+    let target = TenantId::new(Uuid::from_u128(2)).unwrap();
+    let actor = principal(10, 1, Some(2), true);
+    assert_eq!(
+        authorize_tenant_admin_update(&actor, control, target, 0),
+        Ok(())
+    );
+    // The explicit system boundary permits assigning any nonnegative level;
+    // the ordinary hierarchy remains governed by authorize_admin_update.
+    assert_eq!(
+        authorize_tenant_admin_update(&actor, control, target, i32::MAX),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_tenant_admin_update(&actor, control, control, 1),
+        Err(AdminPolicyError::InvalidRoleLevel)
+    );
+    assert_eq!(
+        authorize_tenant_admin_update(&actor, control, target, -1),
+        Err(AdminPolicyError::InvalidRoleLevel)
+    );
+    for denied in [
+        principal(10, 1, Some(1), true),
+        principal(10, 1, Some(3), false),
+        principal(10, 2, Some(3), true),
+        principal(10, 1, None, true),
+    ] {
+        assert_eq!(
+            authorize_tenant_admin_update(&denied, control, target, 1),
+            Err(AdminPolicyError::ActorNotAuthorized)
+        );
+    }
 }

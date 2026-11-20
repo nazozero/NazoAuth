@@ -86,6 +86,7 @@ pub struct NazoAuth {
     runtime_modules: Arc<RuntimeModules>,
     mtls: Arc<MtlsCertificateSource>,
     readiness: crate::well_known::ReadinessDependencies,
+    #[cfg(feature = "deployment-control")]
     deployment: Option<DeploymentServices>,
     mdoc_crls: Option<Arc<dyn crate::capabilities::MdocCrlProvider>>,
     password_hasher: Arc<dyn crate::capabilities::SecretHashPort>,
@@ -97,6 +98,7 @@ pub struct NazoAuthBuilder {
     capabilities: Capabilities,
     instance_id: String,
     avatar: AvatarProfileService,
+    #[cfg(feature = "deployment-control")]
     deployment: Option<Arc<crate::capabilities::DeploymentCapabilities>>,
     mdoc_crls: Option<Arc<dyn crate::capabilities::MdocCrlProvider>>,
 }
@@ -112,6 +114,7 @@ impl NazoAuthBuilder {
             capabilities,
             instance_id: instance_id.into(),
             avatar: AvatarProfileService::Disabled,
+            #[cfg(feature = "deployment-control")]
             deployment: None,
             mdoc_crls: None,
         }
@@ -152,6 +155,7 @@ impl NazoAuthBuilder {
         self
     }
 
+    #[cfg(feature = "deployment-control")]
     pub fn with_deployment(
         mut self,
         deployment: Arc<crate::capabilities::DeploymentCapabilities>,
@@ -174,6 +178,7 @@ impl NazoAuthBuilder {
             capabilities,
             instance_id,
             avatar,
+            #[cfg(feature = "deployment-control")]
             deployment,
             mdoc_crls,
         } = self;
@@ -184,7 +189,9 @@ impl NazoAuthBuilder {
             capabilities.transient_state.provider().health(),
             capabilities.keys.clone(),
         );
+        #[cfg(feature = "deployment-control")]
         let persistence = capabilities.persistence.provider();
+        #[cfg(feature = "deployment-control")]
         let deployment = deployment.map(|capabilities| {
             let deployment_id = capabilities.identity.deployment_id();
             DeploymentServices {
@@ -232,6 +239,7 @@ impl NazoAuthBuilder {
             runtime_modules: startup.runtime_modules,
             mtls,
             readiness,
+            #[cfg(feature = "deployment-control")]
             deployment,
             mdoc_crls,
             password_hasher,
@@ -239,6 +247,7 @@ impl NazoAuthBuilder {
     }
 }
 
+#[cfg(feature = "deployment-control")]
 struct DeploymentServices {
     capabilities: Arc<crate::capabilities::DeploymentCapabilities>,
     controller_registry: crate::control::controller_registry::ControllerRegistryService,

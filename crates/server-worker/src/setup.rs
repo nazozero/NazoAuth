@@ -12,8 +12,6 @@ use crate::WorkerApplication;
 
 const HTML: &str = include_str!("setup.html");
 const SCRIPT: &str = include_str!("setup.js");
-const LOGIN_HTML: &str = include_str!("passkey-login.html");
-const LOGIN_SCRIPT: &str = include_str!("passkey-login.js");
 
 pub async fn handle(
     request: &HttpRequest,
@@ -29,13 +27,7 @@ pub async fn handle(
 pub(crate) fn page(path: &str) -> Option<Response<Full<Bytes>>> {
     let (html, script) = match path {
         "/auth/setup" => (HTML, false),
-        "/auth" | "/auth/passkey" => (LOGIN_HTML, false),
-        "/consent" => (include_str!("consent.html"), false),
-        "/device" => (include_str!("device.html"), false),
         "/auth/setup.js" => (SCRIPT, true),
-        "/auth/passkey.js" => (LOGIN_SCRIPT, true),
-        "/consent.js" => (include_str!("consent.js"), true),
-        "/device.js" => (include_str!("device.js"), true),
         _ => return None,
     };
     if script {

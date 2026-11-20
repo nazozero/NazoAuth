@@ -15,3 +15,5 @@ fi
 if ! cargo install --list | grep -q '^wasm-bindgen-cli v0\.2\.130:'; then
   cargo +1.100.0 install wasm-bindgen-cli --version 0.2.130 --locked
 fi
+
+node deploy/cloudflare/build-web.mjs

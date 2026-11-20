@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js dev --config wrangler.toml",
-    "bundle": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir deploy/cloudflare/bundled --config wrangler.toml",
+    "bundle": "node bundle.mjs",
     "db:migrate": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js d1 migrations apply NAZO_DB --remote --config wrangler.toml",
     "test": "node --test test/*.mjs",
     "deploy": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js deploy --config wrangler.toml"

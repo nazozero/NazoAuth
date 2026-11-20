@@ -19,6 +19,66 @@ pub struct WorkerConfiguration {
     pub machine_only: bool,
     #[serde(default)]
     pub passkey_only: bool,
+    #[serde(default)]
+    pub services: WorkerServices,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerServices {
+    #[serde(default)]
+    pub mtls: bool,
+    #[serde(default)]
+    pub outbound_origins: Vec<String>,
+    pub email_relay: Option<EmailRelay>,
+    #[serde(default)]
+    pub credential_configurations:
+        std::collections::BTreeMap<String, nazo_openid4vci::CredentialConfiguration>,
+    #[serde(default)]
+    pub deferred_credential_configurations: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    pub wallet_authorization_origins: Vec<String>,
+    pub client_attestation_jwks: Option<serde_json::Value>,
+    pub key_attestation_jwks: Option<serde_json::Value>,
+    pub client_attestation_issuer: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmailRelay {
+    pub endpoint: String,
+    pub from: String,
+}
+
+/// Secret JSON is loaded exclusively from NAZO_SERVICE_SECRETS by the host.
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerSecrets {
+    pub data_encryption_key: Option<String>,
+    pub issuer_management_token: Option<String>,
+    pub verifier_management_token: Option<String>,
+    pub email_relay_token: Option<String>,
+    pub federation_provider_configs: Option<serde_json::Value>,
+    pub saml_gateway: Option<WorkerSamlGateway>,
+    pub openid4vc_import: Option<WorkerOpenid4vcImport>,
+}
+
+/// Operator-only, one-generation import through the existing encrypted key
+/// repository. Remove this field from the secret after a successful import.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerOpenid4vcImport {
+    pub expected_revision: i64,
+    pub material: nazo_key_management::Openid4vcMaterial,
+    pub signing_key_pem: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerSamlGateway {
+    pub issuer: String,
+    pub audience: String,
+    pub secret: String,
 }
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
@@ -69,6 +129,11 @@ impl WorkerConfiguration {
                         | ModuleId::AuthorizationDetails
                         | ModuleId::FrontchannelLogout
                         | ModuleId::HttpMessageSignatures
+                        | ModuleId::Ciba
+                        | ModuleId::Scim
+                        | ModuleId::ScimSecurityEvents
+                        | ModuleId::Openid4vciIssuer
+                        | ModuleId::Openid4vpVerifier
                 ),
                 "module {module:?} is unavailable in the Workers deployment profile"
             );
@@ -96,7 +161,15 @@ impl WorkerConfiguration {
         );
         let mut settings =
             nazoauth::config::Configuration::new(self.tenant, &self.issuer, client_secret_pepper)?;
-        settings.protocol.backchannel_logout_supported = false;
+        settings.protocol.backchannel_logout_supported = !self.services.outbound_origins.is_empty();
+        ensure!(
+            !self.services.mtls || self.ingress == Ingress::DirectCloudflare,
+            "Worker mTLS requires direct Cloudflare certificate metadata"
+        );
+        if self.services.mtls {
+            settings.endpoint.mtls_certificate_source =
+                nazoauth::config::MtlsCertificateSourceMode::DirectTls;
+        }
         let mut registration_grants = vec!["client_credentials".to_owned()];
         if !self.machine_only {
             registration_grants
@@ -115,6 +188,7 @@ impl WorkerConfiguration {
                 ModuleId::DeviceAuthorization,
                 "urn:ietf:params:oauth:grant-type:device_code",
             ),
+            (ModuleId::Ciba, "urn:openid:params:grant-type:ciba"),
         ] {
             if self.modules.contains(&module) {
                 registration_grants.push(grant.to_owned());
@@ -122,9 +196,9 @@ impl WorkerConfiguration {
         }
         settings.modules.dynamic_client_registration_capabilities =
             nazo_auth::DynamicRegistrationCapabilities {
-                remote_documents: false,
-                mtls: false,
-                backchannel_logout: false,
+                remote_documents: !self.services.outbound_origins.is_empty(),
+                mtls: self.services.mtls,
+                backchannel_logout: !self.services.outbound_origins.is_empty(),
                 grant_types: Some(registration_grants),
             };
         settings
@@ -167,18 +241,24 @@ impl WorkerConfiguration {
         if self.modules.contains(&ModuleId::DynamicClientRegistration) {
             metadata["registration_endpoint"] = serde_json::json!(format!("{root}/register"));
         }
+        if self.services.mtls {
+            metadata["token_endpoint_auth_methods_supported"] = serde_json::json!([
+                "client_secret_basic",
+                "client_secret_post",
+                "private_key_jwt",
+                "tls_client_auth",
+                "self_signed_tls_client_auth"
+            ]);
+            metadata["tls_client_certificate_bound_access_tokens"] = serde_json::json!(true);
+        }
         metadata
     }
 
-    /// Restrict Workers Free to service endpoints without Argon2id password work.
+    /// Admit routes for the deployment's selected login and service profile.
     pub fn allows_route(&self, method: &http::Method, path: &str) -> bool {
         if matches!(
             path,
-            "/device"
-                | "/device.js"
-                | "/device_authorization"
-                | "/device/verification"
-                | "/device/decision"
+            "/device" | "/device_authorization" | "/device/verification" | "/device/decision"
         ) && !self.modules.contains(&ModuleId::DeviceAuthorization)
         {
             return false;
@@ -228,7 +308,6 @@ impl WorkerConfiguration {
                         | "/check_session/status"
                         | "/fapi/resource"
                         | "/device"
-                        | "/device.js"
                         | "/device/verification"
                         | "/jwks.json"
                         | "/authorize"
@@ -240,10 +319,8 @@ impl WorkerConfiguration {
                         | "/auth/csrf"
                         | "/auth"
                         | "/consent"
-                        | "/consent.js"
                         | "/auth/setup"
                         | "/auth/passkey"
-                        | "/auth/passkey.js"
                         | "/auth/setup.js"
                         | "/logout"
                 ),
@@ -258,6 +335,12 @@ impl WorkerConfiguration {
                         | "/userinfo"
                         | "/auth/passkey/begin"
                         | "/auth/passkey/finish"
+                        | "/auth/mfa/verify"
+                        | "/auth/me/mfa/totp/begin"
+                        | "/auth/me/mfa/totp/confirm"
+                        | "/auth/me/mfa/step-up"
+                        | "/auth/me/mfa/backup-codes/regenerate"
+                        | "/auth/me/mfa/disable"
                         | "/auth/me/passkeys/registration/begin"
                         | "/auth/me/passkeys/registration/finish"
                         | "/auth/logout"

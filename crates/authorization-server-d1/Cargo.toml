@@ -13,9 +13,12 @@ local-sqlite = ["dep:rusqlite"]
 anyhow.workspace = true
 base64.workspace = true
 blake3.workspace = true
+bytes.workspace = true
 futures-util.workspace = true
 jiff.workspace = true
 nazo-auth.workspace = true
+nazo-crypto = { workspace = true, features = ["aead"] }
+nazo-digital-credentials.workspace = true
 nazo-identity.workspace = true
 nazo-passkey.workspace = true
 nazo-key-management.workspace = true
@@ -27,11 +30,13 @@ nazo-openid4vci.workspace = true
 nazo-openid4vp.workspace = true
 nazo-scim-events.workspace = true
 nazo-operator-protocol.workspace = true
+rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tracing.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 web-time.workspace = true
+zeroize.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = { workspace = true, features = ["d1"] }

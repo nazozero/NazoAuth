@@ -1,5 +1,5 @@
 use crate::ports::AdminUserUpdate;
-use crate::{Principal, UserRole};
+use crate::{Principal, TenantId, UserRole};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdminPolicyError {
@@ -77,4 +77,25 @@ pub fn authorize_admin_update(
         admin_level,
         active,
     })
+}
+
+/// Authorize the explicit control-plane operation without applying the ordinary
+/// same-tenant hierarchy policy. Persistence must bind both principals through
+/// the mutation's commit acknowledgement.
+pub fn authorize_tenant_admin_update(
+    actor: &Principal,
+    control_tenant: TenantId,
+    target_tenant: TenantId,
+    admin_level: i32,
+) -> Result<(), AdminPolicyError> {
+    if admin_level < 0 || control_tenant == target_tenant {
+        return Err(AdminPolicyError::InvalidRoleLevel);
+    }
+    if actor.tenant.tenant_id != control_tenant
+        || !actor.active
+        || !actor.admin_level().is_some_and(|level| level >= 2)
+    {
+        return Err(AdminPolicyError::ActorNotAuthorized);
+    }
+    Ok(())
 }

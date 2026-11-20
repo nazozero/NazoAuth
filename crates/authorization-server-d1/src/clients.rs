@@ -75,22 +75,34 @@ impl AdminClientRepositoryPort for D1Provider {
     }
     fn insert_with_required_audit<'a>(
         &'a self,
-        _client: &'a OAuthClient,
-        _client_secret_hash: Option<&'a str>,
-        _registration_access_token_blake3: Option<&'a str>,
-        _actor_id: Uuid,
-        _source_ip_hash: &'a str,
+        client: &'a OAuthClient,
+        client_secret_hash: Option<&'a str>,
+        registration_access_token_blake3: Option<&'a str>,
+        actor_id: Uuid,
+        source_ip_hash: &'a str,
     ) -> AdminClientFuture<'a, OAuthClient> {
-        Box::pin(async { Err(AdminClientPortError::Unavailable) })
+        Box::pin(async move {
+            self.insert_admin_client(
+                client,
+                client_secret_hash,
+                registration_access_token_blake3,
+                actor_id,
+                source_ip_hash,
+            )
+            .await
+        })
     }
     fn update_with_required_audit<'a>(
         &'a self,
-        _expected: &'a OAuthClient,
-        _client: &'a OAuthClient,
-        _actor_id: Uuid,
-        _source_ip_hash: &'a str,
+        expected: &'a OAuthClient,
+        client: &'a OAuthClient,
+        actor_id: Uuid,
+        source_ip_hash: &'a str,
     ) -> AdminClientFuture<'a, OAuthClient> {
-        Box::pin(async { Err(AdminClientPortError::Unavailable) })
+        Box::pin(async move {
+            self.update_admin_client(expected, client, actor_id, source_ip_hash)
+                .await
+        })
     }
 }
 fn logout_client(client: OAuthClient) -> RegisteredLogoutClient {

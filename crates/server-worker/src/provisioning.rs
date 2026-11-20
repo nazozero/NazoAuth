@@ -34,6 +34,17 @@ pub struct ProvisioningInput {
     pub clients: Vec<nazo_auth::CreateClientRequest>,
     #[serde(default)]
     pub users: Vec<ProvisionedUser>,
+    #[serde(default)]
+    pub scim_credentials: Vec<ProvisionedScimCredential>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProvisionedScimCredential {
+    pub token: String,
+    pub scopes: Vec<String>,
+    pub event_audience: Option<String>,
+    pub expires_at: Option<jiff::Timestamp>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +53,8 @@ pub struct ProvisionedUser {
     pub email: String,
     pub username: String,
     pub password: String,
+    /// Explicit offline operator authority; never accepted by registration HTTP.
+    pub role: Option<UserRole>,
 }
 
 pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<Value> {
@@ -52,6 +65,7 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
         signing_key_base64,
         clients,
         users,
+        scim_credentials,
     } = input;
     configuration.application(client_secret_pepper.clone())?;
     if configuration.machine_only {
@@ -139,6 +153,11 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
             "provisioned account password must contain at least 12 bytes"
         );
         let user_id = UserId::new(uuid::Uuid::new_v4())?;
+        let role = user.role.unwrap_or(UserRole::User);
+        ensure!(
+            !matches!(role, UserRole::Admin { level: 0 }),
+            "administrator level must be positive"
+        );
         let now = jiff::Timestamp::now();
         let claims: SubjectClaims = serde_json::from_value(json!({
             "subject": user_id, "preferred_username": user.username,
@@ -150,7 +169,7 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
                 authorization_epoch: 0,
                 user_id,
                 tenant: configuration.tenant,
-                role: UserRole::User,
+                role,
                 active: true,
             },
             account: AccountIdentity {
@@ -167,9 +186,33 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
         provider.provision_user(&account, &claims, password).await?;
         account_ids.push(user_id);
     }
+    let mut scim_ids = Vec::with_capacity(scim_credentials.len());
+    for credential in scim_credentials {
+        let token = Zeroizing::new(credential.token);
+        ensure!(
+            token.len() >= 32,
+            "SCIM bearer credential must contain at least 32 bytes"
+        );
+        let id = uuid::Uuid::new_v4();
+        provider
+            .provision_scim_credential(
+                &nazo_identity::scim::ScimTokenCredential {
+                    id,
+                    tenant_id: configuration.tenant.tenant_id.as_uuid(),
+                    scopes: credential.scopes,
+                    event_audience: credential.event_audience,
+                },
+                &nazo_oauth_server::crypto::blake3_hex(token.as_str()),
+                credential.expires_at,
+            )
+            .await?;
+        scim_ids.push(id);
+    }
     let dummy = Passwords
         .hash_secret(uuid::Uuid::new_v4().to_string())
         .await?
         .into_persistence_value();
-    Ok(json!({"clients": issued, "user_ids": account_ids, "dummy_password_hash": dummy}))
+    Ok(
+        json!({"clients": issued, "user_ids": account_ids, "scim_credential_ids": scim_ids, "dummy_password_hash": dummy}),
+    )
 }

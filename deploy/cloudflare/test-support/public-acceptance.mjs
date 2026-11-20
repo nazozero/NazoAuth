@@ -1,3 +1,6 @@
+import { publicMfa } from './public-mfa.mjs';
+import { publicIdentityServices } from './public-identity-services.mjs';
+import { publicCredentials } from './public-credentials.mjs';
 import {
   constants, createHash, createPrivateKey, createPublicKey, generateKeyPairSync,
   randomBytes, randomUUID, sign, verify,
@@ -160,6 +163,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
   let networkErrors = 0;
   let phase = 'protocol';
   let workload;
+  let credentials;
 
   async function persistAuthenticator() {
     if (!saveAuthenticator) return;
@@ -173,14 +177,19 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
   async function request(path, init = {}) {
     ensure(path.startsWith('/') && !path.startsWith('//'), 'Acceptance request must stay on the issuer');
     const started = performance.now();
-    const record = { path: path.split('?')[0], method: init.method || 'GET', phase, at: new Date().toISOString() };
+    const safePath = path.split('?')[0]
+      .replace(/^\/(auth\/)?ciba\/[^/]+/, '/$1ciba/{transaction}')
+      .replace(/^(\/openid4v(?:ci|p)\/(?:credential-offer|offers|presentations|request|response|result))\/[^/]+/, '$1/{transaction}')
+      .replace(/^(\/auth\/me\/client-credentials)\/[^/]+/, '$1/{delivery}');
+    const record = { path: safePath, method: init.method || 'GET', phase, at: new Date().toISOString() };
     requests.push(record);
     try {
       const response = await fetchRequest(issuer + path, {
         ...init, redirect: 'manual', signal: AbortSignal.timeout(60_000),
         headers: { ...init.headers, 'x-nazo-acceptance': runId, 'x-nazo-acceptance-phase': phase },
       });
-      const text = await response.text();
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const text = bytes.toString();
       record.status = response.status;
       if (response.status >= 400) record.oauth_error = publicErrorCode(text);
       record.cf_ray = response.headers.get('cf-ray');
@@ -192,7 +201,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
       }
       // Response bodies can contain credentials. Keep them in memory only and
       // never include them in thrown errors or the acceptance report.
-      return { status: response.status, headers: response.headers, text };
+      return { status: response.status, headers: response.headers, text, bytes };
     } catch {
       record.latency_ms = +(performance.now() - started).toFixed(2);
       record.network_error = true;
@@ -327,7 +336,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
     signingKeys = json(await request(jwksUrl.pathname)).keys;
     ensure(Array.isArray(signingKeys) && signingKeys.length && signingKeys.every(key => !key.d), 'Invalid public JWKS');
     const disabled = await postJson('/auth/login', {});
-    ensure(disabled.status === 404, 'Password login should be disabled in the selected Free profile');
+    ensure(disabled.status === (input.full_profile ? 400 : 404), 'Password login admission differs from the selected deployment profile');
   });
 
   const serviceClient = input.service_client || input.private_key_client;
@@ -385,9 +394,9 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
       await rejected({ ...metadata, client_name: metadata.client_name + ' no-iat' }, 401, {});
       for (const [name, unsupported] of [
         ['remote-jwks', { jwks_uri: 'https://unconfigured-acceptance.example/jwks.json' }],
-        ['backchannel', { backchannel_logout_uri: 'https://unconfigured-acceptance.example/logout' }],
-        ['mtls', { token_endpoint_auth_method: 'tls_client_auth', tls_client_auth_subject_dn: 'CN=acceptance' }],
-        ['grant', { grant_types: ['urn:openid:params:grant-type:ciba'] }],
+        ['backchannel', { backchannel_logout_uri: 'http://insecure-acceptance.example/logout' }],
+        ['mtls', { token_endpoint_auth_method: 'tls_client_auth', tls_client_auth_subject_dn: 'CN=acceptance', tls_client_auth_san_dns: 'conflicting.example' }],
+        ['grant', { grant_types: ['urn:example:unsupported-grant'] }],
       ]) {
         await rejected({ ...metadata, ...unsupported, client_name: metadata.client_name + ' ' + name }, 400);
       }
@@ -727,9 +736,11 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
         ensure(verificationUri.origin === issuer && verificationUri.searchParams.get('user_code') === device.user_code,
           'Invalid Device verification URI');
         const page = await request(verificationUri.pathname + verificationUri.search);
-        ensure(page.status === 200 && page.headers.get('content-type')?.includes('text/html'),
-          'Authorization Device page did not resolve on the issuer');
-        ensure((await request('/device.js')).status === 200, 'Authorization Device page script was unavailable');
+        const target = new URL(page.headers.get('location') || verificationUri, issuer);
+        ensure(target.origin === issuer && target.pathname === '/ui/device', 'Device page must resolve to NazoAuthWeb');
+        const shell = page.status === 307 ? await request(target.pathname + target.search) : page;
+        ensure(shell.status === 200 && shell.headers.get('content-type')?.includes('text/html') && shell.text.includes('/ui/assets/'),
+          'NazoAuthWeb Device shell was unavailable');
         ensure(json(await poll(device), 400).error === 'authorization_pending', 'Token Device grant did not remain pending');
         ensure(json(await poll(device), 400).error === 'slow_down', 'Token Device grant did not enforce polling interval');
         const view = json(await request('/device/verification?' + new URLSearchParams({ user_code: device.user_code }), {
@@ -804,6 +815,27 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
           'Session state did not change after logout');
         session = await passkeyLogin();
       });
+      if (input.administrator) {
+        phase = 'password_mfa';
+        const mfa = await publicMfa({ issuer, input, request, postJson, json, step });
+        try {
+          phase = 'identity_services';
+          await publicIdentityServices({ issuer, input, request, postJson, postForm, json, step,
+            authenticatedForm, session: mfa.session, baselineSession: session, signingKeys, verifyJwt });
+          if (input.digital_credentials) {
+            phase = 'digital_credentials';
+            credentials = await publicCredentials({ issuer, request, step, input, session: mfa.session });
+          }
+        } finally {
+          phase = 'password_mfa';
+          await mfa.cleanup();
+          phase = 'protocol';
+        }
+      } else if (input.digital_credentials) {
+        phase = 'digital_credentials';
+        credentials = await publicCredentials({ issuer, request, step, input, session });
+        phase = 'protocol';
+      }
       await step('logout_and_session_invalidation', async () => {
         const response = await request('/auth/logout', { method: 'POST', headers: {
           origin: issuer, cookie: session.cookie, 'x-csrf-token': session.csrf,
@@ -871,6 +903,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
     http: { requests: requests.length, status_counts: statusCounts, cloudflare_1102: http1102, network_errors: networkErrors },
     cpu: { source: 'separate Cloudflare invocation telemetry', measured: false },
     ...(workload ? { workload } : {}),
+    ...(credentials ? { digital_credentials: credentials } : {}),
     requests,
   };
 }
