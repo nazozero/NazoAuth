@@ -10,15 +10,17 @@ redirects and response policy stay in the shared implementation.
 ## Deployment profile
 
 Each deployment serves one issuer and one tenant through one primary D1 binding.
-There are two Workers Free profiles. The checked-in template starts
+The checked-in template starts
 `machine_only: true` for confidential Client Credentials clients. Set
 `machine_only: false` and `passkey_only: true` in the **private bootstrap input**
 to enable interactive WebAuthn (Passkey) login without in-request password hashing.
 The offline provisioner creates one initial user with an unknown random password,
 and hands the operator a single-use, 24-hour setup ticket; the ticket grants a
-five-minute registration session on the issuer's HTTPS origin. The full-password
-profile (`machine_only: false`, `passkey_only: false`) requires Workers Paid
-for Argon2id's CPU budget. In Passkey-only mode, set `frontend_base_url` to
+five-minute registration session on the issuer's HTTPS origin. The password-enabled
+profile (`machine_only: false`, `passkey_only: false`) retains the shared Argon2id
+verifier and can be selected on either Free or Paid. Measure its CPU distribution
+and actual platform failures at the intended sustained load. In Passkey-only mode,
+set `frontend_base_url` to
 the issuer origin to use the built-in login and consent pages at `/auth`
 and `/consent`. When Device Authorization is selected, `/device` serves the
 same-origin approval page and returns through Passkey login when needed.
@@ -33,7 +35,7 @@ The password profile requires a separately hosted frontend.
 | Identity | Machine-only, password-enabled full profile, or Passkey-only with offline initial setup; passkey credentials, single-use challenges, sessions and logout share existing services |
 | Account profile | Current account, authorized-client count and validated profile updates; identity and authorization epochs are preserved |
 | Optional modules | Explicit deployment selection; see the module matrix below |
-| Keys | Encrypted persistent key generations; `nazo-crypto` uses Worker WebCrypto for signing and verification |
+| Keys | Encrypted persistent key generations; shared `nazo-crypto` uses Workers WebCrypto for asynchronous Ed25519, ES256, RS256 and PS256 signing, and portable Rust backends for verification |
 | Audit | Required evidence commits with the accepting mutation; append-only D1 audit rows |
 
 Configuration rejects unavailable modules and unknown native fields. Persisted
@@ -99,7 +101,7 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | Avatars and object storage | Avatar revision/claim state and the object-storage port are unbound. An R2 adapter is feasible, provided object publication and database selection retain the existing lifecycle. |
 | Administration and recovery | Native administration, controller registry, recovery roots, role management and native audit anchors are unbound. The server must not absorb the separate controller's recovery authority. |
 | Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
-| Password authentication | Argon2id remains the shared password verifier. The Free profile disables password routes to avoid its CPU cost; the password-enabled profile requires a suitable Paid CPU budget and separate frontend. |
+| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile requires a separately hosted frontend. Evaluate the published CPU budget against measured CPU distributions and actual platform failures at the intended sustained load. |
 
 Missing D1/service adapters above are implementation work, not evidence that
 the protocol cannot run on Workers. Durable state must continue to satisfy the
@@ -189,9 +191,11 @@ Client Credentials, token management, OAuth metadata and JWKS). During offline
 initialization choose `passkey_only: true` and `machine_only: false` for a
 **passwordless, interactive** OAuth/OIDC deployment with Passkey login and
 Authorization Code/PKCE. Browser password login is then explicitly blocked.
-Password-enabled `passkey_only: false` requires **Workers Paid**. All Free
-profiles still require **real edge CPU measurements** before production SLO
-acceptance. The template cannot be called a complete single-click installation
+The password-enabled profile is also selectable on Free. Every profile needs
+**real edge CPU and outcome measurements at the intended sustained load** before
+production SLO acceptance. A CPU sample above 10 ms does not by itself establish
+a platform rejection; see [public CPU and failure measurements](#public-cpu-and-failure-measurements).
+The template cannot be called a complete single-click installation
 because issuer domain, first credentials, secrets and ingress policy must be set.
 Cloudflare Workers Builds has a 20-minute timeout and does not preinstall Rust:
 the repository-root `build` script installs Rust 1.100.0, `worker-build`
@@ -208,8 +212,7 @@ initial user containing only `email` and `username`, no password. Its
 WebAuthn enrollment is authorized by the generated single-use ticket. Machine
 service-only deployments use `machine_only: true`, `passkey_only: false`,
 `users: []`, and confidential `client_credentials` clients. Password-enabled
-full-profile deployments may provide users with original strong passwords but
-must use Paid CPU. Then run:
+full-profile deployments may provide users with original strong passwords. Then run:
 
 ```sh
 npm run bootstrap -- /private/bootstrap.json /private/nazoauth-credentials.json
@@ -261,8 +264,9 @@ or credentials in a Git repository or CI log.
 Manual installations: create a D1 database or let Wrangler auto-provision it.
 Use repository-root `wrangler.toml` and the `NAZO_DB` binding. No placeholder
 database UUID is used. Set a public custom domain only after initialization.
-Configure the ingress rule below before exposing the route. Use Workers Paid to
-budget password hashing and the full application module.
+Configure the ingress rule below before exposing the route. Select a CPU budget
+using the deployed profile's measured CPU distribution and actual platform
+outcomes under the intended sustained load.
 
 For a custom domain, uncomment the top-level `routes` example and replace
 `auth.example.com` with the configured issuer's hostname. Keep `NAZO_VERSION`
@@ -279,7 +283,7 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
 | `modules` | Optional array of available module identifiers from the module matrix; persisted selection must match |
 | `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
-| `passkey_only` | Worker Free interactive Passkey profile; password routes are disabled |
+| `passkey_only` | Interactive Passkey profile; password routes are disabled |
 
 Generate a 32-byte random signing wrapping key, encode it with standard Base64,
 and select its non-secret ID. Generate an independent client-secret pepper of

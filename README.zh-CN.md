@@ -84,9 +84,10 @@ Implicit、Hybrid、密码授权、未签名 Request Object 和 CIBA push 不受
 此按钮可在 **Workers Free** 上创建 Worker 和 D1。首次部署不开放公网入口，
 需要离线生成签名密钥与服务客户端，再配置 HTTPS 域名及 WAF。免费版部署先处于机器认证模式；离线初始化时可选择 `passkey_only: true`、
 `machine_only: false`，在真正的 HTTPS 认证域下使用一次性凭据绑定第一枚
-Passkey，再启用浏览器授权码 + PKCE 登录。密码登录保持关闭，不降低 Argon2
-强度。现行代码包上限为 64 MiB（未压缩）；是否满足免费版每请求
-10 ms CPU，仍需在真实 Cloudflare Edge 验证。详见
+Passkey，再启用浏览器授权码 + PKCE 登录。所选 Passkey 模式关闭密码登录；
+密码模式仍使用共享 Argon2id 策略，可在 Free 或 Paid 上选择。现行代码包上限为
+64 MiB（未压缩）；Free 公布的每请求 CPU 预算为 10 ms。需在目标持续负载下
+测量 CPU 分布和实际平台拒绝，单次 CPU 日志超过预算本身不等于请求失败。详见
 [Cloudflare 一键部署操作](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button)。
 
 <details>

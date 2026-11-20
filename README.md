@@ -94,9 +94,12 @@ provisions signing keys and service clients before the HTTPS domain and WAF
 rule can be enabled. **Workers Free** defaults to a machine-to-machine
 profile (Client Credentials, token management and JWKS). For interactive Free login, the offline
 bootstrap selects the Passkey-only mode and issues a one-use setup ticket for
-the first device: password login remains blocked. Both plans now permit
-64 MiB uncompressed Worker code. Reaching Free's 10 ms per-request CPU limit
-is unverified until a real edge deployment is measured. See the
+the first device: this Passkey mode keeps password login blocked. The password-enabled
+profile retains the shared Argon2id policy and can be selected on either plan.
+Both plans now permit 64 MiB uncompressed Worker code. Workers Free publishes a
+10 ms CPU budget per HTTP request. Measure the selected profile under the intended
+sustained load and report actual platform rejections separately from CPU samples
+above that budget. See the
 [setup instructions](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button).
 
 <details>
