@@ -225,6 +225,8 @@ test('Workers Free one-use Passkey setup creates only a five-minute enrollment s
     })).status, 404);
     assert.equal((await request('/auth/setup')).status, 200);
     assert.equal((await request('/auth/setup.js')).status, 200);
+    assert.equal((await request('/auth/passkey')).status, 200);
+    assert.equal((await request('/auth/passkey.js')).status, 200);
 
     const claim = (ticket, origin = issuer) => request('/auth/setup/claim', {
       method: 'POST',
