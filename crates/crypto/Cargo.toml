@@ -9,6 +9,9 @@ repository.workspace = true
 [features]
 default = []
 jose = [
+    "dep:futures-channel",
+    "dep:js-sys",
+    "dep:wasm-bindgen",
     "dep:jsonwebtoken",
     "dep:aws-lc-rs",
     "dep:p256",
@@ -60,6 +63,9 @@ webpki = { workspace = true, optional = true, features = ["aws-lc-rs"] }
 x509-parser = { workspace = true, optional = true, features = ["verify-aws"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+futures-channel = { workspace = true, optional = true }
+js-sys = { version = "0.3.107", optional = true }
+wasm-bindgen = { version = "0.2.130", optional = true }
 aes-kw = { version = "0.3.1", optional = true, features = ["zeroize"] }
 getrandom = { version = "0.4.3", features = ["wasm_js"] }
 jsonwebtoken = { workspace = true, optional = true, features = ["rust_crypto"] }

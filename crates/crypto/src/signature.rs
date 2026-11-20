@@ -27,6 +27,8 @@ use {
 pub struct PreparedSigningKey {
     algorithm: Algorithm,
     key: PreparedKey,
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    worker_rsa: Option<std::sync::Arc<crate::worker_signing::WorkerRsa>>,
 }
 
 enum PreparedKey {
@@ -47,7 +49,13 @@ impl PreparedSigningKey {
             Algorithm::RS256 | Algorithm::PS256 => PreparedKey::Rsa(prepare_rsa(private_der)?),
             _ => return Err(CryptoError::UnsupportedAlgorithm),
         };
-        Ok(Self { algorithm, key })
+        Ok(Self {
+            algorithm,
+            key,
+            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+            worker_rsa: crate::worker_signing::WorkerRsa::new(algorithm, private_der)?
+                .map(std::sync::Arc::new),
+        })
     }
 
     /// Signs `message` and returns the raw signature bytes.
@@ -60,6 +68,15 @@ impl PreparedSigningKey {
             PreparedKey::Ec(pair) => sign_ec(pair, message),
             PreparedKey::Rsa(pair) => sign_rsa(pair, self.algorithm, message),
         }
+    }
+
+    /// Signs using the native Worker backend for RSA when enabled.
+    pub async fn sign_async(&self, message: &[u8]) -> crate::Result<Vec<u8>> {
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        if let Some(rsa) = &self.worker_rsa {
+            return rsa.sign(message).await;
+        }
+        self.sign(message)
     }
 
     /// Exports the mathematical public JWK members from the retained key pair.

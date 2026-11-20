@@ -1,12 +1,11 @@
 use std::sync::{Arc, OnceLock};
 
+use crate::{CryptoError, jwt::Algorithm};
 use futures_channel::oneshot;
 use js_sys::{
     Promise, Uint8Array,
     futures::{JsFuture, spawn_local},
 };
-use nazo_auth::SignError;
-use nazo_crypto::jwt::Algorithm;
 use pkcs8::{
     AlgorithmIdentifierRef, ObjectIdentifier, PrivateKeyInfoRef, SecretDocument,
     der::asn1::{AnyRef, OctetStringRef},
@@ -33,41 +32,39 @@ extern "C" {
 /// The validated key material owns the imported, non-extractable CryptoKey.
 pub(crate) struct WorkerRsa {
     pss: bool,
+    pkcs8: SecretDocument,
     key: OnceLock<JsValue>,
 }
 
 impl WorkerRsa {
-    pub(crate) fn new(algorithm: Algorithm) -> Option<Self> {
+    pub(crate) fn new(algorithm: Algorithm, pkcs1: &[u8]) -> crate::Result<Option<Self>> {
         let pss = match algorithm {
             Algorithm::RS256 => false,
             Algorithm::PS256 => true,
-            _ => return None,
+            _ => return Ok(None),
         };
-        Some(Self {
+        // RSA signing keys are persisted in PKCS#1. Wrap the already
+        // validated bytes in the PKCS#8 container expected by WebCrypto.
+        let algorithm = AlgorithmIdentifierRef {
+            oid: ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
+            parameters: Some(AnyRef::NULL),
+        };
+        let pkcs1 = OctetStringRef::new(pkcs1).map_err(|_| CryptoError::InvalidKey)?;
+        let pkcs8 = SecretDocument::encode_msg(&PrivateKeyInfoRef::new(algorithm, pkcs1))
+            .map_err(|_| CryptoError::InvalidKey)?;
+        Ok(Some(Self {
             pss,
+            pkcs8,
             key: OnceLock::new(),
-        })
+        }))
     }
 
-    pub(crate) async fn sign(
-        self: &Arc<Self>,
-        pkcs1: &[u8],
-        input: &[u8],
-    ) -> Result<Vec<u8>, SignError> {
-        let import = if self.key.get().is_none() {
-            // RSA signing keys are persisted in PKCS#1. Wrap the already
-            // validated bytes in the PKCS#8 container expected by WebCrypto.
-            let algorithm = AlgorithmIdentifierRef {
-                oid: ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
-                parameters: Some(AnyRef::NULL),
-            };
-            let pkcs1 = OctetStringRef::new(pkcs1).map_err(|_| SignError::SigningFailed)?;
-            let document = SecretDocument::encode_msg(&PrivateKeyInfoRef::new(algorithm, pkcs1))
-                .map_err(|_| SignError::SigningFailed)?;
-            Some(import_rsa_key(document.as_bytes(), self.pss))
-        } else {
-            None
-        };
+    pub(crate) async fn sign(self: &Arc<Self>, input: &[u8]) -> crate::Result<Vec<u8>> {
+        let import = self
+            .key
+            .get()
+            .is_none()
+            .then(|| import_rsa_key(self.pkcs8.as_bytes(), self.pss));
 
         let input = input.to_vec();
         let signing = Arc::clone(self);
@@ -79,18 +76,18 @@ impl WorkerRsa {
                 if let Some(promise) = import {
                     let imported = JsFuture::from(promise)
                         .await
-                        .map_err(|_| SignError::SigningFailed)?;
+                        .map_err(|_| CryptoError::OperationFailed)?;
                     let _ = signing.key.set(imported);
                 }
-                let key = signing.key.get().ok_or(SignError::KeyUnavailable)?;
+                let key = signing.key.get().ok_or(CryptoError::InvalidKey)?;
                 let signature = JsFuture::from(sign_rsa(key, &input, signing.pss))
                     .await
-                    .map_err(|_| SignError::SigningFailed)?;
+                    .map_err(|_| CryptoError::OperationFailed)?;
                 Ok(Uint8Array::from(signature).to_vec())
             }
             .await;
             let _ = sender.send(result);
         });
-        receiver.await.map_err(|_| SignError::SigningFailed)?
+        receiver.await.map_err(|_| CryptoError::OperationFailed)?
     }
 }

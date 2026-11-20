@@ -107,12 +107,6 @@ impl LifecycleHealth {
 pub(crate) struct LocalSigningMaterial {
     pub(crate) private_pkcs8_der: Vec<u8>,
     pub(crate) prepared: nazo_crypto::signature::PreparedSigningKey,
-    #[cfg(all(
-        target_arch = "wasm32",
-        target_os = "unknown",
-        feature = "worker-signing"
-    ))]
-    worker_rsa: Option<Arc<crate::worker_signing::WorkerRsa>>,
 }
 
 impl LocalSigningMaterial {
@@ -125,12 +119,6 @@ impl LocalSigningMaterial {
                 algorithm,
                 &private_pkcs8_der,
             )?,
-            #[cfg(all(
-                target_arch = "wasm32",
-                target_os = "unknown",
-                feature = "worker-signing"
-            ))]
-            worker_rsa: crate::worker_signing::WorkerRsa::new(algorithm).map(Arc::new),
             private_pkcs8_der,
         })
     }
@@ -1468,20 +1456,10 @@ async fn sign_selected(
 }
 
 async fn sign_local(material: &LocalSigningMaterial, input: &[u8]) -> Result<Signature, SignError> {
-    #[cfg(all(
-        target_arch = "wasm32",
-        target_os = "unknown",
-        feature = "worker-signing"
-    ))]
-    if let Some(rsa) = &material.worker_rsa {
-        return rsa
-            .sign(&material.private_pkcs8_der, input)
-            .await
-            .map(Signature::new);
-    }
     material
         .prepared
-        .sign(input)
+        .sign_async(input)
+        .await
         .map(Signature::new)
         .map_err(|_| SignError::SigningFailed)
 }

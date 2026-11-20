@@ -32,7 +32,7 @@ nazo-auth.workspace = true
 nazo-crypto = { workspace = true, features = ["password"] }
 nazo-digital-credentials.workspace = true
 nazo-identity.workspace = true
-nazo-key-management = { workspace = true, features = ["worker-signing"] }
+nazo-key-management.workspace = true
 nazo-oauth-server.workspace = true
 nazo-oauth-server-d1.workspace = true
 nazo-runtime-modules.workspace = true
