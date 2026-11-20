@@ -45,6 +45,13 @@ function configuration(input) {
     throw new Error('clients and users must be arrays (empty arrays are allowed)');
   }
   const machineOnly = input.machine_only !== false;
+  const passkeyOnly = input.passkey_only === true;
+  if (machineOnly && passkeyOnly) {
+    throw new Error('machine_only and passkey_only cannot both be enabled');
+  }
+  if (passkeyOnly && (input.users.length !== 1 || input.users[0].password !== undefined)) {
+    throw new Error('Free passkey-only profile requires one initial user without a password');
+  }
   if (machineOnly) {
     if (input.users.length !== 0) {
       throw new Error('Free machine-only profile cannot register password users');
@@ -61,9 +68,10 @@ function configuration(input) {
     }
   }
   for (const user of input.users) {
-    if (typeof user.password !== 'string' || user.password.length < 12 ||
-        /REPLACE|CHANGE_ME|PASSWORD_HERE|^</i.test(user.password)) {
-      throw new Error('Every user needs an original password of at least 12 bytes');
+    if (!passkeyOnly &&
+        (typeof user.password !== 'string' || user.password.length < 12 ||
+         /REPLACE|CHANGE_ME|PASSWORD_HERE|^</i.test(user.password))) {
+      throw new Error('Every password account needs an original password of at least 12 bytes');
     }
   }
   const tenant = input.tenant ?? {
@@ -72,7 +80,7 @@ function configuration(input) {
   const config = {
     tenant, issuer, frontend_base_url: frontend, ingress: 'direct_cloudflare',
     cors_allowed_origins: input.cors_allowed_origins ?? [frontend],
-    modules: input.modules ?? [], machine_only: machineOnly,
+    modules: input.modules ?? [], machine_only: machineOnly, passkey_only: passkeyOnly,
   };
   return { config, clients: input.clients, users: input.users };
 }
@@ -140,17 +148,28 @@ function main() {
     const sqlite = join(temporary, 'seed.sqlite');
     const provision = {
       configuration: config, signing_key_id: keyId, signing_key_base64: key,
-      client_secret_pepper: pepper, clients, users,
+      client_secret_pepper: pepper, clients,
+      users: config.passkey_only
+        ? users.map(user => ({ ...user, password: randomBytes(32).toString('base64url') }))
+        : users,
     };
     const issued = JSON.parse(execute('cargo', [
       'run', '--quiet', '--locked', '--release', '-p', 'nazo-server-worker',
       '--features', 'provisioning', '--bin', 'nazo-worker-provision', '--', sqlite,
     ], { input: JSON.stringify(provision) }));
 
+    const passkeySetup = config.passkey_only
+      ? {
+          token: randomBytes(32).toString('base64url'),
+          expires_at: Math.floor(Date.now() / 1000) + 86400,
+          url: config.issuer + '/auth/setup',
+        }
+      : null;
     // Save recovery material before any remote write. The file must not exist.
     writeFileSync(outputPath, JSON.stringify({
       configuration: config, signing_key_id: keyId, signing_key_base64: key,
       client_secret_pepper: pepper, ...issued,
+      ...(passkeySetup ? { passkey_setup: passkeySetup } : {}),
     }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 
     const seedSql = join(temporary, 'seed.sql');
@@ -165,6 +184,11 @@ function main() {
       NAZO_SIGNING_KEY: key,
       NAZO_CLIENT_SECRET_PEPPER: pepper,
       NAZO_DUMMY_PASSWORD_HASH: issued.dummy_password_hash,
+      ...(passkeySetup ? {
+        NAZO_BOOTSTRAP_TOKEN: passkeySetup.token,
+        NAZO_BOOTSTRAP_USER_ID: issued.user_ids[0],
+        NAZO_BOOTSTRAP_EXPIRES_AT: String(passkeySetup.expires_at),
+      } : {}),
     }), { mode: 0o600 });
     wrangler('deploy', '--secrets-file', secrets);
     console.log('D1 initialized; private recovery credentials saved to ' + outputPath);
