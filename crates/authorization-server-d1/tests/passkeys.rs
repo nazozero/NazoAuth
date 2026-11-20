@@ -6,7 +6,7 @@ use std::sync::{Arc, Barrier};
 
 use futures_executor::block_on;
 use nazo_identity::{
-    SessionId, TenantId, UserId,
+    SessionId, SessionResolution, SessionService, TenantId, UserId,
     passkey::{StoredPasskeyAuthentication, StoredPasskeyRegistration, passkey_user_handle},
     ports::{
         PasskeyAccountRepositoryPort, PasskeyAuthenticationUpdate, PasskeyCeremonyPort,
@@ -332,6 +332,25 @@ fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
             .unwrap()
             .unwrap();
         assert!(session.record().amr().contains(&"bootstrap".to_owned()));
+        let service = SessionService::new(
+            Arc::new(provider.clone()),
+            Arc::new(provider.clone()),
+            tenant,
+        );
+        assert!(matches!(
+            service.current(&SessionId::new("setup-2"), now.as_second()).await.unwrap(),
+            SessionResolution::Missing
+        ));
+        assert!(matches!(
+            service.current_principal(&SessionId::new("setup-2"), now.as_second()).await.unwrap(),
+            SessionResolution::Missing
+        ));
+        assert!(matches!(
+            service.current_for_passkey_enrollment(&SessionId::new("setup-2"), now.as_second()).await.unwrap(),
+            SessionResolution::Present(_)
+        ));
+        assert!(!service.bind_client(&SessionId::new("setup-2"), "oidc-client").await.unwrap());
+
         assert!(
             nazo_identity::session::recent_credential_management_authentication(
                 session.record().auth_time(),
