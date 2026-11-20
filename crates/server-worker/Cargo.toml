@@ -23,6 +23,7 @@ required-features = ["provisioning"]
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true
+blake3.workspace = true
 bytes.workspace = true
 futures-executor = { workspace = true, optional = true }
 http.workspace = true

@@ -74,6 +74,11 @@ async fn fetch(
         );
         return Ok(result);
     }
+    if cached.prepared.configuration.passkey_only {
+        if let Some(reply) = crate::setup::handle(&request, &env, &cached.prepared).await {
+            return Ok(reply);
+        }
+    }
     let now = jiff::Timestamp::now().as_second();
     if now >= cached.refresh_after.get() && !cached.refreshing.replace(true) {
         struct Reset<'a>(&'a Cell<bool>);
