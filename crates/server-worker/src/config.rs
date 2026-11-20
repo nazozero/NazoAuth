@@ -17,6 +17,8 @@ pub struct WorkerConfiguration {
     pub modules: Vec<ModuleId>,
     #[serde(default)]
     pub machine_only: bool,
+    #[serde(default)]
+    pub passkey_only: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
@@ -34,6 +36,10 @@ impl WorkerConfiguration {
         ensure!(
             client_secret_pepper.len() >= 32,
             "client-secret pepper must contain at least 32 bytes"
+        );
+        ensure!(
+            !(self.machine_only && self.passkey_only),
+            "Worker cannot select both machine-only and passkey-only profiles"
         );
         ensure!(
             !self.machine_only || self.modules.is_empty(),
@@ -98,8 +104,50 @@ impl WorkerConfiguration {
 
     /// Restrict Workers Free to service endpoints without Argon2id password work.
     pub fn allows_route(&self, method: &http::Method, path: &str) -> bool {
-        if !self.machine_only {
+        if !self.machine_only && !self.passkey_only {
             return true;
+        }
+        if self.passkey_only {
+            return match *method {
+                http::Method::GET => matches!(
+                    path,
+                    "/.well-known/openid-configuration"
+                        | "/.well-known/oauth-authorization-server"
+                        | "/.well-known/oauth-protected-resource"
+                        | "/health"
+                        | "/jwks.json"
+                        | "/authorize"
+                        | "/authorize/consent"
+                        | "/authorize/client-presentation"
+                        | "/userinfo"
+                        | "/auth/me"
+                        | "/auth/me/passkeys"
+                        | "/auth/csrf"
+                        | "/auth/setup"
+                        | "/auth/setup.js"
+                        | "/logout"
+                ),
+                http::Method::POST => matches!(
+                    path,
+                    "/token"
+                        | "/revoke"
+                        | "/introspect"
+                        | "/par"
+                        | "/authorize"
+                        | "/authorize/decision"
+                        | "/userinfo"
+                        | "/auth/passkey/begin"
+                        | "/auth/passkey/finish"
+                        | "/auth/me/passkeys/registration/begin"
+                        | "/auth/me/passkeys/registration/finish"
+                        | "/auth/logout"
+                        | "/auth/setup/claim"
+                ),
+                http::Method::DELETE => path
+                    .strip_prefix("/auth/me/passkeys/")
+                    .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok()),
+                _ => false,
+            };
         }
         if method == http::Method::GET {
             matches!(

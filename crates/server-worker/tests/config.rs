@@ -9,6 +9,7 @@ fn configuration() -> WorkerConfiguration {
         cors_allowed_origins: vec![],
         modules: vec![],
         machine_only: false,
+        passkey_only: false,
     }
 }
 
@@ -43,6 +44,36 @@ fn free_profile_limits_routes_and_modules() {
     config
         .modules
         .push(nazo_runtime_modules::ModuleId::SessionManagement);
+    assert!(config.application("p".repeat(32)).is_err());
+}
+
+#[test]
+fn free_passkey_profile_never_exposes_password_authentication() {
+    let mut config = configuration();
+    config.passkey_only = true;
+    for (method, path) in [
+        (http::Method::GET, "/.well-known/openid-configuration"),
+        (http::Method::GET, "/authorize"),
+        (http::Method::GET, "/auth/setup"),
+        (http::Method::POST, "/auth/passkey/begin"),
+        (http::Method::POST, "/auth/passkey/finish"),
+        (http::Method::POST, "/auth/me/passkeys/registration/begin"),
+        (http::Method::POST, "/auth/me/passkeys/registration/finish"),
+        (http::Method::POST, "/auth/setup/claim"),
+    ] {
+        assert!(config.allows_route(&method, path), "{path}");
+    }
+    for (method, path) in [
+        (http::Method::POST, "/auth/login"),
+        (http::Method::POST, "/auth/register"),
+        (http::Method::POST, "/auth/me/mfa/totp/begin"),
+        (http::Method::GET, "/admin/users"),
+        (http::Method::GET, "/auth/me/applications"),
+        (http::Method::POST, "/auth/setup"),
+    ] {
+        assert!(!config.allows_route(&method, path), "{path}");
+    }
+    config.machine_only = true;
     assert!(config.application("p".repeat(32)).is_err());
 }
 
