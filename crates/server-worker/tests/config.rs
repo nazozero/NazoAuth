@@ -1,5 +1,17 @@
 use nazo_server_worker::{Ingress, WorkerConfiguration};
 
+#[cfg(feature = "provisioning")]
+fn wrapping_keys() -> nazo_key_management::SigningKeyWrappingKeyRing {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    let key = URL_SAFE_NO_PAD
+        .decode(nazo_oauth_server::crypto::random_urlsafe_token())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    nazo_key_management::SigningKeyWrappingKeyRing::new("test", key, None).unwrap()
+}
+
 fn configuration() -> WorkerConfiguration {
     WorkerConfiguration {
         tenant: nazo_identity::TenantContext::default_system(),
@@ -163,13 +175,6 @@ fn unknown_native_configuration_is_rejected() {
 #[cfg(feature = "provisioning")]
 #[test]
 fn malformed_dummy_verifier_is_rejected_before_storage_initialization() {
-    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-
-    let wrapping_key = URL_SAFE_NO_PAD
-        .decode(nazo_oauth_server::crypto::random_urlsafe_token())
-        .unwrap()
-        .try_into()
-        .unwrap();
     for malformed in [
         "$argon2id$v=19$m=19456,t=2,p=1$",
         "$argon2id$v=19$m=19456,t=2,p=1$c2hvcnQ$c2hvcnQ",
@@ -178,8 +183,7 @@ fn malformed_dummy_verifier_is_rejected_before_storage_initialization() {
             configuration(),
             nazo_oauth_server_d1::Database::in_memory().unwrap(),
             "p".repeat(32),
-            nazo_key_management::SigningKeyWrappingKeyRing::new("test", wrapping_key, None)
-                .unwrap(),
+            wrapping_keys(),
             malformed.into(),
             None,
         ));
@@ -205,7 +209,7 @@ fn dynamic_registration_requires_a_separate_initial_access_secret() {
             config,
             nazo_oauth_server_d1::Database::in_memory().unwrap(),
             "p".repeat(32),
-            nazo_key_management::SigningKeyWrappingKeyRing::new("test", [7; 32], None).unwrap(),
+            wrapping_keys(),
             "invalid-dummy-verifier".into(),
             secret,
         ));
