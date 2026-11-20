@@ -358,7 +358,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
   if (discoveryPassed && input.modules?.includes('dynamic_client_registration')) {
     await step('dynamic_registration_policy_rotation_and_deactivation', async () => {
       const metadata = {
-        client_name: 'Worker acceptance ' + runId, redirect_uris: [], response_types: [],
+        client_name: 'Worker acceptance ' + runId, redirect_uris: [],
         grant_types: ['client_credentials'], token_endpoint_auth_method: 'client_secret_basic', scope: 'service',
       };
       const initialHeaders = { authorization: 'Bearer ' + input.dcr_initial_access_token };
