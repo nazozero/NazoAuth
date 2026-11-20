@@ -251,12 +251,17 @@ fn oneshot_batch_delivers_records_result_and_returns_to_external_caller() {
     assert_eq!(ports.finished.lock().unwrap().len(), 1);
 }
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[test]
+fn native_token_signing_and_userinfo_execute_through_semantic_ports() {
+    block_on(token_signing_and_userinfo_execute_through_semantic_ports());
+}
+
 #[cfg_attr(
     all(target_arch = "wasm32", target_os = "unknown"),
     wasm_bindgen_test::wasm_bindgen_test
 )]
-#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
-fn token_signing_and_userinfo_execute_through_semantic_ports() {
+async fn token_signing_and_userinfo_execute_through_semantic_ports() {
     use app::{
         contracts::userinfo::{
             AccessTokenAuthScheme, UserinfoError, UserinfoOperations, UserinfoRepresentation,
@@ -266,133 +271,130 @@ fn token_signing_and_userinfo_execute_through_semantic_ports() {
     };
     use nazo_auth::{AccessTokenSignInput, AppliedSenderConstraint};
 
-    block_on(async {
-        let registered = client(true);
-        let tenant = registered.tenant_id;
-        let user_id = uuid::Uuid::from_u128(10);
-        let subject = user_id.to_string();
-        let fixture = Fixture::new(Ok(Some(registered.clone())), Ok(None));
-        let claims = serde_json::from_value::<nazo_identity::SubjectClaims>(serde_json::json!({
-            "subject": user_id,
-            "preferred_username": "alice",
+    let registered = client(true);
+    let tenant = registered.tenant_id;
+    let user_id = uuid::Uuid::from_u128(10);
+    let subject = user_id.to_string();
+    let fixture = Fixture::new(Ok(Some(registered.clone())), Ok(None));
+    let claims = serde_json::from_value::<nazo_identity::SubjectClaims>(serde_json::json!({
+        "subject": user_id,
+        "preferred_username": "alice",
+        "email": "alice@example.test",
+        "email_verified": true,
+        "phone_number_verified": false,
+        "updated_at": jiff::Timestamp::now().as_second(),
+    }))
+    .unwrap();
+    let service = Arc::new(token_ports::userinfo_service(
+        fixture.keys.clone(),
+        registered.clone(),
+        claims.clone(),
+        false,
+    ));
+    let issued = service
+        .sign_access_token(AccessTokenSignInput {
+            signing_algorithm: Some("EdDSA"),
+            authorization_id: Some(uuid::Uuid::now_v7()),
+            client_epoch: Some(0),
+            user_epoch: Some(0),
+            issuer: "https://issuer.example",
+            tenant_id: tenant,
+            subject: &subject,
+            user_id: Some(user_id),
+            subject_type: "user",
+            client_id: &registered.client_id,
+            audiences: &["https://issuer.example/userinfo".into()],
+            scopes: &["openid".into(), "email".into()],
+            authorization_details: &serde_json::json!([]),
+            userinfo_claim_requests: &[],
+            ttl_seconds: 300,
+            sender_constraint: AppliedSenderConstraint::Bearer,
+            actor: None,
+        })
+        .await
+        .unwrap();
+    let decoded = service
+        .decode_access_token("https://issuer.example", &issued.token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(decoded.sub, subject);
+    assert_eq!(decoded.jti, issued.jti);
+    assert_eq!(decoded.exp, issued.expires_at);
+    assert_eq!(decoded.tenant_id, tenant.to_string());
+
+    let handles = UserinfoHandles::new(
+        Arc::new(ProofStore::default()),
+        fixture.audit.clone(),
+        fixture.keys.clone(),
+        UserinfoConfig::new(
+            "https://issuer.example",
+            "https://resource.example",
+            "https://mtls.example",
+            DpopNoncePolicy::Optional,
+            false,
+        ),
+        fixture.remote_client_documents.clone(),
+    );
+    let operation = ServerUserinfoOperations::new(service.clone(), handles.clone());
+    let prepared = operation
+        .prepare(AccessTokenAuthScheme::Bearer, issued.token.clone())
+        .await
+        .unwrap();
+    let result = operation
+        .userinfo(
+            prepared,
+            UserinfoRequestFacts {
+                dpop: DpopRequestFacts {
+                    method: http::Method::GET,
+                    path: "/userinfo",
+                    authority: Some("issuer.example"),
+                    proof: Ok(None),
+                    proof_present: false,
+                },
+                mtls_thumbprint: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.dpop_nonce, None);
+    assert_eq!(
+        result.representation,
+        UserinfoRepresentation::Claims(serde_json::json!({
+            "sub": subject,
             "email": "alice@example.test",
             "email_verified": true,
-            "phone_number_verified": false,
-            "updated_at": jiff::Timestamp::now().as_second(),
-        }))
-        .unwrap();
-        let service = Arc::new(token_ports::userinfo_service(
-            fixture.keys.clone(),
-            registered.clone(),
-            claims.clone(),
-            false,
-        ));
-        let issued = service
-            .sign_access_token(AccessTokenSignInput {
-                signing_algorithm: Some("EdDSA"),
-                authorization_id: Some(uuid::Uuid::now_v7()),
-                client_epoch: Some(0),
-                user_epoch: Some(0),
-                issuer: "https://issuer.example",
-                tenant_id: tenant,
-                subject: &subject,
-                user_id: Some(user_id),
-                subject_type: "user",
-                client_id: &registered.client_id,
-                audiences: &["https://issuer.example/userinfo".into()],
-                scopes: &["openid".into(), "email".into()],
-                authorization_details: &serde_json::json!([]),
-                userinfo_claim_requests: &[],
-                ttl_seconds: 300,
-                sender_constraint: AppliedSenderConstraint::Bearer,
-                actor: None,
-            })
-            .await
-            .unwrap();
-        let decoded = service
-            .decode_access_token("https://issuer.example", &issued.token)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(decoded.sub, subject);
-        assert_eq!(decoded.jti, issued.jti);
-        assert_eq!(decoded.exp, issued.expires_at);
-        assert_eq!(decoded.tenant_id, tenant.to_string());
+        })),
+    );
 
-        let handles = UserinfoHandles::new(
-            Arc::new(ProofStore::default()),
-            fixture.audit.clone(),
-            fixture.keys.clone(),
-            UserinfoConfig::new(
-                "https://issuer.example",
-                "https://resource.example",
-                "https://mtls.example",
-                DpopNoncePolicy::Optional,
-                false,
-            ),
-            fixture.remote_client_documents.clone(),
-        );
-        let operation = ServerUserinfoOperations::new(service.clone(), handles.clone());
-        let prepared = operation
-            .prepare(AccessTokenAuthScheme::Bearer, issued.token.clone())
-            .await
-            .unwrap();
-        let result = operation
-            .userinfo(
-                prepared,
-                UserinfoRequestFacts {
-                    dpop: DpopRequestFacts {
-                        method: http::Method::GET,
-                        path: "/userinfo",
-                        authority: Some("issuer.example"),
-                        proof: Ok(None),
-                        proof_present: false,
-                    },
-                    mtls_thumbprint: None,
-                },
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.dpop_nonce, None);
-        assert_eq!(
-            result.representation,
-            UserinfoRepresentation::Claims(serde_json::json!({
-                "sub": subject,
-                "email": "alice@example.test",
-                "email_verified": true,
-            })),
-        );
+    let mut parts = issued.token.split('.');
+    let header = parts.next().unwrap();
+    let mut tampered: serde_json::Value =
+        serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap()).unwrap();
+    tampered["sub"] = serde_json::json!("another-subject");
+    let signature = parts.next().unwrap();
+    let tampered = format!(
+        "{header}.{}.{signature}",
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&tampered).unwrap()),
+    );
+    assert!(matches!(
+        operation
+            .prepare(AccessTokenAuthScheme::Bearer, tampered)
+            .await,
+        Err(UserinfoError::InvalidAccessToken),
+    ));
 
-        let mut parts = issued.token.split('.');
-        let header = parts.next().unwrap();
-        let mut tampered: serde_json::Value =
-            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap())
-                .unwrap();
-        tampered["sub"] = serde_json::json!("another-subject");
-        let signature = parts.next().unwrap();
-        let tampered = format!(
-            "{header}.{}.{signature}",
-            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&tampered).unwrap()),
-        );
-        assert!(matches!(
-            operation
-                .prepare(AccessTokenAuthScheme::Bearer, tampered)
-                .await,
-            Err(UserinfoError::InvalidAccessToken),
-        ));
-
-        let revoked_service = Arc::new(token_ports::userinfo_service(
-            fixture.keys,
-            registered,
-            claims,
-            true,
-        ));
-        let revoked = ServerUserinfoOperations::new(revoked_service, handles);
-        assert!(matches!(
-            revoked
-                .prepare(AccessTokenAuthScheme::Bearer, issued.token)
-                .await,
-            Err(UserinfoError::RevokedAccessToken),
-        ));
-    });
+    let revoked_service = Arc::new(token_ports::userinfo_service(
+        fixture.keys,
+        registered,
+        claims,
+        true,
+    ));
+    let revoked = ServerUserinfoOperations::new(revoked_service, handles);
+    assert!(matches!(
+        revoked
+            .prepare(AccessTokenAuthScheme::Bearer, issued.token)
+            .await,
+        Err(UserinfoError::RevokedAccessToken),
+    ));
 }

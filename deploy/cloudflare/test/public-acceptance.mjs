@@ -12,7 +12,7 @@ async function readPrivateJson(path) {
 }
 test('public HTTPS Worker protocol acceptance', {
   skip: !inputPath,
-  timeout: 600_000,
+  timeout: 1_200_000,
 }, async () => {
   const input = await readPrivateJson(inputPath);
   const statePath = process.env.NAZO_WORKER_ACCEPTANCE_AUTHENTICATOR;

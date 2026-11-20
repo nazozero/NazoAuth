@@ -90,8 +90,9 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 
 | Area | Current boundary and work required |
 | --- | --- |
-| mTLS | The HTTP adapter does not supply verified client certificates. Supporting Cloudflare-terminated mTLS requires trusted platform certificate facts, certificate/trust adapters and hostname policy. Forwarded headers cannot supply this authority. This is an ingress integration gap, not a general prohibition on Workers cryptography. |
+| mTLS | `nazo-crypto` already provides portable X.509 signature and chain verification. The HTTP adapter does not supply trusted client-certificate facts, and the Worker does not bind a trust store or certificate verifier. Cloudflare-terminated mTLS needs those ingress facts, trust-store/verifier composition and hostname policy. Forwarded headers cannot supply this authority. |
 | Remote documents and federation | The Worker does not bind outbound document or federation clients, federation-link storage or federation replay state. A bounded HTTP adapter must retain shared URL, redirect, size, expiry and SSRF policy; enabling arbitrary `fetch` would not satisfy the contracts. |
+| Back-channel logout | The D1 logout outbox, durable delivery/retry state and bounded outbound delivery adapter are unbound. Workers HTTP fetch can supply the transport, while adapters must retain the shared claim, retry and completion contracts. Discovery support remains disabled. |
 | Email registration and verification | Registration accounts, code reservation/consumption and email delivery are unbound. An email service binding alone does not provide the missing atomic identity operations. |
 | MFA | TOTP enrollment/consumption, backup codes, remembered devices and their required audit mutations need D1 adapters. Password-based backup-code hashing also needs an appropriate CPU budget. |
 | Authorized-application list | `/auth/me` counts persisted grants. The detailed application list is unavailable because D1 does not retain the native authorization-history fields needed for exact counts and last-authorization data. A list must not fabricate them from current grants. |
@@ -434,8 +435,8 @@ npm run bundle --prefix deploy/cloudflare
 npm test --prefix deploy/cloudflare
 ```
 
-The integration suite loads the actual WASM in workerd and provisions an actual
-D1 binding. It exercises the selected modules along with discovery/JWKS,
+The integration suite loads the actual WASM in local workerd with a locally
+provisioned D1 binding. It exercises the selected modules along with discovery/JWKS,
 login/session cookies, authorization code and PKCE, refresh, UserInfo, revocation,
 DPoP nonce/replay, concurrent one-time consumption, binding changes, isolate
 restart and storage failure. It prints local cold-start and concurrent Client

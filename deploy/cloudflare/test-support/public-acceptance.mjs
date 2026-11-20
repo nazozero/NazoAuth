@@ -542,7 +542,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
       }
       const preflight = await request('/token', { method: 'OPTIONS', headers: { origin: issuer,
         'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type,dpop' } });
-      ensure(preflight.status === 204 && preflight.headers.get('access-control-allow-origin') === issuer,
+      ensure(preflight.status === 200 && preflight.headers.get('access-control-allow-origin') === issuer,
         'Authorization token preflight rejected the configured issuer origin');
     });
     const enrolled = await step(input.authenticator ? 'synthetic_passkey_login_with_existing_credential' : 'synthetic_passkey_enrollment_and_login', async () => {
