@@ -5,7 +5,7 @@ use crate::{
     ReconcileOutcome, RegistryError,
 };
 
-use super::RuntimeModuleRegistry;
+use super::{ReconcileMode, RuntimeModuleRegistry};
 
 impl<R, L> RuntimeModuleRegistry<R, L>
 where
@@ -55,7 +55,7 @@ where
             .collect())
     }
 
-    fn is_settled(
+    pub(super) fn is_settled(
         &self,
         module_id: ModuleId,
         states: &BTreeMap<ModuleId, ModuleReconcileState>,
@@ -66,6 +66,15 @@ where
         let enabled = self
             .catalog
             .effective_enabled(module_id, state.desired.mode.is_enabled());
+        if !enabled
+            && !matches!(
+                self.catalog.effective_disable_policy(module_id),
+                crate::DisablePolicy::Immediate
+            )
+            && !self.snapshots.is_idle(module_id)
+        {
+            return false;
+        }
         if !state.instance.as_ref().is_some_and(|instance| {
             instance.applied_revision == Some(state.desired.revision)
                 && ((enabled && instance.state == ModuleState::Enabled)
@@ -115,12 +124,33 @@ where
             .get(&module_id)
             .expect("the closed module catalog must have a transition lock");
         let _transition_guard = transition_lock.lock().await;
-        self.reconcile_once_serialized(module_id).await
+        self.reconcile_once_serialized(module_id, ReconcileMode::Wait)
+            .await
+    }
+
+    /// Advance at most one lifecycle step without awaiting another reconciler
+    /// or a local request lease. Stored work is polled once by the host.
+    /// Catalog durations must remain stable throughout an in-progress disable.
+    pub async fn reconcile_step(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        let transition_lock = self
+            .transition_locks
+            .get(&module_id)
+            .expect("the closed module catalog must have a transition lock");
+        let Some(_transition_guard) = transition_lock.try_lock() else {
+            self.publish(module_id, false, false)?;
+            return Ok(ReconcileOutcome::Pending);
+        };
+        self.reconcile_once_serialized(module_id, ReconcileMode::Step)
+            .await
     }
 
     async fn reconcile_once_serialized(
         &self,
         module_id: ModuleId,
+        mode: ReconcileMode,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let desired = match self.repository.read_desired(module_id).await {
             Ok(Some(desired)) => desired,
@@ -192,14 +222,21 @@ where
                     && ((enabled && instance.state == ModuleState::Enabled)
                         || (!enabled && instance.state == ModuleState::Disabled))
             })
+            && (enabled
+                || matches!(
+                    self.catalog.effective_disable_policy(module_id),
+                    crate::DisablePolicy::Immediate
+                )
+                || self.snapshots.is_idle(module_id))
         {
             return Ok(ReconcileOutcome::NoChange);
         }
 
         if enabled {
-            self.enable(module_id, desired.revision, current).await
+            self.enable(module_id, desired.revision, current, mode)
+                .await
         } else {
-            self.disable(module_id, desired.revision, current).await
+            self.disable(desired, current, mode).await
         }
     }
 }

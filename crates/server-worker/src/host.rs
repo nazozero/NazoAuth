@@ -52,10 +52,19 @@ async fn fetch(
     if !configuration.accepts_authority(request.uri(), request.headers()) {
         return Ok(response(StatusCode::MISDIRECTED_REQUEST, Bytes::new()));
     }
-    if let Some(reply) = crate::ui::serve(&request, &env, configuration).await {
+    // Most Web assets do not depend on module state. The Device shell is an
+    // existing-transaction entry and follows the same current drain admission
+    // as the protocol after the authoritative synchronization below.
+    let module_ui = !configuration.machine_only
+        && matches!(*request.method(), http::Method::GET | http::Method::HEAD)
+        && crate::ui::is_device_page(request.uri().path())
+        && configuration
+            .modules
+            .contains(&nazo_runtime_modules::ModuleId::DeviceAuthorization);
+    if !module_ui && let Some(reply) = crate::ui::serve(&request, &env, configuration).await {
         return reply;
     }
-    if !configuration.allows_route(request.method(), request.uri().path()) {
+    if !module_ui && !configuration.allows_route(request.method(), request.uri().path()) {
         return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
     if configuration.ingress == Ingress::DirectCloudflare {
@@ -84,14 +93,42 @@ async fn fetch(
             }
         },
     };
+    if cached
+        .prepared
+        .application
+        .synchronize_runtime_modules_step()
+        .await
+        .is_err()
+    {
+        worker::console_error!("NazoAuth Worker module synchronization failed");
+        return Ok(unavailable());
+    }
+    let active_modules = cached.prepared.application.runtime_module_snapshot();
+    if module_ui {
+        if !active_modules.permits(
+            nazo_runtime_modules::ModuleId::DeviceAuthorization,
+            nazo_runtime_modules::CapabilityAdmission::ExistingTransaction,
+        ) {
+            return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
+        }
+        if let Some(reply) = crate::ui::serve(&request, &env, &cached.prepared.configuration).await
+        {
+            return reply;
+        }
+    }
     if cached.prepared.configuration.machine_only
         && request.method() == http::Method::GET
         && request.uri().path() == "/.well-known/oauth-authorization-server"
     {
         // A machine-only deployment must not advertise browser grants.
-        let body = serde_json::to_vec(&cached.prepared.configuration.machine_metadata())
-            .map(Bytes::from)
-            .map_err(|_| worker::Error::RustError("OAuth metadata encoding failed".into()))?;
+        let body = serde_json::to_vec(
+            &cached
+                .prepared
+                .configuration
+                .machine_metadata(&active_modules),
+        )
+        .map(Bytes::from)
+        .map_err(|_| worker::Error::RustError("OAuth metadata encoding failed".into()))?;
         let mut result = response(StatusCode::OK, body);
         result.headers_mut().insert(
             http::header::CONTENT_TYPE,
@@ -241,18 +278,27 @@ async fn scheduled(_: worker::ScheduledEvent, env: Env, context: worker::Schedul
             // One bounded pass per Cron event on every deployment profile.
             // Enabling password login does not change the Workers plan budget.
             let total = provider.prune_expired(500).await?;
+            let bindings = binding_values(&env)?;
+            let cached = APPLICATION.with_borrow(|cached| {
+                cached
+                    .as_ref()
+                    .filter(|cached| cached.bindings == bindings)
+                    .cloned()
+            });
+            let application = match cached {
+                Some(cached) => cached,
+                None => application(&env, bindings, configuration.clone()).await?,
+            };
+            if application
+                .prepared
+                .application
+                .synchronize_runtime_modules_step()
+                .await
+                .is_err()
+            {
+                worker::console_error!("NazoAuth scheduled module synchronization failed");
+            }
             if !configuration.services.outbound_origins.is_empty() {
-                let bindings = binding_values(&env)?;
-                let cached = APPLICATION.with_borrow(|cached| {
-                    cached
-                        .as_ref()
-                        .filter(|cached| cached.bindings == bindings)
-                        .cloned()
-                });
-                let application = match cached {
-                    Some(cached) => cached,
-                    None => application(&env, bindings, configuration.clone()).await?,
-                };
                 if configuration
                     .modules
                     .contains(&nazo_runtime_modules::ModuleId::Ciba)

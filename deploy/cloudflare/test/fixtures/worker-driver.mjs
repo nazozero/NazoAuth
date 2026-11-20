@@ -12,9 +12,16 @@ export default {
         return invoke({ ...env, NAZO_DB: env.NAZO_EMPTY_DB });
       case 'version':
         return invoke({ ...env, NAZO_VERSION: { id: 'updated-version' } });
+      case 'warm-version':
+        return invoke({ ...env, NAZO_VERSION: { id: 'warm-version' } });
       case 'passkey-profile': {
         const configuration = JSON.parse(env.NAZO_CONFIG);
         configuration.passkey_only = true;
+        return invoke({ ...env, NAZO_CONFIG: JSON.stringify(configuration) });
+      }
+      case 'without-device': {
+        const configuration = JSON.parse(env.NAZO_CONFIG);
+        configuration.modules = configuration.modules.filter(module => module !== 'device_authorization');
         return invoke({ ...env, NAZO_CONFIG: JSON.stringify(configuration) });
       }
       case 'configuration': {

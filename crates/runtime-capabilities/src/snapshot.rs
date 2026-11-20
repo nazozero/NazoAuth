@@ -84,6 +84,11 @@ impl SnapshotStore {
         self.leases.wait_until_zero(module_id).await;
     }
 
+    #[must_use]
+    pub fn is_idle(&self, module_id: ModuleId) -> bool {
+        self.leases.is_idle(module_id)
+    }
+
     pub fn compare_and_publish(
         &self,
         expected: ModuleRevision,

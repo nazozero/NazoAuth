@@ -26,6 +26,14 @@ fn configuration() -> WorkerConfiguration {
     }
 }
 
+fn active_modules(config: &WorkerConfiguration) -> nazo_runtime_modules::ActiveModuleSnapshot {
+    nazo_runtime_modules::ActiveModuleSnapshot {
+        revision: nazo_runtime_modules::ModuleRevision::new(1),
+        accepting: config.modules.iter().copied().collect(),
+        draining: Default::default(),
+    }
+}
+
 #[test]
 fn free_profile_limits_routes_and_modules() {
     let mut config = configuration();
@@ -47,7 +55,7 @@ fn free_profile_limits_routes_and_modules() {
     ] {
         assert!(!config.allows_route(&method, path), "{path}");
     }
-    let metadata = config.machine_metadata();
+    let metadata = config.machine_metadata(&active_modules(&config));
     assert_eq!(
         metadata["grant_types_supported"],
         serde_json::json!(["client_credentials"])
@@ -115,7 +123,7 @@ fn all_shared_modules_are_admitted_by_the_host_profile() {
     assert!(config.application("p".repeat(32)).is_ok());
     config.services.mtls = true;
     assert!(config.application("p".repeat(32)).is_ok());
-    let metadata = config.machine_metadata();
+    let metadata = config.machine_metadata(&active_modules(&config));
     assert_eq!(metadata["tls_client_certificate_bound_access_tokens"], true);
     assert!(
         metadata["token_endpoint_auth_methods_supported"]
@@ -158,7 +166,7 @@ fn portable_extensions_and_service_metadata_follow_the_selected_modules() {
     config.modules = vec![ModuleId::TokenExchange, ModuleId::JwtBearerGrant];
     assert!(config.application("p".repeat(32)).is_ok());
     assert_eq!(
-        config.machine_metadata()["grant_types_supported"],
+        config.machine_metadata(&active_modules(&config))["grant_types_supported"],
         serde_json::json!([
             "client_credentials",
             "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -167,6 +175,38 @@ fn portable_extensions_and_service_metadata_follow_the_selected_modules() {
     );
     assert!(config.allows_route(&http::Method::OPTIONS, "/token"));
     assert!(!config.allows_route(&http::Method::OPTIONS, "/authorize"));
+}
+
+#[test]
+fn machine_metadata_uses_current_admission_within_the_constructed_capabilities() {
+    use nazo_runtime_modules::ModuleId;
+    let mut config = configuration();
+    config.machine_only = true;
+    config.modules = vec![
+        ModuleId::TokenExchange,
+        ModuleId::JwtBearerGrant,
+        ModuleId::DynamicClientRegistration,
+    ];
+    let mut snapshot = active_modules(&config);
+    snapshot.accepting.remove(&ModuleId::JwtBearerGrant);
+    snapshot
+        .accepting
+        .remove(&ModuleId::DynamicClientRegistration);
+    snapshot.draining.insert(ModuleId::JwtBearerGrant);
+    let metadata = config.machine_metadata(&snapshot);
+    assert_eq!(
+        metadata["grant_types_supported"],
+        serde_json::json!([
+            "client_credentials",
+            "urn:ietf:params:oauth:grant-type:token-exchange"
+        ])
+    );
+    assert!(metadata.get("registration_endpoint").is_none());
+    config.modules.clear();
+    assert_eq!(
+        config.machine_metadata(&snapshot)["grant_types_supported"],
+        serde_json::json!(["client_credentials"])
+    );
 }
 
 #[test]
@@ -403,7 +443,7 @@ fn registration_admission_follows_the_deployment_capabilities() {
         vec!["client_credentials"]
     );
     assert_eq!(
-        config.machine_metadata()["registration_endpoint"],
+        config.machine_metadata(&active_modules(&config))["registration_endpoint"],
         "https://auth.example.com/register"
     );
 }

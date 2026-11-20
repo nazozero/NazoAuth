@@ -2,6 +2,7 @@ import { publicMfa } from './public-mfa.mjs';
 import { publicIdentityServices } from './public-identity-services.mjs';
 import { publicAdminWorkflows } from './public-admin-workflows.mjs';
 import { publicCredentials } from './public-credentials.mjs';
+import { publicRuntimeModules } from './public-runtime-modules.mjs';
 import {
   constants, createHash, createPrivateKey, createPublicKey, generateKeyPairSync,
   randomBytes, randomUUID, sign, verify,
@@ -19,6 +20,7 @@ const publicErrorCodes = new Set([
   'server_error', 'temporarily_unavailable', 'login_required', 'interaction_required', 'consent_required',
   'use_dpop_nonce', 'invalid_dpop_proof', 'authorization_pending', 'slow_down', 'access_denied',
   'expired_token', 'invalid_request_object', 'invalid_request_uri', 'invalid_token',
+  'revision_conflict', 'mfa_step_up_required', 'service_not_constructed',
 ]);
 function publicErrorCode(text) {
   try {
@@ -72,7 +74,7 @@ function signJwt(header, claims, key) {
   return `${input}.${encoded(signature)}`;
 }
 
-function verifyJwt(jwt, keys, issuer, audience) {
+export function verifyJwt(jwt, keys, issuer, audience) {
   ensure(typeof jwt === 'string', 'Missing signed JWT');
   const parts = jwt.split('.');
   ensure(parts.length === 3, 'Expected a compact signed JWT');
@@ -101,7 +103,7 @@ function verifyJwt(jwt, keys, issuer, audience) {
   return claims;
 }
 
-function clientAuthentication(client, issuer) {
+export function clientAuthentication(client, issuer) {
   if (client.private_key_jwk) {
     const now = Math.floor(Date.now() / 1000);
     const key = createPrivateKey({ key: client.private_key_jwk, format: 'jwk' });
@@ -131,6 +133,10 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
     'Acceptance requires a canonical HTTPS issuer origin');
   ensure(!origin.username && !origin.password, 'Issuer must not contain credentials');
   const issuer = origin.origin;
+  if (input.runtime_modules) {
+    ensure(input.runtime_modules.expected_issuer === issuer && input.browser_client
+      && input.administrator && input.device_client, 'Missing explicit runtime module acceptance input');
+  }
   if (input.workload) {
     ensure(input.private_key_client, 'Missing private-key client for the service workload');
     for (const field of ['requests', 'concurrency']) {
@@ -165,6 +171,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
   let phase = 'protocol';
   let workload;
   let credentials;
+  let runtimeModules;
 
   async function persistAuthenticator() {
     if (!saveAuthenticator) return;
@@ -855,6 +862,11 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
         phase = 'password_mfa';
         const mfa = await publicMfa({ issuer, input, request, postJson, json, step });
         try {
+          if (input.runtime_modules) {
+            phase = 'runtime_modules';
+            runtimeModules = await publicRuntimeModules({ issuer, input, request, postForm,
+              authenticatedForm, json, step, session: mfa.session, signingKeys, verifyJwt });
+          }
           phase = 'identity_services';
           await publicAdminWorkflows({ issuer, input, request, postJson, postForm, json, step,
             authenticatedForm, session: mfa.session, baselineSession: session,
@@ -943,6 +955,7 @@ export async function runPublicAcceptance(input, fetchRequest = fetch, saveAuthe
     cpu: { source: 'separate Cloudflare invocation telemetry', measured: false },
     ...(workload ? { workload } : {}),
     ...(credentials ? { digital_credentials: credentials } : {}),
+    ...(runtimeModules ? { runtime_modules: runtimeModules } : {}),
     requests,
   };
 }

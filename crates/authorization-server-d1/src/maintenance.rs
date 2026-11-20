@@ -129,6 +129,16 @@ impl D1Provider {
                 "user_id,token_hash",
                 format!("expires_at<={NOW}"),
             ),
+            // Instance rows are reconstructible observations, not proof that
+            // every isolate has finished its active requests. Desired intent,
+            // its timestamp-bound drain window and immutable events remain.
+            (
+                "nazo_module_instances",
+                "instance_id,module_id",
+                format!(
+                    "updated_at<{NOW}-604800000000 AND (drain_deadline IS NULL OR drain_deadline<={NOW})"
+                ),
+            ),
         ];
         for (table, key, condition) in extra {
             statements.push(Statement::new(format!(

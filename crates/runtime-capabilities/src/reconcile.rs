@@ -12,6 +12,13 @@ pub struct LifecycleFailure {
     pub code: &'static str,
 }
 
+/// One bounded observation of stored work, without waiting for its deadline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DrainProgress {
+    Pending,
+    Complete,
+}
+
 pub trait ModuleLifecycle: Send + Sync {
     fn drain_stored_transactions(
         &self,
@@ -19,6 +26,22 @@ pub trait ModuleLifecycle: Send + Sync {
         revision: ModuleRevision,
         remaining_duration: Duration,
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>>;
+
+    /// Inspect stored work once. Implementations must not sleep or retain a
+    /// request-owned future for another request to resume. `Pending` never
+    /// acknowledges a completed drain, including when the deadline has passed.
+    fn poll_stored_transactions(
+        &self,
+        _module_id: ModuleId,
+        _revision: ModuleRevision,
+        _remaining_duration: Duration,
+    ) -> LifecycleFuture<'_, Result<DrainProgress, LifecycleFailure>> {
+        Box::pin(async {
+            Err(LifecycleFailure {
+                code: "bounded_drain_unavailable",
+            })
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -33,6 +56,15 @@ impl ModuleLifecycle for NoopModuleLifecycle {
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
         Box::pin(async { Ok(true) })
     }
+
+    fn poll_stored_transactions(
+        &self,
+        _module_id: ModuleId,
+        _revision: ModuleRevision,
+        _remaining_duration: Duration,
+    ) -> LifecycleFuture<'_, Result<DrainProgress, LifecycleFailure>> {
+        Box::pin(async { Ok(DrainProgress::Complete) })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,6 +72,7 @@ pub enum ReconcileOutcome {
     NoChange,
     Enabled,
     Disabled,
+    Pending,
     StaleDiscarded,
     Failed,
 }
@@ -52,6 +85,7 @@ pub enum RegistryError<E> {
         compensation: Box<RegistryError<E>>,
     },
     MissingDesiredState(ModuleId),
+    InconsistentDesiredState(ModuleId),
     RuntimeDisableBlocked(ModuleId),
     ServiceNotConstructed(ModuleId),
     ActiveDependent {
@@ -64,4 +98,7 @@ pub enum RegistryError<E> {
     },
     RevisionExhausted(ModuleId),
     SnapshotRevisionExhausted,
+    DrainDeadlineOverflow(ModuleId),
+    SynchronizationBusy,
+    SynchronizationChanged,
 }

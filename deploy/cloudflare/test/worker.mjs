@@ -462,15 +462,152 @@ test('changed bindings never reuse a previous application graph', async () => {
   assert.equal((await request('/.well-known/openid-configuration', { headers: { 'x-nazo-test-binding': 'configuration' } })).status, 421);
   const restored = await expectJson(await request('/.well-known/openid-configuration'));
   assert.equal(restored.issuer, issuer);
-  // The JS resource object can survive a platform version change. Force the
-  // real initialization read to fail and prove the version ID invalidates it.
-  await database.exec('ALTER TABLE nazo_modules RENAME TO nazo_modules_held');
+  // The JS resource object can survive a platform version change. Force a
+  // build-only key read to fail; each request still reads module authority.
+  const warmHeaders = { 'x-nazo-test-binding': 'warm-version' };
+  assert.equal((await request('/.well-known/openid-configuration', { headers: warmHeaders })).status, 200);
+  await database.exec('ALTER TABLE nazo_signing_keys RENAME TO nazo_signing_keys_held');
   try {
-    assert.equal((await request('/.well-known/openid-configuration')).status, 200);
+    assert.equal((await request('/.well-known/openid-configuration', { headers: warmHeaders })).status, 200);
     assert.equal((await request('/.well-known/openid-configuration', { headers: { 'x-nazo-test-binding': 'version' } })).status, 503);
   } finally {
-    await database.exec('ALTER TABLE nazo_modules_held RENAME TO nazo_modules');
+    await database.exec('ALTER TABLE nazo_signing_keys_held RENAME TO nazo_signing_keys');
   }
+});
+
+test('hot and cold requests fail closed on missing module authority and recover', async () => {
+  await expectJson(await request('/.well-known/openid-configuration'));
+  await database.exec('ALTER TABLE nazo_module_desired RENAME TO nazo_module_desired_held');
+  try {
+    assert.equal((await request('/.well-known/openid-configuration')).status, 503);
+    assert.equal((await request('/.well-known/openid-configuration', {
+      headers: { 'x-nazo-test-binding': 'version' },
+    })).status, 503);
+  } finally {
+    await database.exec('ALTER TABLE nazo_module_desired_held RENAME TO nazo_module_desired');
+  }
+  const restored = await expectJson(await request('/.well-known/openid-configuration'));
+  assert.ok(restored.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:jwt-bearer'));
+});
+
+test('hot and cold graphs use current module intent without a deployment', async () => {
+  const moduleId = 'jwt_bearer_grant';
+  const read = () => database.prepare('SELECT mode,revision,updated_at FROM nazo_module_desired WHERE tenant_id=? AND module_id=?')
+    .bind(configuration.tenant.tenant_id, moduleId).first();
+  const before = await read();
+  assert.equal(before.mode, 'enabled');
+  let ours;
+  await expectJson(await request('/.well-known/openid-configuration'));
+  try {
+    // Local fixture admission tests inject the authoritative row. Store CAS,
+    // canonical audit and HTTP administrator policy have separate real tests.
+    ours = before.revision + 1;
+    const changed = await database.prepare('UPDATE nazo_module_desired SET mode=?,revision=?,updated_at=? WHERE tenant_id=? AND module_id=? AND revision=?')
+      .bind('disabled', ours, Date.now() * 1000, configuration.tenant.tenant_id, moduleId, before.revision).run();
+    assert.equal(changed.meta.changes, 1);
+    const hot = await expectJson(await request('/.well-known/openid-configuration'));
+    assert.ok(!hot.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:jwt-bearer'));
+    const cold = await expectJson(await request('/.well-known/openid-configuration', {
+      headers: { 'x-nazo-test-binding': 'version' },
+    }));
+    assert.ok(!cold.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:jwt-bearer'));
+    const rejected = await expectJson(await postForm('/token', jwtClientForm(provisioned.clients[3], {
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt({}), scope: 'service',
+    })), 400);
+    assert.equal(rejected.error, 'unsupported_grant_type');
+  } finally {
+    if (ours !== undefined) {
+      const restored = await database.prepare('UPDATE nazo_module_desired SET mode=?,revision=?,updated_at=? WHERE tenant_id=? AND module_id=? AND revision=? AND mode=?')
+        .bind('enabled', ours + 1, Date.now() * 1000, configuration.tenant.tenant_id, moduleId, ours, 'disabled').run();
+      assert.equal(restored.meta.changes, 1, 'module fixture lost its restore CAS');
+    }
+  }
+  const restored = await expectJson(await request('/.well-known/openid-configuration'));
+  assert.ok(restored.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:jwt-bearer'));
+});
+
+test('Device drain survives cold graphs and expires before UI or transaction admission', async () => {
+  const moduleId = 'device_authorization';
+  const client = provisioned.clients[6];
+  const session = await login();
+  const coldHeaders = { 'x-nazo-test-binding': 'version' };
+  const create = () => postForm('/device_authorization', { client_id: client.client_id,
+    scope: 'openid profile email offline_access' });
+  const poll = (device, headers = {}) => postForm('/token', { grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    client_id: client.client_id, device_code: device.device_code }, headers);
+  const decide = (device, decision, headers = {}) => postForm('/device/decision', {
+    user_code: device.user_code, decision, csrf_token: session.csrf,
+  }, { ...headers, cookie: session.cookie });
+  const original = await database.prepare('SELECT mode,revision FROM nazo_module_desired WHERE tenant_id=? AND module_id=?')
+    .bind(configuration.tenant.tenant_id, moduleId).first();
+  assert.equal(original.mode, 'enabled');
+  let currentRevision = original.revision;
+  let currentMode = original.mode;
+  let outstanding;
+  let issued;
+  const set = async (mode, at = Date.now() * 1000) => {
+    const result = await database.prepare('UPDATE nazo_module_desired SET mode=?,revision=?,updated_at=? WHERE tenant_id=? AND module_id=? AND revision=? AND mode=?')
+      .bind(mode, currentRevision + 1, at, configuration.tenant.tenant_id, moduleId, currentRevision, currentMode).run();
+    assert.equal(result.meta.changes, 1, 'Device fixture lost its state CAS');
+    currentRevision++;
+    currentMode = mode;
+  };
+  try {
+    outstanding = await expectJson(await create());
+    assert.equal((await expectJson(await poll(outstanding), 400)).error, 'authorization_pending');
+    await set('disabled');
+    const hot = await expectJson(await request('/.well-known/openid-configuration'));
+    assert.ok(!hot.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:device_code'));
+    assert.equal((await create()).status, 400);
+    for (const path of ['/device', '/device/']) {
+      const shell = await request(path);
+      assert.equal(shell.status, 307);
+      assert.equal(shell.headers.get('location'), '/ui/device');
+    }
+    const view = await expectJson(await request('/device/verification?' + form({ user_code: outstanding.user_code }), {
+      headers: { ...coldHeaders, cookie: session.cookie },
+    }));
+    assert.equal(view.request.client_id, client.client_id);
+    const states = await database.prepare('SELECT instance_id,drain_deadline FROM nazo_module_instances WHERE tenant_id=? AND module_id=? AND transition_revision=? AND state=?')
+      .bind(configuration.tenant.tenant_id, moduleId, currentRevision, 'draining').all();
+    assert.ok(states.results.length >= 2, 'Both hot and cold instance observations must exist');
+    assert.equal(new Set(states.results.map(row => row.drain_deadline)).size, 1);
+    assert.ok(states.results[0].drain_deadline > Date.now() * 1000);
+    // A long-lived drain must not serialize unrelated requests on its
+    // request-owned D1 futures or fail stable admission with a busy lock.
+    const duringDrain = await Promise.all(Array.from({ length: 8 }, async () =>
+      expectJson(await request('/.well-known/openid-configuration', { headers: coldHeaders }))));
+    for (const metadata of duringDrain) {
+      assert.ok(!metadata.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:device_code'));
+      assert.ok(metadata.grant_types_supported.includes('client_credentials'));
+    }
+    assert.equal((await decide(outstanding, 'approve', coldHeaders)).status, 200);
+    issued = await expectJson(await poll(outstanding, coldHeaders));
+    outstanding = undefined;
+    assert.ok(issued.access_token && issued.id_token && issued.refresh_token);
+
+    await set('enabled');
+    outstanding = await expectJson(await create());
+    // Exercise an expired authoritative horizon without making workerd wait
+    // for the real protocol TTL. Only this local fixture alters the clock anchor.
+    await set('disabled', (Date.now() - 86_400_000) * 1000);
+    for (const headers of [{}, coldHeaders]) {
+      for (const path of ['/device', '/device/', '/ui/device', '/ui/device/'])
+        assert.equal((await request(path, { headers })).status, 404, path);
+      assert.equal((await expectJson(await poll(outstanding, headers), 400)).error, 'unsupported_grant_type');
+    }
+  } finally {
+    if (currentMode === 'disabled') await set('enabled');
+    if (outstanding) assert.equal((await decide(outstanding, 'deny')).status, 200);
+    if (issued) assert.equal((await postForm('/revoke', { client_id: client.client_id,
+      token: issued.refresh_token, token_type_hint: 'refresh_token' })).status, 200);
+  }
+  const unavailable = { 'x-nazo-test-binding': 'without-device' };
+  const metadata = await expectJson(await request('/.well-known/openid-configuration', { headers: unavailable }));
+  assert.ok(!metadata.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:device_code'));
+  assert.equal((await postForm('/device_authorization', { client_id: client.client_id }, unavailable)).status, 404);
+  const restored = await expectJson(await request('/.well-known/openid-configuration'));
+  assert.ok(restored.grant_types_supported.includes('urn:ietf:params:oauth:grant-type:device_code'));
 });
 
 test('a fresh isolate reuses durable keys and sessions', async () => {

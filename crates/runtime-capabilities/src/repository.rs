@@ -145,6 +145,10 @@ pub trait ModuleStateRepository: Send + Sync {
     /// Compares and sets desired state and appends the matching
     /// [`ModuleEventType::DesiredStateChanged`] event in one atomic commit.
     /// A stale outcome must mutate neither desired state nor the event stream.
+    /// An expected-revision-matching request for the current mode is an audited
+    /// no-op: return `Applied(current)`, preserving its revision and `updated_at`,
+    /// and append an event with outcome `noop` at the attempted change time.
+    /// This preserves the authoritative start of an in-progress disable.
     fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,

@@ -179,11 +179,17 @@ identity, credential and HTTP endpoint graphs once. A framework adapter receives
 the completed `NazoAuth`; it does not construct these graphs.
 
 Optional builder methods install avatar storage, deployment-wide control
-identity and tenant membership, and signed mdoc CRL delivery. Deployment controls
+identity and tenant membership, signed mdoc CRL delivery, and a constructed
+runtime module availability ceiling. The ceiling constrains enablement without
+replacing persistent desired state. Deployment controls
 remain restricted to their configured control tenant. Host-specific scheduling
 calls `plan_reconciliation` and `reconcile_once`; the neutral library does not
-spawn a timer or task. Native bounded module drain and SCIM long polling remain
-in the corresponding native capabilities.
+spawn a timer or task. Hosts whose invocations cannot wait for stored-transaction
+lifetimes call `synchronize_runtime_modules_step` before admission and implement
+the lifecycle's nonblocking `poll_stored_transactions`. A `Pending` result keeps
+the transition resumable; it does not claim that old work has finished. Native
+hosts retain the waiting lifecycle entrypoint. SCIM long polling remains in the
+corresponding native capability.
 
 For a native composition example, see
 [`application_capabilities` and startup assembly](../../crates/server/src/bootstrap/startup/services.rs).

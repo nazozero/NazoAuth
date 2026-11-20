@@ -113,6 +113,19 @@ impl RequestLeaseTracker {
         })
         .await;
     }
+
+    /// Nonblocking observation after admission has been closed. No request can
+    /// acquire a lease from a generation already closed by publication.
+    #[must_use]
+    pub fn is_idle(&self, module_id: ModuleId) -> bool {
+        !self
+            .state
+            .lock()
+            .expect("request lease lock poisoned")
+            .active
+            .keys()
+            .any(|(id, _)| *id == module_id)
+    }
 }
 
 #[must_use = "retain the lease until the admitted operation finishes"]

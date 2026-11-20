@@ -9,7 +9,7 @@ use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredRevisionGuard, DesiredStateChange,
     DesiredStateRecord, DesiredStateUpdate, DesiredStateUpdateOutcome, InstanceStateMutation,
     InstanceStateRecord, ModuleCatalog, ModuleEventPage, ModuleId, ModuleLifecycle,
-    ModuleReconcileState, ModuleRevision, ModuleState, ModuleStateRepository, RegistryError,
+    ModuleReconcileState, ModuleRevision, ModuleStateRepository, RegistryError,
     RuntimeModuleManagement, RuntimeModuleManagementError, RuntimeModuleRegistry,
     RuntimeModuleView,
 };
@@ -123,9 +123,17 @@ impl RuntimeModules {
         lifecycle: Arc<dyn ModuleLifecycle>,
         settings: &Configuration,
         instance_id: &str,
+        constructed_availability: Option<&BTreeSet<ModuleId>>,
     ) -> anyhow::Result<Self> {
         let repository = Arc::new(PersistenceRuntimeModuleRepository::new(store));
-        let catalog = module_catalog(settings)?;
+        let mut catalog = module_catalog(settings)?;
+        if let Some(available) = constructed_availability {
+            catalog = catalog.with_constructed_availability(
+                ModuleId::ALL
+                    .into_iter()
+                    .map(|id| (id, available.contains(&id))),
+            );
+        }
         let instance_id = instance_id.to_owned();
         let (accepting, draining) =
             load_explicit_desired_states(&repository, &catalog, &instance_id).await?;
@@ -212,6 +220,9 @@ fn map_management_error(
             );
             RuntimeModuleAdminError::Unavailable
         }
+        RuntimeModuleManagementError::Registry(
+            RegistryError::SynchronizationBusy | RegistryError::SynchronizationChanged,
+        ) => RuntimeModuleAdminError::Unavailable,
         RuntimeModuleManagementError::Registry(RegistryError::ServiceNotConstructed(_)) => {
             RuntimeModuleAdminError::ServiceNotConstructed
         }
@@ -220,9 +231,13 @@ fn map_management_error(
             | RegistryError::ActiveDependent { .. }
             | RegistryError::DependencyUnavailable { .. },
         ) => RuntimeModuleAdminError::PolicyConflict,
-        RuntimeModuleManagementError::Registry(RegistryError::MissingDesiredState(_))
+        RuntimeModuleManagementError::Registry(
+            RegistryError::MissingDesiredState(_) | RegistryError::InconsistentDesiredState(_),
+        )
         | RuntimeModuleManagementError::Registry(
-            RegistryError::RevisionExhausted(_) | RegistryError::SnapshotRevisionExhausted,
+            RegistryError::RevisionExhausted(_)
+            | RegistryError::SnapshotRevisionExhausted
+            | RegistryError::DrainDeadlineOverflow(_),
         )
         | RuntimeModuleManagementError::MissingDesiredState(_) => {
             tracing::error!(?error, "runtime module catalog is inconsistent");
@@ -288,11 +303,17 @@ async fn load_explicit_desired_states(
     catalog: &ModuleCatalog,
     instance_id: &str,
 ) -> anyhow::Result<(BTreeSet<ModuleId>, BTreeSet<ModuleId>)> {
+    let states = repository.read_reconcile_state(instance_id).await?;
+    initial_admission(catalog, states)
+}
+
+fn initial_admission(
+    catalog: &ModuleCatalog,
+    states: Vec<ModuleReconcileState>,
+) -> anyhow::Result<(BTreeSet<ModuleId>, BTreeSet<ModuleId>)> {
     let mut accepting = BTreeSet::new();
     let mut draining = BTreeSet::new();
-    let states = repository
-        .read_reconcile_state(instance_id)
-        .await?
+    let states = states
         .into_iter()
         .map(|state| (state.desired.module_id, state))
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -308,16 +329,22 @@ async fn load_explicit_desired_states(
         }
         if enabled {
             accepting.insert(module_id);
-        } else if catalog.is_available(module_id)
-            && state.instance.as_ref().is_some_and(|instance| {
-                matches!(instance.state, ModuleState::Enabled | ModuleState::Draining)
-                    && matches!(
-                        catalog.spec(module_id).disable_policy,
-                        nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { .. }
-                    )
-            })
-        {
+        } else if catalog.stored_transaction_admission(
+            &state.desired,
+            state.instance.as_ref(),
+            web_time::SystemTime::now(),
+        ) {
             draining.insert(module_id);
+        }
+    }
+    for module_id in &accepting {
+        if catalog
+            .spec(*module_id)
+            .dependencies
+            .iter()
+            .any(|dependency| !accepting.contains(dependency))
+        {
+            anyhow::bail!("runtime module {module_id:?} has an unavailable dependency");
         }
     }
     Ok((accepting, draining))

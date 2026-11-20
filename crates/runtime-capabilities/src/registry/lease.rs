@@ -40,6 +40,9 @@ where
             let mut draining_set = current.draining.clone();
             set_membership(&mut accepting_set, module_id, accepting);
             set_membership(&mut draining_set, module_id, draining);
+            if current.accepting == accepting_set && current.draining == draining_set {
+                return Ok(());
+            }
             let next_revision = current
                 .revision
                 .get()

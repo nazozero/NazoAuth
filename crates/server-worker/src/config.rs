@@ -17,6 +17,8 @@ pub struct WorkerConfiguration {
     #[serde(default)]
     pub cors_allowed_origins: Vec<String>,
     #[serde(default)]
+    /// Capabilities constructed by this deployment. Mutable desired state lives
+    /// in D1 and cannot enable a capability outside this set.
     pub modules: Vec<ModuleId>,
     #[serde(default)]
     pub machine_only: bool,
@@ -279,13 +281,17 @@ impl WorkerConfiguration {
 
     /// Metadata for the machine-only OAuth issuer, without browser grant claims.
     #[must_use]
-    pub fn machine_metadata(&self) -> serde_json::Value {
+    pub fn machine_metadata(
+        &self,
+        active: &nazo_runtime_modules::ActiveModuleSnapshot,
+    ) -> serde_json::Value {
         let root = self.issuer.trim_end_matches('/');
+        let enabled = |module| self.modules.contains(&module) && active.advertises(module);
         let mut grants = vec!["client_credentials"];
-        if self.modules.contains(&ModuleId::TokenExchange) {
+        if enabled(ModuleId::TokenExchange) {
             grants.push("urn:ietf:params:oauth:grant-type:token-exchange");
         }
-        if self.modules.contains(&ModuleId::JwtBearerGrant) {
+        if enabled(ModuleId::JwtBearerGrant) {
             grants.push("urn:ietf:params:oauth:grant-type:jwt-bearer");
         }
         let mut metadata = serde_json::json!({
@@ -300,7 +306,7 @@ impl WorkerConfiguration {
             "token_endpoint_auth_signing_alg_values_supported": nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
             "dpop_signing_alg_values_supported": ["ES256", "EdDSA"]
         });
-        if self.modules.contains(&ModuleId::DynamicClientRegistration) {
+        if enabled(ModuleId::DynamicClientRegistration) {
             metadata["registration_endpoint"] = serde_json::json!(format!("{root}/register"));
         }
         if self.services.mtls {

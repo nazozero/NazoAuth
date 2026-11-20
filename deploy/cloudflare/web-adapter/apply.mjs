@@ -14,7 +14,7 @@ function replaceOnce(source, before, after, contract) {
 export function applyWorkerOverlay(work) {
   for (const name of ['WorkerPasskey.tsx', 'WorkerMfaChallenge.tsx', 'WorkerSecurity.tsx', 'WorkerSecurity.css',
     'WorkerAuthentication.test.tsx', 'WorkerPendingSession.test.tsx', 'WorkerSecurity.test.tsx',
-    'WorkerRuntimeModulesPanel.tsx', 'WorkerRuntimeModulesPanel.test.tsx', 'WorkerGrantHistory.test.tsx']) {
+    'WorkerGrantHistory.test.tsx']) {
     cpSync(resolve(adapters, name), resolve(work, 'src/components', name));
   }
   const authPath = resolve(work, 'src/pages/Auth.tsx');
@@ -149,22 +149,27 @@ export function applyWorkerOverlay(work) {
                     })}`, 'admin grant unknown time');
   writeFileSync(grantsPath, grants);
 
-  const adminPath = resolve(work, 'src/pages/admin/AdminPage.tsx');
-  const admin = replaceOnce(readFileSync(adminPath, 'utf8'),
-    "import RuntimeModulesPanel from './RuntimeModulesPanel';",
-    "import RuntimeModulesPanel from '../../components/WorkerRuntimeModulesPanel';",
-    'deployment-managed module view');
-  writeFileSync(adminPath, admin);
+  // Keep the Web application's existing CAS, MFA, review and polling workflow.
+  // Actual state is instance-scoped in the shared lifecycle on both hosts.
+  const modulesPath = resolve(work, 'src/pages/admin/RuntimeModulesPanel.tsx');
+  let modules = replaceOnce(readFileSync(modulesPath, 'utf8'),
+    '  const { t } = useI18n();', '  const { t, locale } = useI18n();',
+    'runtime module locale');
+  modules = replaceOnce(modules,
+    "              'admin.ui.desiredIntentAndObservedRuntimeStateAreShownSeparately'\n            )}\n          </p>",
+    "              'admin.ui.desiredIntentAndObservedRuntimeStateAreShownSeparately'\n            )}\n          </p>\n          <p>{locale === 'zh-CN'\n            ? '运行状态来自处理本次请求的实例。停用期间，新请求停止接入，已有事务按排空期限完成。'\n            : 'Runtime state belongs to the instance handling this request. Disabling stops new admissions while existing transactions finish within their drain window.'}</p>",
+    'instance-scoped runtime status');
+  writeFileSync(modulesPath, modules);
 
   const homePath = resolve(work, 'src/pages/Home.tsx');
   let home = readFileSync(homePath, 'utf8');
   home = replaceOnce(home,
     '核心通过独立接口连接持久存储与短期状态实现。一个部署可承载多个租户与域名，各自拥有明确的 issuer、账户和安全边界。',
-    '当前 Cloudflare Workers 部署运行一个 issuer 和租户，账户、应用及协议服务均归属此安全边界。模块通过部署配置管理。',
+    '当前 Cloudflare Workers 部署运行一个 issuer 和租户，账户、应用及协议服务均归属此安全边界。管理员可在已部署的能力范围内管理模块启停。',
     'Worker single-issuer deployment description (Chinese)');
   home = replaceOnce(home,
     'Independent interfaces connect the core to persistence and transient-state implementations. One deployment can serve multiple tenants and domains, each with its own issuer, accounts, and security boundary.',
-    'This Cloudflare Workers deployment serves one issuer and tenant. Accounts, applications, and protocol services share that security boundary. Modules are managed through deployment configuration.',
+    'This Cloudflare Workers deployment serves one issuer and tenant. Accounts, applications, and protocol services share that security boundary. Administrators can manage runtime modules within the deployed capabilities.',
     'Worker single-issuer deployment description (English)');
   home = replaceOnce(home,
     `<span>Docker</span>

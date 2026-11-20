@@ -12,7 +12,7 @@ use nazoauth::capabilities::{
 use crate::{
     WorkerConfiguration, WorkerSecrets,
     outbound::Outbound,
-    services::{Passwords, Unavailable},
+    services::{Passwords, RuntimeLifecycle, Unavailable},
 };
 
 /// One prepared application graph per Worker isolate. Authoritative security
@@ -157,17 +157,6 @@ impl WorkerApplication {
             provider = provider.with_data_encryption_key(data_key);
         }
         let provider = Arc::new(provider);
-        let desired = provider.runtime_modules(tenant).read_all_desired().await?;
-        for module in nazo_runtime_modules::ModuleId::ALL {
-            let state = desired
-                .iter()
-                .find(|state| state.module_id == module)
-                .context("runtime module profile has not been provisioned")?;
-            ensure!(
-                state.mode.is_enabled() == configuration.modules.contains(&module),
-                "persisted module {module:?} differs from the deployment profile"
-            );
-        }
         let repository = provider.signing_key_repository(tenant);
         let keys =
             KeyManager::load_database(key_settings(), tenant, repository, wrapping_keys).await?;
@@ -200,7 +189,10 @@ impl WorkerApplication {
             documents: Arc::new(outbound.clone()),
             email,
             federation_http: Arc::new(outbound),
-            module_lifecycle: Arc::new(Unavailable),
+            module_lifecycle: Arc::new(RuntimeLifecycle {
+                provider: provider.clone(),
+                tenant,
+            }),
             scim_events: Arc::new(scim_events),
             certificate_verifier: None,
         };
@@ -209,6 +201,7 @@ impl WorkerApplication {
             capabilities,
             uuid::Uuid::new_v4().to_string(),
         )
+        .with_runtime_module_availability(configuration.modules.iter().copied())
         .with_avatar_storage(provider.as_ref().clone());
         if !configuration.services.mdoc_crls.is_empty() {
             builder = builder.with_mdoc_crls(crate::mdoc_crls::PresignedMdocCrls::new(

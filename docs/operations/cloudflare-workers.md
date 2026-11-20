@@ -57,16 +57,19 @@ selected profile.
 | Identity | Machine-only, password-enabled full profile, or Passkey-only with offline initial setup; shared registration, Passkey ceremonies, MFA, sessions and logout use D1 adapters |
 | Account profile | Current account, validated updates, authorized-application history, MFA and Passkey management, and authenticated avatar upload/read/delete |
 | Tenant administration | User/client administration, application-access requests and approvals, one-use client delivery, grant revocation, and configured trust-policy/dataset management |
-| Optional modules | Explicit deployment selection; see the module matrix below |
+| Optional modules | Deployment capability ceiling with persistent runtime enable/disable, revision-safe administration and resumable drain |
 | Keys | Encrypted persistent key generations; shared `nazo-crypto` uses Workers WebCrypto for asynchronous Ed25519, ES256, RS256 and PS256 signing, and portable Rust backends for verification |
 | Audit | Required evidence commits with the accepting mutation; append-only D1 audit rows |
 
 All 16 shared protocol modules have Worker host adapters for the full profile.
-Configuration rejects unknown native fields and invalid profile/module combinations. Persisted module
-selection must match the deployment. Discovery uses that selected snapshot.
-Module enablement and draining are deployment-managed; the Worker does not
-implement the native host's live module lifecycle control. Unconfigured external
-services return explicit failures.
+Configuration rejects unknown native fields and invalid profile/module combinations.
+`NAZO_CONFIG.modules` identifies the capabilities constructed by the deployment
+and supplies the initial desired state during provisioning. D1 subsequently owns
+mutable desired state; it need not equal the initial deployment selection.
+Administrators use the shared runtime module API and Web workflow with the same
+MFA, CSRF, dependency policy and expected-revision checks as the native host.
+Discovery follows the current admission snapshot. Unconfigured external services
+return explicit failures.
 
 Shared client preparation checks the deployment's enabled grants and service
 capabilities before persistence. Remote documents and outbound notifications
@@ -77,8 +80,9 @@ and does not require an outbound delivery worker. Cloudflare Workflows are not r
 ### Optional module matrix
 
 These are all 16 shared runtime modules. An available module still needs explicit
-selection in `NAZO_CONFIG.modules` and the corresponding client grants, scopes
-and security policy. Availability describes the adapter boundary; public edge
+construction in `NAZO_CONFIG.modules`, enabled durable intent and the corresponding
+client grants, scopes and security policy. Runtime administration cannot construct
+a capability omitted from the deployment. Availability describes the adapter boundary; public edge
 acceptance and protocol conformance remain separate verification activities.
 
 | Module | Workers binding and conditions |
@@ -132,7 +136,7 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | Avatars and object storage | Authenticated multipart upload, binary proxy read and deletion use bounded immutable D1 image chunks and the shared account-revision compare-and-set lifecycle. R2/direct-to-storage uploads are not configured; adding them requires the corresponding direct-upload state and storage adapter. |
 | Tenant administration | User/client listing, creation and updates use shared preparation and hierarchy policy. D1 rechecks current actor context and prepared target metadata at transaction admission; mutations, dependent-token retirement and canonical required audit commit together. Client downgrade to public authentication retires its refresh families and secret. |
 | Deployment administration and recovery | Controller registry, recovery roots and cross-tenant administration routes are compiled out of the Worker. The D1 user port can update administrators across tenant rows within one database transaction, but the single-issuer host does not expose that control-plane operation. Dynamic hostname/tenant registry replacement and native audit anchors are not adapted; this does not prohibit a future multi-host Worker composition. |
-| Runtime module lifecycle | Deployment configuration and persisted module selection must agree. Native live enable/disable/drain controls are not wired to the Worker lifecycle. Changing selection requires a coordinated operator deployment and state transition. |
+| Runtime module lifecycle | The shared registry owns dependency policy and transitions. D1 persists revision CAS, per-instance state and append-only events. Each protocol request synchronizes current intent before admission; bounded steps retain existing-transaction admission during the drain window and never wait for a whole session/refresh lifetime inside one invocation. |
 | Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
 | mdoc CRL publication | Configure an offline-signed public CRL for the current DS/IACA pair. Every CRL request reads the authoritative D1 public material and verifies its exact digest, issuer/certificate binding, signature, publication interval and current DS revocation status. Expired or changed authority material fails closed; the IACA private key stays offline. |
 | Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Free's occasional CPU overage allowance is not guaranteed capacity for password or backup-code operations. Retain the shared work factors and assess actual platform failures under sustained load. |
@@ -140,6 +144,49 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 Unconfigured services and remaining host adapters are not evidence that
 the protocol cannot run on Workers. Durable state must continue to satisfy the
 same tenant isolation, atomic consume, replay, audit and recovery contracts.
+
+### Runtime module administration
+
+The Web uses NazoAuthWeb's existing module review, expected-revision CAS, MFA
+step-up and status/event polling interface. A successful desired-state update
+acknowledges the persistent intent; it does not claim that every isolate has
+finished executing its existing requests. Actual state remains instance-scoped,
+as in the native process host. Every subsequent protocol request first reads
+authoritative D1 state and applies the shared bounded reconcile operation.
+Stable state needs a coherent read without repeated transition writes. An
+unavailable or continuously changing authority fails closed.
+Each invocation advances at most one module transition, including across
+snapshot retries. Unfinished modules rotate so a long drain does not starve
+other changes. This bounds D1 calls while leaving room for the actual protocol
+request; a D1 batch counts as one binding query, not one per SQL statement.
+
+For stored transactions the shared deadline is the accepted desired state's
+timestamp plus the catalog's maximum lifetime. The store preserves timestamp
+and revision for a same-mode update, so repeated disable requests cannot extend
+the window. Cold isolates recover that same deadline; they do not start a new
+timer. At expiry, stored admission closes before existing local request leases
+are checked. A pending lease or drain step is not a completed transition. Native
+hosts retain their waiting reconcile entrypoint; Workers use the resumable one.
+
+This profile uses the fixed shared lifetime settings and does not expose per-tenant
+TTL overrides. Do not change those catalog durations in a deployment while an
+affected module is draining: a future configurable duration requires persistent
+policy/version binding to preserve the same deadline across different builds.
+Disable and finish draining a module before removing its constructed capability
+from deployment configuration. Removing code/services through a deployment is
+not a substitute for the runtime drain operation.
+
+Desired-state, instance-state and canonical event mutations preserve their
+atomic audit contract. Old instance observations may be pruned after seven days
+when they have no live drain deadline; desired intent and append-only events
+are retained. An observation row's absence never proves that all isolates have
+stopped; local leases and the authoritative desired revision remain decisive.
+
+Migration `0015_runtime_modules.sql` imports the old provisioned selection as
+revision 1 with an unknown-history epoch timestamp and no actor. It does not
+invent historical transitions or audit events. A verified cold projection may
+acknowledge its applied revision in a management response without manufacturing
+a persistent instance record.
 
 ## Storage semantics
 
@@ -173,6 +220,10 @@ scheduled invocation also drives bounded CIBA ping and back-channel logout
 delivery batches. Password-route selection does not change the plan's Cron
 budget. Measure scheduled CPU, outcomes and backlog separately to establish
 whether maintenance and delivery keep up with traffic.
+
+Scheduled invocations also advance bounded module reconciliation. Requests do
+not rely on Cron having run: synchronization before protocol admission prevents
+a hot isolate from accepting new work using an obsolete module snapshot.
 
 ## Build
 
@@ -381,7 +432,7 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | `frontend_base_url` | `https://<issuer-host>/ui/` for the bundled Web application, or the base URL of a separately hosted frontend |
 | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
-| `modules` | Optional array of available module identifiers from the module matrix; persisted selection must match |
+| `modules` | Optional array of constructed capabilities from the module matrix; initializes desired state during provisioning and bounds later runtime enablement |
 | `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
 | `passkey_only` | Restricted interactive route profile with Passkey/MFA and selected OAuth flows; broader administration/service APIs and password routes are excluded. Use the full profile for all adapted routes. |
 | `services` | Non-secret configuration for admitted outbound origins, mTLS, email and digital credentials; fields below |
@@ -723,6 +774,7 @@ administrator fixture is separate from the synthetic Passkey user.
 | `modules` | Enabled module names to include in the run |
 | `race_concurrency` | Optional one-use race width, bounded to 2–16; defaults to 4 |
 | `workload` | Optional `{ "requests": 128, "concurrency": 8 }` adds private-key Client Credentials samples after protocol tests; capped at 256 requests and concurrency 16 |
+| `runtime_modules` | Optional `{ "expected_issuer": "https://your-issuer.example" }` explicitly enables temporary Device/JWT Bearer runtime changes using the dedicated administrator's interactive MFA session. Both targets must initially be enabled, fully applied and have no enabled dependents. The runner checks revision CAS, canonical events, stored-transaction drain, metadata, rejection of new work and restoration. It uses current revision ownership for cleanup and reports any need for operator intervention instead of overwriting another administrator's change. |
 
 The result contains normalized paths, timestamps, HTTP statuses, durations and
 fixed failure descriptions. Secret transaction identifiers in CIBA/credential

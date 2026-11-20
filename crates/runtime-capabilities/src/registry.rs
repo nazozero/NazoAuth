@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex};
 
 use crate::{
-    ActiveModuleSnapshot, ModuleCatalog, ModuleId, ModuleLifecycle, ModuleStateRepository,
-    SnapshotStore,
+    ActiveModuleSnapshot, DesiredStateRecord, ModuleCatalog, ModuleId, ModuleLifecycle,
+    ModuleStateRepository, SnapshotStore,
 };
 
 #[path = "registry/dependency.rs"]
@@ -16,8 +16,33 @@ mod lease;
 mod persistence;
 #[path = "registry/reconcile.rs"]
 mod reconcile;
+#[path = "registry/synchronize.rs"]
+mod synchronize;
 #[path = "registry/transition.rs"]
 mod transition;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ReconcileMode {
+    Wait,
+    Step,
+}
+
+#[derive(Clone, Copy)]
+struct DrainObservation {
+    revision: crate::ModuleRevision,
+    deadline: Option<web_time::SystemTime>,
+    stored_complete: bool,
+}
+
+#[derive(Default)]
+struct SynchronizationState {
+    desired: BTreeMap<ModuleId, DesiredStateRecord>,
+    last_published: BTreeMap<ModuleId, DesiredStateRecord>,
+    observed: BTreeMap<ModuleId, DesiredStateRecord>,
+    pending: BTreeSet<ModuleId>,
+    invalidation: u64,
+    next_module: usize,
+}
 
 /// Coordinates durable desired state, one process instance's lifecycle, and
 /// the lock-free admission snapshot used by request handlers.
@@ -29,6 +54,9 @@ pub struct RuntimeModuleRegistry<R, L: ?Sized> {
     snapshots: Arc<SnapshotStore>,
     desired_policy_lock: futures_util::lock::Mutex<()>,
     transition_locks: BTreeMap<ModuleId, futures_util::lock::Mutex<()>>,
+    synchronization: Mutex<SynchronizationState>,
+    synchronization_transition: futures_util::lock::Mutex<()>,
+    drain_observations: Mutex<BTreeMap<ModuleId, DrainObservation>>,
 }
 
 impl<R, L> RuntimeModuleRegistry<R, L>
@@ -61,6 +89,9 @@ where
                 .into_iter()
                 .map(|module_id| (module_id, futures_util::lock::Mutex::new(())))
                 .collect(),
+            synchronization: Mutex::new(SynchronizationState::default()),
+            synchronization_transition: futures_util::lock::Mutex::new(()),
+            drain_observations: Mutex::new(BTreeMap::new()),
         }
     }
 

@@ -6,6 +6,10 @@ use worker::{Env, HttpRequest};
 
 use crate::WorkerConfiguration;
 
+pub(crate) fn is_device_page(path: &str) -> bool {
+    matches!(path.trim_end_matches('/'), "/device" | "/ui/device")
+}
+
 pub(crate) async fn serve(
     request: &HttpRequest,
     env: &Env,
@@ -17,7 +21,7 @@ pub(crate) async fn serve(
         return None;
     }
     let path = request.uri().path();
-    if matches!(path, "/device" | "/ui/device")
+    if is_device_page(path)
         && !configuration
             .modules
             .contains(&nazo_runtime_modules::ModuleId::DeviceAuthorization)
@@ -32,7 +36,7 @@ pub(crate) async fn serve(
         "/" | "/ui" => Some("/ui/"),
         "/auth" | "/auth/passkey" => Some("/ui/auth"),
         "/consent" => Some("/ui/consent"),
-        "/device" => Some("/ui/device"),
+        path if path.trim_end_matches('/') == "/device" => Some("/ui/device"),
         _ => None,
     };
     if let Some(destination) = destination {

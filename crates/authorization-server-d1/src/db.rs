@@ -192,6 +192,10 @@ impl Database {
                 "0014_mdoc_crl_publications.sql",
                 include_str!("../migrations/0014_mdoc_crl_publications.sql"),
             ),
+            (
+                "0015_runtime_modules.sql",
+                include_str!("../migrations/0015_runtime_modules.sql"),
+            ),
         ] {
             let digest = blake3::hash(sql.as_bytes()).to_hex().to_string();
             let applied: Option<String> = transaction

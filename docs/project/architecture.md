@@ -612,6 +612,20 @@ requests from every retained generation. The deadline bounds admission of stored
 transactions; it does not cancel requests already executing. SCIM remains enabled
 while its security-event child is draining.
 
+Stored-transaction deadlines derive from the accepted desired-state timestamp
+and the catalog lifetime, including on cold instances. A same-mode update keeps
+its revision and timestamp, and an existing earlier deadline never moves later.
+Catalog lifetimes must remain stable while that intent drains. Invocation-bound
+hosts use the same registry's resumable synchronization entrypoint: each request
+reads coherent authority independently, stable admission does not await another
+request's I/O, and unfinished transitions remain explicit. A failed authority
+read closes admission and invalidates older in-flight reads; recovery must
+revalidate the current generation before reopening it.
+One synchronization invocation advances at most one module, with a rotating
+pending cursor so long drains do not block unrelated transitions. A cold
+management view may project an applied revision only from the matching verified
+and settled local snapshot; desired state alone is not proof of application.
+
 ### Resource token presentation
 
 The neutral HTTP extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.

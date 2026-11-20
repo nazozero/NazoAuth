@@ -101,6 +101,7 @@ pub struct NazoAuthBuilder {
     #[cfg(feature = "deployment-control")]
     deployment: Option<Arc<crate::capabilities::DeploymentCapabilities>>,
     mdoc_crls: Option<Arc<dyn crate::capabilities::MdocCrlProvider>>,
+    runtime_module_availability: Option<std::collections::BTreeSet<nazo_runtime_modules::ModuleId>>,
 }
 
 impl NazoAuthBuilder {
@@ -117,6 +118,7 @@ impl NazoAuthBuilder {
             #[cfg(feature = "deployment-control")]
             deployment: None,
             mdoc_crls: None,
+            runtime_module_availability: None,
         }
     }
 
@@ -172,6 +174,16 @@ impl NazoAuthBuilder {
         self
     }
 
+    /// Limit runtime administration to services this host actually constructs.
+    /// This is a deployment capability ceiling, not the current desired state.
+    pub fn with_runtime_module_availability(
+        mut self,
+        modules: impl IntoIterator<Item = nazo_runtime_modules::ModuleId>,
+    ) -> Self {
+        self.runtime_module_availability = Some(modules.into_iter().collect());
+        self
+    }
+
     pub async fn build(self) -> anyhow::Result<NazoAuth> {
         let Self {
             settings,
@@ -181,6 +193,7 @@ impl NazoAuthBuilder {
             #[cfg(feature = "deployment-control")]
             deployment,
             mdoc_crls,
+            runtime_module_availability,
         } = self;
         settings.validate()?;
         let password_hasher = capabilities.passwords.hasher.clone();
@@ -216,6 +229,7 @@ impl NazoAuthBuilder {
                 capabilities.module_lifecycle.clone(),
                 &settings,
                 &instance_id,
+                runtime_module_availability.as_ref(),
             )
             .await?,
         );
@@ -262,6 +276,25 @@ struct StartupConfiguration {
 }
 
 impl NazoAuth {
+    /// Synchronize durable intent using bounded lifecycle steps. Requests own
+    /// their reads; stable concurrent requests share no pending I/O future.
+    pub async fn synchronize_runtime_modules_step(
+        &self,
+    ) -> Result<
+        Vec<(
+            nazo_runtime_modules::ModuleId,
+            nazo_runtime_modules::ReconcileOutcome,
+        )>,
+        nazo_runtime_modules::RegistryError<nazo_identity::ports::RepositoryError>,
+    > {
+        self.runtime_modules.registry.synchronize_step().await
+    }
+
+    #[must_use]
+    pub fn runtime_module_snapshot(&self) -> Arc<nazo_runtime_modules::ActiveModuleSnapshot> {
+        self.runtime_modules.registry.snapshot()
+    }
+
     pub async fn plan_reconciliation(
         &self,
     ) -> Result<

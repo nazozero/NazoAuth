@@ -230,7 +230,12 @@ impl nazo_scim_events::EventPollerPort for Unavailable {
     }
 }
 
-impl nazo_runtime_modules::ModuleLifecycle for Unavailable {
+pub(crate) struct RuntimeLifecycle {
+    pub(crate) provider: std::sync::Arc<nazo_oauth_server_d1::D1Provider>,
+    pub(crate) tenant: uuid::Uuid,
+}
+
+impl nazo_runtime_modules::ModuleLifecycle for RuntimeLifecycle {
     fn drain_stored_transactions(
         &self,
         _: nazo_runtime_modules::ModuleId,
@@ -242,7 +247,43 @@ impl nazo_runtime_modules::ModuleLifecycle for Unavailable {
     > {
         Box::pin(async {
             Err(nazo_runtime_modules::LifecycleFailure {
-                code: "deployment_managed_modules",
+                code: "bounded_module_reconcile_required",
+            })
+        })
+    }
+
+    fn poll_stored_transactions(
+        &self,
+        module_id: nazo_runtime_modules::ModuleId,
+        revision: nazo_runtime_modules::ModuleRevision,
+        remaining_duration: std::time::Duration,
+    ) -> nazo_runtime_modules::LifecycleFuture<
+        '_,
+        Result<nazo_runtime_modules::DrainProgress, nazo_runtime_modules::LifecycleFailure>,
+    > {
+        use nazo_oauth_server::ports::persistence::ServerPersistenceProvider;
+        Box::pin(async move {
+            // The shared registry derives the same persistent deadline for all
+            // isolates. As with the native host, retain stored admission for
+            // that full window, checking its authoritative revision each step.
+            // No invocation sleeps for the lifetime of a session or grant.
+            let current = self
+                .provider
+                .runtime_modules(self.tenant)
+                .validate_revision(module_id, revision)
+                .await
+                .map_err(|_| nazo_runtime_modules::LifecycleFailure {
+                    code: "drain_revision_lookup_failed",
+                })?;
+            if !current {
+                return Err(nazo_runtime_modules::LifecycleFailure {
+                    code: "revision_changed",
+                });
+            }
+            Ok(if remaining_duration.is_zero() {
+                nazo_runtime_modules::DrainProgress::Complete
+            } else {
+                nazo_runtime_modules::DrainProgress::Pending
             })
         })
     }
