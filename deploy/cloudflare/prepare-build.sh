@@ -12,3 +12,6 @@ rustup target add --toolchain 1.100.0 wasm32-unknown-unknown
 if ! cargo install --list | grep -q '^worker-build v0\.9\.0:'; then
   cargo +1.100.0 install worker-build --version 0.9.0 --locked
 fi
+if ! cargo install --list | grep -q '^wasm-bindgen-cli v0\.2\.130:'; then
+  cargo +1.100.0 install wasm-bindgen-cli --version 0.2.130 --locked
+fi
