@@ -4,9 +4,9 @@ use nazo_identity::{
     PublicAccount, TenantId, UserId,
     passkey::{StoredPasskeyAuthentication, StoredPasskeyRegistration},
     ports::{
-        PasskeyAccountRepositoryPort, PasskeyAuthenticationUpdate, PasskeyCeremonyPort,
-        PasskeyCredential, PasskeyCredentialSummary, PasskeyRepositoryPort, RepositoryError,
-        RepositoryFuture,
+        ObservedPasskey, PasskeyAccountRepositoryPort, PasskeyAuthenticationUpdate,
+        PasskeyCeremonyPort, PasskeyCredential, PasskeyCredentialSummary, PasskeyRepositoryPort,
+        RepositoryError, RepositoryFuture,
     },
 };
 use nazo_passkey::{CredentialId, PasskeyCredential as WebauthnCredential};
@@ -31,7 +31,7 @@ struct StoredCredential {
     last_used_at: Option<i64>,
     created_at: i64,
     updated_at: i64,
-    version: String,
+    version: Uuid,
 }
 
 impl StoredCredential {
@@ -277,7 +277,7 @@ impl PasskeyRepositoryPort for D1Provider {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-    ) -> RepositoryFuture<'a, Option<PasskeyCredential>> {
+    ) -> RepositoryFuture<'a, Option<ObservedPasskey>> {
         Box::pin(async move {
             self.require_tenant(tenant_id.as_uuid())?;
             self.database
@@ -288,7 +288,13 @@ impl PasskeyRepositoryPort for D1Provider {
                 .await?
                 .into_iter()
                 .next()
-                .map(|row| row.domain(tenant_id).map_err(Into::into))
+                .map(|row| {
+                    let revision = row.version;
+                    Ok(ObservedPasskey {
+                        row: row.domain(tenant_id)?,
+                        revision: Some(revision),
+                    })
+                })
                 .transpose()
         })
     }
@@ -343,22 +349,16 @@ impl PasskeyRepositoryPort for D1Provider {
 
     fn update_authentication<'a>(
         &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        credential_id: &'a str,
+        observed: &'a ObservedPasskey,
         update: PasskeyAuthenticationUpdate,
     ) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            self.require_tenant(tenant_id.as_uuid())?;
-            let row = self.database.query::<StoredCredential>(
-                "SELECT id,user_id,credential_id,credential,label,last_used_at,created_at,updated_at,version FROM nazo_passkeys WHERE tenant_id=?1 AND user_id=?2 AND credential_id=?3",
-                vec![json!(self.tenant_id),json!(user_id),json!(credential_id)],
-            ).await?.into_iter().next().ok_or(RepositoryError::Conflict)?;
-            let mut credential: WebauthnCredential =
-                serde_json::from_str(&row.credential).map_err(|_| DbError::CorruptData)?;
+            let row = &observed.row;
+            self.require_tenant(row.tenant_id.as_uuid())?;
+            let revision = observed.revision.ok_or(DbError::CorruptData)?;
+            let mut credential = row.credential.clone();
             let facts = update.credential;
-            if credential.id.to_b64url() != row.credential_id
-                || credential.counter != facts.expected_counter
+            if credential.counter != facts.expected_counter
                 || credential.backup_eligible != facts.expected_backup_eligible
                 || credential.backup_state != facts.expected_backup_state
                 || credential
@@ -377,8 +377,8 @@ impl PasskeyRepositoryPort for D1Provider {
             let result = self.database.query::<Present>(
                 "UPDATE nazo_passkeys SET credential=?4,version=?5,last_used_at=?6,updated_at=?6 WHERE tenant_id=?1 AND user_id=?2 AND credential_id=?3 AND version=?7 AND EXISTS (SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND active=1) RETURNING 1 AS applied",
                 vec![
-                    json!(self.tenant_id), json!(user_id), json!(credential_id), json!(modified),
-                    json!(Uuid::new_v4()), json!(Timestamp::now().as_microsecond()), json!(row.version),
+                    json!(self.tenant_id), json!(row.user_id), json!(credential.id.to_b64url()), json!(modified),
+                    json!(Uuid::new_v4()), json!(Timestamp::now().as_microsecond()), json!(revision),
                 ],
             ).await?;
             if result.len() == 1 {

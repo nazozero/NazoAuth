@@ -109,8 +109,13 @@ fn credential_registration_cas_and_lifecycle_audit_are_atomic() {
         );
         assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
 
+        let observed = provider
+            .by_credential_id(tenant, user, &credential().id.to_b64url())
+            .await
+            .unwrap()
+            .unwrap();
         provider
-            .update_authentication(tenant, user, &credential().id.to_b64url(), update())
+            .update_authentication(&observed, update())
             .await
             .unwrap();
         assert_eq!(
@@ -118,17 +123,18 @@ fn credential_registration_cas_and_lifecycle_audit_are_atomic() {
             8
         );
         assert_eq!(
-            provider
-                .update_authentication(tenant, user, &credential().id.to_b64url(), update())
-                .await,
+            provider.update_authentication(&observed, update()).await,
             Err(RepositoryError::Conflict)
         );
+        let current = provider
+            .by_credential_id(tenant, user, &credential().id.to_b64url())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(
             provider
                 .update_authentication(
-                    tenant,
-                    user,
-                    &credential().id.to_b64url(),
+                    &current,
                     PasskeyAuthenticationUpdate {
                         credential: CredentialUpdate {
                             expected_counter: 8,
@@ -174,6 +180,11 @@ fn concurrent_authentication_updates_have_one_cas_winner() {
     let user = UserId::new(USER).unwrap();
     block_on(provider.insert(tenant, user, credential(), "A".into())).unwrap();
 
+    let observed = Arc::new(
+        block_on(provider.by_credential_id(tenant, user, &credential().id.to_b64url()))
+            .unwrap()
+            .unwrap(),
+    );
     let provider = Arc::new(provider);
     let barrier = Arc::new(Barrier::new(16));
     let winners = std::thread::scope(|scope| {
@@ -181,14 +192,10 @@ fn concurrent_authentication_updates_have_one_cas_winner() {
             .map(|_| {
                 let provider = Arc::clone(&provider);
                 let barrier = Arc::clone(&barrier);
+                let observed = Arc::clone(&observed);
                 scope.spawn(move || {
                     barrier.wait();
-                    block_on(provider.update_authentication(
-                        tenant,
-                        user,
-                        &credential().id.to_b64url(),
-                        update(),
-                    ))
+                    block_on(provider.update_authentication(&observed, update()))
                 })
             })
             .collect::<Vec<_>>();

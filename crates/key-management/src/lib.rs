@@ -12,6 +12,12 @@ mod repository;
 mod request_object_encryption;
 mod serialization;
 mod token;
+#[cfg(all(
+    target_arch = "wasm32",
+    target_os = "unknown",
+    feature = "worker-signing"
+))]
+mod worker_signing;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

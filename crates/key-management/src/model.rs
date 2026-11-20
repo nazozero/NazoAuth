@@ -107,6 +107,12 @@ impl LifecycleHealth {
 pub(crate) struct LocalSigningMaterial {
     pub(crate) private_pkcs8_der: Vec<u8>,
     pub(crate) prepared: nazo_crypto::signature::PreparedSigningKey,
+    #[cfg(all(
+        target_arch = "wasm32",
+        target_os = "unknown",
+        feature = "worker-signing"
+    ))]
+    worker_rsa: Option<Arc<crate::worker_signing::WorkerRsa>>,
 }
 
 impl LocalSigningMaterial {
@@ -119,6 +125,12 @@ impl LocalSigningMaterial {
                 algorithm,
                 &private_pkcs8_der,
             )?,
+            #[cfg(all(
+                target_arch = "wasm32",
+                target_os = "unknown",
+                feature = "worker-signing"
+            ))]
+            worker_rsa: crate::worker_signing::WorkerRsa::new(algorithm).map(Arc::new),
             private_pkcs8_der,
         })
     }
@@ -1428,15 +1440,10 @@ async fn sign_selected(
     snapshot: &KeySnapshot,
     input: &[u8],
 ) -> Result<Signature, SignError> {
-    let local_sign = |material: &LocalSigningMaterial| {
-        material
-            .prepared
-            .sign(input)
-            .map(Signature::new)
-            .map_err(|_| SignError::SigningFailed)
-    };
     match &selected.handle {
-        SelectedHandle::Active(ActiveSigningKey::Local(material)) => local_sign(material.as_ref()),
+        SelectedHandle::Active(ActiveSigningKey::Local(material)) => {
+            sign_local(material, input).await
+        }
         #[cfg(any(test, feature = "test-support"))]
         SelectedHandle::Active(ActiveSigningKey::FailingForTest) => Err(SignError::SigningFailed),
         SelectedHandle::Active(ActiveSigningKey::External(external)) => {
@@ -1456,8 +1463,27 @@ async fn sign_selected(
             )
             .await
         }
-        SelectedHandle::Local(material) => local_sign(material),
+        SelectedHandle::Local(material) => sign_local(material, input).await,
     }
+}
+
+async fn sign_local(material: &LocalSigningMaterial, input: &[u8]) -> Result<Signature, SignError> {
+    #[cfg(all(
+        target_arch = "wasm32",
+        target_os = "unknown",
+        feature = "worker-signing"
+    ))]
+    if let Some(rsa) = &material.worker_rsa {
+        return rsa
+            .sign(&material.private_pkcs8_der, input)
+            .await
+            .map(Signature::new);
+    }
+    material
+        .prepared
+        .sign(input)
+        .map(Signature::new)
+        .map_err(|_| SignError::SigningFailed)
 }
 
 impl KeyGeneration {

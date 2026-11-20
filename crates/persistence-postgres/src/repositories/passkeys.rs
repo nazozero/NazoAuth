@@ -298,9 +298,17 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<PasskeyCredential>> {
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::ports::ObservedPasskey>>
+    {
         Box::pin(async move {
-            PasskeyRepository::by_credential_id(self, tenant_id, user_id, credential_id).await
+            Ok(
+                PasskeyRepository::by_credential_id(self, tenant_id, user_id, credential_id)
+                    .await?
+                    .map(|row| nazo_identity::ports::ObservedPasskey {
+                        row,
+                        revision: None,
+                    }),
+            )
         })
     }
 
@@ -318,17 +326,15 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
 
     fn update_authentication<'a>(
         &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        credential_id: &'a str,
+        observed: &'a nazo_identity::ports::ObservedPasskey,
         update: PasskeyAuthenticationUpdate,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
             PasskeyRepository::update_authentication(
                 self,
-                tenant_id,
-                user_id,
-                credential_id,
+                observed.row.tenant_id,
+                observed.row.user_id,
+                &observed.row.credential.id.to_b64url(),
                 update,
             )
             .await

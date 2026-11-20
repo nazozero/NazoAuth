@@ -8,6 +8,7 @@ repository.workspace = true
 
 [features]
 test-support = []
+worker-signing = ["dep:futures-channel", "dep:js-sys", "dep:pkcs8", "dep:wasm-bindgen"]
 
 [dependencies]
 web-time.workspace = true
@@ -46,3 +47,9 @@ time.workspace = true
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 aws-lc-rs.workspace = true
 rcgen.workspace = true
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+futures-channel = { workspace = true, optional = true }
+js-sys = { version = "0.3.107", optional = true }
+pkcs8 = { workspace = true, optional = true }
+wasm-bindgen = { version = "0.2.130", optional = true }

@@ -18,6 +18,13 @@ pub struct PasskeyCredential {
     pub updated_at: Timestamp,
 }
 
+/// A credential and the storage revision observed before assertion verification.
+#[derive(Clone, Debug)]
+pub struct ObservedPasskey {
+    pub row: PasskeyCredential,
+    pub revision: Option<Uuid>,
+}
+
 /// Display metadata scoped to one tenant and user; contains no credential payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PasskeyCredentialSummary {
@@ -95,7 +102,7 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-    ) -> RepositoryFuture<'a, Option<PasskeyCredential>>;
+    ) -> RepositoryFuture<'a, Option<ObservedPasskey>>;
 
     /// Commit the credential and its required `passkey_registered` audit event
     /// atomically. An error must leave neither business state nor success audit.
@@ -109,9 +116,7 @@ pub trait PasskeyRepositoryPort: Send + Sync {
 
     fn update_authentication<'a>(
         &'a self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        credential_id: &'a str,
+        observed: &'a ObservedPasskey,
         update: PasskeyAuthenticationUpdate,
     ) -> RepositoryFuture<'a, ()>;
 
