@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID, sign, verify, X509Certificate } fr
 import { isDeepStrictEqual } from 'node:util';
 import {
   assertCredentialStatus, createCredentialWallet, credentialProof, encryptCredentialEnvelope,
-  preAuthorizedCredentialSelector, verifyCertificateJwt,
+  preAuthorizedCredentialSelector, verifyCertificateJwt, withCredentialTokenCleanup,
 } from './public-credentials.mjs';
 
 const ensure = (condition, message) => { if (!condition) throw new Error('Acceptance mdoc: ' + message); };
@@ -256,7 +256,11 @@ export function mdocPresentation(wallet, verified, request, selectedClaims) {
   ])));
 }
 
-export async function runPublicMdoc(input, { request, session, saveWallet } = {}) {
+export function runPublicMdoc(input, options = {}) {
+  return withCredentialTokenCleanup(input, options, runPublicMdocFlow);
+}
+
+async function runPublicMdocFlow(input, { request, session, saveWallet } = {}) {
   ensure(typeof request === 'function', 'A same-origin acceptance recorder is required');
   const issuer = new URL(input.issuer).origin;
   const configuration = input.mdoc_configuration_id ?? input.configuration_id;

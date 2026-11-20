@@ -55,6 +55,50 @@ export function preAuthorizedCredentialSelector(token, configuration, issuer) {
   return { credential_identifier: matches[0].credential_identifiers[0] };
 }
 
+// Observe only tokens returned to this explicit acceptance wallet. Keep the
+// protocol exchange untouched and retire known tokens through its public API,
+// including when issuance or deferred polling fails after a successful grant.
+export async function withCredentialTokenCleanup(input, options, run) {
+  const request = options.request;
+  ensure(typeof request === 'function', 'A same-origin acceptance recorder is required');
+  const tokens = new Set();
+  const recordedRequest = async (path, init = {}) => {
+    const response = await request(path, init);
+    if (input.wallet_client_id && init.method === 'POST' && typeof init.body === 'string'
+      && response.status === 200) {
+      const fields = new URLSearchParams(init.body);
+      if (fields.get('client_id') === input.wallet_client_id) {
+        if (path === '/token' && fields.get('grant_type') === 'urn:ietf:params:oauth:grant-type:pre-authorized_code') {
+          let granted;
+          try { granted = JSON.parse(response.text); } catch {}
+          if (typeof granted?.access_token === 'string' && granted.access_token) tokens.add(granted.access_token);
+        } else if (path === '/revoke') tokens.delete(fields.get('token'));
+      }
+    }
+    return response;
+  };
+  let failed = false;
+  try {
+    return await run(input, { ...options, request: recordedRequest });
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    let cleanupFailed = false;
+    for (const token of tokens) {
+      try {
+        const response = await request('/revoke', { method: 'POST',
+          headers: { origin: input.issuer, 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ client_id: input.wallet_client_id, token, token_type_hint: 'access_token' }).toString() });
+        assertCredentialStatus(response, 200);
+      } catch { cleanupFailed = true; }
+    }
+    // Every cleanup attempt still passes through the redacted HTTP recorder.
+    // A secondary refusal must not replace the original issuance diagnostic.
+    if (cleanupFailed && !failed) ensure(false, 'Credential access token cleanup failed');
+  }
+}
+
 function signEs256(header, claims, privateKey) {
   const input = [header, claims].map(value => encode(JSON.stringify(value))).join('.');
   return input + '.' + encode(sign('sha256', Buffer.from(input), { key: privateKey, dsaEncoding: 'ieee-p1363' }));
@@ -180,7 +224,11 @@ export function decryptCredentialEnvelope(encoded, wallet) {
  * is returned in the public result. `saveWallet` must write a private artifact.
  * Dataset preparation may be skipped only for an already provisioned fixture.
  */
-export async function runPublicCredentials(input, { request, session, saveWallet } = {}) {
+export function runPublicCredentials(input, options = {}) {
+  return withCredentialTokenCleanup(input, options, runPublicCredentialsFlow);
+}
+
+async function runPublicCredentialsFlow(input, { request, session, saveWallet } = {}) {
   ensure(typeof request === 'function', 'A same-origin acceptance recorder is required');
   const issuer = new URL(input.issuer).origin;
   ensure(input.issuer === issuer && input.trust_anchor_pem && input.configuration_id && input.vct,
