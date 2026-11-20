@@ -92,9 +92,11 @@ supported deployment profile.
 The button creates an unpublished Worker and D1 schema. Offline bootstrap
 provisions signing keys and service clients before the HTTPS domain and WAF
 rule can be enabled. **Workers Free** defaults to a machine-to-machine
-profile (Client Credentials, token management and JWKS). Interactive password
-login is unavailable under Free's 10 ms CPU budget. Both plans now permit
-64 MiB uncompressed Worker code. See the
+profile (Client Credentials, token management and JWKS). For interactive Free login, the offline
+bootstrap selects the Passkey-only mode and issues a one-use setup ticket for
+the first device: password login remains blocked. Both plans now permit
+64 MiB uncompressed Worker code. Reaching Free's 10 ms per-request CPU limit
+is unverified until a real edge deployment is measured. See the
 [setup instructions](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button).
 
 <details>

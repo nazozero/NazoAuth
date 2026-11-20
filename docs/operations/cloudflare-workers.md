@@ -10,11 +10,16 @@ redirects and response policy stay in the shared implementation.
 ## Deployment profile
 
 Each deployment serves one issuer and one tenant through one primary D1 binding.
-The default Workers Free deployment is machine-only and provisions confidential
-service clients, without password users or interactive consent. The full
-profile can provision accounts and clients; it needs Workers Paid for password
-CPU. In that profile, host the login/consent UI separately and configure
-`frontend_base_url` accordingly.
+There are two Workers Free profiles. The checked-in template starts
+`machine_only: true` for confidential Client Credentials clients. Set
+`machine_only: false` and `passkey_only: true` in the **private bootstrap input**
+to enable interactive WebAuthn (Passkey) login without in-request password hashing.
+The offline provisioner creates one initial user with an unknown random password,
+and hands the operator a single-use, 24-hour setup ticket; the ticket grants a
+five-minute registration session on the issuer's HTTPS origin. The full-password
+profile (`machine_only: false`, `passkey_only: false`) requires Workers Paid
+for Argon2id's CPU budget. Host login/consent separately and configure
+`frontend_base_url` for the selected interactive profile.
 
 | Capability | Workers profile |
 | --- | --- |
@@ -22,11 +27,11 @@ CPU. In that profile, host the login/consent UI separately and configure
 | Authorization | Authorization code with PKCE and interactive consent |
 | Tokens | Code redemption, refresh, Client Credentials, revocation and UserInfo |
 | Sender constraints | DPoP proof, nonce and replay state |
-| Identity | Provisioned password accounts, login, current account view, session replacement and logout |
+| Identity | Machine-only, password-enabled full profile, or Passkey-only with offline initial setup; passkey credentials, single-use challenges, sessions and logout share existing services |
 | Optional modules | Inline Request Objects/PAR, JARM and Session Management, explicitly selected at provisioning |
 | Keys | Encrypted persistent key generations; portable signing and verification |
 | Audit | Required evidence commits with the accepting mutation; append-only D1 audit rows |
-| Unavailable | Native administration/process signers, mTLS, remote documents, federation, device/CIBA, Token Exchange, Native SSO, DCR, SCIM, OpenID4VC, MFA, passkeys, email registration, profile editing/application lists, avatar/object storage and native audit anchors/roles |
+| Unavailable | Native administration/process signers, mTLS, remote documents, federation, device/CIBA, Token Exchange, Native SSO, DCR, SCIM, OpenID4VC, MFA, email registration, profile editing/application lists, avatar/object storage and native audit anchors/roles |
 
 Configuration rejects unavailable modules and unknown native fields. Persisted
 module selection must match the deployment. Discovery uses that selected
@@ -112,26 +117,31 @@ Free and Paid now accept up to 64 MiB uncompressed (this Worker is approximately
 8.5 MiB). **Workers Free** has 100,000 requests/day, 10 ms CPU per HTTP request
 and 10 ms per Cron invocation; D1 has separate daily row-read/write quotas.
 
-The deployment button defaults to `machine_only: true`: service clients with
-Client Credentials, token management, truthful machine-only OAuth metadata and
-JWKS. It rejects
-password users, Authorization Code and interactive login paths. The full
-interactive profile uses `machine_only: false` and **Workers Paid**, preserving
-Argon2id's security parameters. Client Credentials CPU usage on Free still
-requires real edge measurements before claiming production SLO compliance.
+The deployment template starts in `machine_only: true` (service clients with
+Client Credentials, token management, OAuth metadata and JWKS). During offline
+initialization choose `passkey_only: true` and `machine_only: false` for a
+**passwordless, interactive** OAuth/OIDC deployment with Passkey login and
+Authorization Code/PKCE. Browser password login is then explicitly blocked.
+Password-enabled `passkey_only: false` requires **Workers Paid**. All Free
+profiles still require **real edge CPU measurements** before production SLO
+acceptance. The template cannot be called a complete single-click installation
+because issuer domain, first credentials, secrets and ingress policy must be set.
 Cloudflare Workers Builds has a 20-minute timeout and does not preinstall Rust:
-the repository-root `build` script installs Rust 1.100.0 and `worker-build`
-0.9.0. Confirm build completion in the Cloudflare dashboard.
+the repository-root `build` script installs Rust 1.100.0, `worker-build`
+0.9.0 and `wasm-bindgen-cli` 0.2.130. Confirm build completion in the Cloudflare dashboard.
 
-To initialize a fresh D1 deployment, clone the new repository created by the
-button, install the local build dependencies (`npm run build`, requires Node,
-curl, and Python 3), and create a private JSON input **outside the Git
-repository** from `deploy/cloudflare/bootstrap.example.json`. Set the actual
-issuer HTTPS origin, the separately hosted frontend HTTPS origin, clients,
-and the intended confidential service clients. The Free template has
-`machine_only: true` and `users: []`. Paid full-profile deployments may set
-`machine_only: false` and provision users with original, strong passwords.
-Then run:
+To initialize a fresh D1 deployment, clone the repository associated with the
+button, install local dependencies (Rust 1.100, Node, curl, Python 3, Wrangler),
+and create a private JSON input **outside the Git repository** from
+`deploy/cloudflare/bootstrap.example.json`. Set the issuer to the intended HTTPS
+origin, the frontend to your separate login/consent UI, and real OAuth clients.
+The example selects `passkey_only: true`, `machine_only: false` with **one**
+initial user containing only `email` and `username`, no password. Its
+WebAuthn enrollment is authorized by the generated single-use ticket. Machine
+service-only deployments use `machine_only: true`, `passkey_only: false`,
+`users: []`, and confidential `client_credentials` clients. Password-enabled
+full-profile deployments may provide users with original strong passwords but
+must use Paid CPU. Then run:
 
 ```sh
 npm run bootstrap -- /private/bootstrap.json /private/nazoauth-credentials.json
@@ -142,8 +152,18 @@ runs the native NazoAuth provisioner offline, saves the signing wrapping key
 and issued client credentials to a new private `0600` file, checks that D1
 contains no existing keys/clients/users/modules, imports the seed rows, writes
 the non-secret issuer configuration into root `wrangler.toml`, then deploys
-the Worker with three secret bindings via `--secrets-file`. All temporary seed
-and secret files are deleted when the command exits. It refuses to provision a
+the Worker with three secret bindings and, for Passkey-only setup, three
+additional **temporary bootstrap secret bindings** via `--secrets-file`.
+After offline bootstrap, read the output file's `passkey_setup.url` and
+`passkey_setup.token` **only on the deployer's device**. Once the custom HTTPS
+route and direct-ingress WAF protections are configured, open the issuer's
+`/auth/setup`, enter the ticket in the page (not in a URL), and approve the
+browser's platform Passkey creation dialog. The issued setup session expires
+after five minutes and the ticket is consumed exactly once. Do not reload
+during enrollment. A lost or expired claim without a registered credential
+requires an authenticated offline recovery procedure, not an open HTTP reset.
+Remove the bootstrap bindings from the deployment after successful enrollment.
+All temporary SQL and secret files are deleted when bootstrap exits. It refuses to provision a
 nonempty D1. Preserve the private output offline: losing the wrapping key
 prevents recovering persisted signing keys. If import or deploy fails, retain
 the recovery file and investigate the remote D1 state; do not reinitialize it.
@@ -156,8 +176,12 @@ Before accepting live requests, install the direct-ingress zone WAF rule in
 npm run deploy
 ```
 
-The issuer hostname must match `NAZO_CONFIG.issuer`. A separately hosted
-login/consent frontend is required. Later Git pushes build/deploy via Workers
+The issuer hostname must match `NAZO_CONFIG.issuer`. Passkey browser
+registration must run on that exact secure origin (RP ID derives from the issuer
+hostname). A separately hosted normal login/consent frontend remains required.
+For unmerged PR acceptance select the actual `feat/cloudflare-workers-206`
+branch in Cloudflare Builds; the public one-click button defaults to `main`
+until the PR is merged. Later Git pushes build/deploy via Workers
 Builds; `npm run deploy` remains idempotent for D1 schema migrations and
 preserves existing Worker secrets. Do not publish the private bootstrap JSON
 or credentials in a Git repository or CI log.
@@ -184,6 +208,8 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
 | `modules` | Optional array of `request_objects`, `jarm`, `session_management` |
+| `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
+| `passkey_only` | Worker Free interactive Passkey profile; password routes are disabled |
 
 Generate a 32-byte random signing wrapping key, encode it with standard Base64,
 and select its non-secret ID. Generate an independent client-secret pepper of
