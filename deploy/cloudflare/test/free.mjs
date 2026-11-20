@@ -25,7 +25,7 @@ async function bindPort() {
 async function modules(directory) {
   const included = {};
   for (const relative of await readdir(directory, { recursive: true })) {
-    if (!/\\.(m?js|wasm)$/.test(relative)) continue;
+    if (!/\.(m?js|wasm)$/.test(relative)) continue;
     included[relative] = {
       type: relative.endsWith('.wasm') ? 'wasm' : 'esm',
       contents: relative.endsWith('.wasm')
@@ -77,7 +77,7 @@ test('Workers Free machine-only build has honest metadata and rejects interactiv
       'import json,sqlite3,sys',
       'with sqlite3.connect(sys.argv[1]) as c:',
       ' print(json.dumps([s for s in c.iterdump() if s not in ("BEGIN TRANSACTION;","COMMIT;")]))',
-    ].join('\\n'), sqlite], { encoding: 'utf8' }));
+    ].join('\n'), sqlite], { encoding: 'utf8' }));
 
     const environment = {
       NAZO_CONFIG: JSON.stringify(configuration),
