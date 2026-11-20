@@ -145,12 +145,24 @@ fn credential_registration_cas_and_lifecycle_audit_are_atomic() {
             Err(RepositoryError::Conflict)
         );
         db.execute_sql("CREATE TRIGGER fail_passkey_delete_audit BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_deleted' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END").unwrap();
-        assert!(PasskeyRepositoryPort::delete(&provider, tenant, user, row.id).await.is_err());
+        assert!(
+            PasskeyRepositoryPort::delete(&provider, tenant, user, row.id)
+                .await
+                .is_err()
+        );
         assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
         db.execute_sql("DROP TRIGGER fail_passkey_delete_audit")
             .unwrap();
-        assert!(PasskeyRepositoryPort::delete(&provider, tenant, user, row.id).await.unwrap());
-        assert!(!PasskeyRepositoryPort::delete(&provider, tenant, user, row.id).await.unwrap());
+        assert!(
+            PasskeyRepositoryPort::delete(&provider, tenant, user, row.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !PasskeyRepositoryPort::delete(&provider, tenant, user, row.id)
+                .await
+                .unwrap()
+        );
         assert!(provider.list(tenant, user).await.unwrap().is_empty());
     })
 }
