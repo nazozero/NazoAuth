@@ -82,7 +82,8 @@ impl Database {
     #[cfg(all(not(target_arch = "wasm32"), feature = "local-sqlite"))]
     pub fn execute_schema(&self) -> anyhow::Result<()> {
         self.execute_sql(include_str!("../migrations/0001.sql"))?;
-        self.execute_sql(include_str!("../migrations/0002_state.sql"))
+        self.execute_sql(include_str!("../migrations/0002_state.sql"))?;
+        self.execute_sql(include_str!("../migrations/0003_passkeys.sql"))
     }
 
     /// Offline provisioning and migration execution; never used by a Worker request.

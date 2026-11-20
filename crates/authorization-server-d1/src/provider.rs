@@ -129,11 +129,11 @@ impl nazo_oauth_server::ports::persistence::ServerPersistenceProvider for D1Prov
     fn passkey_accounts(
         &self,
     ) -> std::sync::Arc<dyn nazo_identity::ports::PasskeyAccountRepositoryPort> {
-        Arc::new(Unavailable)
+        Arc::new(self.clone())
     }
 
     fn passkeys(&self) -> std::sync::Arc<dyn nazo_identity::ports::PasskeyRepositoryPort> {
-        Arc::new(Unavailable)
+        Arc::new(self.clone())
     }
 
     fn ciba_accounts(&self) -> std::sync::Arc<dyn nazo_persistence::CibaAccountStore> {
@@ -317,7 +317,7 @@ impl nazo_oauth_server::ports::transient_state::ServerTransientStateProvider for
     }
 
     fn passkey_ceremonies(&self) -> std::sync::Arc<dyn nazo_identity::ports::PasskeyCeremonyPort> {
-        Arc::new(Unavailable)
+        Arc::new(self.clone())
     }
 
     fn federation_state(&self) -> std::sync::Arc<dyn nazo_identity::ports::FederationStatePort> {

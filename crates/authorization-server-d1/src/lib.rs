@@ -8,6 +8,7 @@ mod keys;
 mod maintenance;
 mod modules;
 mod persistence;
+mod passkeys;
 mod profile;
 mod provider;
 mod rows;
