@@ -13,7 +13,7 @@ crons = ["* * * * *"]
 
 [build]
 command = "worker-build --release --locked"
-cwd = "../../crates/server-worker"
+cwd = "crates/server-worker"
 
 [observability]
 enabled = true

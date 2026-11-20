@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --config ../../wrangler.toml",
-    "bundle": "wrangler deploy --dry-run --outdir bundled --config ../../wrangler.toml",
-    "db:migrate": "wrangler d1 migrations apply NAZO_DB --remote --config ../../wrangler.toml",
+    "dev": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js dev --config wrangler.toml",
+    "bundle": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir deploy/cloudflare/bundled --config wrangler.toml",
+    "db:migrate": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js d1 migrations apply NAZO_DB --remote --config wrangler.toml",
     "test": "node --test test/*.mjs",
-    "deploy": "wrangler deploy --config ../../wrangler.toml"
+    "deploy": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js deploy --config wrangler.toml"
   },
   "devDependencies": {
     "miniflare": "5.20261118.0-beta",

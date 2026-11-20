@@ -21,8 +21,10 @@ test('Cloudflare button uses the complete Rust workspace root', () => {
   assert.match(wrangler, /"machine_only":true/);
   assert.match(wrangler, /^binding = "NAZO_VERSION"$/m);
   const nested = JSON.parse(read('../package.json'));
-  assert.match(nested.scripts['db:migrate'], /NAZO_DB --remote --config \.\.\/\.\.\/wrangler\.toml/);
-  assert.match(nested.scripts.deploy, /--config \.\.\/\.\.\/wrangler\.toml/);
+  assert.ok(nested.scripts.bundle.startsWith('cd ../.. && node deploy/cloudflare/'));
+  assert.match(wrangler, /^cwd = "crates\/server-worker"$/m);
+  assert.match(nested.scripts['db:migrate'], /NAZO_DB --remote --config wrangler\.toml/);
+  assert.match(nested.scripts.deploy, /--config wrangler\.toml/);
 });
 
 test('build and publish entrypoints use pinned tooling and migration before deploy', () => {
