@@ -133,6 +133,25 @@ fn logout_without_session_does_not_call_the_outbox() {
 }
 
 #[test]
+fn frontchannel_only_logout_does_not_require_a_backchannel_outbox() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    let mut registered = client(tenant_id, "client-a", true);
+    registered.backchannel_logout_uri = None;
+    clients.clients.lock().unwrap().push(registered);
+    let outbox = Arc::new(Outbox::default());
+    let result = futures_executor::block_on(execute(
+        &service(clients, outbox.clone()),
+        input(tenant_id, None),
+    ))
+    .unwrap();
+    assert_eq!(result.frontchannel_logout_urls.len(), 1);
+    assert!(result.operation_key.is_some());
+    assert_eq!(outbox.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
 fn prepare_does_not_publish_backchannel_notifications() {
     let tenant_id = Uuid::now_v7();
     let clients = Arc::new(Clients::default());

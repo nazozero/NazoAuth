@@ -11,6 +11,7 @@ const RESPONSE_RS256: &[&str] = &["RS256"];
 
 fn input() -> AuthorizationServerMetadataInput<'static> {
     AuthorizationServerMetadataInput {
+        backchannel_logout_supported: true,
         issuer: "https://issuer.example",
         mtls_endpoint_base_url: "https://mtls.issuer.example",
         mtls_enabled: false,
@@ -26,6 +27,25 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
             id_token: ID_TOKEN_RS256,
             response: RESPONSE_RS256,
         },
+    }
+}
+
+#[test]
+fn discovery_reports_the_hosts_backchannel_delivery_capability() {
+    for supported in [false, true] {
+        let metadata = json_value(authorization_server_metadata(
+            AuthorizationServerMetadataInput {
+                backchannel_logout_supported: supported,
+                ..input()
+            },
+            &snapshot([]),
+        ));
+        assert_eq!(metadata["backchannel_logout_supported"], supported);
+        assert_eq!(metadata["backchannel_logout_session_supported"], supported);
+        assert_eq!(
+            metadata["end_session_endpoint"],
+            "https://issuer.example/logout"
+        );
     }
 }
 

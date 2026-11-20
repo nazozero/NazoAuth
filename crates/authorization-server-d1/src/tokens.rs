@@ -524,8 +524,18 @@ impl D1Provider {
     ) -> Result<CommitTokenIssuanceResult, TokenPortError> {
         use nazo_auth::TokenIssuanceMode;
         self.require_tenant(input.tenant_id)?;
-        if input.native_sso_source.is_some() {
-            return Err(TokenPortError::Unavailable);
+        if let Some(source) = &input.native_sso_source
+            && (source.tenant_id != input.tenant_id
+                || Some(source.user_id) != input.user_id
+                || source.family_id.is_nil()
+                || source.source_client_id.is_empty()
+                || !matches!(input.mode, TokenIssuanceMode::Fresh)
+                || !matches!(
+                    input.refresh_token,
+                    Some(RefreshTokenCommit::IssueNew { .. })
+                ))
+        {
+            return Err(TokenPortError::CorruptData);
         }
         if input.issuance_id.is_nil()
             || input.tenant_id.is_nil()
@@ -579,6 +589,11 @@ impl D1Provider {
             access_expiry + nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS * 1_000_000,
         );
         let mut plan = json!({"client":input.client_id,"user":input.user_id,"client_epoch":input.principal_state.client_epoch,"user_epoch":input.principal_state.user_epoch,"subject":input.subject,"grant":grant_hash,"grant_expiry":grant_expiry,"holder":holder,"jti":input.access_token_jti,"access_expiry":access_expiry,"retain_until":retain_until,"family":null,"refresh":"none","rotate":false});
+        if let Some(source) = &input.native_sso_source {
+            plan["native_family"] = json!(source.family_id);
+            plan["native_client"] = json!(source.source_client_id);
+            plan["native_expiry"] = json!(source.device_secret_expires_at.as_microsecond());
+        }
         let mut prune_limit = None;
         if let Some(refresh) = &input.refresh_token {
             let valid_audiences = |values: &[String]| {
@@ -744,6 +759,13 @@ impl D1Provider {
         let refresh_ok = format!(
             "(json_extract(?3,'$.refresh')='none' OR (json_extract(?3,'$.refresh')='new' AND NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND id=json_extract(?3,'$.family'))) OR (json_extract(?3,'$.refresh')='existing' AND EXISTS(SELECT 1 FROM nazo_refresh_families f WHERE f.tenant_id=?1 AND f.id=json_extract(?3,'$.family') AND f.revoked_at IS NULL AND f.expires_at>{NOW} AND {source_ok})))"
         );
+        // D1 holds this primary transaction across the source check and all
+        // destination writes. Member rotation does not invalidate the family;
+        // concurrent source revocation cannot interleave after this fence.
+        // The same transaction may then retire its source under the family cap.
+        let native_sso_ok = format!(
+            "(json_extract(?3,'$.native_family') IS NULL OR (json_extract(?3,'$.native_expiry')>{NOW} AND EXISTS(SELECT 1 FROM nazo_refresh_families f JOIN nazo_clients c ON c.tenant_id=f.tenant_id AND c.id=f.client_id WHERE f.tenant_id=?1 AND f.id=json_extract(?3,'$.native_family') AND f.user_id=json_extract(?3,'$.user') AND c.client_id=json_extract(?3,'$.native_client') AND f.revoked_at IS NULL AND f.expires_at>{NOW})))"
+        );
         let gate = "EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='token_issued')";
         let mut batch = Vec::new();
         if plan["rotate"] == true {
@@ -752,7 +774,7 @@ impl D1Provider {
         }
         // An old event can never authorize this batch: force its UNIQUE
         // constraint to abort even when this attempt's admission is false.
-        batch.push(Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,'token_issued','token_lifecycle',{NOW},json_extract(?3,'$.audit') WHERE ({client_ok} AND {user_ok} AND {grant_ok} AND {refresh_ok}) OR {gate}"),params.clone()));
+        batch.push(Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,'token_issued','token_lifecycle',{NOW},json_extract(?3,'$.audit') WHERE ({client_ok} AND {user_ok} AND {grant_ok} AND {refresh_ok} AND {native_sso_ok}) OR {gate}"),params.clone()));
         if grant_hash.is_some() {
             batch.push(Statement::new(format!("INSERT INTO nazo_redemptions(tenant_id,client_id,grant_hash,issuance_id,holder,jti,expires_at,family_id,retain_until) SELECT ?1,json_extract(?3,'$.client'),json_extract(?3,'$.grant'),?2,json_extract(?3,'$.holder'),json_extract(?3,'$.jti'),json_extract(?3,'$.access_expiry'),json_extract(?3,'$.family'),json_extract(?3,'$.retain_until') WHERE {gate}"),params.clone()));
         }

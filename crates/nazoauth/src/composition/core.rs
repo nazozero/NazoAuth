@@ -285,6 +285,7 @@ fn metadata_config(settings: &Settings) -> MetadataConfig {
     let endpoint = &settings.endpoint;
     let protocol = &settings.protocol;
     MetadataConfig {
+        backchannel_logout_supported: settings.protocol.backchannel_logout_supported,
         issuer: endpoint.issuer.clone(),
         mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
         mtls_enabled: endpoint.mtls_certificate_source != MtlsCertificateSourceMode::Disabled,
@@ -312,6 +313,10 @@ fn dynamic_registration_config(
 ) -> DynamicRegistrationConfig {
     let keys = keyset.snapshot();
     DynamicRegistrationConfig {
+        capabilities: settings
+            .modules
+            .dynamic_client_registration_capabilities
+            .clone(),
         require_fapi2: settings
             .protocol
             .authorization_server_profile

@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use crate::{CryptoError, jwt::Algorithm};
 use futures_channel::oneshot;
 use js_sys::{
-    Promise, Uint8Array,
+    Array, Promise, Uint8Array,
     futures::{JsFuture, spawn_local},
 };
 use pkcs8::{
@@ -13,77 +13,99 @@ use pkcs8::{
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(inline_js = "
-export async function importRsaKey(der, pss) {
-    const name = pss ? 'RSA-PSS' : 'RSASSA-PKCS1-v1_5';
-    return globalThis.crypto.subtle.importKey('pkcs8', der, {name, hash: 'SHA-256'}, false, ['sign']);
+export async function importSigningKey(der, name) {
+    const algorithm = name === 'ECDSA' ? {name, namedCurve: 'P-256'}
+        : name === 'Ed25519' ? name : {name, hash: 'SHA-256'};
+    return globalThis.crypto.subtle.importKey('pkcs8', der, algorithm, false, ['sign']);
 }
-export async function signRsa(key, input, pss) {
-    const algorithm = pss ? {name: 'RSA-PSS', saltLength: 32} : 'RSASSA-PKCS1-v1_5';
-    return new Uint8Array(await globalThis.crypto.subtle.sign(algorithm, key, input));
+export async function signWithKey(key, importing, input, name) {
+    if (!key) {
+        // The borrowed WASM view must not survive the import's await.
+        input = input.slice();
+        key = await importing;
+    }
+    const algorithm = name === 'RSA-PSS' ? {name, saltLength: 32}
+        : name === 'ECDSA' ? {name, hash: 'SHA-256'} : name;
+    // WebCrypto snapshots BufferSource before returning its promise. A warm
+    // key signs the borrowed WASM view directly, without an intermediate copy.
+    const signature = await globalThis.crypto.subtle.sign(algorithm, key, input);
+    return [key, new Uint8Array(signature)];
 }
 ")]
 extern "C" {
-    #[wasm_bindgen(js_name = importRsaKey)]
-    fn import_rsa_key(der: &[u8], pss: bool) -> Promise;
-    #[wasm_bindgen(js_name = signRsa)]
-    fn sign_rsa(key: &JsValue, input: &[u8], pss: bool) -> Promise;
+    #[wasm_bindgen(js_name = importSigningKey)]
+    fn import_signing_key(der: &[u8], name: &str) -> Promise;
+    #[wasm_bindgen(js_name = signWithKey)]
+    fn sign_with_key(key: &JsValue, importing: &JsValue, input: &[u8], name: &str) -> Promise;
 }
 
 /// The validated key material owns the imported, non-extractable CryptoKey.
-pub(crate) struct WorkerRsa {
-    pss: bool,
+pub(crate) struct WorkerSigningKey {
+    name: &'static str,
     pkcs8: SecretDocument,
     key: OnceLock<JsValue>,
 }
 
-impl WorkerRsa {
-    pub(crate) fn new(algorithm: Algorithm, pkcs1: &[u8]) -> crate::Result<Option<Self>> {
-        let pss = match algorithm {
-            Algorithm::RS256 => false,
-            Algorithm::PS256 => true,
-            _ => return Ok(None),
+impl WorkerSigningKey {
+    pub(crate) fn new(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<Self> {
+        let name = match algorithm {
+            Algorithm::RS256 => "RSASSA-PKCS1-v1_5",
+            Algorithm::PS256 => "RSA-PSS",
+            Algorithm::ES256 => "ECDSA",
+            Algorithm::EdDSA => "Ed25519",
+            _ => return Err(CryptoError::UnsupportedAlgorithm),
         };
-        // RSA signing keys are persisted in PKCS#1. Wrap the already
-        // validated bytes in the PKCS#8 container expected by WebCrypto.
-        let algorithm = AlgorithmIdentifierRef {
-            oid: ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
-            parameters: Some(AnyRef::NULL),
+        let pkcs8 = if matches!(algorithm, Algorithm::RS256 | Algorithm::PS256) {
+            // RSA signing keys are persisted in PKCS#1. Wrap the already
+            // validated bytes in the PKCS#8 container expected by WebCrypto.
+            let algorithm = AlgorithmIdentifierRef {
+                oid: ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
+                parameters: Some(AnyRef::NULL),
+            };
+            let pkcs1 = OctetStringRef::new(private_der).map_err(|_| CryptoError::InvalidKey)?;
+            SecretDocument::encode_msg(&PrivateKeyInfoRef::new(algorithm, pkcs1))
+        } else {
+            // RustCrypto already validated the key and its optional public
+            // component. WebCrypto accepts PKCS#8 v1, so omit the outer v2
+            // public-key field while preserving the private-key encoding.
+            let private =
+                PrivateKeyInfoRef::try_from(private_der).map_err(|_| CryptoError::InvalidKey)?;
+            SecretDocument::encode_msg(&PrivateKeyInfoRef::new(
+                private.algorithm,
+                private.private_key,
+            ))
         };
-        let pkcs1 = OctetStringRef::new(pkcs1).map_err(|_| CryptoError::InvalidKey)?;
-        let pkcs8 = SecretDocument::encode_msg(&PrivateKeyInfoRef::new(algorithm, pkcs1))
-            .map_err(|_| CryptoError::InvalidKey)?;
-        Ok(Some(Self {
-            pss,
-            pkcs8,
+        Ok(Self {
+            name,
+            pkcs8: pkcs8.map_err(|_| CryptoError::InvalidKey)?,
             key: OnceLock::new(),
-        }))
+        })
     }
 
     pub(crate) async fn sign(self: &Arc<Self>, input: &[u8]) -> crate::Result<Vec<u8>> {
-        let import = self
-            .key
-            .get()
+        let key = self.key.get();
+        let import = key
             .is_none()
-            .then(|| import_rsa_key(self.pkcs8.as_bytes(), self.pss));
-
-        let input = input.to_vec();
+            .then(|| import_signing_key(self.pkcs8.as_bytes(), self.name));
+        let promise = sign_with_key(
+            key.unwrap_or(&JsValue::UNDEFINED),
+            import.as_ref().map_or(&JsValue::UNDEFINED, AsRef::as_ref),
+            input,
+            self.name,
+        );
         let signing = Arc::clone(self);
         let (sender, receiver) = oneshot::channel();
         // Promise futures are isolate-local. Only the result crosses back into
         // the Send future, and concurrent requests share only a completed key.
         spawn_local(async move {
             let result = async {
-                if let Some(promise) = import {
-                    let imported = JsFuture::from(promise)
-                        .await
-                        .map_err(|_| CryptoError::OperationFailed)?;
-                    let _ = signing.key.set(imported);
-                }
-                let key = signing.key.get().ok_or(CryptoError::InvalidKey)?;
-                let signature = JsFuture::from(sign_rsa(key, &input, signing.pss))
+                let signed = JsFuture::from(promise)
                     .await
                     .map_err(|_| CryptoError::OperationFailed)?;
-                Ok(Uint8Array::from(signature).to_vec())
+                let signed: Array = signed.unchecked_into();
+                let _ = signing.key.set(signed.get(0));
+                let signature: Uint8Array = signed.get(1).unchecked_into();
+                Ok(signature.to_vec())
             }
             .await;
             let _ = sender.send(result);

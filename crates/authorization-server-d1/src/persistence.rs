@@ -171,29 +171,7 @@ impl D1Provider {
             epoch >= 0 && !client.id.is_nil(),
             "invalid client authority"
         );
-        anyhow::ensure!(
-            !client.require_mtls_bound_tokens
-                && !matches!(
-                    client.token_endpoint_auth_method.as_str(),
-                    "tls_client_auth" | "self_signed_tls_client_auth"
-                ),
-            "Workers profile does not support mTLS clients"
-        );
-        anyhow::ensure!(
-            client.backchannel_logout_uri.is_none()
-                && client.frontchannel_logout_uri.is_none()
-                && client.jwks_uri.is_none()
-                && client.request_uris.is_empty()
-                && client.sector_identifier_uri.is_none(),
-            "Workers profile requires local client documents and no channel logout"
-        );
-        anyhow::ensure!(
-            client.grant_types.iter().all(|grant| matches!(
-                grant.as_str(),
-                "authorization_code" | "refresh_token" | "client_credentials"
-            )),
-            "unsupported Workers grant type"
-        );
+        validate_client_capabilities(client)?;
         self.database.batch(vec![Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", vec![json!(self.tenant_id),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(encode(&client.registration)?),json!(secret_digest),json!(epoch),json!(client.is_active)])]).await?;
         Ok(())
     }
@@ -228,7 +206,17 @@ impl D1Provider {
         anyhow::ensure!(
             enabled.iter().all(|module| matches!(
                 module,
-                ModuleId::RequestObjects | ModuleId::Jarm | ModuleId::SessionManagement
+                ModuleId::RequestObjects
+                    | ModuleId::DeviceAuthorization
+                    | ModuleId::DynamicClientRegistration
+                    | ModuleId::Jarm
+                    | ModuleId::SessionManagement
+                    | ModuleId::TokenExchange
+                    | ModuleId::JwtBearerGrant
+                    | ModuleId::NativeSso
+                    | ModuleId::AuthorizationDetails
+                    | ModuleId::FrontchannelLogout
+                    | ModuleId::HttpMessageSignatures
             )),
             "unsupported Workers module"
         );
@@ -535,6 +523,31 @@ impl D1Provider {
         let request_hash = digest(&input.request_id);
         let par_hash = input.pushed_request_uri.as_deref().map(digest);
         if let Some(fields) = input.audit_fields.as_object_mut() {
+            // The persistence owner binds identity and outcome to the accepted
+            // command. Only the shared application's non-secret evidence may
+            // accompany it; arbitrary caller fields never enter the ledger.
+            fields.retain(|key, _| {
+                matches!(
+                    key.as_str(),
+                    "source_ip_hash"
+                        | "pushed_request_digest"
+                        | "code_id"
+                        | "code_hash"
+                        | "code_payload_digest"
+                )
+            });
+            fields.insert(
+                "schema_version".into(),
+                json!(nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION),
+            );
+            fields.insert("event_category".into(), json!("authorization"));
+            fields.insert("tenant_id".into(), json!(input.tenant_id));
+            fields.insert("user_id".into(), json!(input.user_id));
+            fields.insert("client_id".into(), json!(input.client_id));
+            fields.insert("decision".into(), json!(input.decision.as_str()));
+            fields.insert("scope".into(), json!(input.scopes.join(" ")));
+            fields.insert("valid_until".into(), json!(input.valid_until.to_string()));
+            fields.insert("retain_until".into(), json!(input.retain_until.to_string()));
             fields.insert("request_id_hash".into(), json!(request_hash));
             let resource_digest = (!input.resource_indicators.is_empty()).then(|| {
                 let mut hasher = blake3::Hasher::new();
@@ -612,4 +625,36 @@ impl D1Provider {
             _ => Err(AuthorizationPortError::CorruptData),
         }
     }
+}
+
+/// Validate the capabilities backed by this D1 composition after shared registration policy.
+pub(super) fn validate_client_capabilities(client: &OAuthClient) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !client.require_mtls_bound_tokens
+            && !matches!(
+                client.token_endpoint_auth_method.as_str(),
+                "tls_client_auth" | "self_signed_tls_client_auth"
+            ),
+        "Workers profile does not support mTLS clients"
+    );
+    anyhow::ensure!(
+        client.backchannel_logout_uri.is_none()
+            && client.jwks_uri.is_none()
+            && client.request_uris.is_empty()
+            && client.sector_identifier_uri.is_none(),
+        "Workers profile requires local client documents and no backchannel logout"
+    );
+    anyhow::ensure!(
+        client.grant_types.iter().all(|grant| matches!(
+            grant.as_str(),
+            "authorization_code"
+                | "refresh_token"
+                | "client_credentials"
+                | "urn:ietf:params:oauth:grant-type:token-exchange"
+                | "urn:ietf:params:oauth:grant-type:jwt-bearer"
+                | "urn:ietf:params:oauth:grant-type:device_code"
+        )),
+        "unsupported Workers grant type"
+    );
+    Ok(())
 }

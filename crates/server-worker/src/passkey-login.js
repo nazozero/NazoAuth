@@ -31,6 +31,14 @@ async function send(path, data) {
   if (!response.ok) throw new Error('认证失败：' + response.status);
   return response.json();
 }
+function returnPath() {
+  const parameters = new URLSearchParams(location.search);
+  const value = parameters.get('return_to') || parameters.get('next');
+  if (!value?.startsWith('/') || value.startsWith('//')) return null;
+  const target = new URL(value, location.origin);
+  if (target.origin !== location.origin || !['/authorize', '/device'].includes(target.pathname)) return null;
+  return target.pathname + target.search;
+}
 button.addEventListener('click', async () => {
   button.disabled = true;
   status.textContent = '正在准备 Passkey…';
@@ -50,8 +58,8 @@ button.addEventListener('click', async () => {
       ceremony_id: started.ceremony_id,
       response: assertion.toJSON(),
     });
-    const next = new URLSearchParams(location.search).get('next');
-    if (next?.startsWith('/authorize?')) {
+    const next = returnPath();
+    if (next) {
       location.replace(next);
       return;
     }

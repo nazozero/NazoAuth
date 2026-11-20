@@ -56,6 +56,11 @@ jobs:
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
           CARGO_PROFILE_TEST_OPT_LEVEL: "2"
         run: cargo test --locked --target wasm32-unknown-unknown -p nazo-http-worker --test ingress
+      - name: Execute WebCrypto signing contracts
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+          CARGO_PROFILE_TEST_OPT_LEVEL: "2"
+        run: cargo test --locked --target wasm32-unknown-unknown -p nazo-crypto --features jose --test portable_jose
       - name: Build and execute the actual WASM Worker
         run: |
           WASM_BINDGEN_BIN="$(command -v wasm-bindgen)"

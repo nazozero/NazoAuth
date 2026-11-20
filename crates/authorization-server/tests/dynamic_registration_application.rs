@@ -100,6 +100,7 @@ impl ClientSecretDigesterPort for FakeSecurity {
 
 fn application_config() -> DynamicRegistrationConfig {
     DynamicRegistrationConfig {
+        capabilities: Default::default(),
         require_fapi2: false,
         tenant: TenantContext::default_system(),
         issuer: "https://issuer.example".to_owned(),

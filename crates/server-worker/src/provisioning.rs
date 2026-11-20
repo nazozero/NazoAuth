@@ -63,10 +63,20 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
             clients.iter().all(|client| {
                 client.client_type == "confidential"
                     && client.redirect_uris.is_empty()
-                    && client.grant_types.as_slice() == ["client_credentials"]
-                    && client.token_endpoint_auth_method == "client_secret_basic"
+                    && client.grant_types.iter().all(|grant| {
+                        matches!(
+                            grant.as_str(),
+                            "client_credentials"
+                                | "urn:ietf:params:oauth:grant-type:token-exchange"
+                                | "urn:ietf:params:oauth:grant-type:jwt-bearer"
+                        )
+                    })
+                    && matches!(
+                        client.token_endpoint_auth_method.as_str(),
+                        "client_secret_basic" | "client_secret_post" | "private_key_jwt"
+                    )
             }),
-            "machine-only Free profile requires confidential client_credentials clients without redirects"
+            "machine-only profile requires confidential service grants without redirects"
         );
     }
     let encoded_key = Zeroizing::new(signing_key_base64);

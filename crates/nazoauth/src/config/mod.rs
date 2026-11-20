@@ -37,6 +37,8 @@ pub struct TenantSettings {
 
 #[derive(Clone)]
 pub struct ProtocolSettings {
+    /// Whether the host supplies durable backchannel logout delivery.
+    pub backchannel_logout_supported: bool,
     pub default_audience: String,
     pub protected_resource_identifier: String,
     pub additional_scopes_supported: Vec<String>,
@@ -123,6 +125,7 @@ pub struct EmailSettings {
 
 #[derive(Clone, Default)]
 pub struct ModuleSettings {
+    pub dynamic_client_registration_capabilities: nazo_auth::DynamicRegistrationCapabilities,
     pub enable_openid4vci_issuer: bool,
     pub enable_openid4vp_verifier: bool,
     pub register_openid4vci_routes: bool,
@@ -186,6 +189,7 @@ impl Configuration {
                 issuer: issuer.clone(),
             },
             protocol: ProtocolSettings {
+                backchannel_logout_supported: true,
                 default_audience: "resource://default".into(),
                 protected_resource_identifier: format!(
                     "{}/fapi/resource",

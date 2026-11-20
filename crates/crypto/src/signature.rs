@@ -28,7 +28,7 @@ pub struct PreparedSigningKey {
     algorithm: Algorithm,
     key: PreparedKey,
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    worker_rsa: Option<std::sync::Arc<crate::worker_signing::WorkerRsa>>,
+    worker_key: std::sync::Arc<crate::worker_signing::WorkerSigningKey>,
 }
 
 enum PreparedKey {
@@ -53,8 +53,10 @@ impl PreparedSigningKey {
             algorithm,
             key,
             #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-            worker_rsa: crate::worker_signing::WorkerRsa::new(algorithm, private_der)?
-                .map(std::sync::Arc::new),
+            worker_key: std::sync::Arc::new(crate::worker_signing::WorkerSigningKey::new(
+                algorithm,
+                private_der,
+            )?),
         })
     }
 
@@ -70,12 +72,11 @@ impl PreparedSigningKey {
         }
     }
 
-    /// Signs using the native Worker backend for RSA when enabled.
+    /// Signs using the runtime's WebCrypto backend on JavaScript WASM hosts.
     pub async fn sign_async(&self, message: &[u8]) -> crate::Result<Vec<u8>> {
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-        if let Some(rsa) = &self.worker_rsa {
-            return rsa.sign(message).await;
-        }
+        return self.worker_key.sign(message).await;
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         self.sign(message)
     }
 

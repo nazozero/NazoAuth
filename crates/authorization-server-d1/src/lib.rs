@@ -4,6 +4,8 @@
 mod audit;
 mod clients;
 mod db;
+mod dcr;
+mod device;
 mod keys;
 mod maintenance;
 mod modules;

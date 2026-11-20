@@ -20,25 +20,89 @@ five-minute registration session on the issuer's HTTPS origin. The full-password
 profile (`machine_only: false`, `passkey_only: false`) requires Workers Paid
 for Argon2id's CPU budget. In Passkey-only mode, set `frontend_base_url` to
 the issuer origin to use the built-in login and consent pages at `/auth`
-and `/consent`. The password profile requires a separately hosted frontend.
+and `/consent`. When Device Authorization is selected, `/device` serves the
+same-origin approval page and returns through Passkey login when needed.
+The password profile requires a separately hosted frontend.
 
 | Capability | Workers profile |
 | --- | --- |
 | Discovery and JWKS | Shared metadata and key lifecycle |
 | Authorization | Authorization code with PKCE and interactive consent |
 | Tokens | Code redemption, refresh, Client Credentials, revocation and UserInfo |
-| Sender constraints | DPoP proof, nonce and replay state |
+| Client authentication and sender constraints | Client secret, `private_key_jwt`, DPoP proof, nonce and replay state |
 | Identity | Machine-only, password-enabled full profile, or Passkey-only with offline initial setup; passkey credentials, single-use challenges, sessions and logout share existing services |
-| Optional modules | Inline Request Objects/PAR, JARM and Session Management, explicitly selected at provisioning |
-| Keys | Encrypted persistent key generations; portable signing and verification |
+| Account profile | Current account, authorized-client count and validated profile updates; identity and authorization epochs are preserved |
+| Optional modules | Explicit deployment selection; see the module matrix below |
+| Keys | Encrypted persistent key generations; `nazo-crypto` uses Worker WebCrypto for signing and verification |
 | Audit | Required evidence commits with the accepting mutation; append-only D1 audit rows |
-| Unavailable | Native administration/process signers, mTLS, remote documents, federation, device/CIBA, Token Exchange, Native SSO, DCR, SCIM, OpenID4VC, MFA, email registration, profile editing/application lists, avatar/object storage and native audit anchors/roles |
 
 Configuration rejects unavailable modules and unknown native fields. Persisted
 module selection must match the deployment. Discovery uses that selected
 snapshot. Unavailable storage/network operations return explicit failures.
 Client provisioning rejects unsupported grants, remote documents, mTLS and
-frontchannel/backchannel logout. Cloudflare Workflows are not required.
+backchannel logout. Front-channel logout uses registered RP endpoints and does
+not require an outbound delivery worker. Cloudflare Workflows are not required.
+
+### Optional module matrix
+
+These are all 16 shared runtime modules. An available module still needs explicit
+selection in `NAZO_CONFIG.modules` and the corresponding client grants, scopes
+and security policy. Availability describes the adapter boundary; public edge
+acceptance and protocol conformance remain separate verification activities.
+
+| Module | Workers binding and conditions |
+| --- | --- |
+| `device_authorization` | D1 device/user-code mappings, compare-and-set polling state, durable user decision and single-use redemption. Clients must allow `urn:ietf:params:oauth:grant-type:device_code` and set `security_policy.allow_cross_device_flows: true`. |
+| `token_exchange` | Shared local-token exchange with D1 token state, scope/target checks and revocation. Clients must allow the token-exchange grant. External issuer trust and delegated remote tokens are not implicitly enabled. |
+| `jwt_bearer_grant` | Shared JWT bearer grant with client subject binding and atomic assertion replay state. Clients register inline verification keys and the JWT bearer grant. |
+| `ciba` | Unavailable: D1 account lookup, CIBA state/decision contracts and ping delivery are not implemented. A verification UI and delivery configuration are also needed. |
+| `dynamic_client_registration` | Shared RFC 7591/7592 registration with D1 management-token authority, atomic required audit, credential rotation, compare-and-set updates and deactivation. Requires the separate `NAZO_DCR_INITIAL_ACCESS_TOKEN` secret. Deployment capability policy rejects unsupported metadata before resolution or persistence. |
+| `request_objects` | Inline signed Request Objects and PAR use shared validation and D1 one-use state. Remote `request_uri`, `jwks_uri` and sector documents are not bound. |
+| `jarm` | Shared signed authorization responses use persisted issuer keys. The client selects a supported response algorithm. |
+| `authorization_details` | Shared RAR parsing, consent, access-token and refresh handling; D1 persists the accepted details with the grant. |
+| `http_message_signatures` | Shared request verification, response signing and replay state for the signed resource endpoint. Client verification keys must be available inline. |
+| `scim` | Unavailable: SCIM repository and credential ports lack D1 implementations. |
+| `scim_security_events` | Unavailable: requires SCIM plus durable event-store and bounded remote polling adapters. |
+| `native_sso` | Shared device-secret exchange and D1 source refresh-family checks. Requires `token_exchange`, allowed `device_sso` scope, the issuer audience and the code/refresh/exchange grants on participating clients. Revoking the source family prevents later exchange. |
+| `frontchannel_logout` | Registered RP iframe URLs and session identifiers are generated by the shared logout flow. Delivery is performed by the browser. Back-channel delivery remains unavailable. |
+| `session_management` | Shared session state, check-session iframe/status and RP-initiated logout; participating clients enable `security_policy.session_management`. |
+| `openid4vci_issuer` | Unavailable: offer, dataset, subject, nonce, credential, deferred-response and trust-policy persistence contracts need D1 adapters and issuer policy. |
+| `openid4vp_verifier` | Unavailable: presentation state, trust-policy and credential-status resolution need adapters and verifier policy. |
+
+The machine-only profile permits `token_exchange`, `jwt_bearer_grant`,
+`http_message_signatures` and `dynamic_client_registration`; its registration
+policy permits service grants only. The interactive profiles permit the available
+browser modules as well. Selecting a module never grants a client permission
+to use it. Configuration and registration enforce both boundaries.
+
+When selecting dynamic registration, supply `NAZO_DCR_INITIAL_ACCESS_TOKEN`
+as a secret of at least 32 bytes before deploying that module selection.
+Keep it separate from the client-secret pepper and signing wrapping key.
+The graph refuses to start with the module enabled and a missing/short token.
+The default bootstrap input does not enable this module or generate this secret;
+configure it through the deployment's existing secret management when needed.
+Registered clients receive their own management token. A successful configuration
+replacement rotates that token and any client secret; stale management tokens
+cannot update or delete the client. Client-owned updates cannot increase
+administrator-limited scopes or change administrator-owned audiences/policy.
+
+### Remaining host and service boundaries
+
+| Area | Current boundary and work required |
+| --- | --- |
+| mTLS | The HTTP adapter does not supply verified client certificates. Supporting Cloudflare-terminated mTLS requires trusted platform certificate facts, certificate/trust adapters and hostname policy. Forwarded headers cannot supply this authority. This is an ingress integration gap, not a general prohibition on Workers cryptography. |
+| Remote documents and federation | The Worker does not bind outbound document or federation clients, federation-link storage or federation replay state. A bounded HTTP adapter must retain shared URL, redirect, size, expiry and SSRF policy; enabling arbitrary `fetch` would not satisfy the contracts. |
+| Email registration and verification | Registration accounts, code reservation/consumption and email delivery are unbound. An email service binding alone does not provide the missing atomic identity operations. |
+| MFA | TOTP enrollment/consumption, backup codes, remembered devices and their required audit mutations need D1 adapters. Password-based backup-code hashing also needs an appropriate CPU budget. |
+| Authorized-application list | `/auth/me` counts persisted grants. The detailed application list is unavailable because D1 does not retain the native authorization-history fields needed for exact counts and last-authorization data. A list must not fabricate them from current grants. |
+| Avatars and object storage | Avatar revision/claim state and the object-storage port are unbound. An R2 adapter is feasible, provided object publication and database selection retain the existing lifecycle. |
+| Administration and recovery | Native administration, controller registry, recovery roots, role management and native audit anchors are unbound. The server must not absorb the separate controller's recovery authority. |
+| Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
+| Password authentication | Argon2id remains the shared password verifier. The Free profile disables password routes to avoid its CPU cost; the password-enabled profile requires a suitable Paid CPU budget and separate frontend. |
+
+Missing D1/service adapters above are implementation work, not evidence that
+the protocol cannot run on Workers. Durable state must continue to satisfy the
+same tenant isolation, atomic consume, replay, audit and recovery contracts.
 
 ## Storage semantics
 
@@ -66,9 +130,10 @@ authorization codes, revocations or replay decisions.
 
 The full profile's minute cron starts up to 64 cleanup passes of 1,000 rows
 each, stopping after 20 seconds or a short pass. The Workers Free machine-only
-profile makes a single pass of at most 500 rows; cleanup does not run a
-multi-pass loop against Free's 10 ms Cron CPU budget. This lets cleanup catch up with replay traffic while
-bounding each transaction and the scheduled work.
+and Passkey-only profiles make a single pass of at most 500 rows; cleanup does not run a
+multi-pass loop against Free's 10 ms Cron CPU budget. The limit bounds each
+transaction and scheduled invocation; deployed CPU and backlog measurements
+determine whether cleanup keeps up with the actual traffic.
 
 ## Build
 
@@ -114,8 +179,8 @@ omitted: Wrangler can resolve the provisioned database by binding name. The appl
 unprovisioned identity server or install a public bootstrap endpoint.
 
 Cloudflare [removed the gzip size cap in September 2026](https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/):
-Free and Paid now accept up to 64 MiB uncompressed (this Worker is approximately
-8.5 MiB). **Workers Free** has 100,000 requests/day, 10 ms CPU per HTTP request
+Free and Paid now accept up to 64 MiB uncompressed. Use the current dry-run
+artifact size when checking that limit. **Workers Free** has 100,000 requests/day, 10 ms CPU per HTTP request
 and 10 ms per Cron invocation; D1 has separate daily row-read/write quotas.
 
 The deployment template starts in `machine_only: true` (service clients with
@@ -180,7 +245,9 @@ npm run deploy
 
 The issuer hostname must match `NAZO_CONFIG.issuer`. Passkey browser
 registration must run on that exact secure origin (RP ID derives from the issuer
-hostname). A separately hosted normal login/consent frontend remains required.
+hostname). With `frontend_base_url` set to that origin, the Passkey profile
+serves its own login and consent pages. A separately hosted frontend can instead
+use the same protocol endpoints.
 For unmerged PR acceptance select the actual `feat/cloudflare-workers-206`
 branch in Cloudflare Builds; the public one-click button defaults to `main`
 until the PR is merged. Later Git pushes build/deploy via Workers
@@ -209,7 +276,7 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | `frontend_base_url` | Issuer origin for the built-in Passkey UI or the origin of a separately hosted login/consent UI |
 | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
-| `modules` | Optional array of `request_objects`, `jarm`, `session_management` |
+| `modules` | Optional array of available module identifiers from the module matrix; persisted selection must match |
 | `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
 | `passkey_only` | Worker Free interactive Passkey profile; password routes are disabled |
 
@@ -287,8 +354,9 @@ npm run deploy
 
 The Worker refuses to create missing keys in a request. The Free machine-only
 profile allows OAuth server metadata, JWKS, service token issuance and token
-management, and does not expose any interactive authorization or password
-endpoints. The full profile retains the complete endpoint set documented above.
+management, and does not expose interactive authorization or password endpoints.
+The password-enabled profile admits the shared HTTP routes; operations still
+require the available adapters and selected modules described above.
 
 Parsed keys and the
 completed application graph are reused within an isolate. The shared key manager
@@ -324,7 +392,7 @@ Completed graphs are reused without a per-request lock. In-flight initialization
 I/O is not shared across Worker request contexts; concurrent cold requests may
 prepare independently and then reuse the completed graph.
 
-The cache checks the platform-generated `NAZO_VERSION.id` and compares the six
+The cache checks the platform-generated `NAZO_VERSION.id` and compares the
 consumed binding values in JavaScript before reuse. The version ID also covers resource
 rebinding that preserves a JavaScript object's identity; no manual deployment
 counter is needed. Secret values are not copied into Rust strings on
@@ -367,12 +435,99 @@ npm test --prefix deploy/cloudflare
 ```
 
 The integration suite loads the actual WASM in workerd and provisions an actual
-D1 binding. It covers discovery/JWKS, login/session cookies, authorization code
-and PKCE, refresh, UserInfo, revocation, DPoP nonce/replay, concurrent one-time
-consumption, binding changes, isolate restart and storage failure. It prints local cold-start and
-concurrent Client Credentials timings. SQL tests execute production statements
-for rollback, isolation, expiry and CAS. Transport tests use the shared facade
-conformance kit.
+D1 binding. It exercises the selected modules along with discovery/JWKS,
+login/session cookies, authorization code and PKCE, refresh, UserInfo, revocation,
+DPoP nonce/replay, concurrent one-time consumption, binding changes, isolate
+restart and storage failure. It prints local cold-start and concurrent Client
+Credentials timings. SQL tests execute production statements for rollback,
+isolation, expiry and CAS. Transport tests use the shared facade conformance kit.
+
+The local workerd suite deliberately creates and destroys isolated databases.
+Do not reuse that fixture against a deployed D1 binding. Public acceptance has
+a separate opt-in runner and uses only dedicated test identities and clients:
+
+```sh
+NAZO_WORKER_ACCEPTANCE_INPUT=/private/worker-acceptance.json \
+NAZO_WORKER_ACCEPTANCE_OUTPUT=/private/worker-acceptance-result.json \
+NAZO_WORKER_ACCEPTANCE_AUTHENTICATOR=/private/worker-acceptance-passkey.json \
+node --test deploy/cloudflare/test/public-acceptance.mjs
+```
+
+Ordinary `npm test` skips this test when `NAZO_WORKER_ACCEPTANCE_INPUT` is absent.
+The input is a private JSON object with the following fields. All clients must
+already belong to the selected tenant and allow the grants exercised by the run.
+The runner never provisions a database or replaces an existing account.
+
+| Input | Required content |
+| --- | --- |
+| `issuer` | Canonical public HTTPS issuer; redirects are inspected without following them to RPs |
+| `tenant_id`, `user` | Dedicated tenant/user identifiers and `user.email`; needed for browser flows |
+| `enrollment.token` | One-use setup ticket for that dedicated user on the first run |
+| `browser_client` | `client_id`, `redirect_uri`, optional `scope`, `post_logout_redirect_uri`, `frontchannel_logout_uri`; `request_private_key_jwk` enables inline JAR when its public key and signing algorithm are registered |
+| `private_key_client` | `client_id`, `private_key_jwk`, `algorithm`, `scope` and `resource`; private key is never copied into the result |
+| `service_client` | Optional `client_id`, `client_secret`, `scope`; otherwise the private-key client exercises Client Credentials |
+| `dpop_client` | Optional browser client registered with DPoP required |
+| `device_client` | Client with the Device grant, cross-device policy and requested scopes/resource |
+| `native_sso` | `source_client` and `destination_client` browser-client objects with the Native SSO permissions above |
+| `dcr_initial_access_token` | Dedicated initial access token when dynamic registration is selected; kept out of results |
+| `modules` | Enabled module names to include in the run |
+| `race_concurrency` | Optional one-use race width, bounded to 2–16; defaults to 4 |
+| `workload` | Optional `{ "requests": 128, "concurrency": 8 }` adds private-key Client Credentials samples after protocol tests; capped at 256 requests and concurrency 16 |
+
+The result contains paths, timestamps, HTTP statuses, durations and fixed failure
+descriptions. It excludes tokens, cookies, assertion bodies and private keys.
+The optional authenticator file is a separate private `0600` file containing only
+the dedicated synthetic credential and counter. Reusing that path lets later runs
+authenticate without consuming another setup ticket. Never use a real user's
+credential or a general registration ticket for this test.
+
+The optional service workload sends up to 16 serial warm-up requests, then runs
+the remainder through a bounded concurrent pool. Every successful response has
+its JWT signature verified independently. The `x-nazo-acceptance-phase` header
+labels `protocol`, `warm_serial` and `concurrent` invocations; client results and
+the telemetry summary keep these phases separate. Workload durations are client
+wall time. The run never converts them into CPU estimates.
+
+Synthetic P-256 WebAuthn messages exercise server-side ceremony validation and
+one-use state. They do not test a browser's credential UI, authenticator hardware,
+biometrics, cross-device transport or account recovery. Accept the real-device
+Passkey flow separately on the issuer origin, including the setup/login pages
+and an authorization-code redirect through consent.
+
+### Public CPU and failure measurements
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)
+invocation logging for the acceptance deployment and record its sampling policy.
+Each runner request carries an `x-nazo-acceptance` run identifier. Export the
+matching invocation records, bounded by run, deployment version and time range.
+Keep HTTP and scheduled events separate and exclude unrelated scanner traffic.
+Retain request ID, path, response status, CPU/wall time, outcome and version;
+never export authorization headers, cookies or request bodies.
+
+```sh
+NAZO_WORKER_ACCEPTANCE_RUN_ID=nazo-acceptance-REPLACE \
+NAZO_WORKER_ACCEPTANCE_VERSION=REPLACE \
+node deploy/cloudflare/summarize-worker-logs.mjs \
+  /private/invocations.json /private/worker-acceptance-result.json
+```
+
+The summarizer accepts the Cloudflare telemetry `result.events.events` shape
+or normalized records with `timestamp`, `request_id`, `path`, `cpu_ms`, `wall_ms`,
+`outcome`, `status`, `version`, `event_type`, `run_id` and optional `phase`. It deduplicates console
+and invocation records by request, reports missing CPU samples, and compares
+observed fetch counts with the client run. Preserve run/version fields when
+normalizing; only use a prefiltered export without the corresponding filter.
+
+Report CPU sample count, median, p90/p95/p99, maximum and count above 10 ms,
+with HTTP statuses and `exceededCpu`/`exceededMemory` outcomes separately.
+Report the client's actual Cloudflare 1102 pages as another independent count.
+Missing or sampled telemetry is not proof of zero rejections.
+Cloudflare's [CPU limit documentation](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)
+excludes network/database waiting from CPU time and allows occasional over-limit
+execution. A log above 10 ms therefore does not by itself establish a platform
+rejection. Error 1102 can represent CPU or memory exhaustion; the invocation
+outcome distinguishes them. Local timings and HTTPS wall time cannot replace
+platform CPU measurements.
 
 Production acceptance also needs the applicable OAuth/OIDC conformance plans
 against the deployed HTTPS issuer, direct-ingress WAF verification and target

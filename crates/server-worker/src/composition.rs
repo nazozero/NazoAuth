@@ -31,8 +31,24 @@ impl WorkerApplication {
         pepper: String,
         wrapping_keys: SigningKeyWrappingKeyRing,
         dummy_password_hash: String,
+        dynamic_client_registration_initial_access_token: Option<String>,
     ) -> anyhow::Result<Self> {
-        let settings = configuration.application(pepper)?;
+        let mut settings = configuration.application(pepper)?;
+        if configuration
+            .modules
+            .contains(&nazo_runtime_modules::ModuleId::DynamicClientRegistration)
+        {
+            ensure!(
+                dynamic_client_registration_initial_access_token
+                    .as_ref()
+                    .is_some_and(|token| token.len() >= 32),
+                "dynamic client registration requires an initial access token of at least 32 bytes"
+            );
+            settings
+                .modules
+                .dynamic_client_registration_initial_access_token =
+                dynamic_client_registration_initial_access_token;
+        }
         let session_cookie_name = settings.session.session_cookie_name.clone();
         let csrf_cookie_name = settings.session.csrf_cookie_name.clone();
         let cookie_secure = settings.session.cookie_secure;

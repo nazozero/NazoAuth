@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 use crate::{Ingress, WorkerApplication, WorkerConfiguration};
 
 struct Cached {
-    bindings: ([JsValue; 6], String),
+    bindings: ([JsValue; 7], String),
     prepared: WorkerApplication,
     refresh_after: Cell<i64>,
     refreshing: Cell<bool>,
@@ -93,10 +93,10 @@ async fn fetch(
         );
         return Ok(result);
     }
-    if cached.prepared.configuration.passkey_only {
-        if let Some(reply) = crate::setup::handle(&request, &env, &cached.prepared).await {
-            return Ok(reply);
-        }
+    if cached.prepared.configuration.passkey_only
+        && let Some(reply) = crate::setup::handle(&request, &env, &cached.prepared).await
+    {
+        return Ok(reply);
     }
     let now = jiff::Timestamp::now().as_second();
     if now >= cached.refresh_after.get() && !cached.refreshing.replace(true) {
@@ -122,7 +122,7 @@ fn configuration(env: &Env) -> anyhow::Result<WorkerConfiguration> {
 
 async fn application(
     env: &Env,
-    bindings: ([JsValue; 6], String),
+    bindings: ([JsValue; 7], String),
     configuration: WorkerConfiguration,
 ) -> anyhow::Result<Rc<Cached>> {
     let encoded_key = Zeroizing::new(env.secret("NAZO_SIGNING_KEY")?.to_string());
@@ -139,6 +139,9 @@ async fn application(
         env.secret("NAZO_CLIENT_SECRET_PEPPER")?.to_string(),
         wrapping_keys,
         env.secret("NAZO_DUMMY_PASSWORD_HASH")?.to_string(),
+        env.secret("NAZO_DCR_INITIAL_ACCESS_TOKEN")
+            .ok()
+            .map(|token| token.to_string()),
     )
     .await?;
     let initialized = Rc::new(Cached {
@@ -162,7 +165,7 @@ async fn application(
     }))
 }
 
-fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 6], String)> {
+fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 7], String)> {
     // Binding-only deployments may reuse an isolate. Compare the actual values
     // in JS (including D1 object identity), without copying secrets or parsing
     // configuration on every request. Never reuse a graph for changed bindings.
@@ -173,6 +176,9 @@ fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 6], String)> {
         env.secret("NAZO_SIGNING_KEY")?.into(),
         env.secret("NAZO_CLIENT_SECRET_PEPPER")?.into(),
         env.secret("NAZO_DUMMY_PASSWORD_HASH")?.into(),
+        env.secret("NAZO_DCR_INITIAL_ACCESS_TOKEN")
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED),
     ];
     // A platform version captures bindings even when the same JS capability
     // object can refer to a different per-request I/O channel after deployment.
@@ -218,7 +224,7 @@ async fn scheduled(_: worker::ScheduledEvent, env: Env, context: worker::Schedul
             let mut total = 0;
             // Workers Free Cron events have a 10 ms CPU limit; avoid the
             // full-profile multi-pass cleanup loop.
-            let (passes, batch) = if configuration.machine_only {
+            let (passes, batch) = if configuration.machine_only || configuration.passkey_only {
                 (1, 500)
             } else {
                 (64, 1_000)

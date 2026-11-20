@@ -51,6 +51,9 @@ fn free_profile_limits_routes_and_modules() {
 fn free_passkey_profile_never_exposes_password_authentication() {
     let mut config = configuration();
     config.passkey_only = true;
+    config
+        .modules
+        .push(nazo_runtime_modules::ModuleId::DeviceAuthorization);
     for (method, path) in [
         (http::Method::GET, "/.well-known/openid-configuration"),
         (http::Method::GET, "/authorize"),
@@ -60,6 +63,12 @@ fn free_passkey_profile_never_exposes_password_authentication() {
         (http::Method::POST, "/auth/me/passkeys/registration/begin"),
         (http::Method::POST, "/auth/me/passkeys/registration/finish"),
         (http::Method::POST, "/auth/setup/claim"),
+        (http::Method::PATCH, "/auth/me"),
+        (http::Method::OPTIONS, "/auth/me"),
+        (http::Method::POST, "/device_authorization"),
+        (http::Method::GET, "/device"),
+        (http::Method::GET, "/device/verification"),
+        (http::Method::POST, "/device/decision"),
     ] {
         assert!(config.allows_route(&method, path), "{path}");
     }
@@ -84,6 +93,50 @@ fn unavailable_module_fails_before_composition() {
         .modules
         .push(nazo_runtime_modules::ModuleId::Openid4vciIssuer);
     assert!(config.application("p".repeat(32)).is_err());
+}
+
+#[test]
+fn portable_extensions_and_service_metadata_follow_the_selected_modules() {
+    use nazo_runtime_modules::ModuleId;
+    let mut config = configuration();
+    config.modules = vec![
+        ModuleId::DeviceAuthorization,
+        ModuleId::TokenExchange,
+        ModuleId::JwtBearerGrant,
+        ModuleId::NativeSso,
+        ModuleId::FrontchannelLogout,
+        ModuleId::HttpMessageSignatures,
+        ModuleId::SessionManagement,
+    ];
+    config.passkey_only = true;
+    assert!(config.application("p".repeat(32)).is_ok());
+    for (method, path) in [
+        (http::Method::GET, "/check_session"),
+        (http::Method::GET, "/check_session/status"),
+        (http::Method::POST, "/logout"),
+        (http::Method::GET, "/fapi/resource"),
+        (http::Method::POST, "/fapi/resource"),
+        (http::Method::OPTIONS, "/token"),
+        (http::Method::OPTIONS, "/userinfo"),
+    ] {
+        assert!(config.allows_route(&method, path), "{path}");
+    }
+    assert!(!config.allows_route(&http::Method::OPTIONS, "/auth/login"));
+    assert!(!config.allows_route(&http::Method::OPTIONS, "/admin/users"));
+    config.passkey_only = false;
+    config.machine_only = true;
+    config.modules = vec![ModuleId::TokenExchange, ModuleId::JwtBearerGrant];
+    assert!(config.application("p".repeat(32)).is_ok());
+    assert_eq!(
+        config.machine_metadata()["grant_types_supported"],
+        serde_json::json!([
+            "client_credentials",
+            "urn:ietf:params:oauth:grant-type:token-exchange",
+            "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        ])
+    );
+    assert!(config.allows_route(&http::Method::OPTIONS, "/token"));
+    assert!(!config.allows_route(&http::Method::OPTIONS, "/authorize"));
 }
 
 #[test]
@@ -128,6 +181,7 @@ fn malformed_dummy_verifier_is_rejected_before_storage_initialization() {
             nazo_key_management::SigningKeyWrappingKeyRing::new("test", wrapping_key, None)
                 .unwrap(),
             malformed.into(),
+            None,
         ));
         let error = match result {
             Err(error) => error,
@@ -136,6 +190,36 @@ fn malformed_dummy_verifier_is_rejected_before_storage_initialization() {
         assert_eq!(
             error.to_string(),
             "dummy verifier must use the deployment's Argon2id password policy"
+        );
+    }
+}
+
+#[cfg(feature = "provisioning")]
+#[test]
+fn dynamic_registration_requires_a_separate_initial_access_secret() {
+    for secret in [None, Some("short".to_owned()), Some("x".repeat(32))] {
+        let mut config = configuration();
+        config.modules = vec![nazo_runtime_modules::ModuleId::DynamicClientRegistration];
+        let meets_length = secret.as_ref().is_some_and(|secret| secret.len() >= 32);
+        let result = futures_executor::block_on(nazo_server_worker::WorkerApplication::build(
+            config,
+            nazo_oauth_server_d1::Database::in_memory().unwrap(),
+            "p".repeat(32),
+            nazo_key_management::SigningKeyWrappingKeyRing::new("test", [7; 32], None).unwrap(),
+            "invalid-dummy-verifier".into(),
+            secret,
+        ));
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("invalid deployment was accepted"),
+        };
+        assert_eq!(
+            error.to_string(),
+            if meets_length {
+                "dummy verifier must use the deployment's Argon2id password policy"
+            } else {
+                "dynamic client registration requires an initial access token of at least 32 bytes"
+            }
         );
     }
 }
@@ -190,4 +274,70 @@ fn authority_admission_ignores_forwarding_headers_and_rejects_conflicting_host()
         &http::HeaderMap::new()
     ));
     assert!(!config.accepts_authority(&"/token".parse().unwrap(), &http::HeaderMap::new()));
+}
+
+#[test]
+fn native_sso_requires_its_shared_exchange_module() {
+    let mut config = configuration();
+    config.modules = vec![nazo_runtime_modules::ModuleId::NativeSso];
+    assert!(config.application("p".repeat(32)).is_err());
+    config
+        .modules
+        .push(nazo_runtime_modules::ModuleId::TokenExchange);
+    assert!(config.application("p".repeat(32)).is_ok());
+}
+
+#[test]
+fn registration_admission_follows_the_deployment_capabilities() {
+    use nazo_runtime_modules::ModuleId;
+    let mut config = configuration();
+    config.passkey_only = true;
+    assert!(!config.allows_route(&http::Method::POST, "/register"));
+    assert!(!config.allows_route(&http::Method::GET, "/device.js"));
+    config.modules = vec![
+        ModuleId::DynamicClientRegistration,
+        ModuleId::DeviceAuthorization,
+    ];
+    for (method, path) in [
+        (http::Method::POST, "/register"),
+        (http::Method::GET, "/register/client"),
+        (http::Method::PUT, "/register/client"),
+        (http::Method::DELETE, "/register/client"),
+        (http::Method::GET, "/device.js"),
+    ] {
+        assert!(config.allows_route(&method, path), "{path}");
+    }
+    assert!(!config.allows_route(&http::Method::GET, "/register/client/nested"));
+    let settings = config.application("p".repeat(32)).unwrap();
+    let capabilities = settings.modules.dynamic_client_registration_capabilities;
+    assert!(
+        !capabilities.remote_documents && !capabilities.mtls && !capabilities.backchannel_logout
+    );
+    let grants = capabilities.grant_types.unwrap();
+    assert!(
+        grants
+            .iter()
+            .any(|grant| grant == "urn:ietf:params:oauth:grant-type:device_code")
+    );
+    assert!(
+        !grants
+            .iter()
+            .any(|grant| grant == "urn:ietf:params:oauth:grant-type:token-exchange")
+    );
+    config.passkey_only = false;
+    config.machine_only = true;
+    config.modules = vec![ModuleId::DynamicClientRegistration];
+    let settings = config.application("p".repeat(32)).unwrap();
+    assert_eq!(
+        settings
+            .modules
+            .dynamic_client_registration_capabilities
+            .grant_types
+            .unwrap(),
+        vec!["client_credentials"]
+    );
+    assert_eq!(
+        config.machine_metadata()["registration_endpoint"],
+        "https://auth.example.com/register"
+    );
 }

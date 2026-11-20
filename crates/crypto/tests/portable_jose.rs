@@ -110,6 +110,93 @@ fn all_jose_algorithms_interoperate_with_independent_vectors() {
     }
 }
 
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn runtime_signing_preserves_vectors_across_cold_concurrency_and_key_reuse() {
+    use std::{future::Future as _, task::Context};
+    use wasm_bindgen::JsCast as _;
+
+    fn require_send<T: Send>(future: T) -> T {
+        future
+    }
+
+    let fixture = vectors();
+    let message = bytes(&fixture["message"]);
+    let memory: js_sys::WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
+    for vector in fixture["signatures"].as_array().unwrap() {
+        let algorithm = algorithm(vector);
+        let prepared =
+            signature::PreparedSigningKey::new(algorithm, &bytes(&vector["private_der"])).unwrap();
+        let public = verification_key(&vector["public_jwk"]);
+
+        // Start several requests before any import completes. Each owns its
+        // pending import; only a completed CryptoKey is shared by later calls.
+        let mut cold = (0..4)
+            .map(|_| Box::pin(require_send(prepared.sign_async(&message))))
+            .collect::<Vec<_>>();
+        for signing in &mut cold {
+            assert!(
+                signing
+                    .as_mut()
+                    .poll(&mut Context::from_waker(std::task::Waker::noop()))
+                    .is_pending()
+            );
+        }
+        // Growing WASM memory detaches borrowed JS views. The import await
+        // must retain an owned message, not a view into the old memory buffer.
+        memory.grow(1);
+        for signing in cold {
+            let signed = signing.await.unwrap();
+            signature::verify(algorithm, &public, &message, &signed).unwrap();
+            if matches!(algorithm, Algorithm::EdDSA | Algorithm::RS256) {
+                assert_eq!(signed, bytes(&vector["signature"]));
+            }
+        }
+
+        // Exercise the cached-key path, including a different input and a
+        // memory growth after sign() has snapshotted its borrowed BufferSource.
+        for input in [&message[..], b"a new signing input".as_slice()] {
+            let mut signing = Box::pin(require_send(prepared.sign_async(input)));
+            assert!(
+                signing
+                    .as_mut()
+                    .poll(&mut Context::from_waker(std::task::Waker::noop()))
+                    .is_pending()
+            );
+            memory.grow(1);
+            let mut signed = signing.await.unwrap();
+            signature::verify(algorithm, &public, input, &signed).unwrap();
+            signed[0] ^= 1;
+            assert_eq!(
+                signature::verify(algorithm, &public, input, &signed),
+                Err(CryptoError::InvalidSignature)
+            );
+        }
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[wasm_bindgen_test::wasm_bindgen_test]
+async fn runtime_signing_preserves_validated_ed25519_pkcs8_v2() {
+    let fixture = vectors();
+    let vector = &fixture["signatures"][0];
+    let message = bytes(&fixture["message"]);
+    let prepared = signature::PreparedSigningKey::new(
+        Algorithm::EdDSA,
+        &bytes(&fixture["ed25519_pkcs8_v2"]["private_der"]),
+    )
+    .unwrap();
+    let signed = prepared.sign_async(&message).await.unwrap();
+    assert_eq!(signed, bytes(&vector["signature"]));
+    signature::verify(
+        Algorithm::EdDSA,
+        &verification_key(&vector["public_jwk"]),
+        &message,
+        &signed,
+    )
+    .unwrap();
+}
+
 #[cfg_attr(
     all(target_arch = "wasm32", target_os = "unknown"),
     wasm_bindgen_test::wasm_bindgen_test

@@ -4,6 +4,7 @@ use nazo_auth::{
 };
 
 const POLICY: DynamicRegistrationPolicy<'static> = DynamicRegistrationPolicy {
+    capabilities: &nazo_auth::DynamicRegistrationCapabilities::ALL,
     default_audience: "https://api.example",
     pairwise_subject_supported: true,
     id_token_signing_algs: &["RS256", "PS256"],

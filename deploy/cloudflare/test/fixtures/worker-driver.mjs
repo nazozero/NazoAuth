@@ -12,6 +12,11 @@ export default {
         return invoke({ ...env, NAZO_DB: env.NAZO_EMPTY_DB });
       case 'version':
         return invoke({ ...env, NAZO_VERSION: { id: 'updated-version' } });
+      case 'passkey-profile': {
+        const configuration = JSON.parse(env.NAZO_CONFIG);
+        configuration.passkey_only = true;
+        return invoke({ ...env, NAZO_CONFIG: JSON.stringify(configuration) });
+      }
       case 'configuration': {
         const configuration = JSON.parse(env.NAZO_CONFIG);
         configuration.issuer = configuration.issuer.replace('127.0.0.1', 'localhost');

@@ -42,18 +42,42 @@ impl WorkerConfiguration {
             "Worker cannot select both machine-only and passkey-only profiles"
         );
         ensure!(
-            !self.machine_only || self.modules.is_empty(),
-            "machine-only Free profile cannot enable browser session modules"
+            !self.machine_only
+                || self.modules.iter().all(|module| {
+                    matches!(
+                        module,
+                        ModuleId::TokenExchange
+                            | ModuleId::JwtBearerGrant
+                            | ModuleId::HttpMessageSignatures
+                            | ModuleId::DynamicClientRegistration
+                    )
+                }),
+            "machine-only profile cannot enable interactive modules"
         );
         for module in &self.modules {
             ensure!(
                 matches!(
                     module,
-                    ModuleId::RequestObjects | ModuleId::Jarm | ModuleId::SessionManagement
+                    ModuleId::RequestObjects
+                        | ModuleId::DeviceAuthorization
+                        | ModuleId::DynamicClientRegistration
+                        | ModuleId::Jarm
+                        | ModuleId::SessionManagement
+                        | ModuleId::TokenExchange
+                        | ModuleId::JwtBearerGrant
+                        | ModuleId::NativeSso
+                        | ModuleId::AuthorizationDetails
+                        | ModuleId::FrontchannelLogout
+                        | ModuleId::HttpMessageSignatures
                 ),
                 "module {module:?} is unavailable in the Workers deployment profile"
             );
         }
+        ensure!(
+            !self.modules.contains(&ModuleId::NativeSso)
+                || self.modules.contains(&ModuleId::TokenExchange),
+            "Native SSO requires Token Exchange"
+        );
         let issuer = url::Url::parse(&self.issuer).context("invalid issuer URL")?;
         ensure!(
             issuer.path() == "/",
@@ -72,6 +96,37 @@ impl WorkerConfiguration {
         );
         let mut settings =
             nazoauth::config::Configuration::new(self.tenant, &self.issuer, client_secret_pepper)?;
+        settings.protocol.backchannel_logout_supported = false;
+        let mut registration_grants = vec!["client_credentials".to_owned()];
+        if !self.machine_only {
+            registration_grants
+                .extend(["authorization_code".to_owned(), "refresh_token".to_owned()]);
+        }
+        for (module, grant) in [
+            (
+                ModuleId::TokenExchange,
+                "urn:ietf:params:oauth:grant-type:token-exchange",
+            ),
+            (
+                ModuleId::JwtBearerGrant,
+                "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            ),
+            (
+                ModuleId::DeviceAuthorization,
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ),
+        ] {
+            if self.modules.contains(&module) {
+                registration_grants.push(grant.to_owned());
+            }
+        }
+        settings.modules.dynamic_client_registration_capabilities =
+            nazo_auth::DynamicRegistrationCapabilities {
+                remote_documents: false,
+                mtls: false,
+                backchannel_logout: false,
+                grant_types: Some(registration_grants),
+            };
         settings
             .endpoint
             .frontend_base_url
@@ -90,22 +145,74 @@ impl WorkerConfiguration {
     #[must_use]
     pub fn machine_metadata(&self) -> serde_json::Value {
         let root = self.issuer.trim_end_matches('/');
-        serde_json::json!({
+        let mut grants = vec!["client_credentials"];
+        if self.modules.contains(&ModuleId::TokenExchange) {
+            grants.push("urn:ietf:params:oauth:grant-type:token-exchange");
+        }
+        if self.modules.contains(&ModuleId::JwtBearerGrant) {
+            grants.push("urn:ietf:params:oauth:grant-type:jwt-bearer");
+        }
+        let mut metadata = serde_json::json!({
             "issuer": self.issuer,
             "token_endpoint": format!("{root}/token"),
             "jwks_uri": format!("{root}/jwks.json"),
             "revocation_endpoint": format!("{root}/revoke"),
             "introspection_endpoint": format!("{root}/introspect"),
             "response_types_supported": [],
-            "grant_types_supported": ["client_credentials"],
-            "token_endpoint_auth_methods_supported": ["client_secret_basic"]
-        })
+            "grant_types_supported": grants,
+            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
+            "token_endpoint_auth_signing_alg_values_supported": nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+            "dpop_signing_alg_values_supported": ["ES256", "EdDSA"]
+        });
+        if self.modules.contains(&ModuleId::DynamicClientRegistration) {
+            metadata["registration_endpoint"] = serde_json::json!(format!("{root}/register"));
+        }
+        metadata
     }
 
     /// Restrict Workers Free to service endpoints without Argon2id password work.
     pub fn allows_route(&self, method: &http::Method, path: &str) -> bool {
+        if matches!(
+            path,
+            "/device"
+                | "/device.js"
+                | "/device_authorization"
+                | "/device/verification"
+                | "/device/decision"
+        ) && !self.modules.contains(&ModuleId::DeviceAuthorization)
+        {
+            return false;
+        }
+        if path == "/register" || path.starts_with("/register/") {
+            return self.modules.contains(&ModuleId::DynamicClientRegistration)
+                && if path == "/register" {
+                    matches!(*method, http::Method::POST | http::Method::OPTIONS)
+                } else {
+                    path.strip_prefix("/register/")
+                        .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+                        && matches!(
+                            *method,
+                            http::Method::GET
+                                | http::Method::PUT
+                                | http::Method::DELETE
+                                | http::Method::OPTIONS
+                        )
+                };
+        }
         if !self.machine_only && !self.passkey_only {
             return true;
+        }
+        // Keep the shared facade responsible for endpoint-specific CORS policy.
+        // A preflight can reach only a path admitted for an actual operation.
+        if method == http::Method::OPTIONS {
+            return [
+                http::Method::GET,
+                http::Method::POST,
+                http::Method::PATCH,
+                http::Method::DELETE,
+            ]
+            .iter()
+            .any(|method| self.allows_route(method, path));
         }
         if self.passkey_only {
             return match *method {
@@ -115,6 +222,14 @@ impl WorkerConfiguration {
                         | "/.well-known/oauth-authorization-server"
                         | "/.well-known/oauth-protected-resource"
                         | "/health"
+                        | "/live"
+                        | "/startup"
+                        | "/check_session"
+                        | "/check_session/status"
+                        | "/fapi/resource"
+                        | "/device"
+                        | "/device.js"
+                        | "/device/verification"
                         | "/jwks.json"
                         | "/authorize"
                         | "/authorize/consent"
@@ -147,7 +262,12 @@ impl WorkerConfiguration {
                         | "/auth/me/passkeys/registration/finish"
                         | "/auth/logout"
                         | "/auth/setup/claim"
+                        | "/logout"
+                        | "/fapi/resource"
+                        | "/device_authorization"
+                        | "/device/decision"
                 ),
+                http::Method::PATCH => path == "/auth/me",
                 http::Method::DELETE => path
                     .strip_prefix("/auth/me/passkeys/")
                     .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok()),
@@ -162,9 +282,14 @@ impl WorkerConfiguration {
                     | "/startup"
                     | "/jwks.json"
                     | "/.well-known/oauth-authorization-server"
+                    | "/.well-known/oauth-protected-resource"
+                    | "/fapi/resource"
             )
         } else if method == http::Method::POST {
-            matches!(path, "/token" | "/revoke" | "/introspect")
+            matches!(
+                path,
+                "/token" | "/revoke" | "/introspect" | "/fapi/resource"
+            )
         } else {
             false
         }

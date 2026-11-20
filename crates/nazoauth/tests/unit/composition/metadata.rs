@@ -29,6 +29,7 @@ fn metadata_config_maps_only_the_focused_settings_boundary() {
     assert_eq!(
         metadata_config(&settings).endpoint_config(),
         MetadataEndpointConfig {
+            backchannel_logout_supported: true,
             issuer: "https://issuer.example".to_owned(),
             mtls_endpoint_base_url: "https://mtls.issuer.example".to_owned(),
             mtls_enabled: true,

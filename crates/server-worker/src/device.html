@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>NazoAuth · 设备授权</title>
+<main>
+<h1>设备授权</h1>
+<p>确认应用名称和设备上显示的用户码。只有在你发起了这次登录时才允许访问。</p>
+<form id="lookup">
+<label for="user-code">设备上的用户码</label>
+<input id="user-code" name="user_code" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+<button id="lookup-button" type="submit">查看请求</button>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<section id="details" hidden>
+<h2>确认授权请求</h2>
+<p>请求应用 <strong id="client"></strong></p>
+<p>应用编号 <code id="client-id"></code></p>
+<p>用户码 <strong id="confirmation-code"></strong></p>
+<p>请求的权限和信息</p>
+<ul id="permissions"></ul>
+<p>访问的资源</p>
+<ul id="resources"></ul>
+<p>请求有效期至 <time id="expires"></time></p>
+<button id="approve" type="button" disabled>允许此设备</button>
+<button id="deny" type="button" disabled>拒绝</button>
+</section>
+</main>
+<script src="/device.js" defer></script>
+</html>

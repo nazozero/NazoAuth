@@ -115,16 +115,131 @@ fn current_session_profile_reads_real_account_and_tenant_user_grant_count() {
                 .update_profile(
                     TenantId::new(TENANT).unwrap(),
                     UserId::new(USER).unwrap(),
-                    ProfilePatch::default()
+                    ProfilePatch {
+                        display_name: Some("Updated name".into()),
+                        ..Default::default()
+                    },
                 )
-                .await,
-            Err(RepositoryError::Unavailable),
+                .await
+                .unwrap()
+                .profile
+                .display_name
+                .as_deref(),
+            Some("Updated name")
         );
 
         database.execute_sql("DROP TABLE nazo_grants").unwrap();
         assert_eq!(
             operations.me(session_id).await,
             Err(ProfileAccountError::OverviewUnavailable)
+        );
+    });
+}
+
+#[test]
+fn profile_updates_preserve_identity_and_only_keep_verification_for_the_same_phone() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        database
+            .execute_sql(&format!(
+                "UPDATE nazo_users SET claims=json_set(claims,'$.phone_number','+8613800000000',
+                '$.phone_number_verified',json('true'),'$.picture','https://images.example/avatar',
+                '$.email_verified',json('true')),epoch=7,avatar_revision=3
+             WHERE tenant_id='{TENANT}' AND id='{USER}'"
+            ))
+            .unwrap();
+        let profiles = provider.profiles();
+        let update = ProfilePatch {
+            display_name: Some("New display".into()),
+            given_name: Some("Given".into()),
+            phone_number: Some("+8613800000000".into()),
+            address_locality: Some("Shenzhen".into()),
+            ..Default::default()
+        };
+        let before = Timestamp::now().as_second();
+        let updated = profiles
+            .update_profile(
+                TenantId::new(TENANT).unwrap(),
+                UserId::new(USER).unwrap(),
+                update,
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.account.email, "test@example.com");
+        assert_eq!(updated.account.username, "test");
+        assert!(updated.account.email_verified);
+        assert_eq!(updated.principal.authorization_epoch, 7);
+        assert_eq!(updated.profile.avatar_revision, 3);
+        assert_eq!(
+            updated.profile.avatar_url.as_deref(),
+            Some("https://images.example/avatar")
+        );
+        assert_eq!(updated.profile.display_name.as_deref(), Some("New display"));
+        assert_eq!(
+            updated.profile.address.locality.as_deref(),
+            Some("Shenzhen")
+        );
+        assert!(updated.profile.phone_number_verified);
+        assert!(updated.updated_at.as_second() >= before);
+
+        let changed = profiles
+            .update_profile(
+                TenantId::new(TENANT).unwrap(),
+                UserId::new(USER).unwrap(),
+                ProfilePatch {
+                    phone_number: Some("+8613900000000".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert!(!changed.profile.phone_number_verified);
+        assert!(changed.profile.display_name.is_none());
+        assert_eq!(changed.profile.address, Default::default());
+        assert_eq!(changed.profile.avatar_revision, 3);
+        assert_eq!(changed.principal.authorization_epoch, 7);
+    });
+}
+
+#[test]
+fn profile_mutation_rejects_other_tenants_missing_users_and_inactive_accounts() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let profiles = provider.profiles();
+        assert!(
+            profiles
+                .update_profile(
+                    TenantId::new(Uuid::from_u128(999)).unwrap(),
+                    UserId::new(USER).unwrap(),
+                    ProfilePatch::default(),
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            profiles
+                .update_profile(
+                    TenantId::new(TENANT).unwrap(),
+                    UserId::new(Uuid::from_u128(999)).unwrap(),
+                    ProfilePatch::default(),
+                )
+                .await,
+            Err(RepositoryError::NotFound)
+        );
+        database
+            .execute_sql(&format!(
+                "UPDATE nazo_users SET active=0 WHERE tenant_id='{TENANT}' AND id='{USER}'"
+            ))
+            .unwrap();
+        assert_eq!(
+            profiles
+                .update_profile(
+                    TenantId::new(TENANT).unwrap(),
+                    UserId::new(USER).unwrap(),
+                    ProfilePatch::default(),
+                )
+                .await,
+            Err(RepositoryError::NotFound)
         );
     });
 }

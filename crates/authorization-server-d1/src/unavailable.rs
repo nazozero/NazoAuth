@@ -37,17 +37,6 @@ impl nazo_identity::ports::AdminUserRepositoryPort for Unavailable {
     }
 }
 
-impl nazo_identity::ports::ProfileRepositoryPort for Unavailable {
-    fn update_profile<'a>(
-        &'a self,
-        _tenant_id: nazo_identity::TenantId,
-        _user_id: nazo_identity::UserId,
-        _update: nazo_identity::ProfilePatch,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::PublicAccount> {
-        Box::pin(async { Err(nazo_identity::ports::RepositoryError::Unavailable) })
-    }
-}
-
 impl nazo_identity::ports::RegistrationAccountRepositoryPort for Unavailable {
     fn email_exists<'a>(
         &'a self,
@@ -705,97 +694,6 @@ impl nazo_identity::ports::MtlsTrustAnchorStore for Unavailable {
     }
 }
 
-impl nazo_auth::DeviceGrantRepositoryPort for Unavailable {
-    fn upsert_grant<'a>(
-        &'a self,
-        _write: nazo_auth::DeviceGrantWrite<'a>,
-    ) -> nazo_auth::DeviceGrantFuture<'a, ()> {
-        Box::pin(async { Err(nazo_auth::DeviceGrantPortError::Unavailable) })
-    }
-}
-
-impl nazo_auth::DeviceStateStorePort for Unavailable {
-    type Version = nazo_auth::DeviceStateVersion;
-    fn create<'a>(
-        &'a self,
-        _device_code: &'a str,
-        _user_code: &'a str,
-        _state: &'a nazo_auth::DeviceAuthorizationState,
-        _ttl_seconds: u64,
-    ) -> nazo_auth::DeviceStateFuture<'a, nazo_auth::DeviceCreateResult> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn load_by_device_code<'a>(
-        &'a self,
-        _device_code: &'a str,
-    ) -> nazo_auth::DeviceStateFuture<'a, Option<nazo_auth::StoredDeviceAuthorization<Self::Version>>>
-    {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn load_by_device_hash<'a>(
-        &'a self,
-        _device_hash: &'a str,
-    ) -> nazo_auth::DeviceStateFuture<'a, Option<nazo_auth::StoredDeviceAuthorization<Self::Version>>>
-    {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn resolve_user_code<'a>(
-        &'a self,
-        _user_code: &'a str,
-    ) -> nazo_auth::DeviceStateFuture<'a, Option<String>> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn replace_by_device_code<'a>(
-        &'a self,
-        _device_code: &'a str,
-        _version: &'a Self::Version,
-        _replacement: &'a nazo_auth::DeviceAuthorizationState,
-    ) -> nazo_auth::DeviceStateFuture<'a, nazo_auth::DeviceAtomicResult> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn replace_by_device_hash<'a>(
-        &'a self,
-        _device_hash: &'a str,
-        _version: &'a Self::Version,
-        _replacement: &'a nazo_auth::DeviceAuthorizationState,
-    ) -> nazo_auth::DeviceStateFuture<'a, nazo_auth::DeviceStateReplacement<Self::Version>> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn claim_decision<'a>(
-        &'a self,
-        _device_hash: &'a str,
-        _user_code: &'a str,
-        _version: &'a Self::Version,
-        _replacement: &'a nazo_auth::DeviceAuthorizationState,
-    ) -> nazo_auth::DeviceStateFuture<'a, nazo_auth::DeviceAtomicResult> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn complete_decision<'a>(
-        &'a self,
-        _device_hash: &'a str,
-        _user_code: &'a str,
-        _version: &'a Self::Version,
-        _replacement: &'a nazo_auth::DeviceAuthorizationState,
-    ) -> nazo_auth::DeviceStateFuture<'a, nazo_auth::DeviceAtomicResult> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-
-    fn delete_user_code_if_matches<'a>(
-        &'a self,
-        _user_code: &'a str,
-        _device_hash: &'a str,
-    ) -> nazo_auth::DeviceStateFuture<'a, nazo_auth::DeviceAtomicResult> {
-        Box::pin(async { Err(nazo_auth::DeviceStatePortError::Unavailable) })
-    }
-}
-
 impl nazo_auth::CibaStateStorePort for Unavailable {
     type Version = nazo_auth::CibaStateVersion;
     fn load<'a>(
@@ -890,67 +788,6 @@ impl nazo_auth::BackchannelLogoutOutboxPort for Unavailable {
         _deliveries: &'a [nazo_auth::IdempotentBackchannelLogoutDelivery],
     ) -> nazo_auth::LogoutFuture<'a, ()> {
         Box::pin(async { Err(nazo_auth::LogoutDependencyError::Unavailable) })
-    }
-}
-
-impl nazo_auth::DynamicRegistrationClientStore for Unavailable {
-    fn insert<'a>(
-        &'a self,
-        _prepared: nazo_auth::PreparedClientRegistration,
-        _source_ip_hash: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, nazo_auth::OAuthClient> {
-        Box::pin(async { Err(nazo_auth::DynamicRegistrationDependencyError::Unavailable) })
-    }
-
-    fn by_registration_access_token<'a>(
-        &'a self,
-        _tenant_id: uuid::Uuid,
-        _client_id: &'a str,
-        _token_hash: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>>
-    {
-        Box::pin(async { Err(nazo_auth::DynamicRegistrationDependencyError::Unavailable) })
-    }
-
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        _tenant_id: uuid::Uuid,
-        _client_id: uuid::Uuid,
-        _candidate_digest: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, bool> {
-        Box::pin(async { Err(nazo_auth::DynamicRegistrationDependencyError::Unavailable) })
-    }
-
-    fn rotate_credentials<'a>(
-        &'a self,
-        _tenant_id: uuid::Uuid,
-        _client_id: uuid::Uuid,
-        _client_secret_hash: Option<&'a str>,
-        _expected_registration_access_token_hash: &'a str,
-        _new_registration_access_token_hash: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, nazo_auth::OAuthClient> {
-        Box::pin(async { Err(nazo_auth::DynamicRegistrationDependencyError::Unavailable) })
-    }
-
-    fn replace_registration<'a>(
-        &'a self,
-        _client: &'a nazo_auth::OAuthClient,
-        _client_secret_hash: Option<&'a str>,
-        _expected_registration_access_token_hash: &'a str,
-        _new_registration_access_token_hash: Option<&'a str>,
-        _source_ip_hash: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, nazo_auth::OAuthClient> {
-        Box::pin(async { Err(nazo_auth::DynamicRegistrationDependencyError::Unavailable) })
-    }
-
-    fn deactivate<'a>(
-        &'a self,
-        _tenant_id: uuid::Uuid,
-        _client_id: uuid::Uuid,
-        _expected_registration_access_token_hash: &'a str,
-        _source_ip_hash: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, bool> {
-        Box::pin(async { Err(nazo_auth::DynamicRegistrationDependencyError::Unavailable) })
     }
 }
 

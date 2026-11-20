@@ -153,9 +153,14 @@ applies the same algorithm, key-format, certificate and signature policy across
 targets. Native JOSE and RSA paths retain AWS-LC; WASM uses the RustCrypto JWT
 provider and portable RSA-OAEP/AES key-wrap implementations. Local signing
 generations retain parsed Ed25519, P-256 and RSA key pairs for signatures and
-public JWK projection. The backend validates standard Ed25519 PKCS#8 v1 and v2
-inputs; generated storage encodings are unchanged. Cargo selects the backend
-without a runtime dispatch layer.
+public JWK projection. Async signing on Workers uses WebCrypto for RS256, PS256,
+ES256 and Ed25519 through the same `nazo-crypto` API. The cache retains only
+completed CryptoKey imports: concurrent cold requests own their import promises,
+and input bytes are copied before a cold import can yield or WASM memory can grow.
+The backend validates standard Ed25519 PKCS#8 v1 and v2 inputs before normalizing
+the WebCrypto import; generated storage encodings are unchanged. Synchronous
+WASM signing and verification retain the portable implementation. Cargo selects
+the target backend without duplicating protocol signing policy in the host.
 
 Each key generation also owns decoded OpenID4VC certificate DER shared by verifier
 requests and pinned signing leases; path selection, validity and revocation checks

@@ -108,6 +108,7 @@ pub struct AuthorizationServerMetadataInput<'a> {
     pub issuer: &'a str,
     pub mtls_endpoint_base_url: &'a str,
     pub mtls_enabled: bool,
+    pub backchannel_logout_supported: bool,
     pub profile: MetadataAuthorizationServerProfile,
     pub ciba_profile: CibaMetadataProfile,
     pub pairwise_subject_enabled: bool,
@@ -237,8 +238,14 @@ impl Serialize for AuthorizationServerMetadata<'_> {
                 crate::CIBA_JWT_SIGNING_ALGS,
             )?;
         }
-        metadata.serialize_entry("backchannel_logout_session_supported", &true)?;
-        metadata.serialize_entry("backchannel_logout_supported", &true)?;
+        metadata.serialize_entry(
+            "backchannel_logout_session_supported",
+            &input.backchannel_logout_supported,
+        )?;
+        metadata.serialize_entry(
+            "backchannel_logout_supported",
+            &input.backchannel_logout_supported,
+        )?;
         if capabilities.ciba {
             metadata.serialize_entry(
                 "backchannel_token_delivery_modes_supported",

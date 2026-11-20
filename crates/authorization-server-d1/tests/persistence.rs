@@ -119,6 +119,40 @@ fn decision(request: &str) -> AuthorizationDecisionCommit {
 }
 
 #[test]
+fn authorization_audit_binds_canonical_identity_and_discards_unrecognized_fields() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        database
+            .execute_sql(&format!(
+                "CREATE TRIGGER require_canonical_decision BEFORE INSERT ON nazo_audit
+             WHEN NEW.event_type='authorization_decision'
+             BEGIN SELECT CASE WHEN NOT (
+               json_extract(NEW.payload,'$.tenant_id') IS '{TENANT}'
+               AND json_extract(NEW.payload,'$.user_id') IS '{USER}'
+               AND json_extract(NEW.payload,'$.client_id') IS 'client'
+               AND json_extract(NEW.payload,'$.decision') IS 'approve'
+               AND json_extract(NEW.payload,'$.scope') IS 'openid'
+               AND json_extract(NEW.payload,'$.source_ip_hash') IS '{}'
+               AND json_type(NEW.payload,'$.secret') IS NULL
+               AND json_type(NEW.payload,'$.request_id') IS NULL
+             ) THEN RAISE(ABORT,'noncanonical audit') END; END;",
+                "a".repeat(64)
+            ))
+            .unwrap();
+        let mut input = decision("canonical-audit");
+        input.audit_fields = json!({
+            "tenant_id": "forged", "user_id": "forged", "client_id": "forged",
+            "decision": "deny", "scope": "administrator", "secret": "must-not-persist",
+            "request_id": "raw-handle-must-not-persist", "source_ip_hash": "a".repeat(64)
+        });
+        assert_eq!(
+            provider.commit_decision(input).await.unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+    });
+}
+
+#[test]
 fn single_use_commit_has_one_winner_under_concurrency() {
     let (_, provider) = block_on(fixture());
     let provider = Arc::new(provider);
@@ -933,4 +967,239 @@ fn refresh_rotation_cannot_widen_a_previously_narrowed_audience() {
         assert_eq!(still_live.id, narrow.id);
         assert!(still_live.revoked_at.is_none());
     })
+}
+
+fn native_sso(source: Uuid, raw: &str) -> CommitTokenIssuance {
+    let mut input = token(
+        TokenIssuanceMode::Fresh,
+        Some(RefreshTokenCommit::IssueNew {
+            token: refresh(raw, Uuid::new_v4()),
+            contract: contract(),
+        }),
+    );
+    input.native_sso_source = Some(nazo_auth::NativeSsoSourceFence {
+        tenant_id: TENANT,
+        user_id: USER,
+        source_client_id: "client".into(),
+        family_id: source,
+        device_secret_expires_at: Timestamp::now() + SignedDuration::from_secs(300),
+    });
+    input
+}
+
+#[test]
+fn native_sso_fences_family_authority_without_consuming_the_source() {
+    block_on(async {
+        let (_, provider) = fixture().await;
+        let family = Uuid::new_v4();
+        provider
+            .commit_token_issuance(token(
+                code("native-source"),
+                Some(RefreshTokenCommit::IssueNew {
+                    token: refresh("source", family),
+                    contract: contract(),
+                }),
+            ))
+            .await
+            .unwrap();
+        // Normal member rotation preserves the Native SSO family authority.
+        let source = provider
+            .refresh_token(TENANT, "source")
+            .await
+            .unwrap()
+            .unwrap();
+        let mut replacement = refresh("source-rotated", family);
+        replacement.rotated_from_id = Some(source.id);
+        assert_eq!(
+            provider
+                .commit_token_issuance(token(
+                    TokenIssuanceMode::Fresh,
+                    Some(RefreshTokenCommit::UseExisting {
+                        authority: source.authority(),
+                        rotation: Some(replacement)
+                    })
+                ))
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        for raw in ["destination-one", "destination-two"] {
+            assert_eq!(
+                provider
+                    .commit_token_issuance(native_sso(family, raw))
+                    .await
+                    .unwrap(),
+                CommitTokenIssuanceResult::Committed
+            );
+            assert!(provider.refresh_token(TENANT, raw).await.unwrap().is_some());
+        }
+        assert!(
+            provider
+                .refresh_family_active(TENANT, family, USER)
+                .await
+                .unwrap()
+        );
+    });
+}
+
+#[test]
+fn native_sso_rejects_changed_source_before_any_destination_write() {
+    for scenario in [
+        "revoked",
+        "expired",
+        "wrong-client",
+        "wrong-user",
+        "secret-expired",
+        "missing",
+    ] {
+        block_on(async {
+            let (database, provider) = fixture().await;
+            let family = Uuid::new_v4();
+            provider
+                .commit_token_issuance(token(
+                    code("native-source"),
+                    Some(RefreshTokenCommit::IssueNew {
+                        token: refresh("source", family),
+                        contract: contract(),
+                    }),
+                ))
+                .await
+                .unwrap();
+            let mut input = native_sso(family, "rejected-destination");
+            match scenario {
+                "revoked" => database
+                    .execute_sql("UPDATE nazo_refresh_families SET revoked_at=1")
+                    .unwrap(),
+                "expired" => database
+                    .execute_sql("UPDATE nazo_refresh_families SET expires_at=1")
+                    .unwrap(),
+                "wrong-client" => {
+                    input.native_sso_source.as_mut().unwrap().source_client_id =
+                        "other-client".into()
+                }
+                "wrong-user" => database
+                    .execute_sql(&format!(
+                        "UPDATE nazo_refresh_families SET user_id='{}'",
+                        Uuid::new_v4()
+                    ))
+                    .unwrap(),
+                "secret-expired" => {
+                    input
+                        .native_sso_source
+                        .as_mut()
+                        .unwrap()
+                        .device_secret_expires_at = Timestamp::now() - SignedDuration::from_secs(1)
+                }
+                "missing" => input.native_sso_source.as_mut().unwrap().family_id = Uuid::new_v4(),
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                provider.commit_token_issuance(input).await.unwrap(),
+                CommitTokenIssuanceResult::RefreshGrantUnavailable,
+                "{scenario}"
+            );
+            assert!(
+                provider
+                    .refresh_token(TENANT, "rejected-destination")
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "{scenario}"
+            );
+        });
+    }
+}
+
+#[test]
+fn native_sso_can_retire_its_own_source_at_the_family_cap() {
+    block_on(async {
+        let (_, provider) = fixture().await;
+        let source = Uuid::new_v4();
+        for index in 0..nazo_auth::MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE {
+            let family = if index == 0 { source } else { Uuid::new_v4() };
+            let mut member = refresh(&format!("native-family-{index}"), family);
+            member.issued_at += SignedDuration::from_secs(index);
+            assert_eq!(
+                provider
+                    .commit_token_issuance(token(
+                        TokenIssuanceMode::Fresh,
+                        Some(RefreshTokenCommit::IssueNew {
+                            token: member,
+                            contract: contract()
+                        })
+                    ))
+                    .await
+                    .unwrap(),
+                CommitTokenIssuanceResult::Committed
+            );
+        }
+        let mut destination = native_sso(source, "cap-destination");
+        if let Some(RefreshTokenCommit::IssueNew { token, .. }) = &mut destination.refresh_token {
+            token.issued_at += SignedDuration::from_secs(30);
+        }
+        assert_eq!(
+            provider.commit_token_issuance(destination).await.unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        assert!(
+            !provider
+                .refresh_family_active(TENANT, source, USER)
+                .await
+                .unwrap()
+        );
+        assert!(
+            provider
+                .refresh_token(TENANT, "cap-destination")
+                .await
+                .unwrap()
+                .unwrap()
+                .revoked_at
+                .is_none()
+        );
+        assert_eq!(
+            provider
+                .commit_token_issuance(native_sso(source, "retired-source-attempt"))
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::RefreshGrantUnavailable
+        );
+    });
+}
+
+#[test]
+fn native_sso_audit_failure_rolls_back_the_destination_and_preserves_source() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let source = Uuid::new_v4();
+        provider
+            .commit_token_issuance(token(
+                code("native-audit"),
+                Some(RefreshTokenCommit::IssueNew {
+                    token: refresh("source", source),
+                    contract: contract(),
+                }),
+            ))
+            .await
+            .unwrap();
+        database.execute_sql("CREATE TRIGGER reject_native_audit BEFORE INSERT ON nazo_audit BEGIN SELECT RAISE(ABORT,'unavailable'); END;").unwrap();
+        assert!(
+            provider
+                .commit_token_issuance(native_sso(source, "audit-failed"))
+                .await
+                .is_err()
+        );
+        assert!(
+            provider
+                .refresh_token(TENANT, "audit-failed")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            provider
+                .refresh_family_active(TENANT, source, USER)
+                .await
+                .unwrap()
+        );
+    });
 }

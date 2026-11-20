@@ -55,7 +55,10 @@ impl nazo_oauth_server::ports::persistence::ServerPersistenceProvider for D1Prov
         &self,
         _tenant_id: uuid::Uuid,
     ) -> std::sync::Arc<dyn nazo_auth::DeviceGrantRepositoryPort> {
-        Arc::new(Unavailable)
+        Arc::new(Self {
+            database: self.database.clone(),
+            tenant_id: _tenant_id,
+        })
     }
 
     fn token_repository(&self) -> std::sync::Arc<dyn nazo_auth::TokenRepositoryPort> {
@@ -75,7 +78,7 @@ impl nazo_oauth_server::ports::persistence::ServerPersistenceProvider for D1Prov
     fn dynamic_registration_clients(
         &self,
     ) -> std::sync::Arc<dyn nazo_auth::DynamicRegistrationClientStore> {
-        Arc::new(Unavailable)
+        Arc::new(self.clone())
     }
 
     fn logout_clients(&self) -> std::sync::Arc<dyn nazo_auth::LogoutClientRepositoryPort> {
@@ -119,7 +122,7 @@ impl nazo_oauth_server::ports::persistence::ServerPersistenceProvider for D1Prov
     }
 
     fn profiles(&self) -> std::sync::Arc<dyn nazo_identity::ports::ProfileRepositoryPort> {
-        Arc::new(Unavailable)
+        Arc::new(self.clone())
     }
 
     fn avatars(&self) -> std::sync::Arc<dyn nazo_identity::ports::AvatarRepositoryPort> {
@@ -286,7 +289,7 @@ impl nazo_oauth_server::ports::transient_state::ServerTransientStateProvider for
         &self,
     ) -> std::sync::Arc<dyn nazo_auth::DeviceStateStorePort<Version = nazo_auth::DeviceStateVersion>>
     {
-        Arc::new(Unavailable)
+        Arc::new(self.clone())
     }
 
     fn dpop_state(&self) -> std::sync::Arc<dyn nazo_auth::DpopStateStorePort> {
