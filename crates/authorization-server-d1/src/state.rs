@@ -947,6 +947,59 @@ impl TryFrom<SessionWire<'_>> for SessionRecord {
     }
 }
 
+impl D1Provider {
+    /// Exchange an offline high-entropy setup ticket for a five-minute session
+    /// used only to enroll the first WebAuthn credential. The claim fence,
+    /// session and Required audit append commit in one D1 transaction.
+    pub async fn claim_passkey_setup(
+        &self,
+        ticket_digest: &str,
+        user_id: UserId,
+        session_id: &str,
+        now: Timestamp,
+    ) -> Result<bool, RepositoryError> {
+        if ticket_digest.len() != 64 || !ticket_digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(RepositoryError::Consistency("invalid setup ticket digest".into()));
+        }
+        let claim_version = Uuid::new_v4().to_string();
+        let mut session = SessionRecord::new(
+            user_id,
+            0,
+            now.as_second(),
+            vec!["bootstrap".into()],
+            false,
+            Some(Uuid::new_v4().to_string()),
+        );
+        session.record_authentication_at(now);
+        let session_version = Uuid::new_v4().to_string();
+        let session_key = key(&[session_id]);
+        let event_id = Uuid::new_v4();
+        let evidence = json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+            "event_category": "authentication",
+            "tenant_id": self.tenant_id,
+            "user_id": user_id.as_uuid(),
+        });
+        let result = self.database.batch(vec![
+            Statement::new(
+                "INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) SELECT ?1,'passkey_setup_claim',?2,'null',?3,253402300799 FROM nazo_users WHERE tenant_id=?1 AND id=?4 AND active=1 AND NOT EXISTS(SELECT 1 FROM nazo_passkeys WHERE tenant_id=?1 AND user_id=?4) ON CONFLICT DO NOTHING RETURNING version",
+                vec![json!(self.tenant_id), json!(ticket_digest), json!(claim_version), json!(user_id)],
+            ),
+            Statement::new(
+                "INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) SELECT ?1,'session',?4,?5,?6,unixepoch()+300 WHERE EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='passkey_setup_claim' AND key=?2 AND version=?3) ON CONFLICT DO NOTHING RETURNING version",
+                vec![json!(self.tenant_id), json!(ticket_digest), json!(claim_version), json!(session_key), json!(encode(&SessionWire::from(&session)).map_err(repository_error)?), json!(session_version)],
+            ),
+            Statement::new(
+                "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?4,'passkey_setup_claimed','authentication',?5,?6 FROM nazo_state WHERE tenant_id=?1 AND kind='passkey_setup_claim' AND key=?2 AND version=?3 RETURNING sequence",
+                vec![json!(self.tenant_id), json!(ticket_digest), json!(claim_version), json!(event_id), json!(now.as_microsecond()), json!(encode(&evidence).map_err(repository_error)?)],
+            ),
+        ]).await.map_err(repository_error)?;
+        Ok(result[0].rows.len() == 1
+            && result[1].rows.len() == 1
+            && result[2].rows.len() == 1)
+    }
+}
+
 impl LoginSessionPort for D1Provider {
     fn create<'a>(
         &'a self,
