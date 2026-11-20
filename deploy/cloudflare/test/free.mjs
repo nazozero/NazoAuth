@@ -33,7 +33,11 @@ async function modules(directory) {
         : await readFile(path.join(directory, relative), 'utf8'),
     };
   }
-  return { mainModule: 'worker/shim.mjs', modulesRoot: directory, modules: included };
+  included['test-driver.mjs'] = {
+    type: 'esm',
+    contents: await readFile(new URL('./fixtures/worker-driver.mjs', import.meta.url), 'utf8'),
+  };
+  return { mainModule: 'test-driver.mjs', modulesRoot: directory, modules: included };
 }
 
 test('Workers Free machine-only build has honest metadata and rejects interactive login', async () => {
