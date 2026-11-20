@@ -242,6 +242,14 @@ test('Workers Free one-use Passkey setup creates only a five-minute enrollment s
     const cookie = credentials.map(item => item.split(';')[0]).join('; ');
     const csrf = (await first.json()).csrf_token;
     assert.equal((await claim(token)).status, 403, 'setup token must be single-use');
+    assert.equal(
+      (await request('/auth/me', { headers: { cookie } })).status, 401,
+      'an enrollment session cannot be used as an ordinary account login',
+    );
+    assert.equal(
+      (await request('/auth/me/passkeys', { headers: { cookie } })).status, 401,
+      'enrollment may not list or manage existing credentials',
+    );
     const begin = await request('/auth/me/passkeys/registration/begin', {
       method: 'POST',
       headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
