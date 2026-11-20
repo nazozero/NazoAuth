@@ -13,13 +13,11 @@ use nazo_identity::{
         PasskeyRepositoryPort, RepositoryError,
     },
 };
-use nazo_oauth_server_d1::D1Provider;
 use nazo_passkey::{
     AttestationEvidence, CosePublicKey, CredentialId, CredentialUpdate,
     PasskeyCredential as WebauthnCredential, RegistrationOptions, Webauthn,
 };
 use support::{TENANT, USER, fixture};
-use uuid::Uuid;
 
 fn credential() -> WebauthnCredential {
     WebauthnCredential {
