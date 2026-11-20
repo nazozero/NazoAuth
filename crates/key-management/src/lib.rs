@@ -6,6 +6,7 @@ mod external_signer;
 pub use external_signer::{ExternalKeySigner, ExternalSignRequest};
 mod jwks;
 mod lifecycle;
+mod mdoc_publication;
 mod model;
 mod mtls_trust;
 mod repository;
@@ -21,6 +22,7 @@ pub use client_registration::{
     client_secret_matches_digest, inspect_client_jwks, rfc4514_dn_from_der, rfc4514_dn_matches,
     validate_client_jwks, validate_rfc4514_dn,
 };
+pub use mdoc_publication::{MdocCrlNumber, MdocCrlPublication, MdocCrlPublicationStore};
 #[cfg(feature = "test-support")]
 pub use model::TestSigningBehavior;
 pub use model::{

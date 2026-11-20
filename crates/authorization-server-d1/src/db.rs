@@ -188,6 +188,10 @@ impl Database {
                 "0013_access_request_pending.sql",
                 include_str!("../migrations/0013_access_request_pending.sql"),
             ),
+            (
+                "0014_mdoc_crl_publications.sql",
+                include_str!("../migrations/0014_mdoc_crl_publications.sql"),
+            ),
         ] {
             let digest = blake3::hash(sql.as_bytes()).to_hex().to_string();
             let applied: Option<String> = transaction

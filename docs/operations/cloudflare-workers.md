@@ -444,9 +444,24 @@ must appear exactly when that snapshot records it revoked, with the same
 revocation time. Update the public artifact together with any authority or
 revocation change. Unknown publication IDs return 404; a configured artifact
 that no longer matches, is invalid or has expired returns 503. The operator owns
-CRL renewal and increasing publication numbers: the Worker validates the signed
-number, but does not implement the native automatic CRL-number lifecycle or
-persist a monotonic-number fence. No IACA signing operation runs in the Worker.
+CRL renewal and increasing publication numbers. Migration
+`0014_mdoc_crl_publications.sql` records the highest accepted publication for
+each tenant and IACA public-key issuer ID. Signed artifacts must encode the
+number as a complete canonical positive DER INTEGER with at most 20 content
+octets, including any positive-sign padding. The receipt stores its magnitude as
+fixed-width hexadecimal text so values above `u64` and JavaScript's exact integer
+range remain exact. A lower number, or the same number
+with different CRL bytes, authority, issuer or timestamps, fails closed. Higher
+numbers cannot move `thisUpdate` backwards. Exact republication is idempotent.
+
+The receipt and final stored-state check use the same D1 transaction as a fresh
+comparison of the authoritative OpenID4VC public projection and database time.
+Changing the DS or revocation snapshot under the same IACA requires a higher
+number; it does not reset the fence. A different IACA public key starts a
+different issuer-ID namespace. Ordinary JWT key rotation and signing-key
+wrapping changes leave this public-authority binding intact. Receipts remain
+after CRL expiration so renewal cannot reset the counter. The Worker does not
+automatically renew or sign CRLs; the IACA signing key remains offline.
 
 Generate a 32-byte random signing wrapping key, encode it with standard Base64,
 and select its non-secret ID. Generate an independent client-secret pepper of

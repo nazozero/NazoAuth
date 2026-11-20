@@ -3006,6 +3006,7 @@ dependencies = [
  "bytes",
  "futures-executor",
  "futures-util",
+ "hex",
  "jiff 1.0.1",
  "nazo-auth",
  "nazo-crypto",

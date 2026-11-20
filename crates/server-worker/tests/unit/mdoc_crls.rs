@@ -17,6 +17,7 @@ fn public() -> Openid4vcPublicMaterial {
 fn publication(public: &Openid4vcPublicMaterial, der: &'static [u8]) -> PublishedCrl {
     PublishedCrl {
         der: Bytes::from_static(der),
+        der_sha256: Sha256::digest(der).into(),
         public_material_hash: blake3::hash(&serde_json::to_vec(public).unwrap()),
     }
 }
@@ -27,9 +28,54 @@ fn now() -> Timestamp {
 }
 
 #[test]
+fn crl_number_extension_requires_complete_canonical_positive_der() {
+    for encoded in [
+        vec![],
+        vec![0x02, 0x00],
+        vec![0x02, 0x01, 0x00],
+        vec![0x02, 0x01, 0x80],
+        vec![0x02, 0x01, 0xff],
+        vec![0x02, 0x02, 0x00, 0x01],
+        vec![0x02, 0x01, 0x01, 0x00],
+        vec![0x02, 0x01, 0x01, 0x02, 0x01, 0x02],
+        vec![0x22, 0x01, 0x01],
+        vec![0x82, 0x01, 0x01],
+        vec![0x02, 0x81, 0x01, 0x01],
+        vec![0x1f, 0x02, 0x01, 0x01],
+    ] {
+        assert!(publication_number(&encoded).is_err(), "{encoded:02x?}");
+    }
+    assert_eq!(
+        publication_number(&[0x02, 0x02, 0x00, 0x80])
+            .unwrap()
+            .to_fixed_hex(),
+        format!("{:040x}", 128),
+    );
+}
+
+#[test]
+fn crl_number_der_length_counts_the_positive_sign_octet() {
+    let mut largest = vec![0x02, 20, 0x7f];
+    largest.extend([0xff; 19]);
+    assert_eq!(
+        publication_number(&largest).unwrap().to_fixed_hex(),
+        format!("7{}", "f".repeat(39)),
+    );
+    let mut padded = vec![0x02, 20, 0x00, 0x80];
+    padded.extend([0x00; 18]);
+    assert!(publication_number(&padded).is_ok());
+    let mut oversized = vec![0x02, 21, 0x00, 0x80];
+    oversized.extend([0x00; 19]);
+    assert!(publication_number(&oversized).is_err());
+    let mut unpadded_oversized = vec![0x02, 21, 0x01];
+    unpadded_oversized.extend([0x00; 20]);
+    assert!(publication_number(&unpadded_oversized).is_err());
+}
+
+#[test]
 fn signed_crl_is_bound_to_the_exact_public_authority_and_current_ds() {
     let public = public();
-    validate_publication(
+    let verified = validate_publication(
         &public,
         ISSUER,
         ISSUER_ID,
@@ -37,6 +83,10 @@ fn signed_crl_is_bound_to_the_exact_public_authority_and_current_ds() {
         now(),
     )
     .unwrap();
+    assert_eq!(
+        verified.number.to_fixed_hex(),
+        format!("{:040x}", u128::from(u64::MAX) + 5),
+    );
     assert!(
         validate_publication(
             &public,
@@ -121,7 +171,9 @@ fn changed_authority_generation_invalidates_an_otherwise_valid_crl() {
     let mut public = public();
     let artifact = publication(&public, GOOD_CRL);
     public.signing_kid.push_str("-new-generation");
-    let error = validate_publication(&public, ISSUER, ISSUER_ID, &artifact, now()).unwrap_err();
+    let error = validate_publication(&public, ISSUER, ISSUER_ID, &artifact, now())
+        .err()
+        .expect("tampered CRL must be rejected");
     assert_eq!(error.to_string(), "mdoc CRL authority generation changed");
 }
 

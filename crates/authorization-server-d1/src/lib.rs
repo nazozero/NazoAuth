@@ -20,6 +20,7 @@ mod grants;
 mod keys;
 mod logout;
 mod maintenance;
+mod mdoc_publication;
 mod mfa;
 mod modules;
 mod mtls_trust;

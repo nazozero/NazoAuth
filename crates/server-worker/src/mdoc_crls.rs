@@ -8,7 +8,9 @@ use bytes::Bytes;
 use jiff::Timestamp;
 use nazo_crypto::certificate::{verify_crl_signature, verify_signature};
 use nazo_digital_credentials::{CertificateRevocationStatus, certificate_identity};
-use nazo_key_management::{KeyManager, Openid4vcPublicMaterial};
+use nazo_key_management::{
+    KeyManager, MdocCrlNumber, MdocCrlPublication, MdocCrlPublicationStore, Openid4vcPublicMaterial,
+};
 use nazo_mdoc::certificate::{
     check_document_signer_profile, check_iaca_profile, check_issuer_binding,
 };
@@ -22,11 +24,14 @@ use crate::config::WorkerMdocCrl;
 
 struct PublishedCrl {
     der: Bytes,
+    der_sha256: [u8; 32],
     public_material_hash: blake3::Hash,
 }
 
 pub(crate) struct PresignedMdocCrls {
     keys: KeyManager,
+    store: Arc<dyn MdocCrlPublicationStore>,
+    tenant_id: uuid::Uuid,
     issuer: String,
     publications: BTreeMap<String, PublishedCrl>,
 }
@@ -34,6 +39,8 @@ pub(crate) struct PresignedMdocCrls {
 impl PresignedMdocCrls {
     pub(crate) fn new(
         keys: KeyManager,
+        store: Arc<dyn MdocCrlPublicationStore>,
+        tenant_id: uuid::Uuid,
         issuer: &str,
         configured: &BTreeMap<String, WorkerMdocCrl>,
     ) -> anyhow::Result<Arc<Self>> {
@@ -58,6 +65,7 @@ impl PresignedMdocCrls {
                 Ok((
                     id.clone(),
                     PublishedCrl {
+                        der_sha256: Sha256::digest(&der).into(),
                         der: der.into(),
                         public_material_hash: blake3::Hash::from_hex(
                             &value.public_material_blake3,
@@ -68,6 +76,8 @@ impl PresignedMdocCrls {
             .collect::<anyhow::Result<_>>()?;
         Ok(Arc::new(Self {
             keys,
+            store,
+            tenant_id,
             issuer: issuer.trim_end_matches('/').to_owned(),
             publications,
         }))
@@ -91,13 +101,27 @@ impl nazoauth::capabilities::MdocCrlProvider for PresignedMdocCrls {
             let material = state
                 .material
                 .context("mdoc authority material is absent")?;
-            validate_publication(
+            let verified = validate_publication(
                 &material.public,
                 &self.issuer,
                 issuer_id,
                 publication,
                 Timestamp::now(),
             )?;
+            let mut issuer_key_id = [0_u8; 32];
+            hex::decode_to_slice(issuer_id, &mut issuer_key_id)?;
+            self.store
+                .accept_verified_publication(&MdocCrlPublication {
+                    tenant_id: self.tenant_id,
+                    issuer_id: issuer_key_id,
+                    issuer: self.issuer.clone(),
+                    number: verified.number,
+                    der_sha256: publication.der_sha256,
+                    authority: material.public,
+                    this_update: verified.this_update,
+                    next_update: verified.next_update,
+                })
+                .await?;
             Ok(Some(publication.der.clone()))
         })
     }
@@ -156,13 +180,45 @@ fn issuer_name_matches(certificate: &X509Certificate<'_>, issuer: &str) -> anyho
         .any(|name| matches!(name, GeneralName::URI(value) if *value == issuer)))
 }
 
+struct VerifiedPublication {
+    number: MdocCrlNumber,
+    this_update: Timestamp,
+    next_update: Timestamp,
+}
+
+fn publication_number(encoded: &[u8]) -> anyhow::Result<MdocCrlNumber> {
+    use x509_parser::asn1_rs::{FromDer as _, Integer, ToDer as _};
+
+    // Extension parsing may discard a remainder. Decode this complete value
+    // again and require canonical DER, including its universal primitive tag
+    // and shortest length. The positive sign octet counts toward RFC 5280's
+    // twenty-content-octet bound; BigUint alone loses that information.
+    let (remaining, integer) = Integer::from_der(encoded)
+        .map_err(|_| anyhow::anyhow!("mdoc CRL number is not a DER integer"))?;
+    ensure!(
+        remaining.is_empty()
+            && integer.any().as_bytes().len() <= 20
+            && integer.to_der_vec()?.as_slice() == encoded,
+        "mdoc CRL number must use complete canonical DER of at most 20 content octets"
+    );
+    let value = integer.any();
+    let content = value.as_bytes();
+    ensure!(
+        content.first().is_some_and(|byte| byte & 0x80 == 0),
+        "mdoc CRL number must be positive"
+    );
+    // Canonical DER permits one leading zero only when it is needed to keep
+    // the next octet positive. The shared magnitude type also rejects zero.
+    MdocCrlNumber::from_big_endian(content.strip_prefix(&[0]).unwrap_or(content))
+}
+
 fn validate_publication(
     public: &Openid4vcPublicMaterial,
     issuer: &str,
     issuer_id: &str,
     publication: &PublishedCrl,
     now: Timestamp,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<VerifiedPublication> {
     // Hash the typed public projection, including its canonical timestamp
     // serialization. Re-encoding through serde_json::Value changes field order.
     ensure!(
@@ -256,14 +312,10 @@ fn validate_publication(
             && crl.extensions().iter().all(|extension| !extension.critical),
         "mdoc CRL authority key does not match the IACA"
     );
-    let number = crl
-        .crl_number()
-        .context("mdoc CRL has no publication number")?
-        .to_bytes_be();
-    ensure!(
-        number.len() <= 20 && number.iter().any(|byte| *byte != 0),
-        "mdoc CRL number must be positive"
-    );
+    let number_extension = extensions
+        .get(&x509_parser::der_parser::oid!(2.5.29.20))
+        .context("mdoc CRL has no publication number")?;
+    let number = publication_number(number_extension.value)?;
     let identity = certificate_identity(&chain[0]);
     let entry = snapshot
         .entries
@@ -290,7 +342,11 @@ fn validate_publication(
             );
         }
     }
-    Ok(())
+    Ok(VerifiedPublication {
+        number,
+        this_update,
+        next_update,
+    })
 }
 
 #[cfg(test)]

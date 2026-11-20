@@ -213,6 +213,8 @@ impl WorkerApplication {
         if !configuration.services.mdoc_crls.is_empty() {
             builder = builder.with_mdoc_crls(crate::mdoc_crls::PresignedMdocCrls::new(
                 keys.clone(),
+                provider.clone(),
+                tenant,
                 &configuration.issuer,
                 &configuration.services.mdoc_crls,
             )?);
