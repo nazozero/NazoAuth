@@ -124,6 +124,8 @@ impl WorkerConfiguration {
                         | "/auth/me/passkeys"
                         | "/auth/csrf"
                         | "/auth/setup"
+                        | "/auth/passkey"
+                        | "/auth/passkey.js"
                         | "/auth/setup.js"
                         | "/logout"
                 ),

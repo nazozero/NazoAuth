@@ -12,6 +12,8 @@ use crate::WorkerApplication;
 
 const HTML: &str = include_str!("setup.html");
 const SCRIPT: &str = include_str!("setup.js");
+const LOGIN_HTML: &str = include_str!("passkey-login.html");
+const LOGIN_SCRIPT: &str = include_str!("passkey-login.js");
 
 pub async fn handle(
     request: &HttpRequest,
@@ -32,6 +34,21 @@ pub async fn handle(
         ("GET", "/auth/setup.js") => {
             reply(StatusCode::OK, SCRIPT, "text/javascript; charset=utf-8")
         }
+        ("GET", "/auth/passkey") => {
+            let mut response = reply(StatusCode::OK, LOGIN_HTML, "text/html; charset=utf-8");
+            response.headers_mut().insert(
+                header::CONTENT_SECURITY_POLICY,
+                http::HeaderValue::from_static(
+                    "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+                ),
+            );
+            response
+        }
+        ("GET", "/auth/passkey.js") => reply(
+            StatusCode::OK,
+            LOGIN_SCRIPT,
+            "text/javascript; charset=utf-8",
+        ),
         ("POST", "/auth/setup/claim") => claim(request, env, application).await,
         _ => return None,
     };
