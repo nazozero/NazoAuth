@@ -166,7 +166,9 @@ impl D1Provider {
         credential_id: Uuid,
     ) -> Result<Statement, RepositoryError> {
         if !nazo_persistence::security_audit_payload_within_limit(&event.payload) {
-            return Err(RepositoryError::Consistency("security audit exceeds its size bound".into()));
+            return Err(RepositoryError::Consistency(
+                "security audit exceeds its size bound".into(),
+            ));
         }
         Ok(Statement::new(
             "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,?3,?4,?5,?6 FROM nazo_passkeys WHERE tenant_id=?1 AND id=?7",
@@ -310,8 +312,14 @@ impl PasskeyRepositoryPort for D1Provider {
                 Statement::new(
                     "INSERT INTO nazo_passkeys(tenant_id,id,user_id,credential_id,credential,label,created_at,updated_at,version) SELECT ?1,?2,?3,?4,?5,?6,?7,?7,?8 WHERE EXISTS (SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?3 AND active=1) ON CONFLICT DO NOTHING RETURNING 1 AS applied",
                     vec![
-                        json!(self.tenant_id), json!(id), json!(user_id), json!(credential_id),
-                        json!(encoded), json!(label), json!(now.as_microsecond()), json!(version),
+                        json!(self.tenant_id),
+                        json!(id),
+                        json!(user_id),
+                        json!(credential_id),
+                        json!(encoded),
+                        json!(label),
+                        json!(now.as_microsecond()),
+                        json!(version),
                     ],
                 ),
                 self.conditional_audit(&event, id)?,
@@ -321,8 +329,14 @@ impl PasskeyRepositoryPort for D1Provider {
                 return Err(RepositoryError::Conflict);
             }
             Ok(PasskeyCredential {
-                id, tenant_id, user_id, credential, label,
-                last_used_at: None, created_at: now, updated_at: now,
+                id,
+                tenant_id,
+                user_id,
+                credential,
+                label,
+                last_used_at: None,
+                created_at: now,
+                updated_at: now,
             })
         })
     }
@@ -347,7 +361,9 @@ impl PasskeyRepositoryPort for D1Provider {
                 || credential.counter != facts.expected_counter
                 || credential.backup_eligible != facts.expected_backup_eligible
                 || credential.backup_state != facts.expected_backup_state
-                || credential.backup_eligible.is_some_and(|v| v != facts.backup_eligible)
+                || credential
+                    .backup_eligible
+                    .is_some_and(|v| v != facts.backup_eligible)
             {
                 return Err(RepositoryError::Conflict);
             }
@@ -365,16 +381,15 @@ impl PasskeyRepositoryPort for D1Provider {
                     json!(Uuid::new_v4()), json!(Timestamp::now().as_microsecond()), json!(row.version),
                 ],
             ).await?;
-            if result.len() == 1 { Ok(()) } else { Err(RepositoryError::Conflict) }
+            if result.len() == 1 {
+                Ok(())
+            } else {
+                Err(RepositoryError::Conflict)
+            }
         })
     }
 
-    fn delete(
-        &self,
-        tenant_id: TenantId,
-        user_id: UserId,
-        id: Uuid,
-    ) -> RepositoryFuture<'_, bool> {
+    fn delete(&self, tenant_id: TenantId, user_id: UserId, id: Uuid) -> RepositoryFuture<'_, bool> {
         Box::pin(async move {
             self.require_tenant(tenant_id.as_uuid())?;
             let event = self.passkey_audit("passkey_deleted", user_id, id);

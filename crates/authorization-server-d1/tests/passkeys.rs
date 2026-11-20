@@ -13,11 +13,11 @@ use nazo_identity::{
         PasskeyRepositoryPort, RepositoryError,
     },
 };
+use nazo_oauth_server_d1::D1Provider;
 use nazo_passkey::{
     AttestationEvidence, CosePublicKey, CredentialId, CredentialUpdate,
     PasskeyCredential as WebauthnCredential, RegistrationOptions, Webauthn,
 };
-use nazo_oauth_server_d1::D1Provider;
 use support::{TENANT, USER, fixture};
 use uuid::Uuid;
 
@@ -28,10 +28,10 @@ fn credential() -> WebauthnCredential {
         counter: 7,
         transports: vec!["internal".into()],
         aaguid: [0u8; 16],
-        user_handle: Some(passkey_user_handle(
-            TenantId::new(TENANT).unwrap(),
-            UserId::new(USER).unwrap(),
-        ).to_vec()),
+        user_handle: Some(
+            passkey_user_handle(TenantId::new(TENANT).unwrap(), UserId::new(USER).unwrap())
+                .to_vec(),
+        ),
         uv_initialized: Some(true),
         backup_eligible: Some(true),
         backup_state: Some(false),
@@ -64,46 +64,93 @@ fn credential_registration_cas_and_lifecycle_audit_are_atomic() {
         let tenant = TenantId::new(TENANT).unwrap();
         let user = UserId::new(USER).unwrap();
 
-        let account = provider.by_email(tenant, "test@example.com").await.unwrap().unwrap();
+        let account = provider
+            .by_email(tenant, "test@example.com")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(account.user_id(), user);
         assert!(provider.by_id(tenant, user).await.unwrap().is_some());
-        assert!(provider.by_email(tenant, "no@example.com").await.unwrap().is_none());
+        assert!(
+            provider
+                .by_email(tenant, "no@example.com")
+                .await
+                .unwrap()
+                .is_none()
+        );
 
-        let row = provider.insert(tenant, user, credential(), "Laptop".into()).await.unwrap();
+        let row = provider
+            .insert(tenant, user, credential(), "Laptop".into())
+            .await
+            .unwrap();
         assert_eq!(row.credential.id.to_b64url(), credential().id.to_b64url());
         assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
-        assert_eq!(provider.list_summaries(tenant, user).await.unwrap()[0].sign_count, 7);
-        assert_eq!(provider.credential_ids(tenant, user).await.unwrap().len(), 1);
-        assert!(provider.by_credential_id(tenant, user, &credential().id.to_b64url()).await.unwrap().is_some());
+        assert_eq!(
+            provider.list_summaries(tenant, user).await.unwrap()[0].sign_count,
+            7
+        );
+        assert_eq!(
+            provider.credential_ids(tenant, user).await.unwrap().len(),
+            1
+        );
+        assert!(
+            provider
+                .by_credential_id(tenant, user, &credential().id.to_b64url())
+                .await
+                .unwrap()
+                .is_some()
+        );
 
         // No success audit may survive a rejected duplicate credential.
         assert_eq!(
-            provider.insert(tenant, user, credential(), "Duplicate".into()).await.unwrap_err(),
+            provider
+                .insert(tenant, user, credential(), "Duplicate".into())
+                .await
+                .unwrap_err(),
             RepositoryError::Conflict
         );
         assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
 
-        provider.update_authentication(tenant, user, &credential().id.to_b64url(), update()).await.unwrap();
-        assert_eq!(provider.list_summaries(tenant, user).await.unwrap()[0].sign_count, 8);
+        provider
+            .update_authentication(tenant, user, &credential().id.to_b64url(), update())
+            .await
+            .unwrap();
         assert_eq!(
-            provider.update_authentication(tenant, user, &credential().id.to_b64url(), update()).await,
+            provider.list_summaries(tenant, user).await.unwrap()[0].sign_count,
+            8
+        );
+        assert_eq!(
+            provider
+                .update_authentication(tenant, user, &credential().id.to_b64url(), update())
+                .await,
             Err(RepositoryError::Conflict)
         );
         assert_eq!(
-            provider.update_authentication(tenant, user, &credential().id.to_b64url(),
-                PasskeyAuthenticationUpdate {
-                    credential: CredentialUpdate { expected_counter: 8, new_counter: 9,
-                        expected_backup_eligible: Some(false), backup_eligible: false,
-                        expected_backup_state: Some(false), backup_state: false },
-                    initialize_user_verification: false,
-                }
-            ).await,
+            provider
+                .update_authentication(
+                    tenant,
+                    user,
+                    &credential().id.to_b64url(),
+                    PasskeyAuthenticationUpdate {
+                        credential: CredentialUpdate {
+                            expected_counter: 8,
+                            new_counter: 9,
+                            expected_backup_eligible: Some(false),
+                            backup_eligible: false,
+                            expected_backup_state: Some(false),
+                            backup_state: false
+                        },
+                        initialize_user_verification: false,
+                    }
+                )
+                .await,
             Err(RepositoryError::Conflict)
         );
         db.execute_sql("CREATE TRIGGER fail_passkey_delete_audit BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_deleted' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END").unwrap();
         assert!(provider.delete(tenant, user, row.id).await.is_err());
         assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
-        db.execute_sql("DROP TRIGGER fail_passkey_delete_audit").unwrap();
+        db.execute_sql("DROP TRIGGER fail_passkey_delete_audit")
+            .unwrap();
         assert!(provider.delete(tenant, user, row.id).await.unwrap());
         assert!(!provider.delete(tenant, user, row.id).await.unwrap());
         assert!(provider.list(tenant, user).await.unwrap().is_empty());
@@ -120,20 +167,32 @@ fn concurrent_authentication_updates_have_one_cas_winner() {
     let provider = Arc::new(provider);
     let barrier = Arc::new(Barrier::new(16));
     let winners = std::thread::scope(|scope| {
-        let joins = (0..16).map(|_| {
-            let provider = Arc::clone(&provider);
-            let barrier = Arc::clone(&barrier);
-            scope.spawn(move || {
-                barrier.wait();
-                block_on(provider.update_authentication(
-                    tenant, user, &credential().id.to_b64url(), update(),
-                ))
+        let joins = (0..16)
+            .map(|_| {
+                let provider = Arc::clone(&provider);
+                let barrier = Arc::clone(&barrier);
+                scope.spawn(move || {
+                    barrier.wait();
+                    block_on(provider.update_authentication(
+                        tenant,
+                        user,
+                        &credential().id.to_b64url(),
+                        update(),
+                    ))
+                })
             })
-        }).collect::<Vec<_>>();
-        joins.into_iter().filter(|join| join.join().unwrap().is_ok()).count()
+            .collect::<Vec<_>>();
+        joins
+            .into_iter()
+            .map(|join| join.join().unwrap())
+            .filter(Result::is_ok)
+            .count()
     });
     assert_eq!(winners, 1);
-    assert_eq!(block_on(provider.list_summaries(tenant, user)).unwrap()[0].sign_count, 8);
+    assert_eq!(
+        block_on(provider.list_summaries(tenant, user)).unwrap()[0].sign_count,
+        8
+    );
 }
 
 #[test]
@@ -160,32 +219,65 @@ fn registration_and_authentication_challenges_are_single_use_and_expire() {
         block_on(provider.store_registration("registration-id", &stored, 300)),
         Err(RepositoryError::Conflict)
     );
-    assert!(block_on(provider.take_registration("registration-id")).unwrap().is_some());
-    assert!(block_on(provider.take_registration("registration-id")).unwrap().is_none());
+    assert!(
+        block_on(provider.take_registration("registration-id"))
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        block_on(provider.take_registration("registration-id"))
+            .unwrap()
+            .is_none()
+    );
 
     let (_, state) = webauthn().start_authentication_for_user(&handle, &[credential().id]);
     let stored_login = StoredPasskeyAuthentication {
-        user_id: user, tenant_id: tenant, state, dummy: false,
+        user_id: user,
+        tenant_id: tenant,
+        state,
+        dummy: false,
     };
     block_on(provider.store_authentication("auth-id", &stored_login, 300)).unwrap();
     let provider = Arc::new(provider);
     let barrier = Arc::new(Barrier::new(16));
     let winners = std::thread::scope(|scope| {
-        let joins = (0..16).map(|_| {
-            let provider = Arc::clone(&provider);
-            let barrier = Arc::clone(&barrier);
-            scope.spawn(move || {
-                barrier.wait();
-                block_on(provider.take_authentication("auth-id")).unwrap().is_some()
+        let joins = (0..16)
+            .map(|_| {
+                let provider = Arc::clone(&provider);
+                let barrier = Arc::clone(&barrier);
+                scope.spawn(move || {
+                    barrier.wait();
+                    block_on(provider.take_authentication("auth-id"))
+                        .unwrap()
+                        .is_some()
+                })
             })
-        }).collect::<Vec<_>>();
-        joins.into_iter().filter(|join| join.join().unwrap()).count()
+            .collect::<Vec<_>>();
+        joins
+            .into_iter()
+            .map(|join| join.join().unwrap())
+            .filter(|won| *won)
+            .count()
     });
     assert_eq!(winners, 1);
     block_on(provider.store_authentication("expired", &stored_login, 300)).unwrap();
-    db.execute_sql("UPDATE nazo_state SET expires_at=unixepoch()-1 WHERE kind='passkey_authentication'").unwrap();
-    assert!(block_on(provider.take_authentication("expired")).unwrap().is_none());
+    db.execute_sql(
+        "UPDATE nazo_state SET expires_at=unixepoch()-1 WHERE kind='passkey_authentication'",
+    )
+    .unwrap();
+    assert!(
+        block_on(provider.take_authentication("expired"))
+            .unwrap()
+            .is_none()
+    );
     block_on(provider.store_authentication("expired", &stored_login, 300)).unwrap();
-    assert!(block_on(provider.take_authentication("expired")).unwrap().is_some());
-    assert!(matches!(block_on(provider.store_authentication("invalid-ttl", &stored_login, 301)), Err(RepositoryError::Consistency(_))));
+    assert!(
+        block_on(provider.take_authentication("expired"))
+            .unwrap()
+            .is_some()
+    );
+    assert!(matches!(
+        block_on(provider.store_authentication("invalid-ttl", &stored_login, 301)),
+        Err(RepositoryError::Consistency(_))
+    ));
 }
