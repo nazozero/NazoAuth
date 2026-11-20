@@ -55,7 +55,10 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
     } = input;
     configuration.application(client_secret_pepper.clone())?;
     if configuration.machine_only {
-        ensure!(users.is_empty(), "machine-only Free profile does not provision password users");
+        ensure!(
+            users.is_empty(),
+            "machine-only Free profile does not provision password users"
+        );
         ensure!(
             clients.iter().all(|client| {
                 client.client_type == "confidential"

@@ -46,7 +46,11 @@ async fn fetch(
     {
         return Ok(response(StatusCode::MISDIRECTED_REQUEST, Bytes::new()));
     }
-    if !cached.prepared.configuration.allows_route(request.method(), request.uri().path()) {
+    if !cached
+        .prepared
+        .configuration
+        .allows_route(request.method(), request.uri().path())
+    {
         return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
     if cached.prepared.configuration.ingress == Ingress::DirectCloudflare {

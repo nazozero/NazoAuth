@@ -104,7 +104,10 @@ impl WorkerConfiguration {
         if method == http::Method::GET {
             matches!(
                 path,
-                "/health" | "/live" | "/startup" | "/jwks.json"
+                "/health"
+                    | "/live"
+                    | "/startup"
+                    | "/jwks.json"
                     | "/.well-known/oauth-authorization-server"
             )
         } else if method == http::Method::POST {
