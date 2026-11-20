@@ -30,16 +30,16 @@ impl PasskeyOperationsProvider {
     ) -> Result<PublicAccount, PasskeyEndpointError> {
         let session_id = SessionId::new(context.session_id.as_str());
         let resolution = if allow_bootstrap {
-            self.sessions.current_for_passkey_enrollment(&session_id, context.now).await
+            self.sessions
+                .current_for_passkey_enrollment(&session_id, context.now)
+                .await
         } else {
             self.sessions.current(&session_id, context.now).await
         };
-        match resolution
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to resolve current session user for passkey operation");
-                PasskeyEndpointError::SessionUnavailable
-            })?
-        {
+        match resolution.map_err(|error| {
+            tracing::warn!(%error, "failed to resolve current session user for passkey operation");
+            PasskeyEndpointError::SessionUnavailable
+        })? {
             SessionResolution::Present(session) => {
                 if require_fresh_authentication
                     && !nazo_identity::session::recent_credential_management_authentication(

@@ -338,18 +338,32 @@ fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
             tenant,
         );
         assert!(matches!(
-            service.current(&SessionId::new("setup-2"), now.as_second()).await.unwrap(),
+            service
+                .current(&SessionId::new("setup-2"), now.as_second())
+                .await
+                .unwrap(),
             SessionResolution::Missing
         ));
         assert!(matches!(
-            service.current_principal(&SessionId::new("setup-2"), now.as_second()).await.unwrap(),
+            service
+                .current_principal(&SessionId::new("setup-2"), now.as_second())
+                .await
+                .unwrap(),
             SessionResolution::Missing
         ));
         assert!(matches!(
-            service.current_for_passkey_enrollment(&SessionId::new("setup-2"), now.as_second()).await.unwrap(),
+            service
+                .current_for_passkey_enrollment(&SessionId::new("setup-2"), now.as_second())
+                .await
+                .unwrap(),
             SessionResolution::Present(_)
         ));
-        assert!(!service.bind_client(&SessionId::new("setup-2"), "oidc-client").await.unwrap());
+        assert!(
+            !service
+                .bind_client(&SessionId::new("setup-2"), "oidc-client")
+                .await
+                .unwrap()
+        );
 
         assert!(
             nazo_identity::session::recent_credential_management_authentication(
