@@ -472,7 +472,7 @@ test('WebAuthn Passkey enrollment and login use real D1 credentials and single-u
   assert.equal(passkeyCookies.length, 2);
   const cookie = passkeyCookies.map(value => value.split(';')[0]).join('; ');
   const me = await expectJson(await request('/auth/me', { headers: { cookie } }));
-  assert.equal(me.account.email, email);
+  assert.equal(me.email, email);
   const usedAgain = await request('/auth/passkey/finish', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify(authentication),
