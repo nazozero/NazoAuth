@@ -35,6 +35,10 @@ pub trait PresentationStorePort: Send + Sync {
         idempotency: PresentationCreateIdempotency<'a>,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
 
+    /// Load only a live, uncompleted transaction for request publication or
+    /// response verification. Completion retires this view together with its
+    /// ephemeral response key; return None rather than a keyless transaction.
+    /// Create idempotency and completed results remain separately readable.
     fn request<'a>(
         &'a self,
         transaction_id: Uuid,

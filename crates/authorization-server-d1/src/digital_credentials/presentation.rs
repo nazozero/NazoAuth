@@ -181,7 +181,7 @@ impl PresentationStorePort for PresentationStore {
         now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, Error>> {
         Box::pin(async move {
-            self.0.provider.database.query::<Row>(&format!("SELECT t.* FROM nazo_vp_transactions t WHERE t.tenant_id=?1 AND t.id=?2 AND t.expires_at>?3 AND {TRUST}"),vec![json!(self.0.provider.tenant_id),json!(id),json!(now.as_microsecond())])
+            self.0.provider.database.query::<Row>(&format!("SELECT t.* FROM nazo_vp_transactions t WHERE t.tenant_id=?1 AND t.id=?2 AND t.completed_at IS NULL AND t.expires_at>?3 AND {TRUST}"),vec![json!(self.0.provider.tenant_id),json!(id),json!(now.as_microsecond())])
                 .await?.into_iter().next().map(|row| self.transaction(row,true)).transpose()
         })
     }

@@ -128,7 +128,7 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | Back-channel logout | The shared logout service writes a D1 outbox; leased claims, retry/expiry and completion state drive bounded Worker HTTP delivery on scheduled events. Admit each RP notification origin. Discovery support is enabled only when outbound origins are configured; front-channel delivery remains browser-driven. |
 | Email registration and verification | Shared registration uses D1 account creation, owner-bound send reservations, a fixed verification-attempt budget and single-use challenge consumption. Delivery requires the configured HTTPS email relay, its admitted origin and secret. Concurrent sends and cleanup cannot overwrite or delete a later owner's challenge. |
 | MFA | D1 stores encrypted TOTP seeds, one-use counters, hashed backup codes, remembered-device bindings and required audit mutations. Configure the service data-encryption key. Shared recent-MFA and interactive-proof requirements apply to administration; a remembered device does not grant recent-MFA authority. Backup-code hashing retains the native Argon2id policy and needs measured CPU capacity. |
-| Authorized-application list | The shared profile lists current grants with canonical authorization audit history for counts and last authorization. Administrator grant revocation retires the associated token families and credential access in the same D1 transaction. |
+| Authorized-application list | The shared profile lists current grants with canonical authorization audit history for counts and last authorization. Legacy grants explicitly marked as having unknown history return `null` for these fields; the Web interface shows “History unavailable” / “历史未记录” rather than inventing timestamps or counts. Administrator grant revocation retires the associated token families and credential access in the same D1 transaction. |
 | Avatars and object storage | Authenticated multipart upload, binary proxy read and deletion use bounded immutable D1 image chunks and the shared account-revision compare-and-set lifecycle. R2/direct-to-storage uploads are not configured; adding them requires the corresponding direct-upload state and storage adapter. |
 | Tenant administration | User/client listing, creation and updates use shared preparation and hierarchy policy. D1 rechecks current actor context and prepared target metadata at transaction admission; mutations, dependent-token retirement and canonical required audit commit together. Client downgrade to public authentication retires its refresh families and secret. |
 | Deployment administration and recovery | Controller registry, recovery roots and cross-tenant administration routes are compiled out of the Worker. The D1 user port can update administrators across tenant rows within one database transaction, but the single-issuer host does not expose that control-plane operation. Dynamic hostname/tenant registry replacement and native audit anchors are not adapted; this does not prohibit a future multi-host Worker composition. |
@@ -403,6 +403,7 @@ The `services` object contains only declared host capabilities and public policy
 
 | Field | Meaning |
 | --- | --- |
+| `previous_signing_wrapping_key` | Optional `{ "id": "previous-key-id" }` for a wrapping-key transition. Key bytes are supplied only through the fixed private `NAZO_PREVIOUS_SIGNING_KEY` binding, as standard Base64 encoding of exactly 32 bytes. Both the identifier and binding must be present, or both absent. |
 | `data_encryption_key` | Standard Base64 encoding of an independent 32-byte key for MFA seeds and protected service state; required when enabling OpenID4VC and needed for MFA enrollment |
 | `issuer_management_token`, `verifier_management_token` | Separate OpenID4VC issuer/verifier management credentials, each at least 32 bytes; enabling a role requires its token |
 | `email_relay_token` | Bearer credential for the configured HTTPS relay; at least 16 bytes |
@@ -551,9 +552,35 @@ require the available adapters and selected modules described above.
 Parsed keys and the
 completed application graph are reused within an isolate. The shared key manager
 advances persisted lifecycle state; a request refreshes its snapshot at most once
-per minute. Changing wrapping keys requires retaining access to the old
-generation and resealing it through key-management tooling before switching the
-deployed secret.
+per minute. Automatic signing-key generation, prepublication, activation and
+retirement follow the shared 30-day policy with 24-hour prepublication and
+verification-grace windows. Successful signing with an existing generation does
+not establish the CPU capacity needed to generate a replacement RSA key.
+
+To change the signing wrapping key, prepare one coordinated deployment with a
+new `NAZO_SIGNING_KEY_ID` and `NAZO_SIGNING_KEY`, the old identifier in
+`NAZO_SERVICE_SECRETS.previous_signing_wrapping_key.id`, and the old key in the
+private `NAZO_PREVIOUS_SIGNING_KEY` binding. The current and previous identifiers
+must differ. The previous key is accepted only for reading; shared key management
+authenticates the existing generation and atomically reseals it under the current
+key during startup or refresh. This transition preserves the signing material
+and its public JWKS. Missing, malformed or incorrect old-key material fails
+closed; it does not initialize a replacement keyset.
+
+Cloudflare version settings can inherit the existing secret binding under the
+fixed previous-key name without exporting its value. Preserve all other service
+secret fields when preparing the transition. Direct key bytes in the
+`previous_signing_wrapping_key` JSON object are rejected, so there is only one
+source of previous-key material. Changes to either secret invalidate the
+isolate's prepared graph.
+
+After the authoritative D1 generation is sealed with the new identifier and all
+serving versions can read it, remove the previous-key identifier and binding
+together in a subsequent deployment. An old version with only the former current
+key cannot read the resealed generation; coordinate traffic and any rollback
+accordingly. Public token/JWKS checks and the D1 generation's wrapping-key
+identifier establish the transition outcome independently of the longer
+signing-key rotation lifecycle.
 
 ## Authenticated ingress
 

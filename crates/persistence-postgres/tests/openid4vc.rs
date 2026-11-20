@@ -1088,16 +1088,49 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     );
     let stored_result = verifier.result(transaction_id, now).await.unwrap().unwrap();
     assert_eq!(stored_result, result);
-    assert_eq!(
+    assert!(
         verifier
             .request(transaction_id, now)
             .await
             .unwrap()
-            .unwrap()
-            .response_encryption_private_key,
-        None,
-        "successful completion must erase the no-longer-consumed ephemeral response key"
+            .is_none(),
+        "completed response requests must not resolve to a keyless active transaction"
     );
+    let retained = verifier
+        .find_by_create_request(nazo_openid4vp::PresentationCreateIdempotency {
+            request_jti: &create_request_jti,
+            request_sha256: &create_request_sha256,
+            canonical_request: &create_request,
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.id, transaction_id);
+    assert!(retained.response_encryption_private_key.is_none());
+    assert!(matches!(
+        verifier.create(&transaction, nazo_openid4vp::PresentationCreateIdempotency {
+            request_jti: &create_request_jti,
+            request_sha256: &create_request_sha256,
+            canonical_request: &create_request,
+        }).await.unwrap(),
+        nazo_openid4vp::PresentationCreateOutcome::Existing(existing) if existing.id == transaction_id
+    ));
+    let mut connection = get_conn(&pool).await.unwrap();
+    let terminal = sql_query(
+        "SELECT COUNT(*) AS count FROM openid4vp_transactions \
+         WHERE id=$1 AND tenant_id=$2 AND completed_at IS NOT NULL \
+           AND ephemeral_private_key_ciphertext IS NULL AND result_ciphertext IS NOT NULL",
+    )
+    .bind::<SqlUuid, _>(transaction_id)
+    .bind::<SqlUuid, _>(tenant_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        terminal.count, 1,
+        "completion must erase only the retired response key"
+    );
+    drop(connection);
     let mut late_transaction = transaction.clone();
     late_transaction.id = Uuid::now_v7();
     late_transaction.request.state = format!("late-state-{}", Uuid::now_v7());

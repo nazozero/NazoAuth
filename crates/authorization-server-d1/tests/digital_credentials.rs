@@ -501,14 +501,20 @@ fn presentation_idempotency_and_completion_have_one_owner_under_races() {
             time
         );
         assert!(
-            store
-                .request(winner, now())
-                .await
-                .unwrap()
-                .unwrap()
-                .response_encryption_private_key
-                .is_none()
+            store.request(winner, now()).await.unwrap().is_none(),
+            "completed response requests must not resolve to a keyless active transaction"
         );
+        let retained = store
+            .find_by_create_request(binding("same-request"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.id, winner);
+        assert!(retained.response_encryption_private_key.is_none());
+        assert!(matches!(
+            store.create(&transaction, binding("same-request")).await.unwrap(),
+            PresentationCreateOutcome::Existing(existing) if existing.id == winner
+        ));
         assert!(
             !store
                 .bind_wallet_nonce(winner, "after-completion", now())
@@ -520,6 +526,77 @@ fn presentation_idempotency_and_completion_have_one_owner_under_races() {
         &database,
         "(SELECT COUNT(*) FROM nazo_vp_transactions WHERE completed_at IS NOT NULL AND private_key_ciphertext IS NULL AND result_ciphertext IS NOT NULL)=1",
     );
+}
+
+#[test]
+fn encrypted_presentation_completion_retires_request_but_keeps_result_and_create_identity() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let store = provider.openid4vp_store(TENANT, KEY);
+        let mut transaction = presentation();
+        transaction.request.response_mode = ResponseMode::DirectPostJwt;
+        store
+            .create(&transaction, binding("encrypted-terminal"))
+            .await
+            .unwrap();
+        assert!(
+            store
+                .request(transaction.id, now())
+                .await
+                .unwrap()
+                .unwrap()
+                .response_encryption_private_key
+                .is_some()
+        );
+        let completed_at = now();
+        let result = PresentationResult {
+            transaction_id: transaction.id,
+            credentials: Vec::new(),
+            completed_at,
+        };
+        assert!(
+            store
+                .complete(
+                    transaction.id,
+                    &state_hash(&transaction),
+                    &result,
+                    completed_at
+                )
+                .await
+                .unwrap()
+        );
+        // Neither an ordinary replay nor the earlier caller clock may revive
+        // the response view after atomic completion erased its response key.
+        for clock in [transaction.created_at, now()] {
+            assert!(
+                store
+                    .request(transaction.id, clock)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            store.result(transaction.id, now()).await.unwrap(),
+            Some(result)
+        );
+        let retained = store
+            .find_by_create_request(binding("encrypted-terminal"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.id, transaction.id);
+        assert_eq!(retained.request, transaction.request);
+        assert!(retained.response_encryption_private_key.is_none());
+        assert!(matches!(
+            store.create(&transaction, binding("encrypted-terminal")).await.unwrap(),
+            PresentationCreateOutcome::Existing(existing) if existing.id == transaction.id
+        ));
+        assert_sql(
+            &database,
+            "(SELECT COUNT(*) FROM nazo_vp_transactions WHERE completed_at IS NOT NULL AND private_key_ciphertext IS NULL AND result_ciphertext IS NOT NULL)=1",
+        );
+    });
 }
 
 #[test]

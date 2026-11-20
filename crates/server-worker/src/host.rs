@@ -3,19 +3,16 @@ use std::{
     rc::Rc,
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use http::{Response, StatusCode};
 use http_body_util::Full;
-use nazo_key_management::SigningKeyWrappingKeyRing;
 use nazo_oauth_server_d1::{D1Provider, Database};
 use worker::{Env, HttpRequest, event, wasm_bindgen::JsValue};
-use zeroize::Zeroizing;
 
-use crate::{Ingress, WorkerApplication, WorkerConfiguration};
+use crate::{Ingress, WorkerApplication, WorkerConfiguration, WorkerSecrets};
 
 struct Cached {
-    bindings: ([JsValue; 8], String),
+    bindings: ([JsValue; 9], String),
     prepared: WorkerApplication,
     refresh_after: Cell<i64>,
     refreshing: Cell<bool>,
@@ -131,17 +128,22 @@ fn configuration(env: &Env) -> anyhow::Result<WorkerConfiguration> {
 
 async fn application(
     env: &Env,
-    bindings: ([JsValue; 8], String),
+    bindings: ([JsValue; 9], String),
     configuration: WorkerConfiguration,
 ) -> anyhow::Result<Rc<Cached>> {
-    let encoded_key = Zeroizing::new(env.secret("NAZO_SIGNING_KEY")?.to_string());
-    let mut key = Zeroizing::new([0_u8; 32]);
-    anyhow::ensure!(
-        STANDARD.decode_slice(encoded_key.as_bytes(), key.as_mut_slice())? == 32,
-        "signing wrapping key must decode to exactly 32 bytes"
-    );
-    let wrapping_keys =
-        SigningKeyWrappingKeyRing::new(env.var("NAZO_SIGNING_KEY_ID")?.to_string(), *key, None)?;
+    let mut secrets: WorkerSecrets = env
+        .secret("NAZO_SERVICE_SECRETS")
+        .ok()
+        .map(|value| serde_json::from_str(&value.to_string()))
+        .transpose()?
+        .unwrap_or_default();
+    let wrapping_keys = secrets.take_signing_wrapping_keys(
+        env.var("NAZO_SIGNING_KEY_ID")?.to_string(),
+        env.secret("NAZO_SIGNING_KEY")?.to_string(),
+        env.secret("NAZO_PREVIOUS_SIGNING_KEY")
+            .ok()
+            .map(|key| key.to_string()),
+    )?;
     let prepared = WorkerApplication::build(
         configuration,
         Database::from_binding(env.d1("NAZO_DB")?),
@@ -151,11 +153,7 @@ async fn application(
         env.secret("NAZO_DCR_INITIAL_ACCESS_TOKEN")
             .ok()
             .map(|token| token.to_string()),
-        env.secret("NAZO_SERVICE_SECRETS")
-            .ok()
-            .map(|value| serde_json::from_str(&value.to_string()))
-            .transpose()?
-            .unwrap_or_default(),
+        secrets,
     )
     .await?;
     let initialized = Rc::new(Cached {
@@ -179,7 +177,7 @@ async fn application(
     }))
 }
 
-fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 8], String)> {
+fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 9], String)> {
     // Binding-only deployments may reuse an isolate. Compare the actual values
     // in JS (including D1 object identity), without copying secrets or parsing
     // configuration on every request. Never reuse a graph for changed bindings.
@@ -194,6 +192,9 @@ fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 8], String)> {
             .map(JsValue::from)
             .unwrap_or(JsValue::UNDEFINED),
         env.secret("NAZO_SERVICE_SECRETS")
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED),
+        env.secret("NAZO_PREVIOUS_SIGNING_KEY")
             .map(JsValue::from)
             .unwrap_or(JsValue::UNDEFINED),
     ];

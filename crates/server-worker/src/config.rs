@@ -1,7 +1,10 @@
 use anyhow::{Context, ensure};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_identity::TenantContext;
+use nazo_key_management::SigningKeyWrappingKeyRing;
 use nazo_runtime_modules::ModuleId;
 use serde::Deserialize;
+use zeroize::Zeroizing;
 
 /// Deployment configuration. Secret values are supplied separately by the host.
 #[derive(Clone, Deserialize)]
@@ -64,6 +67,7 @@ pub struct EmailRelay {
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkerSecrets {
+    pub previous_signing_wrapping_key: Option<WorkerPreviousSigningWrappingKey>,
     pub data_encryption_key: Option<String>,
     pub issuer_management_token: Option<String>,
     pub verifier_management_token: Option<String>,
@@ -71,6 +75,54 @@ pub struct WorkerSecrets {
     pub federation_provider_configs: Option<serde_json::Value>,
     pub saml_gateway: Option<WorkerSamlGateway>,
     pub openid4vc_import: Option<WorkerOpenid4vcImport>,
+}
+
+/// Temporary read authority for a generation sealed before a wrapping-key change.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerPreviousSigningWrappingKey {
+    pub id: String,
+}
+
+impl WorkerSecrets {
+    /// Consume the transition secret before handing the remaining service secrets
+    /// to application composition. Key management owns generation authentication
+    /// and resealing; the host only decodes deployment-provided key material.
+    pub fn take_signing_wrapping_keys(
+        &mut self,
+        current_id: String,
+        current_base64: String,
+        previous_base64: Option<String>,
+    ) -> anyhow::Result<SigningKeyWrappingKeyRing> {
+        let previous_base64 = previous_base64.map(Zeroizing::new);
+        let current = decode_signing_wrapping_key(Zeroizing::new(current_base64))?;
+        let previous = match (self.previous_signing_wrapping_key.take(), previous_base64) {
+            (Some(previous), Some(encoded)) => {
+                Some((previous.id, decode_signing_wrapping_key(encoded)?))
+            }
+            (None, None) => None,
+            _ => anyhow::bail!(
+                "previous signing wrapping key id and NAZO_PREVIOUS_SIGNING_KEY must be configured together"
+            ),
+        };
+        Ok(SigningKeyWrappingKeyRing::new(
+            current_id,
+            *current,
+            previous.as_ref().map(|(id, key)| (id.clone(), **key)),
+        )?)
+    }
+}
+
+fn decode_signing_wrapping_key(encoded: Zeroizing<String>) -> anyhow::Result<Zeroizing<[u8; 32]>> {
+    let mut key = Zeroizing::new([0_u8; 32]);
+    ensure!(
+        STANDARD
+            .decode_slice(encoded.as_bytes(), key.as_mut_slice())
+            .ok()
+            == Some(32),
+        "signing wrapping key must be standard Base64 encoding of exactly 32 bytes"
+    );
+    Ok(key)
 }
 
 /// Operator-only, one-generation import through the existing encrypted key
