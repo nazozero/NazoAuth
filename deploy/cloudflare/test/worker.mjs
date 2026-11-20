@@ -27,6 +27,42 @@ const configuration = {
 let temporary, mf, database, provisioned, options, signingKeys;
 const form = (values) => new URLSearchParams(values).toString();
 const sha256 = (value) => createHash('sha256').update(value).digest('base64url');
+
+const base64url = (data) => Buffer.from(data).toString('base64url');
+const uuidBytes = (value) => Buffer.from(value.replaceAll('-', ''), 'hex');
+
+// Only the integration test constructs authenticator CBOR; protocol parsing stays in nazo-passkey.
+function cborHeader(type, length) {
+  if (length < 24) return Buffer.from([(type << 5) | length]);
+  if (length < 256) return Buffer.from([(type << 5) | 24, length]);
+  if (length < 65536) {
+    const bytes = Buffer.alloc(3);
+    bytes[0] = (type << 5) | 25;
+    bytes.writeUInt16BE(length, 1);
+    return bytes;
+  }
+  const bytes = Buffer.alloc(5);
+  bytes[0] = (type << 5) | 26;
+  bytes.writeUInt32BE(length, 1);
+  return bytes;
+}
+function cbor(value) {
+  if (Number.isSafeInteger(value)) return value >= 0 ? cborHeader(0, value) : cborHeader(1, -value - 1);
+  if (Buffer.isBuffer(value)) return Buffer.concat([cborHeader(2, value.length), value]);
+  if (typeof value === 'string') {
+    const bytes = Buffer.from(value);
+    return Buffer.concat([cborHeader(3, bytes.length), bytes]);
+  }
+  if (value instanceof Map) {
+    const entries = [...value].map(([key, item]) => [cbor(key), cbor(item)]);
+    entries.sort(([a], [b]) => a.length - b.length || Buffer.compare(a, b));
+    return Buffer.concat([cborHeader(5, entries.length), ...entries.flat()]);
+  }
+  if (Array.isArray(value)) return Buffer.concat([cborHeader(4, value.length), ...value.map(cbor)]);
+  if (value && typeof value === 'object') return cbor(new Map(Object.entries(value)));
+  throw new Error('Unsupported test CBOR value');
+}
+
 const request = (url, init = {}) => mf.dispatchFetch(`${issuer}${url}`, { redirect: 'manual', ...init });
 const postForm = (url, values, headers = {}) => request(url, {
   method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: form(values),
@@ -349,6 +385,99 @@ test('a fresh isolate reuses durable keys and sessions', async () => {
   assert.equal(await (await mf.dispatchFetch(metadata.jwks_uri)).text(), jwks);
   const retained = await request('/auth/me', { headers: { cookie: session.cookie } });
   assert.equal(retained.status, 200, await retained.clone().text());
+});
+
+
+test('WebAuthn Passkey enrollment and login use real D1 credentials and single-use ceremonies', async () => {
+  const initial = await login();
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = publicKey.export({ format: 'jwk' });
+  const credentialId = randomBytes(32);
+  const encodedId = base64url(credentialId);
+  const coseKey = cbor(new Map([
+    [1, 2], [3, -7], [-1, 1],
+    [-2, Buffer.from(jwk.x, 'base64url')], [-3, Buffer.from(jwk.y, 'base64url')],
+  ]));
+  const host = new URL(issuer).hostname;
+  const rpHash = createHash('sha256').update(host).digest();
+  const authData = Buffer.concat([
+    rpHash, Buffer.from([0x45]), Buffer.alloc(4),
+    Buffer.alloc(16), Buffer.from([0, credentialId.length]), credentialId, coseKey,
+  ]);
+
+  const registered = await expectJson(await request('/auth/me/passkeys/registration/begin', {
+    method: 'POST',
+    headers: { cookie: initial.cookie, 'x-csrf-token': initial.csrf, 'content-type': 'application/json' },
+    body: JSON.stringify({ label: 'Integration passkey' }),
+  }));
+  const createClientData = Buffer.from(JSON.stringify({
+    type: 'webauthn.create', challenge: registered.publicKey.challenge,
+    origin: issuer, crossOrigin: false,
+  }));
+  const registration = {
+    ceremony_id: registered.ceremony_id,
+    response: {
+      id: encodedId, rawId: encodedId, type: 'public-key',
+      response: {
+        clientDataJSON: base64url(createClientData),
+        attestationObject: base64url(cbor(new Map([
+          ['fmt', 'none'], ['authData', authData], ['attStmt', new Map()],
+        ]))),
+      },
+    },
+  };
+  const created = await expectJson(await request('/auth/me/passkeys/registration/finish', {
+    method: 'POST',
+    headers: { cookie: initial.cookie, 'x-csrf-token': initial.csrf, 'content-type': 'application/json' },
+    body: JSON.stringify(registration),
+  }), 201);
+  assert.equal(created.credential_id, encodedId);
+  const replay = await request('/auth/me/passkeys/registration/finish', {
+    method: 'POST',
+    headers: { cookie: initial.cookie, 'x-csrf-token': initial.csrf, 'content-type': 'application/json' },
+    body: JSON.stringify(registration),
+  });
+  assert.notEqual(replay.status, 201, 'registration challenge must be consumed only once');
+
+  const begun = await expectJson(await request('/auth/passkey/begin', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email }),
+  }));
+  const assertionData = Buffer.concat([rpHash, Buffer.from([0x05]), Buffer.from([0, 0, 0, 1])]);
+  const getClientData = Buffer.from(JSON.stringify({
+    type: 'webauthn.get', challenge: begun.publicKey.challenge, origin: issuer, crossOrigin: false,
+  }));
+  const userHandle = Buffer.concat([
+    uuidBytes(configuration.tenant.tenant_id), uuidBytes(provisioned.user_ids[0]),
+  ]);
+  const toSign = Buffer.concat([assertionData, createHash('sha256').update(getClientData).digest()]);
+  const authentication = {
+    ceremony_id: begun.ceremony_id,
+    response: {
+      id: encodedId, rawId: encodedId, type: 'public-key',
+      response: {
+        authenticatorData: base64url(assertionData),
+        clientDataJSON: base64url(getClientData),
+        signature: base64url(sign('sha256', toSign, privateKey)),
+        userHandle: base64url(userHandle),
+      },
+    },
+  };
+  const completed = await request('/auth/passkey/finish', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(authentication),
+  });
+  assert.equal(completed.status, 200, await completed.clone().text());
+  const passkeyCookies = completed.headers.getSetCookie();
+  assert.equal(passkeyCookies.length, 2);
+  const cookie = passkeyCookies.map(value => value.split(';')[0]).join('; ');
+  const me = await expectJson(await request('/auth/me', { headers: { cookie } }));
+  assert.equal(me.account.email, email);
+  const usedAgain = await request('/auth/passkey/finish', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(authentication),
+  });
+  assert.notEqual(usedAgain.status, 200, 'assertion challenge cannot be replayed');
 });
 
 test('storage failure does not issue tokens or accept a login', async () => {
