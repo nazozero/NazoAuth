@@ -431,6 +431,8 @@ pub fn verify_logout_token(
     )
 }
 
+// Explicit trust inputs are clearer than a single-use context object at this boundary.
+#[allow(clippy::too_many_arguments)]
 pub fn verify_logout_token_with_algorithm(
     tenant_id: crate::TenantId,
     provider: &str,
