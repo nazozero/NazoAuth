@@ -15,15 +15,13 @@ their opaque handles do not authorize transferring them across stores or tenants
 
 [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) requires a risk
 assessment and mitigations appropriate to each cross-device deployment. The
-client grant allowlist and `allow_cross_device_flows` are authorization gates,
-not proof of device proximity or user intent. Operators must assess consent
-and session phishing, select suitable mitigations, and consider proximity
-when possible before enabling these flows. Device/CIBA expiry, polling limits,
-user decisions and client or sender binding are available controls, but do
-not establish proximity or guarantee that a user recognizes a phishing
-request. The relying application and deployment own the remaining context.
-Native SSO between apps on the same device is not inherently a cross-device
-flow; deployments that transfer its authority across devices must assess it.
+client grant allowlist and `allow_cross_device_flows` control authorization.
+Before enabling these flows, assess consent and session phishing and select
+deployment-specific mitigations, including device proximity where possible.
+Device/CIBA provide expiry, polling limits, user decisions and client or sender
+binding. The relying application supplies the user-facing transaction context
+and any proximity check. Apply the same assessment to Native SSO deployments
+that transfer authority across devices.
 
 ## Device approval
 
@@ -33,29 +31,30 @@ snapshot. The application may inspect its payload for audit and client lookup,
 but cannot change or construct its storage identity. `approve` and `deny`
 consume this preparation instead of resolving the user code again.
 
-The approval sequence remains:
+The approval sequence is:
 
 1. Atomically compare the state revision **and the live user-code mapping**,
    then claim the approval
 2. Reload after a successful claim or stale-claim takeover before writing the
-   PostgreSQL grant, so a paused worker observes an already transferred owner
+   durable grant, so a paused worker observes an already transferred owner
    or completed decision
 3. Persist the grant and CAS `grant_recorded=true`
 4. Reuse the adapter's acknowledged written snapshot for the final CAS; check
    the current authorization expiry again, and atomically verify the mapping
    before removing it
 
-Only step 4 avoids the read after a successful write. The claim-to-database
-read is deliberately retained: a later failed CAS cannot undo a stale worker's
-PostgreSQL grant write. The PostgreSQL owner records a unique decision receipt
+Step 4 reuses the acknowledged snapshot. The read before the grant write checks
+ownership again because a later CAS conflict cannot undo that durable write.
+The persistence adapter records a unique decision receipt
 for `(tenant_id, device_code_hash)` in the same transaction as the grant. It
 checks the authorization deadline after acquiring the grant/revocation lock.
 A retry of that decision never writes the grant again, including after a newer
 worker completes and the user revokes it. Expired receipts are removed by the
 existing security-state maintenance worker; expired decisions cannot write.
-The existing `Approving` recovery states and claim timeout remain unchanged.
+`Approving` recovery states and the claim timeout allow another request to
+complete an interrupted decision.
 
-The Valkey adapter serializes a replacement once. On an acknowledged recorded
+The native Valkey adapter serializes a replacement once. On an acknowledged recorded
 CAS, it returns that exact written JSON as the opaque revision. It preserves
 the key's existing absolute `PEXPIRETIME`; no locally recomputed TTL or
 core-generated storage version substitutes for it. Mapping replacement or
@@ -69,39 +68,32 @@ intent and calls `decide_prepared`. Conflict retries may observe changed poll
 timing, but cannot retarget the already audited decision to another client,
 user, scope, audience, request lifetime or notification destination.
 
-Existing `decide` and `decide_with_authorization_deadline` entry points still
-prepare their own snapshot. The latter retains the caller-owned atomic
-expiry fence. This change does not alter the separate authorization and
-retention deadlines, or the ping-queue update performed with the decision CAS.
+`decide` and `decide_with_authorization_deadline` prepare their own snapshot.
+The latter enforces the caller-owned atomic expiry fence. Authorization and
+retention have separate deadlines; the decision CAS also updates ping delivery.
 
-CIBA Approved polling still atomically consumes state before downstream token
-issuance. Device Approved polling still retains state and delegates one-time
-issuance to the durable token boundary. These existing, different failure and
-retry contracts are not changed by decision preparation.
+CIBA and Device approved polling retain their state and delegate one-use
+issuance to the durable token transaction. CIBA returns an owned approved
+snapshot; an explicit authorization deadline adds a store-clock CAS that
+preserves the state and its original TTL. Precommit failures can retry. After
+successful issuance, the durable consumption fence rejects another redemption.
 
-## Rust port/API changes
+## Rust port contract
 
-- `DeviceGrantService::approve` and `deny` now accept `PreparedDeviceDecision`
+- `DeviceGrantService::approve` and `deny` accept `PreparedDeviceDecision`
 - `DeviceStateStorePort::claim_decision` must atomically check the supplied
   state revision and live user-code-to-device mapping before applying a claim
 - `replace_by_device_hash` returns `DeviceStateReplacement<V>`; only its
   `Applied` variant contains the adapter's acknowledged written snapshot
-- Unused `DeviceStateStorePort::consume_by_device_code` and
-  `DeviceGrantRepositoryPort::client_by_id` were removed; no production caller
-  used them. Token consumption and application client lookup retain their
-  existing owners
-- CIBA adds `prepare_decision` / `decide_prepared`; its previous decision and
-  polling APIs remain available
+- CIBA exposes `prepare_decision` / `decide_prepared` alongside the convenience
+  decision and polling methods
 
-These are source-level Rust port changes. The persisted Device/CIBA JSON
-formats and normal HTTP request/response flows are unchanged. If a Device
-user-code mapping disappears or is replaced while the old state remains live,
-the decision CAS fails closed; exhausting conflict retries may now return
-HTTP 503 instead of the previous missing-mapping HTTP 400. Adapter and test
-implementations must be updated together. Migration
-`20261020000200_device_approval_receipts` adds the durable approval identity.
+If a Device user-code mapping disappears or is replaced while the old state
+remains live, the decision CAS rejects it. Exhausting conflict retries returns
+HTTP 503. The durable approval receipt binds the decision independently of
+transient-state cleanup.
 
-## Targeted evidence
+## Tests
 
 The focused tests are `ciba_decision_preparation` in `nazo-auth`, the Device
 application unit tests and `cross_device_application` in `nazo-oauth-server`,
@@ -109,6 +101,4 @@ and `ciba_device_contract` in `nazo-valkey`. They cover normal call order,
 audit-before-write, preparation expiry, identity/CAS conflicts, changed or
 missing user-code mapping, owner handover, unknown writes, exact persisted
 versions and absolute deadlines. The Valkey target requires an explicitly
-configured isolated `VALKEY_URL`; a skipped live-store fixture is not passing
-storage evidence. Source-level command counts are not measured latency or
-throughput results.
+configured isolated `VALKEY_URL`.

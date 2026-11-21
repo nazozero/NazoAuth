@@ -8,10 +8,8 @@ Implementation status and verification requirements are recorded in
 
 ## Scope
 
-This document is a best-practice control matrix for Nazo Auth Server. It is
-broader and stricter than a feature checklist: the goal is to define the safest
-server-side OAuth/OIDC/FAPI profile this project should implement and advertise,
-while keeping interoperability exceptions explicit, narrow, and testable.
+This matrix defines NazoAuth's OAuth/OIDC/FAPI security profiles, implementation
+status, interoperability exceptions and required tests.
 
 The matrix follows these source families:
 
@@ -38,16 +36,13 @@ The matrix follows these source families:
 - OAuth.net working-group specification index:
   <https://oauth.net/specs/>
 
-The decision rule is deliberately conservative: standards conformance never
-justifies weakening a protocol security boundary. If an external validator and a
-core sender-constraint, issuer, audience, redirect, replay, key, or client-auth
-guarantee appear to conflict, the implementation must preserve the security
-guarantee and root-cause the test/profile mismatch.
+When an external validator conflicts with a sender-constraint, issuer, audience,
+redirect, replay, key or client-authentication rule, resolve the test/profile
+mismatch while preserving that security boundary.
 
-## 10/10 Acceptance Bar
+## Acceptance requirements
 
-This matrix is considered complete only if it satisfies all of the following
-conditions:
+Each supported profile must meet these requirements:
 
 1. Every public capability claim is tied to a runtime-enforced profile and
    generated metadata, not to documentation intent.
@@ -117,7 +112,7 @@ conditions:
 | Sender-constrained tokens | Prefer DPoP or mTLS for high-value access tokens; require one for FAPI profile. Reject bearer use of sender-constrained tokens. Access tokens must carry `cnf` data appropriate to the selected proof mechanism. | RFC 8705, RFC 9449, RFC 9700, FAPI2 | Required for FAPI; recommended for high-value clients. | DPoP/mTLS/resource tests | Do not relax sender binding merely to satisfy a conformance shortcut. For FAPI, treat refresh-token behavior according to profile and sender-constraint semantics rather than generic bearer rotation assumptions. |
 | DPoP proof validation | Validate proof type, alg, signature, embedded JWK thumbprint, `htu`, `htm`, `iat`, `jti`, optional `ath`, nonce if issued/required, authorization-code-to-DPoP-key binding where applicable, and replay. FAPI clients must support server-provided nonce; requiring nonce for all FAPI DPoP requests is project hardening and must be documented as such. | RFC 9449, RFC 9700, FAPI2 | Required where DPoP is accepted; nonce support required for FAPI DPoP clients; nonce enforcement is profile/project policy. | `crates/authorization-server-core/src/dpop.rs`, `crates/authorization-server/src/security/dpop.rs`, `crates/resource-server/src/dpop.rs`, DPoP support tests, and resource-server DPoP tests | Clustered AS/RS deployments need shared nonce/replay state or deterministic routing. |
 | mTLS sender constraint | Bind token `cnf.x5t#S256` to verified client certificate thumbprint. | RFC 8705, RFC 9700, FAPI2 | Required where mTLS-bound tokens are issued. | FAPI resource tests and mTLS tests | Resource servers must only trust certificate material from the local TLS layer or trusted proxy boundary. |
-| Access-token format | Current profile uses RFC 9068-style JWT access tokens with issuer, subject/client, audience, expiry, scope, optional `authorization_details`, and optional `cnf`. Opaque access tokens plus authenticated introspection are also valid high-security strategies; do not imply JWT access tokens are universally required by OAuth/FAPI. | RFC 9068, RFC 7662, RFC 9700, RFC 9701 | Required for current JWT profile; opaque/introspection remains a valid alternative profile if implemented. | Token claim tests and resource-server verifier tests | Keep sensitive internal state out of JWT claims. If opaque tokens are introduced, add RFC 7662/RFC 9701 profile, RS authz, caching, revocation, and signed-introspection tests. |
+| Access-token format | Current profile uses RFC 9068-style JWT access tokens with issuer, subject/client, audience, expiry, scope, optional `authorization_details`, and optional `cnf`. OAuth/FAPI also permits opaque access tokens with authenticated introspection. | RFC 9068, RFC 7662, RFC 9700, RFC 9701 | Required for current JWT profile; opaque/introspection remains a valid alternative profile if implemented. | Token claim tests and resource-server verifier tests | Keep sensitive internal state out of JWT claims. If opaque tokens are introduced, add RFC 7662/RFC 9701 profile, RS authz, caching, revocation, and signed-introspection tests. |
 | Access-token transport | Reject ambiguous or unsafe token transport at protected resources. FAPI resource servers must not accept access tokens in query parameters and should accept only Authorization-header bearer/DPoP forms appropriate to the token type. | RFC 6750, RFC 9700, RFC 9449, FAPI2 | Required. | FAPI resource tests | Prefer Authorization header; form/query token transport must remain tightly controlled and never enabled for FAPI. |
 | Refresh-token handling | Unbound public refresh-token grants rotate and retain every unexpired spent proof for reuse detection. Public rotation cannot extend the original family deadline. Confidential or actually DPoP/mTLS-bound families retain an additional 64-proof reuse window; older presentations are unknown and do not compromise the family. A refresh request may narrow the new access-token scope, while any rotated refresh token retains the original scope authorization. | RFC 6749, RFC 9700, RFC 10017, FAPI2 | Required/profile-scoped. | `crates/authorization-server/src/token/refresh.rs`, `crates/authorization-server/src/token/issue_grant.rs`, refresh rotation/reuse/DPoP/mTLS tests, and refresh-token rotation docs | Authentication-class downgrade atomically revokes prior families. Migration 20261111000100 retires existing public families whose original deadline is unrecoverable; affected clients must reauthorize. |
 | Refresh-token audience narrowing | Code redemption preserves the complete original RT resource grant; later rotating refreshes may narrow the current audience without changing the original contract. | RFC 8707, RFC 9700 | Required grant bound; monotonic rotation narrowing is local policy. | Refresh audience tests and real-PG `refresh_authority` | Missing refresh resource keeps the current persisted binding. Resource reordering does not change the contract; preserve and rotation revalidate source authority at commit. |
@@ -172,7 +167,7 @@ conditions:
 | RFC 9701 | Required only if JWT introspection is advertised or if the FAPI Message Signing signed-introspection option is claimed. | Implemented/profile-scoped | Advertise signed/encrypted introspection only under `fapi2-message-signing-introspection`; bind `iss`, `aud`, active signing key, authenticated RS identity, `Accept: application/token-introspection+jwt`, and per-client JWE metadata. |
 | RFC 9728 | Recommended for resource-server discovery and FAPI resource metadata. | Implemented | Keep protected resource identifiers aligned with JWT audiences. |
 | OAuth 2.1 draft | Directional target, not final RFC; treat as work in progress until published as RFC. | Partial/aligned | Track latest draft and turn into final RFC audit when published. Do not cite draft conformance as final RFC conformance. |
-| OIDC Core | Required for certified OP profile. | Implemented/profile-scoped | Keep authorization-code OP profile; do not imply implicit/hybrid support. Maintain ID Token, nonce, `auth_time`/`max_age`, `acr`/`amr`, claims, JSON/signed/encrypted UserInfo, and offline access controls as separate testable rows. |
+| OIDC Core | Required for certified OP profile. | Implemented/profile-scoped | Keep the authorization-code OP profile. Maintain ID Token, nonce, `auth_time`/`max_age`, `acr`/`amr`, claims, JSON/signed/encrypted UserInfo, and offline access controls as separate testable rows. |
 | OIDC Discovery | Required. | Implemented | Keep discovery generated from runtime facts. |
 | OIDC Dynamic Client Registration | Useful but high-risk provisioning surface. | Implemented/prerequisite-gated | Advertise only when `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN` is configured; materialize baseline client policy; support RFC 7592 management only for DCR-created clients with hashed registration access tokens and dynamic-client audit events; support `jwks_uri` only through the constrained HTTPS remote-document resolver; software statements remain deferred. |
 | OIDC RP-Initiated Logout | Required where advertised. | Implemented | Keep exact post-logout redirect validation. |
@@ -204,11 +199,11 @@ and tested.
 
 | Standard or draft | Source status on 2026-11-11 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
-| `draft-ietf-oauth-v2-1-17` | OAuth WG active draft | Explicit authorization-code profile | `security_policy.authorization_code_profile=oauth21` implements the draft-17 token redirect contract with mandatory S256 PKCE. Existing OAuth 2.0/OIDC and FAPI client contracts remain explicit; this is a draft profile, not an unpublished RFC certification. |
+| `draft-ietf-oauth-v2-1-17` | OAuth WG active draft | Explicit authorization-code profile | `security_policy.authorization_code_profile=oauth21` implements the draft-17 token redirect contract with mandatory S256 PKCE. OAuth 2.0/OIDC and FAPI clients retain their registered redirect contracts. |
 | `RFC 10017` | Published BCP (August 2026) | Server-side guidance reviewed | The final text preserves relevant draft-27 requirements; a public refresh expiry gap was fixed. Third-party application requirements cannot be guaranteed by the authorization server. |
-| `RFC 10027` | Published BCP (August 2026) | Deployment-specific assessment required | Device and CIBA gates and lifecycle protections support the deployment but do not establish proximity or user intent. Assess risks and mitigations for each deployment; same-device Native SSO is not inherently cross-device. |
-| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 behavior is implemented; this update draft is not claimed until its delta is audited. |
-| `draft-ietf-oauth-rfc8725bis-10` | RFC Editor queue BCP | Not supported (audit pending) | RFC 8725 behavior is implemented; this bis draft is not claimed until JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion deltas are audited. |
+| `RFC 10027` | Published BCP (August 2026) | Deployment-specific assessment required | Device and CIBA provide authorization and lifecycle controls. Assess phishing risks, user-facing transaction context and proximity checks for each cross-device deployment. |
+| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 is implemented. Review this draft’s changes before adoption. |
+| `draft-ietf-oauth-rfc8725bis-10` | RFC Editor queue BCP | Not supported (audit pending) | RFC 8725 is implemented. Adoption requires reviewing changes to algorithms, key binding and cross-JWT confusion protections. |
 | `RFC 10070` | Published Proposed Standard | Supported for issuer-only client authentication and the bounded JWT bearer grant | Client-authentication assertions require issuer-only audiences even for clients with legacy flags; affected clients must migrate before upgrading. |
 | `draft-ietf-oauth-refresh-token-expiration-03` | OAuth WG active draft | Not supported (planned) | Add only after refresh-token and authorization-expiration state, metadata, revocation, and tests exist. |
 | `draft-ietf-oauth-first-party-apps-04` | OAuth WG active draft | Not supported (planned) | Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |

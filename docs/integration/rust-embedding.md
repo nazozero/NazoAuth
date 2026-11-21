@@ -32,8 +32,8 @@ needed TLS, macros, compression and cookie features without `http2`. Resolve
 `actix-http` 3.21.3 or later for the chunked-body and keep-alive timeout fixes. Cargo
 features are additive; another dependency can re-enable Actix HTTP/2. Run
 `python3 scripts/check_native_transport.py` to check the actual workspace graph,
-and verify negotiated ALPN in the deployment. Removing `.auto_h2c(false)` alone
-is not a protocol policy; that method only applies to cleartext connections.
+and verify negotiated ALPN in the deployment. `.auto_h2c(false)` controls only
+cleartext connections; Cargo features govern the compiled HTTP/2 support.
 
 ### Dependency upgrades
 
@@ -57,9 +57,8 @@ Its issuer sampled digest identifiers across the full `u32` range;
 [ISO/IEC 18013-5:2021 §9.1.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
 requires each value to be smaller than `2^31`. The maintained issuer generates
 identifiers within that range, and the verifier rejects larger identifiers in
-both IssuerSignedItem and MSO valueDigests. Unconditional acceptance of all old
-issuer outputs is therefore not a migration guarantee. Reissue affected
-credentials through the authorized issuance flow before relying on the new
+both IssuerSignedItem and MSO valueDigests. Reissue affected
+credentials through the authorized issuance flow before using the current
 verifier. Identifiers participate in signed issuer data: editing or re-encoding
 stored credentials cannot repair them. Preserve the strict protocol check.
 
@@ -178,18 +177,21 @@ These are real I/O capabilities. The builder creates the authorization, token,
 identity, credential and HTTP endpoint graphs once. A framework adapter receives
 the completed `NazoAuth`; it does not construct these graphs.
 
-Optional builder methods install avatar storage, deployment-wide control
-identity and tenant membership, signed mdoc CRL delivery, and a constructed
-runtime module availability ceiling. The ceiling constrains enablement without
-replacing persistent desired state. Deployment controls
-remain restricted to their configured control tenant. Host-specific scheduling
+Optional builder methods install avatar storage, signed mdoc CRL delivery and a
+constructed runtime module availability ceiling. The ceiling constrains enablement
+without replacing persistent desired state. Hosts built with `deployment-control`
+can also install `DeploymentCapabilities`: deployment identity, control tenant,
+tenant index, controller-registry port and recovery-root port. These ports are
+separate from the shared `ServerPersistenceProvider`; the Worker omits this
+feature. Deployment controls are restricted to their configured control tenant.
+Host-specific scheduling
 calls `plan_reconciliation` and `reconcile_once`; the neutral library does not
 spawn a timer or task. Hosts whose invocations cannot wait for stored-transaction
 lifetimes call `synchronize_runtime_modules_step` before admission and implement
 the lifecycle's nonblocking `poll_stored_transactions`. A `Pending` result keeps
-the transition resumable; it does not claim that old work has finished. Native
-hosts retain the waiting lifecycle entrypoint. SCIM long polling remains in the
-corresponding native capability.
+the transition open for the next invocation. Native hosts use the waiting
+lifecycle entrypoint. Hosts supply SCIM long polling through `EventPollerPort`;
+the Worker implementation waits with the platform's asynchronous delay.
 
 For a native composition example, see
 [`application_capabilities` and startup assembly](../../crates/server/src/bootstrap/startup/services.rs).
@@ -225,8 +227,8 @@ rules remain internal to the facade.
    A host with an authenticated ingress source can supply
    `authenticated_client_ip` when the platform does not expose a socket peer.
    Source-IP budgets and auditing use that fact before considering proxy headers.
-   It does not establish a trusted socket peer or certificate trust. Ordinary
-   client-supplied forwarding headers cannot populate this field.
+   Socket-peer and certificate trust use their separate authenticated facts.
+   Ordinary client-supplied forwarding headers cannot populate this field.
 4. Forward the body with `NazoAuth::handle_stream`. Its input is an ordinary
    `Request<S>` where `S: Stream<Item = Result<Bytes, E>>` and
    `E: Error + Send + Sync + 'static`. The stream may be local and need not be

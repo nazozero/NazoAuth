@@ -10,9 +10,9 @@ that name it.
 
 The [protocol profiles](../protocol/profile-matrix.md) and
 [specification matrix](../protocol/rfc-compliance-matrix.md) define the scope
-of each protocol. Implementation checks do not confer certification. The
+of each protocol. The
 [OpenID certification records](../../README.md#openid-certified) identify the
-registered profiles and versions. Public Workers acceptance is recorded below.
+registered profiles and versions.
 
 ## Sign-in and account management
 
@@ -248,20 +248,3 @@ workload.
 See the [security exclusions](../protocol/not-implemented-security-policy.md)
 and [standards roadmap](../protocol/rfc-compliance-matrix.md#current-oauth-standards-roadmap)
 for compatibility exceptions, unaudited revisions and watchlist drafts.
-
-## Public Workers Free integration coverage
-
-The full profile completed these flows on a public Workers Free deployment
-using synthetic accounts and independently hosted test services over HTTPS.
-
-| Integration | Verified behavior |
-| --- | --- |
-| Verification mail | The HTTPS relay delivered the message over SMTP to a private Mailpit inbox. The received code registered an account and a second submission was rejected. |
-| OIDC and OAuth 2.0 social login | Separate Keycloak clients completed authorization-code login with PKCE. The OIDC adapter verified the ID token and the custom social adapter fetched UserInfo. Both logins created the expected account link and session and rejected callback replay. |
-| SAML gateway | Keycloak issued a signed SAML response. The gateway verified the response and assertion and sent an authenticated envelope to the Worker. The Worker established the account session and rejected envelope replay. |
-| CIBA ping | A signed request used mTLS and the user approved it. The receiver checked the bearer token and matched the request ID. After an intentional HTTP 503, the Worker retried with the same idempotency key and received HTTP 204. The client redeemed the request once and received an mTLS-bound access token. |
-| RP back-channel logout | The RP verified the signed logout token, matched the issuer, audience and session, and invalidated its session. The OP session also became invalid. |
-
-This coverage uses a controlled SMTP inbox, the custom social adapter and a
-SAML gateway against Keycloak. Validate delivery to the destination mail
-provider and sign-in with any provider-specific adapter used in production.

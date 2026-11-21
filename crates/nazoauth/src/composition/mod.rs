@@ -203,18 +203,16 @@ impl NazoAuthBuilder {
             capabilities.keys.clone(),
         );
         #[cfg(feature = "deployment-control")]
-        let persistence = capabilities.persistence.provider();
-        #[cfg(feature = "deployment-control")]
         let deployment = deployment.map(|capabilities| {
             let deployment_id = capabilities.identity.deployment_id();
             DeploymentServices {
                 controller_registry:
                     crate::control::controller_registry::ControllerRegistryService::new(
-                        persistence.controller_registry(),
+                        capabilities.controller_registry.clone(),
                         deployment_id,
                     ),
                 recovery_root: crate::control::recovery_root::RecoveryRootService::new(
-                    persistence.recovery_root(),
+                    capabilities.recovery_root.clone(),
                     deployment_id,
                 ),
                 capabilities,

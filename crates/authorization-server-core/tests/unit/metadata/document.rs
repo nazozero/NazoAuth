@@ -31,6 +31,114 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
 }
 
 #[test]
+fn machine_metadata_keeps_oauth_capabilities_without_user_authorization() {
+    let scopes = ["orders:read".to_owned()];
+    for mtls_enabled in [false, true] {
+        let metadata = json_value(authorization_server_metadata(
+            AuthorizationServerMetadataInput {
+                profile: MetadataAuthorizationServerProfile::MachineToMachine,
+                mtls_enabled,
+                additional_scopes_supported: &scopes,
+                ..input()
+            },
+            &snapshot(ModuleId::ALL),
+        ));
+        assert_eq!(metadata["issuer"], "https://issuer.example");
+        assert_eq!(metadata["token_endpoint"], "https://issuer.example/token");
+        assert_eq!(
+            metadata["registration_endpoint"],
+            "https://issuer.example/register"
+        );
+        assert_eq!(metadata["response_types_supported"], json!([]));
+        assert_eq!(metadata["scopes_supported"], json!(["orders:read"]));
+        assert_eq!(
+            metadata["grant_types_supported"],
+            json!([
+                "client_credentials",
+                "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "urn:ietf:params:oauth:grant-type:token-exchange",
+            ])
+        );
+        assert_eq!(
+            metadata["token_endpoint_auth_signing_alg_values_supported"],
+            json!(SUPPORTED_CLIENT_JWT_SIGNING_ALGS)
+        );
+        assert_eq!(
+            metadata["dpop_signing_alg_values_supported"],
+            json!(DPOP_SIGNING_ALGS)
+        );
+        for field in [
+            "authorization_endpoint",
+            "authorization_signing_alg_values_supported",
+            "backchannel_authentication_endpoint",
+            "backchannel_logout_supported",
+            "check_session_iframe",
+            "claims_supported",
+            "code_challenge_methods_supported",
+            "device_authorization_endpoint",
+            "end_session_endpoint",
+            "frontchannel_logout_supported",
+            "id_token_signing_alg_values_supported",
+            "prompt_values_supported",
+            "pushed_authorization_request_endpoint",
+            "request_parameter_supported",
+            "request_uri_parameter_supported",
+            "require_pushed_authorization_requests",
+            "response_modes_supported",
+            "subject_types_supported",
+            "userinfo_endpoint",
+        ] {
+            assert!(metadata.get(field).is_none(), "{field}");
+        }
+        for endpoint in ["token", "revocation", "introspection"] {
+            let methods = metadata[format!("{endpoint}_endpoint_auth_methods_supported")]
+                .as_array()
+                .unwrap();
+            assert!(methods.contains(&json!("client_secret_basic")));
+            assert!(methods.contains(&json!("private_key_jwt")));
+            assert!(!methods.contains(&json!("none")));
+            assert!(!methods.contains(&json!("attest_jwt_client_auth")));
+            assert_eq!(methods.contains(&json!("tls_client_auth")), mtls_enabled);
+        }
+        if mtls_enabled {
+            assert_eq!(
+                metadata["mtls_endpoint_aliases"],
+                json!({
+                    "introspection_endpoint": "https://mtls.issuer.example/introspect",
+                    "revocation_endpoint": "https://mtls.issuer.example/revoke",
+                    "token_endpoint": "https://mtls.issuer.example/token",
+                })
+            );
+            assert_eq!(metadata["tls_client_certificate_bound_access_tokens"], true);
+        } else {
+            assert!(metadata.get("mtls_endpoint_aliases").is_none());
+        }
+    }
+}
+
+#[test]
+fn machine_metadata_uses_current_module_admission() {
+    let mut active = snapshot([ModuleId::TokenExchange]);
+    active.draining.insert(ModuleId::JwtBearerGrant);
+    active.draining.insert(ModuleId::DynamicClientRegistration);
+    let metadata = json_value(authorization_server_metadata(
+        AuthorizationServerMetadataInput {
+            profile: MetadataAuthorizationServerProfile::MachineToMachine,
+            ..input()
+        },
+        &active,
+    ));
+    assert_eq!(
+        metadata["grant_types_supported"],
+        json!([
+            "client_credentials",
+            "urn:ietf:params:oauth:grant-type:token-exchange",
+        ])
+    );
+    assert!(metadata.get("registration_endpoint").is_none());
+}
+
+#[test]
 fn discovery_reports_the_hosts_backchannel_delivery_capability() {
     for supported in [false, true] {
         let metadata = json_value(authorization_server_metadata(

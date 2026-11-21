@@ -56,5 +56,5 @@ that mode when rendering. Follow the
 [proxy contract](../../proxy/README.md) when forwarding certificate identity.
 
 `signing.externalCommand` configures an external signer. Its executable and
-credentials require `extraVolumes` and `extraVolumeMounts`; selecting a command
-does not itself establish KMS/HSM custody or recovery guarantees.
+credentials require `extraVolumes` and `extraVolumeMounts`. The external signer
+owns KMS/HSM key custody and recovery.

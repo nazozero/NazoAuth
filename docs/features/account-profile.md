@@ -44,11 +44,9 @@ closed.
 
 ## Response caching and cross-origin access
 
-Successful profile and authorized-application responses deliberately include
-`Cache-Control: no-store` and `Pragma: no-cache`. This is a security hardening
-for personally identifiable and authorization-history data. Error status,
-body, content type, cookie clearing, and pre-existing error headers remain
-unchanged.
+Successful profile and authorized-application responses include
+`Cache-Control: no-store` and `Pragma: no-cache` to prevent caching personal
+details and authorization history.
 
 The routes are statically registered under the credentialed `/auth/me` CORS
 policy. Allowed origins may send `GET` and CSRF-bearing `PATCH` requests with

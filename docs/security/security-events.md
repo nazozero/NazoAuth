@@ -57,23 +57,20 @@ for age expiry or `"unavailable_export_unattempted_telemetry"` for closed export
 admission. The latter is best-effort rejection, not an expiry or durable receipt.
 Collectors must count these reasons separately from queue-full rejection and
 persistence success; no payload, tenant or credential is logged by the expiry
-record. A successful read and its initial audit log do not promise that its
-best-effort telemetry will eventually reach the ledger. Memory remains bounded
+record. Best-effort telemetry can be dropped under these conditions. Memory remains bounded
 by the existing 4,096 queue entries and at most 64 entries in the active batch.
 
-This does not relax Required freshness or promise instant recovery: existing
-persistent evidence, uncertain batches, unavailable storage, invalid checkpoints
-and receiver rejection still block the relevant operations. Recovery acceptance
-must check that *unattempted stale Telemetry* does not repeatedly re-close the
-gate after the mandatory backlog drains, not merely that a final drain succeeds.
+Persistent evidence, uncertain batches, unavailable storage, invalid checkpoints
+and receiver rejection block the relevant Required operations. During recovery,
+check that admission stays open after the mandatory backlog drains and stale,
+unattempted Telemetry is discarded.
 
-Optional and Disabled retain their existing no-health-gate policy. They do not
-guarantee bounded disk backlog during indefinite exporter failure or absence;
-Required-mode fault results must not be generalized to them. Deployments needing
+Optional and Disabled have no health gate, so their disk backlog can grow while
+the exporter is unavailable. Deployments needing
 outage admission control must run the independent exporter with Required mode
-and monitor accepted rate, pending age, disk headroom and recovery. An age gate
-is not a universal byte quota, and no mode may discard Required evidence to
-manufacture a flat storage curve.
+and monitor accepted rate, pending age, disk headroom and recovery. Required
+evidence is retained until its acknowledgement and retention conditions permit
+reclamation.
 
 The four independent cleanup count queries also consume their complete result
 streams before using deletion counts or returning the guarded connection. A

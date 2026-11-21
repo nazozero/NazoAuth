@@ -153,80 +153,12 @@ impl VerificationEmailDeliveryPort for Unavailable {
     }
 }
 
+#[cfg(all(feature = "provisioning", not(target_arch = "wasm32")))]
 impl nazo_auth::SectorIdentifierResolverPort for Unavailable {
     fn resolve<'a>(&'a self, _: &'a str) -> nazo_auth::SectorIdentifierFuture<'a> {
         Box::pin(async {
             Err("remote sector documents are unavailable in this deployment profile".into())
         })
-    }
-}
-
-impl nazo_oauth_server::contracts::dynamic_client_registration::RemoteJwksResolverPort
-    for Unavailable
-{
-    fn resolve<'a>(
-        &'a self,
-        _: &'a str,
-        _: Option<&'a str>,
-    ) -> nazo_oauth_server::contracts::dynamic_client_registration::RemoteJwksFuture<'a> {
-        Box::pin(async { Err("remote JWKS are unavailable; provision inline client keys".into()) })
-    }
-}
-
-impl nazo_oauth_server::ports::remote_request_object::RemoteRequestObjectResolverPort
-    for Unavailable
-{
-    fn resolve_request_object<'a>(
-        &'a self,
-        _: &'a str,
-    ) -> nazo_oauth_server::ports::remote_request_object::RequestObjectFuture<'a> {
-        Box::pin(async {
-            Err("remote request objects are unavailable; submit inline or use PAR".into())
-        })
-    }
-}
-
-impl nazo_oauth_server::ports::credential_status::CredentialStatusResolver for Unavailable {
-    fn fetch<'a>(
-        &'a self,
-        _: &'a str,
-        _: nazo_digital_credentials::CredentialFormat,
-    ) -> nazo_digital_credentials::CredentialFuture<
-        'a,
-        Result<Vec<u8>, nazo_digital_credentials::CredentialTrustError>,
-    > {
-        Box::pin(async { Err(nazo_digital_credentials::CredentialTrustError::Unavailable) })
-    }
-}
-
-impl nazoauth::capabilities::FederationHttpClient for Unavailable {
-    fn send(
-        &self,
-        _: http::Request<bytes::Bytes>,
-        _: usize,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = anyhow::Result<http::Response<bytes::Bytes>>>
-                + Send
-                + '_,
-        >,
-    > {
-        Box::pin(async {
-            anyhow::bail!("federation HTTP is unavailable in this deployment profile")
-        })
-    }
-}
-
-impl nazo_scim_events::EventPollerPort for Unavailable {
-    fn poll<'a>(
-        &'a self,
-        _: &'a nazo_scim_events::EventReceiver,
-        _: &'a nazo_scim_events::ValidatedPollRequest,
-    ) -> nazo_scim_events::EventFuture<
-        'a,
-        Result<nazo_scim_events::PollResponse, nazo_scim_events::PollError>,
-    > {
-        Box::pin(async { Err(nazo_scim_events::EventStoreError::Unavailable.into()) })
     }
 }
 

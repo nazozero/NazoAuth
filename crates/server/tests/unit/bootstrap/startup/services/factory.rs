@@ -414,6 +414,7 @@ async fn deployment_routes_are_gated_but_runtime_modules_are_tenant_scoped() {
     let state = crate::facade_conformance::infrastructure(false).await;
     let deployment = crate::facade_conformance::deployment(
         nazo_identity::TenantContext::default_system().tenant_id,
+        &state.diesel_db,
     );
     let mut tenants = HashMap::from([
         (
@@ -515,7 +516,10 @@ async fn legacy_custom_control_tenant_remains_authorized() {
     Arc::make_mut(&mut state.settings).tenant.context.tenant_id = control_tenant_id;
     let application = crate::test_support::facade::builder(&state, Default::default())
         .unwrap()
-        .with_deployment(crate::facade_conformance::deployment(control_tenant_id))
+        .with_deployment(crate::facade_conformance::deployment(
+            control_tenant_id,
+            &state.diesel_db,
+        ))
         .build()
         .await
         .unwrap();

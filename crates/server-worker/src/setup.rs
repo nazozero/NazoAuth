@@ -42,15 +42,11 @@ pub(crate) fn page(path: &str) -> Option<Response<Full<Bytes>>> {
         Bytes::from_static(html.as_bytes()),
         "text/html; charset=utf-8",
     );
-    let policy = if path == "/consent" {
-        // The decision endpoint performs the registered client's redirect.
-        "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
-    } else {
-        "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
-    };
     response.headers_mut().insert(
         header::CONTENT_SECURITY_POLICY,
-        http::HeaderValue::from_static(policy),
+        http::HeaderValue::from_static(
+            "default-src 'none'; script-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+        ),
     );
     Some(response)
 }
@@ -79,7 +75,11 @@ async fn claim(
     let Ok(expected) = env.secret("NAZO_BOOTSTRAP_TOKEN") else {
         return reply(StatusCode::SERVICE_UNAVAILABLE, Bytes::new(), "text/plain");
     };
-    if !constant_time_ticket(token, &expected.to_string()) {
+    let expected = expected.to_string();
+    if token.len() != 43
+        || expected.len() != 43
+        || !nazo_oauth_server::crypto::constant_time_eq(token.as_bytes(), expected.as_bytes())
+    {
         return reply(StatusCode::FORBIDDEN, Bytes::new(), "text/plain");
     }
     let Ok(expiry) = env.secret("NAZO_BOOTSTRAP_EXPIRES_AT") else {
@@ -150,20 +150,6 @@ async fn claim(
         .headers_mut()
         .append(header::SET_COOKIE, csrf_cookie);
     response
-}
-
-fn constant_time_ticket(provided: &str, expected: &str) -> bool {
-    // Both values represent 32 random bytes in unpadded base64url form.
-    if provided.len() != 43 || expected.len() != 43 {
-        return false;
-    }
-    provided
-        .bytes()
-        .zip(expected.bytes())
-        .fold(0_u8, |difference, (left, right)| {
-            difference | (left ^ right)
-        })
-        == 0
 }
 
 fn reply(status: StatusCode, content: Bytes, content_type: &'static str) -> Response<Full<Bytes>> {

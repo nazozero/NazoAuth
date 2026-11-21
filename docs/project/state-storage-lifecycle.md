@@ -70,8 +70,8 @@ Historical compaction SQL remains in that release's Git history.
 
 Remembered devices use the tenant/token key and an expiry index for the global
 sweep. They retain the token, owner, user-agent binding and deadline; unused
-adapter UUIDs and creation/last-used metadata are absent. Dropped historical
-columns do not imply immediate filesystem shrink on upgraded databases.
+adapter UUIDs and creation/last-used metadata are absent. Upgraded tables may retain
+reusable space from the old layout.
 
 Expired identity approvals have an hourly reclamation path. Both unused and
 consumed approvals remain through their original expiry. Reclaimed tokens return

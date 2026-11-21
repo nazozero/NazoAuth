@@ -9,8 +9,9 @@ use nazo_oauth_server::ports::persistence::ServerPersistenceBindings;
 use nazo_oauth_server_postgres::PostgresProvider;
 use nazo_postgres::{
     AdminProvisionRepository, AuditLedgerRepository, ControllerRegistryRepository, DbPool,
-    OAuthClientRepository, PostgresTenantResourceExecutor, TenantDirectoryControlRepository,
-    TenantDirectoryRepository, TenantResourceRepository, TokenRepository,
+    OAuthClientRepository, PostgresTenantResourceExecutor, RecoveryRootRepository,
+    TenantDirectoryControlRepository, TenantDirectoryRepository, TenantResourceRepository,
+    TokenRepository,
 };
 
 const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/oauth";
@@ -146,7 +147,7 @@ impl PersistenceLauncher for PostgresLauncher {
     fn server_bindings<'a>(
         &'a self,
         source: &'a ConfigSource,
-    ) -> LauncherFuture<'a, ServerPersistenceBindings> {
+    ) -> LauncherFuture<'a, crate::bootstrap::ServerPersistence> {
         Box::pin(async move {
             let database_url = config::database_url(source)?;
             let max_connections = config::database_max_connections(source)?;
@@ -155,9 +156,14 @@ impl PersistenceLauncher for PostgresLauncher {
             nazo_postgres::MfaRepository::with_totp_key_ring(pool.clone(), totp_keys.clone())
                 .activate_totp_key()
                 .await?;
-            Ok(ServerPersistenceBindings::new(Arc::new(
-                PostgresProvider::new(pool, totp_keys),
-            )))
+            Ok(crate::bootstrap::ServerPersistence {
+                application: ServerPersistenceBindings::new(Arc::new(PostgresProvider::new(
+                    pool.clone(),
+                    totp_keys,
+                ))),
+                controller_registry: Arc::new(ControllerRegistryRepository::new(pool.clone())),
+                recovery_root: Arc::new(RecoveryRootRepository::new(pool)),
+            })
         })
     }
 

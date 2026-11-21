@@ -58,9 +58,7 @@ impl Outbound {
             .uri(url.as_str())
             .header(header::ACCEPT, media.join(", "))
             .body(Bytes::new())?;
-        let response = self
-            .send(request, 128 * 1024, Duration::from_secs(10))
-            .await?;
+        let response = transport(request, 128 * 1024, Duration::from_secs(10)).await?;
         ensure!(
             response.status() == StatusCode::OK,
             "remote document returned a non-success status"
@@ -275,7 +273,7 @@ impl nazo_oauth_server::ports::credential_status::CredentialStatusResolver for O
             };
             self.document(uri, &[media], false)
                 .await
-                .map(|bytes| bytes.to_vec())
+                .map(Vec::from)
                 .map_err(|_| CredentialTrustError::Unavailable)
         })
     }

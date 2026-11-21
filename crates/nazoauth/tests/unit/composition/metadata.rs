@@ -68,6 +68,16 @@ fn metadata_config_uses_composable_discovery_for_every_legacy_profile() {
 }
 
 #[test]
+fn metadata_config_selects_machine_profile_for_hosts_without_user_authorization() {
+    let mut settings = settings();
+    settings.protocol.user_authorization_supported = false;
+    assert_eq!(
+        metadata_config(&settings).authorization_server_profile,
+        MetadataAuthorizationServerProfile::MachineToMachine
+    );
+}
+
+#[test]
 fn metadata_config_maps_both_ciba_profiles() {
     for (profile, expected) in [
         (

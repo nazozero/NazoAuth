@@ -10,7 +10,7 @@ impl PersistenceLauncher for UnusedLauncher {
     fn server_bindings<'a>(
         &'a self,
         _config: &'a ConfigSource,
-    ) -> LauncherFuture<'a, nazo_oauth_server::ports::persistence::ServerPersistenceBindings> {
+    ) -> LauncherFuture<'a, crate::bootstrap::ServerPersistence> {
         unreachable!("help and release identity do not initialize persistence")
     }
 

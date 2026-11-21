@@ -112,7 +112,15 @@ test('Workers Free machine-only build gates login and rotates its persisted sign
     assert.equal(metadata.issuer, issuer);
     assert.deepEqual(metadata.grant_types_supported, ['client_credentials']);
     assert.equal(metadata.authorization_endpoint, undefined);
-    assert.equal(metadataResponse.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal(metadataResponse.headers.get('content-type'), 'application/json');
+    assert.deepEqual(metadata.response_types_supported, []);
+    assert.ok(!metadata.token_endpoint_auth_methods_supported.includes('none'));
+    for (const name of ['userinfo_endpoint', 'end_session_endpoint', 'pushed_authorization_request_endpoint',
+      'id_token_signing_alg_values_supported', 'claims_supported', 'subject_types_supported']) {
+      assert.equal(metadata[name], undefined, name);
+    }
+    assert.equal(metadata.introspection_endpoint, `${issuer}/introspect`);
+    assert.ok(metadata.introspection_endpoint_auth_signing_alg_values_supported.includes('ES256'));
 
     assert.equal((await request('/jwks.json')).status, 200);
     assert.equal((await request('/.well-known/openid-configuration')).status, 404);

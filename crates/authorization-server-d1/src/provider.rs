@@ -209,14 +209,6 @@ impl nazo_oauth_server::ports::persistence::ServerPersistenceProvider for D1Prov
         Arc::new(self.clone())
     }
 
-    fn controller_registry(&self) -> std::sync::Arc<dyn nazo_persistence::ControllerRegistryPort> {
-        Arc::new(Unavailable)
-    }
-
-    fn recovery_root(&self) -> std::sync::Arc<dyn nazo_persistence::RecoveryRootPort> {
-        Arc::new(Unavailable)
-    }
-
     fn mtls_trust_anchors(&self) -> std::sync::Arc<dyn nazo_identity::ports::MtlsTrustAnchorStore> {
         Arc::new(self.clone())
     }
@@ -385,21 +377,5 @@ impl nazo_oauth_server::ports::transient_state::TransientStateHealthPort for D1P
                     nazo_oauth_server::ports::transient_state::TransientStateError::Unavailable
                 })
         })
-    }
-}
-
-impl nazo_oauth_server::ports::transient_state::TenantTransientStateFactory for D1Provider {
-    fn for_tenant(
-        &self,
-        tenant_id: nazo_identity::TenantId,
-    ) -> Result<
-        nazo_oauth_server::ports::transient_state::ServerTransientStateBindings,
-        nazo_oauth_server::ports::transient_state::TransientStateError,
-    > {
-        Ok(
-            nazo_oauth_server::ports::transient_state::ServerTransientStateBindings::new(Arc::new(
-                Self::new(self.database.clone(), tenant_id),
-            )),
-        )
     }
 }

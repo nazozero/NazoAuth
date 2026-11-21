@@ -7,9 +7,8 @@ NazoAuth implements a bounded, experimental resource profile against the
 built on 2026-06-26. It is separate from the FAPI 2.0 Security Profile and
 FAPI 2.0 Message Signing Final Specifications.
 The implementation uses RFC 9421 HTTP Message Signatures and RFC 9530
-`Content-Digest` primitives. A newer working draft, Implementer's Draft, or
-Final Specification requires a normative delta audit before changing this
-claim or behavior.
+`Content-Digest` primitives. Review normative changes before adopting a newer
+working draft, Implementer's Draft or Final Specification.
 
 ## Product and threat boundary
 
@@ -71,19 +70,17 @@ Response signatures are generated after access-token, sender-constraint and
 request-signature verification succeeds. Authentication errors, nonce challenges
 and rejected/replayed HTTP signatures return their normal OAuth status and body
 over TLS without invoking the private response signer. A client must not treat
-an unsigned response as successful resource evidence. This profile does not
-promise signed rejection receipts for unauthenticated requests; draft section
-5.3.2 specifies how a signed response is constructed.
+an unsigned response as successful resource evidence. Draft section 5.3.2
+specifies how a signed response is constructed.
 
-## Evidence and conformance status
+## Tests
 
-The Rust crate is the canonical canonicalization and cryptographic-vector
-implementation. Its request and response tests cover GET/POST,
+The Rust crate owns canonicalization and cryptographic-vector tests. Its request
+and response tests cover GET/POST,
 structured-field ambiguity, digest, time, algorithm/key policy, replay
 fingerprints, request binding, response binding, and altered inputs. The
 Actix resource-route tests cover the default-off boundary and its HTTP
-integration. No separate Python wire-vector runner is a current source of
-cryptographic truth or external-conformance evidence.
+integration.
 
 HTTP Signatures is an experimental profile with its own test suite.
 

@@ -276,7 +276,7 @@ mix them with instances issuing epoch-bound tokens. Pre-upgrade tokens remain
 supported through their original JTI/ownership records and retention policy.
 After new issuance starts, application rollback to an epoch-unaware release is
 not supported. Database downgrade is explicitly refused by the principal-state
-migration. This changes no standalone offline-verifier revocation guarantee.
+migration. Standalone offline verifiers continue to use signed-token validation.
 
 ## Authorization-code identity cutover
 
@@ -297,8 +297,8 @@ before reopening ingress; an isolated old primary must stay isolated.
 Do not mix old cache-consumption authority and new durable-decision authority
 for authorization requests. Quiesce/drain the old authorization handlers before
 activating the new adapter contract across all serving instances. Apply the
-corresponding migration first. Existing authorization-code redemption retains
-its prior SingleUse fence; this change does not weaken that boundary.
+corresponding migration first. Authorization-code redemption uses its separate
+SingleUse fence.
 
 Do not roll back while retained or unexported decision facts remain. The
 audit checkpoint is not permission to drop a still-live consent/PAR fence.

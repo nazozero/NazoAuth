@@ -13,7 +13,7 @@ pub(crate) mod tenant_runtime;
 /// the service phase owns the Actix server factory and all request handles.
 pub async fn run(
     config: ConfigSource,
-    persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
+    persistence: ServerPersistence,
     transient_state: &dyn crate::cli::TransientStateLauncher,
     avatar_object_store: &dyn crate::cli::AvatarObjectStoreLauncher,
 ) -> anyhow::Result<()> {

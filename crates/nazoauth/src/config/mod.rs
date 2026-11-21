@@ -37,6 +37,8 @@ pub struct TenantSettings {
 
 #[derive(Clone)]
 pub struct ProtocolSettings {
+    /// Whether the host exposes end-user authorization and identity endpoints.
+    pub user_authorization_supported: bool,
     /// Whether the host supplies durable backchannel logout delivery.
     pub backchannel_logout_supported: bool,
     pub default_audience: String,
@@ -189,6 +191,7 @@ impl Configuration {
                 issuer: issuer.clone(),
             },
             protocol: ProtocolSettings {
+                user_authorization_supported: true,
                 backchannel_logout_supported: true,
                 default_audience: "resource://default".into(),
                 protected_resource_identifier: format!(

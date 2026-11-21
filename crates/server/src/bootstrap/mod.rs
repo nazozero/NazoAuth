@@ -34,6 +34,13 @@ use actix_web::{
 use nazo_http_actix::security_headers;
 use transport::{direct_tls_listeners, spawn_direct_tls_reloader};
 
+/// Application persistence and deployment authority supplied by the native launcher.
+pub struct ServerPersistence {
+    pub application: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
+    pub controller_registry: Arc<dyn nazo_persistence::ControllerRegistryPort>,
+    pub recovery_root: Arc<dyn nazo_persistence::RecoveryRootPort>,
+}
+
 fn ui_static_files(root: PathBuf) -> impl HttpServiceFactory {
     let index = root.join("index.html");
     let files = Files::new("", root)

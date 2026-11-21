@@ -167,12 +167,6 @@ impl ServerPersistenceProvider for FixturePersistence {
     fn logout_delivery_store(&self) -> Arc<dyn nazo_persistence::BackchannelLogoutDeliveryStore> {
         self.base.logout_delivery_store()
     }
-    fn controller_registry(&self) -> Arc<dyn nazo_persistence::ControllerRegistryPort> {
-        self.base.controller_registry()
-    }
-    fn recovery_root(&self) -> Arc<dyn nazo_persistence::RecoveryRootPort> {
-        self.base.recovery_root()
-    }
     fn mtls_trust_anchors(&self) -> Arc<dyn MtlsTrustAnchorStore> {
         self.base.mtls_trust_anchors()
     }

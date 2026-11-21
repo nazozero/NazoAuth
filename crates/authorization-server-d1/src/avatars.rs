@@ -286,18 +286,19 @@ impl AvatarStoragePort for D1Provider {
             if length > 2_097_152 {
                 return Err(AvatarStorageError::InvalidState);
             }
-            let mut bytes = Vec::with_capacity(length);
+            // Base64's decoded-size estimate includes up to two padding bytes.
+            // Reserve them once so every chunk decodes into the final buffer.
+            let mut bytes = Vec::with_capacity(length + 2);
             for (ordinal, row) in rows.into_iter().enumerate() {
                 if row.ordinal != ordinal {
                     return Err(AvatarStorageError::InvalidState);
                 }
-                let chunk = STANDARD
-                    .decode(row.value)
+                STANDARD
+                    .decode_vec(row.value, &mut bytes)
                     .map_err(|_| AvatarStorageError::InvalidState)?;
-                if chunk.len() > length.saturating_sub(bytes.len()) {
+                if bytes.len() > length {
                     return Err(AvatarStorageError::InvalidState);
                 }
-                bytes.extend_from_slice(&chunk);
             }
             if bytes.len() != length {
                 return Err(AvatarStorageError::InvalidState);

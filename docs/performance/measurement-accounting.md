@@ -21,7 +21,7 @@
 | `prepare_local_failed` | 发请求前本地 fixture / 签名构造异常 | INVALID |
 | `prepare_failed` | 旧未分类失败，或不能归因的 JS / 解析 / 传输异常 | INVALID |
 
-同一 bootstrap 被 `cap_mixed` 的操作阶段调用时仍保留上述分类。HTTP 阶段发生未知异常并不自动证明 SUT 故障。成功和失败准备都计入 `cap_iter_ms`（迭代 entry → end）；`cap_measure_ms` 仅记录操作执行时间，不能替代完整迭代延迟。全部迭代都在准备阶段失败、没有 `cap_measure_ms` 时，runner 仍输出测量摘要。
+同一 bootstrap 被 `cap_mixed` 的操作阶段调用时仍保留上述分类。HTTP 阶段无法归因的异常按 `prepare_failed` 记录。成功和失败准备都计入 `cap_iter_ms`（迭代 entry → end）；`cap_measure_ms` 仅记录操作执行时间，不能替代完整迭代延迟。全部迭代都在准备阶段失败、没有 `cap_measure_ms` 时，runner 仍输出测量摘要。
 
 ## PostgreSQL 驻留证据
 

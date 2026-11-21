@@ -104,8 +104,7 @@ Release schema 7 omits frontend pins, controller SemVer ranges, and asserted
 rollback policy. After executing a migration, the controller stops the writer
 on activation failure and requires verified recovery. A successful migrated
 update drops the previous artifact reference; a completed database recovery
-also clears the previous reference. Neither operation claims that the previous
-binary can run against the resulting database. Updates without migration retain
+also clears the previous reference. Updates without migration retain
 the existing previous-artifact rollback path.
 
 The corresponding controller uses deployment-state schema 8 and backup-manifest

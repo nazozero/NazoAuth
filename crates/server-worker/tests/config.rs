@@ -26,14 +26,6 @@ fn configuration() -> WorkerConfiguration {
     }
 }
 
-fn active_modules(config: &WorkerConfiguration) -> nazo_runtime_modules::ActiveModuleSnapshot {
-    nazo_runtime_modules::ActiveModuleSnapshot {
-        revision: nazo_runtime_modules::ModuleRevision::new(1),
-        accepting: config.modules.iter().copied().collect(),
-        draining: Default::default(),
-    }
-}
-
 #[test]
 fn free_profile_limits_routes_and_modules() {
     let mut config = configuration();
@@ -55,13 +47,8 @@ fn free_profile_limits_routes_and_modules() {
     ] {
         assert!(!config.allows_route(&method, path), "{path}");
     }
-    let metadata = config.machine_metadata(&active_modules(&config));
-    assert_eq!(
-        metadata["grant_types_supported"],
-        serde_json::json!(["client_credentials"])
-    );
-    assert_eq!(metadata["token_endpoint"], "https://auth.example.com/token");
-    assert!(metadata.get("authorization_endpoint").is_none());
+    let settings = config.application("p".repeat(32)).unwrap();
+    assert!(!settings.protocol.user_authorization_supported);
     config
         .modules
         .push(nazo_runtime_modules::ModuleId::SessionManagement);
@@ -123,14 +110,12 @@ fn all_shared_modules_are_admitted_by_the_host_profile() {
     assert!(config.application("p".repeat(32)).is_ok());
     config.services.mtls = true;
     assert!(config.application("p".repeat(32)).is_ok());
-    let metadata = config.machine_metadata(&active_modules(&config));
-    assert_eq!(metadata["tls_client_certificate_bound_access_tokens"], true);
-    assert!(
-        metadata["token_endpoint_auth_methods_supported"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("tls_client_auth"))
-    );
+    let settings = config.application("p".repeat(32)).unwrap();
+    assert!(settings.protocol.user_authorization_supported);
+    assert!(matches!(
+        settings.endpoint.mtls_certificate_source,
+        nazoauth::config::MtlsCertificateSourceMode::DirectTls
+    ));
 }
 
 #[test]
@@ -165,48 +150,15 @@ fn portable_extensions_and_service_metadata_follow_the_selected_modules() {
     config.machine_only = true;
     config.modules = vec![ModuleId::TokenExchange, ModuleId::JwtBearerGrant];
     assert!(config.application("p".repeat(32)).is_ok());
-    assert_eq!(
-        config.machine_metadata(&active_modules(&config))["grant_types_supported"],
-        serde_json::json!([
-            "client_credentials",
-            "urn:ietf:params:oauth:grant-type:token-exchange",
-            "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        ])
+    assert!(
+        !config
+            .application("p".repeat(32))
+            .unwrap()
+            .protocol
+            .user_authorization_supported
     );
     assert!(config.allows_route(&http::Method::OPTIONS, "/token"));
     assert!(!config.allows_route(&http::Method::OPTIONS, "/authorize"));
-}
-
-#[test]
-fn machine_metadata_uses_current_admission_within_the_constructed_capabilities() {
-    use nazo_runtime_modules::ModuleId;
-    let mut config = configuration();
-    config.machine_only = true;
-    config.modules = vec![
-        ModuleId::TokenExchange,
-        ModuleId::JwtBearerGrant,
-        ModuleId::DynamicClientRegistration,
-    ];
-    let mut snapshot = active_modules(&config);
-    snapshot.accepting.remove(&ModuleId::JwtBearerGrant);
-    snapshot
-        .accepting
-        .remove(&ModuleId::DynamicClientRegistration);
-    snapshot.draining.insert(ModuleId::JwtBearerGrant);
-    let metadata = config.machine_metadata(&snapshot);
-    assert_eq!(
-        metadata["grant_types_supported"],
-        serde_json::json!([
-            "client_credentials",
-            "urn:ietf:params:oauth:grant-type:token-exchange"
-        ])
-    );
-    assert!(metadata.get("registration_endpoint").is_none());
-    config.modules.clear();
-    assert_eq!(
-        config.machine_metadata(&snapshot)["grant_types_supported"],
-        serde_json::json!(["client_credentials"])
-    );
 }
 
 #[test]
@@ -441,9 +393,5 @@ fn registration_admission_follows_the_deployment_capabilities() {
             .grant_types
             .unwrap(),
         vec!["client_credentials"]
-    );
-    assert_eq!(
-        config.machine_metadata(&active_modules(&config))["registration_endpoint"],
-        "https://auth.example.com/register"
     );
 }

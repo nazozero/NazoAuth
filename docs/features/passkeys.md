@@ -45,9 +45,9 @@ credentials does not require a fresh proof. Login uses an email-first flow so th
 server can scope allowed credentials to one active tenant-bound user.
 
 Email-first login exposes stable allowed credential identifiers for enrolled
-accounts. Dummy challenges keep the response shape usable for absent accounts,
-but do not guarantee account non-enumerability across repeated requests. This
-profile does not implement discoverable, username-free login.
+accounts. Dummy challenges preserve the response shape for absent accounts;
+repeated requests can still distinguish enrollment through stable credential
+identifiers. Discoverable, username-free login is unsupported.
 
 ### Browser response format
 
@@ -102,8 +102,7 @@ initialized UV enrollment creates a normal HTTPOnly session with
 requirement without an additional OTP. Registration records whether UV was
 established. An assertion with UV does not independently initialize a credential
 that was registered without UV or whose historical UV state is unknown.
-Assertions without eligible UV retain the pending-MFA or remembered-device flow;
-the `passkey` method alone is not evidence of a second factor.
+Assertions without eligible UV use the pending-MFA or remembered-device flow.
 
 Existing credentials whose JSONB lacks UV history remain readable and usable as
 a passkey factor; users do not need to register them again. To authorize UV for
@@ -119,13 +118,10 @@ For an MFA-enabled account, a user who can access only an older passkey and has
 no usable TOTP, recovery code or valid remembered-device proof receives a pending
 MFA session. The signature is valid, but that session cannot automatically
 complete step-up, enroll a new TOTP factor or disable MFA. Normal MFA enrollment
-confirms TOTP and returns recovery codes before enabling the account's MFA flag;
-this does not prove the user still possesses either factor. Recover an existing
-independent factor, or use a separately authorized account-recovery procedure,
-before relying on such an account after the upgrade. Missing UV history cannot
-be reconstructed from the credential key, current UV bit or historical AMR.
-Credential readability and the absence of a re-registration requirement do not
-mean every existing user retains the same MFA experience without this step-up.
+confirms TOTP and returns recovery codes before enabling the account's MFA flag.
+To recover access, use an existing independent factor or a separately authorized
+account-recovery procedure. Missing UV history cannot be reconstructed from the
+credential key, current UV bit or historical AMR.
 
 Upgrading the verifier preserves sessions that were already issued. The new
 credential history cannot retrospectively establish how an older session earned
@@ -167,5 +163,5 @@ zero-counter authentication from overwriting a concurrent backup-state change.
 The stored credential format and database schema are unchanged.
 
 Stored attestation evidence distinguishes no attestation, self attestation and
-verified statements with an untrusted certificate. A valid attestation signature
-does not establish a trusted manufacturer, certificate chain or hardware origin.
+verified statements with an untrusted certificate. Manufacturer and hardware
+trust require a trusted attestation chain in addition to signature verification.

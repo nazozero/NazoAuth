@@ -407,3 +407,121 @@ fn offline_setup_grant_is_single_use_and_rolls_back_on_audit_failure() {
         );
     });
 }
+
+#[test]
+fn offline_setup_rolls_back_ignored_session_or_required_audit_writes() {
+    block_on(async {
+        for trigger in [
+            "CREATE TRIGGER ignore_setup BEFORE INSERT ON nazo_state WHEN NEW.kind='session' BEGIN SELECT RAISE(IGNORE); END",
+            "CREATE TRIGGER ignore_setup BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_setup_claimed' BEGIN SELECT RAISE(IGNORE); END",
+        ] {
+            let (db, provider) = fixture().await;
+            let user = UserId::new(USER).unwrap();
+            let ticket = "a".repeat(64);
+            let now = jiff::Timestamp::now();
+            db.execute_sql(trigger).unwrap();
+            assert!(
+                provider
+                    .claim_passkey_setup(&ticket, user, "setup-failed", now)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                provider
+                    .load(&SessionId::new("setup-failed"))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            db.execute_sql("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE kind='passkey_setup_claim') AND NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='passkey_setup_claimed') THEN 1 ELSE json('partial setup survived rollback') END").unwrap();
+            db.execute_sql("DROP TRIGGER ignore_setup").unwrap();
+            assert!(
+                provider
+                    .claim_passkey_setup(&ticket, user, "setup-retry", now)
+                    .await
+                    .unwrap()
+            );
+        }
+    });
+}
+
+#[test]
+fn offline_setup_session_collision_preserves_the_ticket_and_existing_session() {
+    block_on(async {
+        let (db, provider) = fixture().await;
+        let user = UserId::new(USER).unwrap();
+        let now = jiff::Timestamp::now();
+        assert!(
+            provider
+                .claim_passkey_setup(&"a".repeat(64), user, "setup-existing", now)
+                .await
+                .unwrap()
+        );
+        let existing = provider
+            .load(&SessionId::new("setup-existing"))
+            .await
+            .unwrap()
+            .unwrap();
+        let ticket = "b".repeat(64);
+        assert!(
+            provider
+                .claim_passkey_setup(&ticket, user, "setup-existing", now)
+                .await
+                .is_err()
+        );
+        let retained = provider
+            .load(&SessionId::new("setup-existing"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.version(), existing.version());
+        db.execute_sql("SELECT CASE WHEN (SELECT count(*) FROM nazo_state WHERE kind='passkey_setup_claim')=1 AND (SELECT count(*) FROM nazo_audit WHERE event_type='passkey_setup_claimed')=1 THEN 1 ELSE json('colliding setup consumed its ticket') END").unwrap();
+        assert!(
+            provider
+                .claim_passkey_setup(&ticket, user, "setup-retry", now)
+                .await
+                .unwrap()
+        );
+    });
+}
+
+#[test]
+fn offline_setup_session_tracks_the_current_account_epoch() {
+    block_on(async {
+        let (db, provider) = fixture().await;
+        let tenant = TenantId::new(TENANT).unwrap();
+        let user = UserId::new(USER).unwrap();
+        let now = jiff::Timestamp::now();
+        db.execute_sql("UPDATE nazo_users SET epoch=7").unwrap();
+        assert!(
+            provider
+                .claim_passkey_setup(&"a".repeat(64), user, "setup-epoch", now)
+                .await
+                .unwrap()
+        );
+        let session_id = SessionId::new("setup-epoch");
+        let session = provider.load(&session_id).await.unwrap().unwrap();
+        assert_eq!(session.record().authorization_epoch(), 7);
+        let service = SessionService::new(
+            Arc::new(provider.clone()),
+            Arc::new(provider.clone()),
+            tenant,
+        );
+        assert!(matches!(
+            service
+                .current_for_passkey_enrollment(&session_id, now.as_second())
+                .await
+                .unwrap(),
+            SessionResolution::Present(_)
+        ));
+        db.execute_sql("UPDATE nazo_users SET epoch=8").unwrap();
+        assert!(matches!(
+            service
+                .current_for_passkey_enrollment(&session_id, now.as_second())
+                .await
+                .unwrap(),
+            SessionResolution::Invalidated
+        ));
+        assert!(provider.load(&session_id).await.unwrap().is_none());
+    });
+}

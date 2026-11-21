@@ -225,6 +225,7 @@ impl WorkerConfiguration {
         );
         let mut settings =
             nazoauth::config::Configuration::new(self.tenant, &self.issuer, client_secret_pepper)?;
+        settings.protocol.user_authorization_supported = !self.machine_only;
         settings.protocol.backchannel_logout_supported = !self.services.outbound_origins.is_empty();
         ensure!(
             !self.services.mtls || self.ingress == Ingress::DirectCloudflare,
@@ -277,49 +278,6 @@ impl WorkerConfiguration {
         }
         settings.validate()?;
         Ok(settings)
-    }
-
-    /// Metadata for the machine-only OAuth issuer, without browser grant claims.
-    #[must_use]
-    pub fn machine_metadata(
-        &self,
-        active: &nazo_runtime_modules::ActiveModuleSnapshot,
-    ) -> serde_json::Value {
-        let root = self.issuer.trim_end_matches('/');
-        let enabled = |module| self.modules.contains(&module) && active.advertises(module);
-        let mut grants = vec!["client_credentials"];
-        if enabled(ModuleId::TokenExchange) {
-            grants.push("urn:ietf:params:oauth:grant-type:token-exchange");
-        }
-        if enabled(ModuleId::JwtBearerGrant) {
-            grants.push("urn:ietf:params:oauth:grant-type:jwt-bearer");
-        }
-        let mut metadata = serde_json::json!({
-            "issuer": self.issuer,
-            "token_endpoint": format!("{root}/token"),
-            "jwks_uri": format!("{root}/jwks.json"),
-            "revocation_endpoint": format!("{root}/revoke"),
-            "introspection_endpoint": format!("{root}/introspect"),
-            "response_types_supported": [],
-            "grant_types_supported": grants,
-            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
-            "token_endpoint_auth_signing_alg_values_supported": nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
-            "dpop_signing_alg_values_supported": ["ES256", "EdDSA"]
-        });
-        if enabled(ModuleId::DynamicClientRegistration) {
-            metadata["registration_endpoint"] = serde_json::json!(format!("{root}/register"));
-        }
-        if self.services.mtls {
-            metadata["token_endpoint_auth_methods_supported"] = serde_json::json!([
-                "client_secret_basic",
-                "client_secret_post",
-                "private_key_jwt",
-                "tls_client_auth",
-                "self_signed_tls_client_auth"
-            ]);
-            metadata["tls_client_certificate_bound_access_tokens"] = serde_json::json!(true);
-        }
-        metadata
     }
 
     /// Admit routes for the deployment's selected login and service profile.

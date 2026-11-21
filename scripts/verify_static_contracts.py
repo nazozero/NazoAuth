@@ -71,6 +71,7 @@ EXECUTION_DEPENDENCIES = {
     "opentelemetry-appender-tracing", "opentelemetry-otlp", "opentelemetry_sdk",
     "process-wrap", "reqwest", "rustix", "smol", "tokio", "tokio-postgres",
     "tokio-postgres-rustls", "tonic", "tracing-opentelemetry", "tracing-subscriber",
+    "wasm-streams", "worker", "worker-macros", "worker-sys",
 }
 # Host/OS execution surfaces that inner source must not call even through a
 # non-denied dependency. Checked against resolved Rust paths, not bare names.

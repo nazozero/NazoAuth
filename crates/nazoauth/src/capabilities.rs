@@ -76,6 +76,8 @@ pub struct DeploymentCapabilities {
     pub identity: DeploymentIdentity,
     pub control_tenant: nazo_identity::TenantId,
     pub tenants: Arc<dyn TenantAvailability>,
+    pub controller_registry: Arc<dyn nazo_persistence::ControllerRegistryPort>,
+    pub recovery_root: Arc<dyn nazo_persistence::RecoveryRootPort>,
 }
 
 /// Supplies signed CRL bytes; native key provisioning remains in the host.

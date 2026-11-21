@@ -289,7 +289,11 @@ fn metadata_config(settings: &Settings) -> MetadataConfig {
         issuer: endpoint.issuer.clone(),
         mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
         mtls_enabled: endpoint.mtls_certificate_source != MtlsCertificateSourceMode::Disabled,
-        authorization_server_profile: MetadataAuthorizationServerProfile::Composable,
+        authorization_server_profile: if protocol.user_authorization_supported {
+            MetadataAuthorizationServerProfile::Composable
+        } else {
+            MetadataAuthorizationServerProfile::MachineToMachine
+        },
         ciba_security_profile: match protocol.ciba_security_profile {
             CibaSecurityProfile::FapiCibaId1 => CibaMetadataProfile::FapiCiba,
             CibaSecurityProfile::Fapi2Ciba => CibaMetadataProfile::Fapi2Ciba,

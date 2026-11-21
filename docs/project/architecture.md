@@ -2,11 +2,10 @@
 
 ## Design Rule
 
-NazoAuth is a Cargo Workspace deployed as one modular-monolith server. Crates
-exist to enforce a domain, infrastructure, transport, or security boundary;
-they are not divided one crate per RFC. Calls between crates remain ordinary
-in-process Rust calls. The design does not use a dynamic-library plugin ABI,
-RPC, an event bus, a command bus, or layers whose only job is forwarding.
+NazoAuth is a Cargo workspace with native and Cloudflare Workers hosts. Both
+hosts compose the same protocol and application crates. Crate boundaries follow
+domain, infrastructure, transport and security responsibilities; calls between
+them are ordinary in-process Rust calls.
 
 The root manifest is a virtual workspace with resolver 3. The `nazoauth` package
 is the framework-neutral embedding facade. The `nazo-server` package owns the
@@ -26,6 +25,10 @@ facade without that feature, so those services and routes are absent from its
 compiled application. Tenant user/client administration and shared protocol
 capabilities remain available. The Worker host is built independently with
 `--no-default-features`; offline provisioning is a separate native feature.
+`ServerPersistenceProvider` supplies shared application persistence. A host
+enabling deployment control supplies the controller registry and recovery-root
+ports explicitly in `DeploymentCapabilities`, together with its deployment
+identity and tenant index.
 The [Rust embedding guide](../integration/rust-embedding.md) describes the public
 builder, standard HTTP transport contract and adapter conformance kit.
 Its CLI includes the version-coupled server and operator-task work; the
@@ -54,7 +57,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `persistence` | `nazo-persistence` | Database-neutral semantic persistence contracts and application-facing records, including tenant directory and protocol/credential stores. It contains no SQL, connection, transaction, or driver API. |
 | `persistence-postgres` | `nazo-postgres` | Durable PostgreSQL adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and transaction boundaries. Rows never leave this crate. |
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
-| `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. It is not a generic plugin or miscellaneous-module crate. |
+| `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. |
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
 | `http-worker` | `nazo-http-worker` | Cloudflare Workers transport conversion, bounded streaming and authenticated ingress facts through the same facade. |
 | `authorization-server-d1` | `nazo-oauth-server-d1` | Primary D1 persistence and transient-state ports, atomic SQL changes, expiry and required audit. |
@@ -66,9 +69,8 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `nazoauth` | `nazoauth` | Framework-neutral embedding API, application composition and HTTP protocol adaptation. It owns route identity, request interpretation, security presentation and response bytes, including OpenID4VC endpoints. Its integration contract uses standard HTTP values and connection facts. |
 | `server` | `nazo-server` | Native host and `nazoauth` executable: process configuration, launchers, tenant/bootstrap resources, HTTP listener wiring, CLI/operator tasks, TLS, process adapters, local storage and background scheduling. It binds concrete infrastructure to the neutral facade. |
 
-The historical Axum/Tower and tonic adapters are removed. Actix and Cloudflare
-Workers consume the same facade contract. The generic resource-server core may use the
-framework-neutral `http` types without becoming a Web-framework adapter.
+Actix and Cloudflare Workers consume the same facade contract. The resource-server
+core uses framework-neutral `http` types.
 
 ## Dependency Direction
 
@@ -111,7 +113,7 @@ The enforced prohibitions are more important than a broad graph:
 - no crate cycle, workspace-wide prelude, or cross-crate glob re-export is
   allowed.
 
-The normal request path is deliberately short:
+The native request path is:
 
 ```text
 Actix request and connection facts -> standard HTTP request and Bytes
@@ -238,11 +240,14 @@ Each `ModuleId` declares:
 An administrator PATCH changes only desired state and returns `202 Accepted`.
 The UI must show the request as pending until actual state and revision confirm
 completion. Desired state is durable; actual state is reconciled by each
-server instance. Each one-second reconciliation pass reads the tenant's desired
-state and this instance's actual state in one PostgreSQL snapshot. The snapshot
+server instance. The native host's one-second reconciliation pass reads the
+tenant's desired state and its instance's actual state in one PostgreSQL snapshot. The snapshot
 only skips already-settled modules whose dependency and admission checks still
 hold; modules requiring action retain fresh reads and the revision-fenced state
-machine. No durable snapshot is cached between passes.
+machine. No durable snapshot is cached between passes. The Worker reads D1
+authority before protocol admission and advances the shared state machine in
+bounded, resumable steps. Both hosts use the same revisions, dependency policy
+and drain deadlines.
 
 Every asynchronous transition carries the desired-state revision. The worker
 revalidates that revision before publishing an active snapshot, before
@@ -279,6 +284,9 @@ Within that boundary, endpoint dependencies stay focused: metadata handlers
 receive metadata configuration, keys, and the
 capability snapshot; session handlers receive session policy and session
 storage; repositories are injected only into flows that query them.
+OAuth server metadata is serialized by the shared core for both interactive and
+machine-only profiles. Hosts supply the supported capabilities; metadata shape
+and advertisement rules stay in the core.
 
 ## Token Issuance and Security State
 
@@ -351,8 +359,8 @@ identities; prompt-none does not increment explicit approval counters. The
 code and its payload are prepared in memory and bound to the fact. Only an
 affirmative durable result permits code storage/publication. An unknown result
 fails closed. A later code-store or response failure leaves a committed,
-possibly undelivered decision; it never frees the fence or compensates the
-grant, and retries do not promise recovery of the original response.
+possibly undelivered decision. The consumption fence and grant remain committed;
+a retry observes that committed decision.
 
 The audit guarantee covers committed decisions, including committed denials.
 A crash before a decision takes effect need not preserve an attempted-decision
@@ -415,11 +423,9 @@ postcommit replay returns `invalid_grant` without recovering the original
 response or revoking another holder's tokens. A dependency outage can still
 return 503 before replay detection.
 
-This change alters the persisted Device/CIBA fence key format. Deployments
-must drain old token requests and expire or invalidate pending old Device/CIBA
-authorizations before switching to the new implementation. Old sender-derived
-receipts must not be mixed with the new code-only identities. No compatibility
-recovery layer or production state cleanup is performed by this change.
+When upgrading from sender-derived Device/CIBA fence keys, drain old token
+requests and expire or invalidate pending authorizations before switching
+writers. The current code-only consumption identities reject those old writers.
 
 CIBA's retry boundary follows [CIBA Core §10.1 and §10.1.1](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0-final.html):
 503 permits retry; an `auth_req_id` becomes invalid after successful redemption.
@@ -478,9 +484,9 @@ Within an implementation refactor, preserve the selected current contracts:
 routes, configuration, migration history, persisted data, transient-state
 keys/payloads/TTL, token claims, protocol errors, discovery, and profile behavior.
 Contract tests must be in place before moving an implementation across a
-boundary. This does not promise compatibility with historical releases: before
-0.5.0, unsupported configuration, state, and control-message formats are rejected
-rather than implicitly converted. See the [update and recovery contract](../operations/one-click-update.md).
+boundary. Before 0.5.0, configuration, state and control messages use the current
+formats. Unsupported formats are rejected. See the
+[update and recovery contract](../operations/one-click-update.md).
 
 Production/test source boundaries, private-unit mounts, support seams, and
 integration-test placement are normative in [testing.md](testing.md). The
@@ -488,10 +494,9 @@ static-contract gate enforces that structure across every workspace crate.
 
 Use the commands and isolated service prerequisites in
 [testing.md](testing.md#verification). Choose validation for the changed
-boundary; source checks do not establish deployment, conformance, or load-test
-results. Historical reports apply only to their recorded revisions.
+boundary and record the tested revision, configuration and result.
 
-The new refresh-family collision probe deliberately uses an uncached parameterized query: a named plan selected for an empty family table can retain a sequential scan after rapid growth. It still checks only the tenant/family primary key before any retirement or insertion; collision compromise and audit semantics are unchanged. Other typed principal and lock queries retain prepared-plan reuse.
+The refresh-family collision probe uses an uncached parameterized query: a named plan selected for an empty family table can retain a sequential scan after rapid growth. It checks the tenant/family primary key before retirement or insertion. Other typed principal and lock queries reuse prepared plans.
 
 ### Shared session authority
 
@@ -561,10 +566,9 @@ Registration sends use one attempt owner for the email and peer cooldowns and
 stored code. Code publication atomically checks the current email reservation
 owner before SET EX, so a delayed hash cannot overwrite a later sender's code.
 Cleanup compares that owner atomically, so a late SMTP failure
-cannot remove a later sender's state. Cooldown durations and code expiry are
-unchanged. This changes transient email-code records from raw hashes to owned
-records: drain pending registration sends/codes before switching writers; old
-unbound records fail closed without a compatibility fallback.
+cannot remove a later sender's state. When upgrading from raw email-code hashes
+to owned records, drain pending registration sends and codes before switching
+writers. The current format rejects unbound records.
 
 Tenant graph retirement synchronously aborts both module reconciliation and
 CIBA ping loops before awaiting either join. Dropping the final lifecycle owner
@@ -623,8 +627,8 @@ read closes admission and invalidates older in-flight reads; recovery must
 revalidate the current generation before reopening it.
 One synchronization invocation advances at most one module, with a rotating
 pending cursor so long drains do not block unrelated transitions. A cold
-management view may project an applied revision only from the matching verified
-and settled local snapshot; desired state alone is not proof of application.
+management view projects an applied revision only from the matching, settled
+local snapshot.
 
 ### Resource token presentation
 
@@ -800,8 +804,7 @@ remain publicly mutable, including signer claims, narrowed scope/audience and
 nested SID/binding state. The original authentication context survives successor
 replacement. Final family/member/expiry locks and actual persisted contract
 content remain authoritative; a content-reference key does not authenticate an
-otherwise mutable payload. These ownership reductions require exact-candidate
-format, compiler, lint and regression validation before acceptance.
+otherwise mutable payload.
 
 The database-backed signing-key refresh always reads the authoritative record.
 An unchanged authenticated record reuses its prepared keys until the next

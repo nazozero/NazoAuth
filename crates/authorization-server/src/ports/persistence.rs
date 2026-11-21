@@ -1,8 +1,5 @@
-//! Backend-neutral persistence composition for the HTTP server.
-//!
-//! The server asks for complete business capabilities here.  An adapter may
-//! allocate pools, run transactions, or derive encryption state internally,
-//! but none of those mechanisms cross into the application crate.
+//! Database capabilities consumed by authentication and authorization services.
+//! Adapters own connection pools, transactions and storage encryption.
 
 use std::sync::Arc;
 
@@ -20,12 +17,8 @@ use nazo_identity::ports::{
     ScimCredentialPort, ScimRepositoryPort, SessionAccountPort,
 };
 
-/// All database capabilities required by one NazoAuth server process.
-///
-/// Each method returns a narrow semantic Port.  In particular, this is not a
-/// connection factory: launchers own adapter construction and may select a
-/// completely different static backend without pulling another driver's code
-/// into the binary.
+/// Application persistence supplied by the selected database adapter.
+/// Each method returns the port for one business capability.
 pub trait ServerPersistenceProvider: Send + Sync {
     fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore>;
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger>;
@@ -82,8 +75,6 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn logout_outbox(&self) -> Arc<dyn nazo_auth::BackchannelLogoutOutboxPort>;
     fn logout_delivery_store(&self) -> Arc<dyn nazo_persistence::BackchannelLogoutDeliveryStore>;
 
-    fn controller_registry(&self) -> Arc<dyn nazo_persistence::ControllerRegistryPort>;
-    fn recovery_root(&self) -> Arc<dyn nazo_persistence::RecoveryRootPort>;
     fn mtls_trust_anchors(&self) -> Arc<dyn MtlsTrustAnchorStore>;
 
     fn openid4vc_trust_policies(&self) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore>;

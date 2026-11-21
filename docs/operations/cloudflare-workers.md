@@ -5,16 +5,17 @@ and application crates. `nazo-http-worker` converts transport values;
 `nazo-oauth-server-d1` implements the existing persistence and transient-state
 ports. `nazo-server-worker` owns bindings, configuration, key refresh and the
 prepared application graph. Protocol parsing, grants, DPoP validation,
-redirects and response policy stay in the shared implementation.
+redirects, discovery metadata and response policy stay in the shared
+implementation. Machine-only deployments select the shared service-client
+capabilities before metadata serialization.
 
 ## Deployment profile
 
 Each deployment serves one issuer and one tenant through one primary D1 binding.
 The host rejects other request authorities before selecting an application graph.
-The native host's dynamic tenant directory, per-host runtime replacement and
-cross-tenant control plane are not part of this profile. Supporting multiple
-issuer hostnames would require those composition and lifecycle boundaries; it
-is not a platform prohibition on host-based routing.
+Dynamic tenant directories, per-host runtime replacement and cross-tenant
+control are currently available in the native host. A multi-issuer Worker
+would need its own directory and graph-replacement adapters.
 
 The checked-in template starts `machine_only: true` for confidential service
 clients. Set `machine_only: false` and `passkey_only: true` in the **private bootstrap input**
@@ -23,11 +24,10 @@ The bootstrap helper creates one initial user with an unknown random password,
 and hands the operator a single-use, 24-hour setup ticket; the ticket grants a
 five-minute registration session on the issuer's HTTPS origin. The password-enabled
 profile (`machine_only: false`, `passkey_only: false`) retains the shared Argon2id
-verifier and can be selected on either Free or Paid. Selection enables the
-adapter; it does not provide enough CPU for every operation. Password checks and
-backup-code generation/verification retain the native Argon2id work factors and
-can exceed Free's guaranteed per-request budget. Measure their CPU distribution
-and actual platform failures at the intended sustained load.
+verifier on either Free or Paid. Password checks and backup-code operations
+retain the native Argon2id work factors and can exceed Free's per-request CPU
+budget. Size the deployment using CPU measurements and platform outcomes at
+the intended sustained load.
 
 Both interactive profiles can serve the bundled NazoAuthWeb application from
 the issuer's `/ui/` path. Set `frontend_base_url` to `https://<issuer-host>/ui/`.
@@ -42,11 +42,10 @@ ordinary account registration. A separately hosted frontend is also possible.
 `passkey_only` remains a restricted HTTP deployment profile: it admits its
 Passkey/MFA account operations and selected authorization/token flows, not the
 complete administrator, federation, SCIM, CIBA or digital-credential API surface.
-Selecting a module does not expand that route allowlist. Use
+Use
 `machine_only: false`, `passkey_only: false` for the full Web and all adapted
 service routes; that profile offers both password and Passkey authentication.
-Serving the Web shell alone does not enable a server operation excluded by the
-selected profile.
+Each profile's route allowlist applies to Web requests and selected modules.
 
 | Capability | Workers profile |
 | --- | --- |
@@ -82,8 +81,7 @@ and does not require an outbound delivery worker. Cloudflare Workflows are not r
 These are all 16 shared runtime modules. An available module still needs explicit
 construction in `NAZO_CONFIG.modules`, enabled durable intent and the corresponding
 client grants, scopes and security policy. Runtime administration cannot construct
-a capability omitted from the deployment. Availability describes the adapter boundary; public edge
-acceptance and protocol conformance remain separate verification activities.
+a capability omitted from the deployment.
 
 | Module | Workers binding and conditions |
 | --- | --- |
@@ -128,30 +126,25 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | --- | --- |
 | mTLS | Enable `services.mtls` only with direct Cloudflare ingress and client-certificate collection configured for the issuer hostname. Facts come from platform `request.cf.tlsClientAuth`, including bounded RFC 9440 certificate data, revocation flags and a matching fingerprint. A platform-verified chain or the shared portable X.509 verifier with approved D1 trust anchors supplies trust; registered client selectors still apply. Ordinary request headers cannot confer certificate authority. |
 | Remote documents | A bounded Worker fetch adapter resolves JWKS, Request Objects, sector documents and credential status lists. `services.outbound_origins` admits exact HTTPS origins; redirects are not followed, credentials are not inherited, and time/body/media limits apply. Fetch does not expose native DNS resolution or IP pinning: the operator-controlled origin list is this host's network authority. |
-| Federation | D1 account/link and replay adapters reuse the shared OIDC/social provider flows, with bounded outbound HTTP. Configure provider credentials and endpoints in service secrets and admit their origins. SAML uses the shared authenticated gateway contract. Real provider login still requires the corresponding external account/application, credentials and callback registration. |
+| Federation | D1 account/link and replay adapters reuse the shared OIDC/social provider flows, with bounded outbound HTTP. Configure the provider application, credentials and endpoints in service secrets, register its callback and admit its origins. SAML uses the shared authenticated gateway contract. |
 | Back-channel logout | The shared logout service writes a D1 outbox; leased claims, retry/expiry and completion state drive bounded Worker HTTP delivery on scheduled events. Admit each RP notification origin. Discovery support is enabled only when outbound origins are configured; front-channel delivery remains browser-driven. |
 | Email registration and verification | Shared registration uses D1 account creation, owner-bound send reservations, a fixed verification-attempt budget and single-use challenge consumption. Delivery requires the configured HTTPS email relay, its admitted origin and secret. Concurrent sends and cleanup cannot overwrite or delete a later owner's challenge. |
 | MFA | D1 stores encrypted TOTP seeds, one-use counters, hashed backup codes, remembered-device bindings and required audit mutations. Configure the service data-encryption key. Shared recent-MFA and interactive-proof requirements apply to administration; a remembered device does not grant recent-MFA authority. Backup-code hashing retains the native Argon2id policy and needs measured CPU capacity. |
 | Authorized-application list | The shared profile lists current grants with canonical authorization audit history for counts and last authorization. Legacy grants explicitly marked as having unknown history return `null` for these fields; the Web interface shows “History unavailable” / “历史未记录” rather than inventing timestamps or counts. Administrator grant revocation retires the associated token families and credential access in the same D1 transaction. |
 | Avatars and object storage | Authenticated multipart upload, binary proxy read and deletion use the shared account-revision compare-and-set lifecycle. A private `NAZO_AVATARS` R2 binding stores new image bytes in R2, and D1 retains avatar metadata and existing D1-backed images. Browser-direct uploads are unsupported on Workers. |
 | Tenant administration | User/client listing, creation and updates use shared preparation and hierarchy policy. D1 rechecks current actor context and prepared target metadata at transaction admission; mutations, dependent-token retirement and canonical required audit commit together. Client downgrade to public authentication retires its refresh families and secret. |
-| Deployment administration and recovery | Controller registry, recovery roots and cross-tenant administration routes are compiled out of the Worker. The D1 user port can update administrators across tenant rows within one database transaction, but the single-issuer host does not expose that control-plane operation. Dynamic hostname/tenant registry replacement and native audit anchors are not adapted; this does not prohibit a future multi-host Worker composition. |
+| Deployment administration and recovery | The Worker builds without `deployment-control`, so `DeploymentCapabilities` and its control routes are absent. Controller-registry and recovery-root ports belong to that optional host capability. Dynamic hostname/tenant registry replacement and independent audit anchoring need additional adapters. The D1 user port supports transactional administrator updates across tenant rows; the current single-issuer host exposes only tenant-local administration. |
 | Runtime module lifecycle | The shared registry owns dependency policy and transitions. D1 persists revision CAS, per-instance state and append-only events. Each protocol request synchronizes current intent before admission; bounded steps retain existing-transaction admission during the drain window and never wait for a whole session/refresh lifetime inside one invocation. |
 | Native process signers and files | Worker isolates cannot run the native host's subprocess/OS integration. Provisioning stays in a native offline tool; request signing uses the shared `nazo-crypto` Worker backend. Persistent files require an explicit storage adapter. |
 | mdoc CRL publication | Configure an offline-signed public CRL for the current DS/IACA pair. Every CRL request reads the authoritative D1 public material and verifies its exact digest, issuer/certificate binding, signature, publication interval and current DS revocation status. Expired or changed authority material fails closed; the IACA private key stays offline. |
-| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Free's occasional CPU overage allowance is not guaranteed capacity for password or backup-code operations. Retain the shared work factors and assess actual platform failures under sustained load. |
-
-Unconfigured services and remaining host adapters are not evidence that
-the protocol cannot run on Workers. Durable state must continue to satisfy the
-same tenant isolation, atomic consume, replay, audit and recovery contracts.
+| Password authentication | Argon2id remains the shared password verifier on either plan. Machine-only and Passkey-only profiles disable password routes; the password-enabled profile can use the bundled Web application. Size password and backup-code workloads against the plan's CPU budget while retaining the shared work factors. |
 
 ### Runtime module administration
 
 The Web uses NazoAuthWeb's existing module review, expected-revision CAS, MFA
 step-up and status/event polling interface. A successful desired-state update
-acknowledges the persistent intent; it does not claim that every isolate has
-finished executing its existing requests. Actual state remains instance-scoped,
-as in the native process host. Every subsequent protocol request first reads
+persists the requested state. Each isolate reports its own actual state and
+finishes existing requests under the shared drain policy. Every subsequent protocol request first reads
 authoritative D1 state and applies the shared bounded reconcile operation.
 Stable state needs a coherent read without repeated transition writes. An
 unavailable or continuously changing authority fails closed.
@@ -165,8 +158,9 @@ timestamp plus the catalog's maximum lifetime. The store preserves timestamp
 and revision for a same-mode update, so repeated disable requests cannot extend
 the window. Cold isolates recover that same deadline; they do not start a new
 timer. At expiry, stored admission closes before existing local request leases
-are checked. A pending lease or drain step is not a completed transition. Native
-hosts retain their waiting reconcile entrypoint; Workers use the resumable one.
+are checked. Transitions remain pending until both drain and local leases
+complete. Native hosts use the waiting reconcile entrypoint; Workers use the
+resumable one.
 
 This profile uses the fixed shared lifetime settings and does not expose per-tenant
 TTL overrides. Do not change those catalog durations in a deployment while an
@@ -264,9 +258,8 @@ Binaryen distribution, or the distribution selected by `WASM_OPT_BIN` or
 and dynamic WASM export access fail the build instead of guessing what is live.
 Memory, globals and tables are retained; SDK helpers reached through indirect
 function-table calls also remain. Recognized SDK wrapper shapes are eligible
-for analysis; runtime reachability decides removal. The generated `build/prune-report.json` records
-raw/gzip sizes and export changes; fewer exports do not guarantee a smaller
-compressed binary.
+for analysis; runtime reachability decides removal. The generated
+`build/prune-report.json` records raw/gzip sizes and export changes.
 
 The WASM production graph excludes Actix, native HTTP servers, PostgreSQL/Valkey
 drivers, native TLS and native Tokio execution features. The SDK's Tokio library
@@ -338,10 +331,9 @@ Use the repository **root**. Cloudflare's button cannot clone only `deploy/cloud
 the Rust workspace and its dependencies live outside that directory.
 
 The button creates a Git copy, provisions the `NAZO_DB` D1 binding, deploys
-the private Worker and runs its SQL migrations. The D1 ID is intentionally
-omitted: Wrangler can resolve the provisioned database by binding name. The application is intentionally
-**not reachable** yet (`workers_dev = false`, no public route). Never expose an
-unprovisioned identity server or install a public bootstrap endpoint.
+the private Worker and runs its SQL migrations. Wrangler resolves the provisioned
+database by binding name. The application stays private (`workers_dev = false`,
+no public route) until provisioning and ingress configuration are complete.
 
 Cloudflare [removed the gzip size cap in September 2026](https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/):
 Free and Paid now accept up to 64 MiB uncompressed. Use the current dry-run
@@ -353,16 +345,12 @@ Client Credentials, token management, OAuth metadata and JWKS). During offline
 initialization choose `passkey_only: true` and `machine_only: false` for a
 **passwordless, interactive** OAuth/OIDC deployment with Passkey login and
 Authorization Code/PKCE. Browser password login is then explicitly blocked.
-The password-enabled profile is also selectable on Free. Argon2id operations
-must not lower their work factors to fit that plan. Occasional successful
-over-budget requests do not establish reliable capacity for password login,
-MFA enrollment, backup-code regeneration or exhaustive backup-code verification.
-Every profile needs
-**real edge CPU and outcome measurements at the intended sustained load** before
-production SLO acceptance. A CPU sample above 10 ms does not by itself establish
-a platform rejection; see [public CPU and failure measurements](#public-cpu-and-failure-measurements).
-The template cannot be called a complete single-click installation
-because issuer domain, first credentials, secrets and ingress policy must be set.
+The password-enabled profile is also selectable on Free and retains the shared
+Argon2id work factors. Measure password login, MFA enrollment and backup-code
+operations at the intended sustained load; use the platform's invocation outcome
+to identify CPU rejections. See [public CPU and failure measurements](#public-cpu-and-failure-measurements).
+After using the button, configure the issuer domain, initial credentials,
+secrets and ingress policy.
 Cloudflare Workers Builds has a 20-minute timeout and does not preinstall Rust:
 the repository-root `build` script installs Rust 1.100.0, `worker-build`
 0.9.0 and `wasm-bindgen-cli` 0.2.130. Confirm build completion in the Cloudflare dashboard.
@@ -422,9 +410,7 @@ registration must run on that exact secure origin (RP ID derives from the issuer
 hostname). With `frontend_base_url` set to that origin's `/ui/` path, both
 interactive profiles use the bundled Web application. A separately hosted frontend can instead
 use the same protocol endpoints.
-For unmerged PR acceptance select the actual `feat/cloudflare-workers-206`
-branch in Cloudflare Builds; the public one-click button defaults to `main`
-until the PR is merged. Later Git pushes build/deploy via Workers
+The public one-click button uses `main`. Later Git pushes build/deploy via Workers
 Builds; `npm run deploy` remains idempotent for D1 schema migrations and
 preserves existing Worker secrets. Do not publish the private bootstrap JSON
 or credentials in a Git repository or CI log.
@@ -654,8 +640,8 @@ completed application graph are reused within an isolate. The shared key manager
 advances persisted lifecycle state; a request refreshes its snapshot at most once
 per minute. Automatic signing-key generation, prepublication, activation and
 retirement follow the shared 30-day policy with 24-hour prepublication and
-verification-grace windows. Successful signing with an existing generation does
-not establish the CPU capacity needed to generate a replacement RSA key.
+verification-grace windows. Include replacement RSA key generation in the
+selected plan's CPU measurements.
 
 To change the signing wrapping key, prepare one coordinated deployment with a
 new `NAZO_SIGNING_KEY_ID` and `NAZO_SIGNING_KEY`, the old identifier in
@@ -692,7 +678,7 @@ Do not expose this Worker through service bindings or another Worker. Keep Pseud
 IPv4 in `Off` or `Add Header` mode.
 
 Same-zone Worker scripts can change `x-real-ip`, which can change
-`CF-Connecting-IP`; header presence alone does not prove direct ingress.
+`CF-Connecting-IP`. Enforce the WAF restriction above before trusting that header.
 [Cloudflare's request-header documentation](https://developers.cloudflare.com/fundamentals/reference/http-headers/)
 defines these facts. Zone-rule and same-zone Worker administrators belong to the
 trusted deployment boundary.
@@ -730,8 +716,8 @@ or invalid encodings take the shared body-error path. Fetch headers may already
 have normalized repeated values, a separate platform constraint from the repeated
 values retained by the Rust HTTP contract.
 
-JS/WASM transfer and response serialization still copy bytes. The boundary is
-not completely zero-copy across heaps. Password verification holds one
+JS/WASM transfer and response serialization copy bytes across heaps.
+Password verification holds one
 memory-hard workspace at a time per isolate because it never suspends while the
 workspace is allocated.
 
@@ -740,8 +726,8 @@ use independent deployments; never split one authority's transaction across
 databases. Measure the actual region, crypto algorithms, login/token mix and D1
 latency. The [D1 FAQ](https://developers.cloudflare.com/d1/reference/faq/) describes
 throughput/overload behavior; [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
-cover isolate memory, CPU and bundle/startup limits. Local workerd throughput
-does not establish production edge capacity.
+cover isolate memory, CPU and bundle/startup limits. Measure production capacity
+on the selected Cloudflare plan and regions.
 
 ## Verification
 
@@ -766,10 +752,9 @@ Credentials timings. SQL tests execute production statements for rollback,
 isolation, expiry, required effects and CAS, including the identity and credential
 adapters. Transport tests use the shared facade conformance kit. The Web build
 runs its overlay tests, TypeScript build and source/distribution security checks.
-These local checks do not establish remote provider interoperability or public
-edge acceptance of every configured feature.
+Test configured providers and public ingress against the deployed HTTPS issuer.
 
-The local workerd suite deliberately creates and destroys isolated databases.
+The local workerd suite creates and destroys isolated databases.
 Do not reuse that fixture against a deployed D1 binding. Public acceptance has
 a separate opt-in runner and uses only dedicated test identities and clients:
 
@@ -827,10 +812,10 @@ the telemetry summary keep these phases separate. Workload durations are client
 wall time. The run never converts them into CPU estimates.
 
 Synthetic P-256 WebAuthn messages exercise server-side ceremony validation and
-one-use state. They do not test a browser's credential UI, authenticator hardware,
-biometrics, cross-device transport or account recovery. Accept the real-device
-Passkey flow separately on the issuer origin, including the setup/login pages
-and an authorization-code redirect through consent.
+one-use state. Test browser enrollment and login with a real authenticator on
+the issuer origin, including the setup/login pages and an authorization-code
+redirect through consent. Include biometrics, cross-device transport and recovery
+when those paths are used by the deployment.
 
 ### Public CPU and failure measurements
 
@@ -858,19 +843,16 @@ normalizing; only use a prefiltered export without the corresponding filter.
 
 Report CPU sample count, median, p90/p95/p99, maximum and count above 10 ms,
 with HTTP statuses and `exceededCpu`/`exceededMemory` outcomes separately.
-Report the client's actual Cloudflare 1102 pages as another independent count.
-Missing or sampled telemetry is not proof of zero rejections.
-Keep expensive password/MFA phases identifiable and retain the results of mixed
-workloads as well as isolated protocol runs. A later successful run does not
-erase earlier platform failures. When a negative security test receives a
-platform error, report that error; it neither proves acceptance of the invalid
-credential nor verifies the expected application-level rejection.
+Report the client's actual Cloudflare 1102 pages and telemetry coverage as
+separate counts. Keep password/MFA phases identifiable, and retain each run's
+outcomes for both mixed workloads and isolated protocol tests. Classify a
+platform error during a negative security test as a platform failure; rerun
+that case to check the expected application rejection.
 Cloudflare's [CPU limit documentation](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)
 excludes network/database waiting from CPU time and allows occasional over-limit
-execution. A log above 10 ms therefore does not by itself establish a platform
-rejection. Error 1102 can represent CPU or memory exhaustion; the invocation
-outcome distinguishes them. Local timings and HTTPS wall time cannot replace
-platform CPU measurements.
+execution. Use the invocation outcome to identify CPU rejection. Error 1102 can
+represent CPU or memory exhaustion; the outcome distinguishes them. Report
+platform CPU and HTTPS wall time separately.
 
 Production acceptance also needs the applicable OAuth/OIDC conformance plans
 against the deployed HTTPS issuer, direct-ingress WAF verification and target
