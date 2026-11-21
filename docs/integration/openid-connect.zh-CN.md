@@ -91,7 +91,7 @@ registration metadata 中宣告这些能力的条件。状态为“支持”的�
 | 草案或协议族 | 状态 | 观察原因 |
 | --- | --- | --- |
 | GNAP Core / GNAP Resource Server Connections | 观察中 | [RFC 9635](https://www.rfc-editor.org/rfc/rfc9635.html) 和 [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767.html) 是相邻授权协议；可作为后续 grant negotiation 设计参考，但不是 OAuth/OIDC 开关。 |
-| Agent Authorization Profile | 观察中 | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) 对 AI agent delegated access 有参考价值；尚不能作为实现承诺。 |
+| Agent Authorization Profile | 观察中 | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) 对 AI agent delegated access 有参考价值。 |
 | Delegated Authorization / Actor Chain | 观察中 | [draft-li-oauth-delegated-authorization-04](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) 和 [draft-mw-oauth-actor-chain-03](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) 与 token exchange、actor delegation、审计链相关。 |
 | Global Token Revocation | 观察中 | [draft-parecki-oauth-global-token-revocation-06](https://datatracker.ietf.org/doc/draft-parecki-oauth-global-token-revocation/) 对账号失陷和事故响应有价值，但需要严格 blast-radius、审计和多客户端策略。 |
 | RAR / Resource Metadata 扩展 | 观察中 | [draft-ietf-oauth-rar-metadata-remediation-00](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/)、[draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/) 和 [draft-mcguinness-oauth-rfc9728bis-02](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) 可能改善 typed permissions 与 protected-resource metadata。 |
@@ -384,7 +384,9 @@ CIBA Core 1.0 第 13 节仍只列出 401，相关勘误由尚未关闭的
 
 高保障集成应优先使用非对称或 sender-constrained 客户端认证。FAPI profile 排除 shared-secret POST 认证。
 
-`private_key_jwt` 应以 issuer 标识符作为唯一 audience，并保持 assertion lifetime 较短。新动态注册客户端遵循此规则。管理员为现有客户端启用的端点或多 audience 兼容设置，在非 FAPI profile 中继续生效；`client-authentication+jwt` 类型的断言始终只接受 issuer。所有受影响的客户端都改为使用唯一 issuer audience 后，移除兼容设置。mTLS 需要注册正确的证书绑定客户端元数据，并在宣告 mTLS 元数据之前完成可信 proxy/mTLS termination 边界配置。
+`private_key_jwt` 必须以 issuer 标识符作为唯一 audience，并保持断言生命周期较短。此规则适用于所有客户端和断言类型；保留的端点或多 audience 设置不再放宽验证。
+
+mTLS 需要注册正确的证书绑定客户端元数据，并在宣告 mTLS 元数据之前完成可信 proxy/mTLS termination 边界配置。
 
 ### 部署 mTLS 信任生命周期
 
@@ -396,7 +398,7 @@ RFC 8705 第 7.4 节还指出：如果授权服务器信任多个 CA，攻击者
 - 通过公网 CA 审批流程使用 `tls_client_auth` 的客户端还必须登记由管理员确认的 SHA-256 叶证书 pin。该 pin 只能收紧 RFC 8705 subject 匹配，防止另一个已批准 CA 签发同 subject 证书后冒充该客户端。使用 `private_key_jwt` 认证、仅用 mTLS 绑定访问令牌的客户端不以证书作为认证身份，因此申请 sender constraint 所需 CA 时不要求这项额外 pin。
 - 输入必须是恰好一张当前有效的 RFC 5280 CA 证书，最大 16 KiB，包含 critical CA Basic Constraints、critical `keyCertSign`，并使用允许的 RSA 或 NIST 曲线公钥。
 - 必须由另一名有效管理员批准或拒绝。拒绝和撤销必须提供有界原因；每次状态变化与持久化审计在同一数据库事务完成。
-审批在取得租户串行化锁、当前管理员、申请和客户端行锁后采样一次数据库当前时间；证书有效期和当前信任锚配额使用同一接受点时间。这不承诺 COMMIT ACK 必须在证书到期前到达。
+审批在取得租户串行化锁、当前管理员、申请和客户端行锁后采样一次数据库当前时间；证书有效期和当前信任锚配额使用同一接受点时间。
 
 - 单客户端最多保留 8 个当前有效信任锚和 4 个待审批申请，单用户在每个租户最多保留 16 个待审批申请，单租户最多保留 128 个不同的当前有效信任锚；创建和审批按租户串行化。
 - 反向代理只能安装从控制面导出的已批准 bundle。应用认证仍校验客户端唯一登记的 RFC 8705 subject selector；经公网审批的 PKI 信任还必须匹配叶证书 pin。self-signed 客户端继续绑定其登记证书 key。OAuth 授权仍按客户端登记的证书身份检查。

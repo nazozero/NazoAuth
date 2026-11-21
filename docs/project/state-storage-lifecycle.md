@@ -33,7 +33,7 @@ rollback reuses the connection; an open or broken transaction is discarded.
 
 ## Valkey transient state
 
-These existing models remain Valkey-owned; no PostgreSQL copy or replacement namespace is introduced. TTL expiry is independent of the SQL maintenance worker.
+Valkey owns the following transient state and expires it independently of the SQL maintenance worker.
 
 |模型|TTL/消费所有者|
 |---|---|
@@ -50,15 +50,11 @@ These existing models remain Valkey-owned; no PostgreSQL copy or replacement nam
 
 HTTP inputs/outputs, validation results, normalized requests, request-local principal snapshots, prepared signatures, connection leases and runtime service handles stay in request/process memory unless a specifically documented business fact is committed. Derived names, counts and validity booleans must not become another mutable authority beside their original facts.
 
-## Validation boundary
-
-Model placement is not changed merely to satisfy a storage label. The existing independently expiring request state is already in Valkey. PG short-window security receipts are explicitly separated from long-lived business facts; their physical reclamation policy must be reported separately, including retention cost. No new cache authority, cross-store transaction or recovery queue is introduced.
-
 ## Physical reclamation cadence
 
 No worker writes an “expired” status to make a credential invalid. Every use must enforce its timestamp and security predicates even when the row still exists. The single maintenance worker selects `ProtocolState` on its normal 60-second interval and `IncludingHistory` initially and after an hour has elapsed since a completed history cycle. The latter additionally reclaims SCIM audit history only after its unchanged 180-day retention, expired MFA remembered devices, and expired controller identity approvals. Both retain the existing bounded batches, database cutoff, lock rules, cancellation behavior and catch-up budget. Failures or incomplete catch-up do not defer unfinished history for an hour.
 
-High-rate protocol receipts use the 60-second cycle to limit expired resident rows. Required evidence is never discarded by a timer before acknowledgement. Optional/Disabled audit exports are not promised bounded disk use during an indefinite receiver outage.
+High-rate protocol receipts use the 60-second cycle to limit expired resident rows. Required evidence is never discarded by a timer before acknowledgement. Optional/Disabled audit exports can accumulate retained records throughout a receiver outage.
 
 TTL moves physical expiry into Valkey; it does not remove the logical live-state cost or make asynchronous replication durable. Local memory is appropriate for request values and reconstructible projections, not a replacement for shared one-use or revocation authority. At rate λ and necessary retention T, approximately λ×T records can be legitimate live state. Expired eligible backlog, retained live records, dead tuples waiting for vacuum and reusable physical high-water space must be measured separately.
 

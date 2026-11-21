@@ -19,9 +19,7 @@ const MAX_CLIENT_ASSERTION_JTI_BYTES: usize = 128;
 pub struct ClientAssertionVerificationInput<'a> {
     pub issuer: &'a str,
     pub endpoint_path: &'a str,
-    /// Additional configured endpoint origins that may be accepted only for a
-    /// client that explicitly permits endpoint audiences. These are not issuer
-    /// aliases: the issuer itself remains the sole issuer-audience candidate.
+    /// Endpoint aliases are ignored; the issuer is the required audience.
     pub endpoint_audience_aliases: &'a [&'a str],
     pub client: &'a OAuthClient,
     pub assertion: &'a str,

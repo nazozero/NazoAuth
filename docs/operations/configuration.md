@@ -230,8 +230,8 @@ revocation authority.
 
 Valkey bounds Pending/Consuming/Failed entries by the grant deadline; PostgreSQL
 fences repeated issuance even after cache loss or a hidden commit ACK. Receipt
-retention covers the access-token acceptance window and grant deadline; it is
-not a promise of receipt retention throughout the refresh family's lifetime.
+retention follows the access-token acceptance window and grant deadline,
+independently of the refresh-family lifetime.
 Historical exact-request receipts remain lookup-only, and old payloads are
 rejected for new issuance. Migration and rollback require coordinated ingress,
 writer and state-epoch boundaries. See

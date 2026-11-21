@@ -251,9 +251,12 @@ cargo test --locked --all-features -p nazo-postgres --test audit_ledger \
 
 Rust workspace checks cover changes to Rust sources, manifests, toolchains,
 fixtures, migrations, build/coverage scripts and their workflow. Python and
-architecture checks run separately and do not compile the service. CodeQL,
-operator parser fuzzing, service-image/HTTP security checks and performance-runner
+architecture checks run separately and do not compile the service. Operator
+parser fuzzing, service-image/HTTP security checks and performance-runner
 images each have their own inputs in `scripts/ci_inputs.py`.
+
+CodeQL scans every PR update and main push. GitHub publishes its security result
+in the independent `CodeQL` check.
 
 Input-selected automatic runs compare the actual checkout's Git file identities, including
 the PR merge result, with a successful run of the same workflow and event in the
@@ -273,8 +276,7 @@ inputs equal the current main inputs. The merged PR head/base are read from the
 commit-to-PR association: Actions can clear a historical run's `pull_requests`
 list after merge. Only the Rust input-selection job receives PR read permission.
 Otherwise main runs the full ordinary suite.
-This covers direct pushes, changed merge inputs and missing evidence without
-guessing a merge result. Other workflows retain their separate main checks.
+Other workflows retain their separate main checks.
 
 Coverage runs weekly and on manual dispatch; it is not repeated on every merge.
 Manual `code-quality` runs coverage plus the uninstrumented timing/documentation
@@ -284,9 +286,9 @@ cannot share compiled workspace artifacts. Release checks consume successful gov
 
 | Stage or changed inputs | Checks to execute |
 | --- | --- |
-| Documentation or specification inventory only | Source/reference, Python and workflow-policy checks; reuse successful unchanged Rust, CodeQL, fuzz and image checks. Without reusable evidence, execute the selected checks. |
+| Documentation or specification inventory only | Source/reference, Python and workflow-policy checks; reuse successful unchanged Rust, fuzz and image checks. Without reusable evidence, execute the selected checks. |
 | Rust, dependencies, toolchain, fixtures or migrations | Workspace formatting, Clippy and PostgreSQL/Valkey tests; CodeQL and service security checks. Operator fuzzing runs when its parser, crypto, manifest, corpus or workflow inputs change. |
-| Every PR or main push | WASM production dependency/feature checks and portable runtime contracts; compiled artifacts use the separate WASM cache. |
+| Every PR or main push | CodeQL analysis, WASM production dependency/feature checks and portable runtime contracts; compiled artifacts use the separate WASM cache. |
 | Performance runner or its workflow | Build and smoke-test the runner and execute native k6 JSON regressions. BuildKit reuses unchanged k6 and Python dependency layers. |
 | Main after merge | Reuse ordinary PR tests only with identical proven inputs; retain main CodeQL/security roles and run missing or expired checks. |
 | Release | Require successful governed main CI, then build, scan and verify the release artifacts. Do not dispatch another complete functional CI run. |
@@ -472,9 +474,8 @@ Release commits must be reachable from `main`. `code-quality.yml`,
 successful run on `main`, triggered by `push` or `workflow_dispatch`. The gate
 searches the latest 100 runs per workflow.
 
-`conformance-security.yml` runs its independent protocol checks on matching
-changes. It is not part of this release helper's required-workflow list; that
-list alone does not describe repository branch-protection policy.
+`conformance-security.yml` runs its protocol and supply-chain checks on matching
+changes.
 
 A run may cover the exact release commit or an ancestor when the intervening
 net changes affect only `docs/`, root Markdown files, or the retired
@@ -483,8 +484,8 @@ scripts, and workflow changes require fresh checks. PR runs, failed checks,
 unrelated commits, and later commits do not qualify. Accepted run IDs and
 commits are printed in the policy job log.
 
-Documentation-only pushes run the input-selection gate and lightweight checks;
-unchanged heavy jobs reuse successful evidence as described above.
+Documentation-only pushes run CodeQL, the input-selection gate and lightweight
+checks; unchanged heavy jobs reuse successful evidence as described above.
 If suitable evidence is missing, run the required workflow manually on `main`
 and wait for success before retrying a release from that commit. Rerunning an
 old tag still uses the workflow stored at that tag; this policy change takes
@@ -516,8 +517,8 @@ and either side of CAS, deletion ordering, restart/legacy fallback, tenant/user
 isolation, partial versions, unsafe paths and best-effort retirement. Their
 fixtures live in `tests/support/local_avatar.rs`. The profile HTTP suite also
 wraps the real PostgreSQL CAS with an error after commit and checks that the
-selected image remains readable. Run it with the existing isolated PG/Valkey
-fixture settings; an unconfigured fixture is not execution evidence.
+selected image remains readable. Run it with the existing isolated PostgreSQL
+and Valkey fixture settings.
 
 Identity Avatar regressions retain Publishing retry ETag/hash/decoder checks,
 count the initial Pending staged read, verify the single hash and byte-drop
