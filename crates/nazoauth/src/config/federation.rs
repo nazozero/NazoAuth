@@ -17,6 +17,7 @@ pub struct OidcFederationSettings {
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     pub jwks_url: String,
+    pub userinfo_endpoint: Option<String>,
     pub client_id: String,
     pub client_secret: String,
     pub redirect_uri: String,

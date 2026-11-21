@@ -2,6 +2,8 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod oidc;
+
 use crate::{
     LoginSuccess, PublicAccount, TenantContext,
     ports::{

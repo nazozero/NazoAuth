@@ -16,7 +16,7 @@ image.workspace = true
 jiff-tzdb = "1.0.0"
 language-tags = "0.3.2"
 lettre.workspace = true
-nazo-crypto = { workspace = true, features = ["password"] }
+nazo-crypto = { workspace = true, features = ["password", "jose"] }
 nazo-scim-events.workspace = true
 nazo-passkey.workspace = true
 rand.workspace = true

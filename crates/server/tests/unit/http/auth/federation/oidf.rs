@@ -16,6 +16,7 @@ async fn oidf_rp_http_bridge() {
         authorization_endpoint: format!("{issuer}authorize"),
         token_endpoint: format!("{issuer}token"),
         jwks_url: format!("{issuer}jwks"),
+        userinfo_endpoint: Some(format!("{issuer}userinfo")),
         client_id: "nazoauth-issue202".into(),
         client_secret: "nazoauth-issue202-test-secret".into(),
         redirect_uri: "https://localhost:8443/rp/auth/federation/oidf-rp-test/callback".into(),

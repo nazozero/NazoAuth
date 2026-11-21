@@ -203,6 +203,7 @@ impl ProviderConfig {
             )?,
             token_endpoint: required_text(self.token_endpoint.take(), "token_endpoint")?,
             jwks_url: required_text(self.jwks_url.take(), "jwks_url")?,
+            userinfo_endpoint: self.userinfo_endpoint.take().and_then(trimmed_optional),
             client_id: required_credential(self.client_id.take(), "client_id")?,
             client_secret: required_credential(self.client_secret.take(), "client_secret")?,
             redirect_uri: required_text(self.redirect_uri.take(), "redirect_uri")?,
@@ -305,6 +306,9 @@ pub fn validate_oidc_settings(
     validate_http_endpoint_url(&settings.authorization_endpoint)?;
     validate_http_endpoint_url(&settings.token_endpoint)?;
     validate_http_endpoint_url(&settings.jwks_url)?;
+    if let Some(endpoint) = &settings.userinfo_endpoint {
+        validate_http_endpoint_url(endpoint)?;
+    }
     validate_http_endpoint_url(&settings.redirect_uri)?;
     if !settings
         .scopes

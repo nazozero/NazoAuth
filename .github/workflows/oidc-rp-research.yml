@@ -71,7 +71,7 @@ jobs:
               if row.get('executable') and row.get('target', {}).get('name') == 'nazo_server':
                   print('RP_TEST_BINARY=' + row['executable'])
           PY
-      - name: Start unchanged RP flow with a prebound test identity
+      - name: Start production RP flow with a prebound test identity
         run: |
           test -n "$RP_TEST_BINARY"
           timeout 12m "$RP_TEST_BINARY" oidf_rp_http_bridge --ignored --nocapture > "$OIDF_WORK_DIR/evidence/rp.log" 2>&1 &
@@ -94,7 +94,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/oidf-rp/evidence/bootstrap"
           git rev-parse HEAD > "$RUNNER_TEMP/oidf-rp/evidence/nazoauth-commit.txt"
-          docker logs nazo-issue202-server > "$RUNNER_TEMP/oidf-rp/evidence/bootstrap/server.log" 2>&1 || true
+          docker logs nazo-issue202-server > "$RUNNER_TEMP/oidf-rp/server-private.log" 2>&1 || true
           docker logs nazo-issue202-nginx > "$RUNNER_TEMP/oidf-rp/evidence/bootstrap/nginx.log" 2>&1 || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

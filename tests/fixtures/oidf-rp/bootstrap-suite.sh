@@ -5,9 +5,9 @@ set -euo pipefail
 task_dir="$(realpath "${1:?usage: bootstrap-suite.sh WORK_DIR}")"
 mkdir -p "$task_dir/tls" "$task_dir/evidence/bootstrap"
 chmod 700 "$task_dir/tls"
-suite_image='registry.gitlab.com/openid/conformance-suite:release-v5.3.4'
-nginx_image='registry.gitlab.com/openid/conformance-suite/nginx:release-v5.3.4'
-mongo_image='mongo:6.0.13'
+suite_image='registry.gitlab.com/openid/conformance-suite@sha256:dcc4bd1fb7e9c00f048a67373fe2bec5ecf9feb45a6b5d55e237e5c30e5312c6'
+nginx_image='registry.gitlab.com/openid/conformance-suite/nginx@sha256:9a7850826fcc8690cd43373528f50e9551ba33bf8e4a40b67b13267b0aca3675'
+mongo_image='mongo@sha256:b415b12f638e2685d06c58ab7fb5943577c50fadec6d9340ef67d21aeac72070'
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -sha256 \
   -keyout "$task_dir/tls/ca.key" -out "$task_dir/tls/ca.crt" \
@@ -34,8 +34,9 @@ cat > "$task_dir/nginx.conf" <<'EOF'
 worker_processes 1;
 events { worker_connections 512; }
 http {
-  access_log /dev/stdout;
-  error_log /dev/stderr;
+  log_format evidence '$request_method $uri $status';
+  access_log /dev/stdout evidence;
+  error_log /dev/null;
   server {
     listen 127.0.0.1:8443 ssl;
     server_name localhost;
@@ -58,7 +59,10 @@ docker pull "$suite_image"
 docker pull "$nginx_image"
 docker pull "$mongo_image"
 docker image inspect "$suite_image" "$nginx_image" "$mongo_image" \
-  > "$task_dir/evidence/bootstrap/image-identities.json"
+  | python3 -c 'import json,sys; print(json.dumps([
+      {key: image[key] for key in ("Id", "RepoDigests", "Created", "Architecture", "Os")}
+      for image in json.load(sys.stdin)
+    ], indent=2))' > "$task_dir/evidence/bootstrap/image-identities.json"
 docker run -d --name nazo-issue202-mongo --network host \
   "$mongo_image" --bind_ip 127.0.0.1
 docker run -d --name nazo-issue202-server --network host \
@@ -88,7 +92,8 @@ for attempt in $(seq 1 180); do
   sleep 1
 done
 if [[ "$ready" != true ]]; then
-  docker logs nazo-issue202-server > "$task_dir/evidence/bootstrap/server.log" 2>&1
+  # Raw JVM logs can contain the Suite's private test keys; never upload them.
+  docker logs nazo-issue202-server > "$task_dir/server-startup-private.log" 2>&1
   exit 1
 fi
 

@@ -14,6 +14,18 @@ Supported federation modes:
 - tenant-scoped external identity links in the resolved request runtime
 - HTTPOnly server-side sessions that retain the local account MFA requirement
 
+`nazo-identity::federation` owns state, nonce and PKCE lifecycles, OIDC RP
+authorization requests, ID Token validation, UserInfo subject binding and
+upstream identity normalization. Its existing service resolves accounts,
+creates sessions and records federation audit events. Shared JOSE key import
+and S256 derivation belong to `nazo-crypto`.
+
+The framework-neutral `nazoauth` facade owns callback extraction, HTTP request
+construction, redirects and cookie presentation. The native host supplies
+reqwest transport; the Worker host supplies bounded Fetch transport and admits
+configured outbound origins. Both use the same RP semantics and provider
+registry.
+
 ## Local MFA
 
 OIDC, social, and SAML gateway login use the local account's `mfa_enabled`
@@ -22,9 +34,6 @@ setting. An enabled account receives a pending-MFA session and
 `expires_in` use `PENDING_MFA_SESSION_TTL_SECONDS`. It must complete the existing
 local MFA flow before accessing an authenticated session. Accounts without
 local MFA receive the regular session lifetime.
-
-Upstream `amr` and `acr` claims are retained as external identity metadata.
-They do not satisfy local MFA: no provider assurance mapping is configured.
 
 ## Provider Registry
 
@@ -48,9 +57,9 @@ provider state through:
 
 - `GET /admin/federation/providers`
 
-The admin view reports callback URLs and whether secret-backed fields are
-configured, but it does not return client secrets, provider access tokens, JWKS
-contents, or raw assertions.
+The admin view reports callback URLs and endpoint/credential configuration
+status, including `userinfo_endpoint_configured` for OIDC providers. Client
+secrets, provider access tokens, JWKS contents and raw assertions are excluded.
 
 ## External OIDC Login
 
@@ -63,11 +72,42 @@ Endpoints:
 - `GET /auth/federation/{provider_id}/start`
 - `GET /auth/federation/{provider_id}/callback`
 
-The flow uses authorization code, PKCE S256, nonce, short-lived Valkey state,
-token endpoint exchange, JWKS lookup, and ID Token verification. The server
-checks issuer, audience, expiry, required `iat`, nonce, `kid`, and signature. The ID Token must
-contain an email claim and `email_verified=true`; absent or false verification
-claims are rejected before account lookup, linking, or provisioning.
+The flow uses authorization code, PKCE S256, nonce, short-lived server-side
+state, `client_secret_basic` token exchange, JWKS lookup and ID Token
+verification. The native host stores transient state in Valkey; the Worker
+host uses its D1 state adapter.
+
+ID Token verification checks the exact configured issuer, subject, client
+audience, expiry, required `iat`, nonce and signature. Tokens with multiple
+audiences must include an `azp` equal to the client ID. Expiry must be later
+than the current time, and `iat` may be at most 60 seconds in the future.
+Supported signing algorithms are RS256, PS256, ES256 and EdDSA with Ed25519.
+
+JWKS is fetched for each callback. A supplied `kid` must occur exactly once in
+the JWKS, and that key must be usable for the declared algorithm. An ID Token
+without `kid` is accepted only when the JWKS contains exactly one usable public
+signing key for its declared algorithm.
+
+### UserInfo and Profile Claims
+
+An OIDC provider can configure an optional `userinfo_endpoint` in its registry
+entry. Every callback for that provider fetches JSON UserInfo after ID Token
+verification, using the token response's Bearer access token. UserInfo `sub`
+must exactly match the subject in the verified ID Token before any profile
+claim is used. A failed request, invalid response or subject mismatch stops
+the login.
+
+With UserInfo configured, its email and name claims supply the upstream profile.
+With the endpoint omitted, the profile comes from the signed ID Token.
+The identity projection retains issuer, subject, normalized verified email and
+name fields. Third-party tokens remain request-local and are never stored as
+NazoAuth tokens or session credentials.
+
+An existing active `(tenant_id, provider_type, provider_id, subject)` link can
+authenticate without a verified email claim. Creating a new account requires
+a syntactically valid email with `email_verified=true`. Missing, invalid or
+unverified email cannot provision an account, and matching the email of an
+existing local account never creates a new link to that account.
 
 ## Browser Binding and Callback State
 
@@ -90,8 +130,10 @@ digest never enter provider URLs, token requests or audit events.
 Callback validates the existing provider/query rules, then requires the configured
 cookie before touching the federation state store, upstream exchange, account,
 link or session. A missing or invalid cookie returns InvalidState (HTTP 400).
-The Valkey adapter performs exactly one namespaced EVAL: GET, protected JSON
-decode, browser-hash comparison, and DEL only on a match. A missing, legacy,
+The native Valkey adapter uses one namespaced EVAL to read the value, check its
+JSON browser binding and delete only on a match. The Worker D1 adapter performs
+the same ownership check with a conditional `DELETE ... RETURNING` scoped to
+the tenant, state kind, state key and expiry. A missing, expired, legacy,
 corrupt-JSON or wrong-browser value returns StateExpired (HTTP 400); an existing
 nonmatching value and its expiry are untouched. A matching but typed-corrupt
 payload is consumed and rejected. State backend failures remain HTTP 503.
@@ -167,16 +209,18 @@ Identity selection uses the authenticated provider type, issuer and subject.
 
 ## Identity Linking
 
-External identities are stored in `external_identity_links` and bound to the
-tenant selected from the request host. The unique key is `(tenant_id,
-provider_type, provider_id, subject)`. The provider registry is process
-configuration, while account lookup, linking, provisioning, session creation,
-and transient federation state execute through that resolved tenant graph.
+Native PostgreSQL stores external identities in `external_identity_links`;
+Worker D1 uses `nazo_federation_links`. Both bind links to the tenant selected
+from the request host with the unique key `(tenant_id, provider_type,
+provider_id, subject)`. The host configures the provider registry, while account
+lookup, linking, provisioning, session creation and transient federation state
+execute through that resolved tenant graph.
 
 Resolution order:
 
 - an existing active link selects the linked user
-- without an existing link, a same-email local user is not auto-linked
+- without an existing link, a verified email is required to provision an account
+- a same-email local user is not auto-linked
 - otherwise a local user is provisioned with a random unusable password hash and
   `email_verified=true`
 
@@ -203,16 +247,17 @@ Local session state remains the NazoAuth fact source. External provider logout
 failures do not mark remote logout as complete; local `/auth/logout` and OIDC
 OP logout clear the local session independently of upstream provider state.
 
-Account creation, provider-link insertion and their Required `external_identity_linked`
-audit event share one PostgreSQL transaction. Reusing an existing link does not
-emit a second creation event. A failed audit commit cannot leave a new linked
-account behind.
+Account creation, provider-link insertion and their Required
+`external_identity_linked` audit event share one PostgreSQL transaction or D1
+atomic batch. Reusing an existing link does not emit a second creation event.
+A failed audit commit cannot leave a new linked account behind.
 
 Endpoint and callback URLs may contain query parameters and trailing slashes;
 the authorization redirect merges protocol parameters using URL query encoding.
-Issuer identifiers retain their separate stricter validation. Client IDs and
-secrets retain their exact configured bytes. OAuth Basic authentication
-form-encodes each credential component before constructing the header.
+Issuer identifiers retain their exact trailing slash and reject query
+parameters, fragments and URL credentials. Client IDs and secrets retain their
+exact configured bytes. OAuth Basic authentication form-encodes each credential
+component before constructing the header.
 
 Unlinking a federation identity and its required lifecycle audit share one
 persistence transaction. Audit failure leaves the link intact.

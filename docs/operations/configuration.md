@@ -478,11 +478,18 @@ credentials, federation client secrets, and SAML shared secrets must not be
 committed to Git.
 
 `FEDERATION_PROVIDER_CONFIGS` is a JSON array for modular third-party login
-providers. Each enabled entry must include `provider_id`, `enabled`,
-`display_name`, `adapter_type`, client credentials, redirect URI, scope,
-endpoint or issuer configuration, and claim mapping. Providers default to
-disabled unless `enabled` is true. Incomplete enabled provider configuration
-fails startup; disabled providers do not appear in `/auth/federation/providers`.
+providers. Each entry supplies `provider_id`, `display_name`, `adapter_type`
+and that adapter's configuration. Providers default to disabled unless
+`enabled` is true. Incomplete configuration fails startup; disabled providers
+do not appear in `/auth/federation/providers`.
+
+OIDC entries require issuer, authorization/token endpoints, `jwks_url`, client
+credentials and redirect URI. `scopes` defaults to `openid email profile` and
+must include `openid`. The optional `userinfo_endpoint` supplies JSON profile
+claims after ID Token validation; its subject must match the ID Token exactly.
+Endpoint URLs use HTTPS or loopback HTTP and reject URL credentials and
+fragments. See [external federation](../features/federation.md#userinfo-and-profile-claims)
+for profile and account-linking behavior.
 
 Security-state lifetimes and cooldowns must be positive. Startup rejects zero
 or negative values for session, authorization-code, access-token, ID-token,

@@ -21,6 +21,7 @@ use crate::config::{
 };
 use crate::http::{ClientIpConfig, client_ip_with_config};
 use nazo_identity::email::normalize_email_address;
+use nazo_identity::federation::oidc as rp;
 use nazo_oauth_server::rate_limit::AuthRequestLimiter;
 use nazo_oauth_server::services::LocalFederationService;
 
@@ -157,11 +158,12 @@ pub async fn federation_provider_start(
             {
                 Ok(start) => federation_start_response(
                     config,
-                    oidc_authorization_url(
-                        provider,
-                        &start.state,
-                        &start.nonce,
-                        &start.pkce_verifier,
+                    rp::authorization_url(
+                        &provider.authorization_endpoint,
+                        &provider.client_id,
+                        &provider.redirect_uri,
+                        &provider.scopes,
+                        &start,
                     ),
                     &browser_binding_seed,
                 ),
@@ -319,7 +321,13 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let claims = match verify_oidc_id_token(provider, &jwks, &token.id_token, &stored.nonce) {
+    let claims = match rp::verify_id_token(
+        &provider.issuer,
+        &provider.client_id,
+        &jwks,
+        &token.id_token,
+        &stored.nonce,
+    ) {
         Ok(claims) => claims,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC ID Token verification failed");
@@ -330,45 +338,36 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let email = match claims
-        .email
-        .as_deref()
-        .and_then(|value| normalize_email_address(value).ok())
-    {
-        Some(email) => email,
-        None => {
+    let userinfo = if let Some(endpoint) = provider.userinfo_endpoint.as_deref() {
+        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token).await {
+            Ok(userinfo) => Some(userinfo),
+            Err(error) => {
+                tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC UserInfo request failed");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "OIDC federation unavailable.",
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let identity = match claims.into_identity(&provider.provider_id, userinfo) {
+        Ok(identity) => identity,
+        Err(error) => {
+            tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC upstream identity rejected");
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
                 "access_denied",
-                "OIDC email claim required.",
+                "OIDC federation failed.",
             );
         }
     };
-    if claims.email_verified != Some(true) {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "access_denied",
-            "OIDC email must be verified.",
-        );
-    }
     complete_federation(
         service,
         config,
-        VerifiedExternalIdentity {
-            provider_type: "oidc".to_owned(),
-            provider_id: provider.provider_id.clone(),
-            subject: claims.sub.clone(),
-            email: Some(email.clone()),
-            display_name: claims.name.clone(),
-            claims: json!({
-                "iss": claims.iss,
-                "sub": claims.sub,
-                "email": email,
-                "name": claims.name,
-                "given_name": claims.given_name,
-                "family_name": claims.family_name,
-            }),
-        },
+        identity,
         "oidc",
         client_ip_with_config(req, client_ip),
         false,
@@ -604,7 +603,6 @@ pub fn validate_oidc_callback_input(
     let code = query
         .code
         .as_deref()
-        .map(str::trim)
         .filter(|value| !value.is_empty())
         .filter(|value| value.len() <= 4096)
         .ok_or_else(|| {

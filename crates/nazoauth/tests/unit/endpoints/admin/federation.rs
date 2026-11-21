@@ -3,7 +3,7 @@ use crate::config::{ExternalLoginProvider, ExternalLoginProviderAdapter, OidcFed
 
 #[test]
 fn admin_provider_view_exposes_onboarding_metadata_without_secret_material() {
-    let provider = ExternalLoginProvider {
+    let mut provider = ExternalLoginProvider {
         provider_id: "google".to_owned(),
         enabled: true,
         display_name: "Google".to_owned(),
@@ -15,6 +15,7 @@ fn admin_provider_view_exposes_onboarding_metadata_without_secret_material() {
             authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth".to_owned(),
             token_endpoint: "https://oauth2.googleapis.com/token".to_owned(),
             jwks_url: "https://www.googleapis.com/oauth2/v3/certs".to_owned(),
+            userinfo_endpoint: None,
             client_id: "google-client".to_owned(),
             client_secret: "google-secret".to_owned(),
             redirect_uri: "https://auth.example/auth/federation/google/callback".to_owned(),
@@ -30,8 +31,16 @@ fn admin_provider_view_exposes_onboarding_metadata_without_secret_material() {
         "https://auth.example/auth/federation/google/callback"
     );
     assert_eq!(view["secret_configured"], true);
+    assert_eq!(view["userinfo_endpoint_configured"], false);
     assert!(view.get("client_secret").is_none());
     assert!(view.get("access_token").is_none());
+
+    if let ExternalLoginProviderAdapter::Oidc(settings) = &mut provider.adapter {
+        settings.userinfo_endpoint = Some("https://identity.example/userinfo".to_owned());
+    }
+    let view = admin_provider_view(&provider);
+    assert_eq!(view["userinfo_endpoint_configured"], true);
+    assert!(view.get("userinfo_endpoint").is_none());
 }
 
 #[test]

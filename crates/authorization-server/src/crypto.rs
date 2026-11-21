@@ -2,10 +2,10 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::Claims;
 pub use nazo_auth::{client_jwt_decoding_key, jwt_decoding_key_from_jwk};
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
+pub use nazo_crypto::pkce_s256;
 pub use nazo_key_management::{client_secret_digest, client_secret_matches_digest};
 use nazo_openid4vci::ProofError;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
@@ -32,10 +32,6 @@ pub fn access_token_tenant_id(claims: &Claims) -> Option<Uuid> {
 
 pub fn random_urlsafe_token() -> String {
     URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
-}
-
-pub fn pkce_s256(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
 pub fn decoding_key(jwk: &Value, algorithm: Algorithm) -> Result<JwtVerificationKey, ProofError> {

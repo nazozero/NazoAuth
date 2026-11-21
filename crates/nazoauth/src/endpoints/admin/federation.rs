@@ -67,6 +67,7 @@ pub fn admin_provider_view(provider: &crate::config::ExternalLoginProvider) -> V
             "authorization_endpoint": &oidc.authorization_endpoint,
             "token_endpoint_configured": true,
             "jwks_url_configured": true,
+            "userinfo_endpoint_configured": oidc.userinfo_endpoint.is_some(),
             "secret_configured": true,
         }),
         ExternalLoginProviderAdapter::Social(social) => json!({
