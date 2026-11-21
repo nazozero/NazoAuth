@@ -371,14 +371,14 @@ fn state_writes_and_deletions_reject_ignored_required_effects() {
         let (database, provider) = fixture();
         database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_state BEGIN SELECT RAISE(IGNORE); END;").unwrap();
         assert!(
-            DpopStateStorePort::issue_nonce(&provider, "nonce", 60)
+            DpopStateStorePort::issue_nonce(&provider, &nazo_auth::new_dpop_nonce(), 60)
                 .await
                 .is_err()
         );
         assert!(
             nazo_resource_server::DpopNonceStorage::issue_nonce(
                 &provider,
-                "nonce",
+                &nazo_auth::new_dpop_nonce(),
                 Timestamp::now().as_second() + 60
             )
             .await
