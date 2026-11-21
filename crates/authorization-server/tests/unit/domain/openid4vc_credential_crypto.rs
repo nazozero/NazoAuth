@@ -4065,7 +4065,7 @@ fn mdoc_requires_device_signature_even_for_a_valid_mac_primitive() {
             &device.name_spaces_bytes,
         )
         .unwrap();
-        let key = [42u8; 32];
+        let key = rand::random::<[u8; 32]>();
         let mut mac = coset::CoseMac0Builder::new()
             .protected(
                 coset::HeaderBuilder::new()

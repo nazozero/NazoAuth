@@ -1064,29 +1064,31 @@ mod password {
             b"password"
         ));
 
-        let produced = password::hash_argon2id(b"correct horse battery staple", 256, 2, 1).unwrap();
+        let mut secret = [0_u8; 32];
+        aws_lc_rs::rand::fill(&mut secret).unwrap();
+        let produced = password::hash_argon2id(&secret, 256, 2, 1).unwrap();
         assert!(produced.starts_with("$argon2id$v=19$m=256,t=2,p=1$"));
         assert_eq!(
             password::validate_argon2id_phc(&produced, 256, 2, 1),
             Ok(())
         );
         let parsed = PasswordHash::new(&produced).unwrap();
-        Argon2::default()
-            .verify_password(b"correct horse battery staple", &parsed)
-            .unwrap();
+        Argon2::default().verify_password(&secret, &parsed).unwrap();
 
+        let mut salt = [0_u8; 16];
+        aws_lc_rs::rand::fill(&mut salt).unwrap();
         let native = Argon2::default()
-            .hash_password_with_salt(b"native secret", b"saltsalt")
+            .hash_password_with_salt(&secret, &salt)
             .unwrap()
             .to_string();
-        assert!(password::verify_argon2_phc(&native, b"native secret"));
+        assert!(password::verify_argon2_phc(&native, &secret));
 
         assert!(matches!(
-            password::hash_argon2id(b"x", 0, 2, 1),
+            password::hash_argon2id(&secret, 0, 2, 1),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(
-            password::hash_argon2id(b"x", 256, 0, 1),
+            password::hash_argon2id(&secret, 256, 0, 1),
             Err(CryptoError::InvalidInput)
         ));
     }
