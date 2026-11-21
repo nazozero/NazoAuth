@@ -1048,6 +1048,7 @@ mod ed25519 {
 #[cfg(feature = "password")]
 mod password {
     use argon2::{Argon2, PasswordHash, PasswordHasher as _, PasswordVerifier as _};
+    use aws_lc_rs::rand::{SystemRandom, generate};
     use nazo_crypto::{CryptoError, password};
 
     const LEGACY_PHC: &str =
@@ -1064,8 +1065,8 @@ mod password {
             b"password"
         ));
 
-        let mut secret = [0_u8; 32];
-        aws_lc_rs::rand::fill(&mut secret).unwrap();
+        let rng = SystemRandom::new();
+        let secret: [u8; 32] = generate(&rng).unwrap().expose();
         let produced = password::hash_argon2id(&secret, 256, 2, 1).unwrap();
         assert!(produced.starts_with("$argon2id$v=19$m=256,t=2,p=1$"));
         assert_eq!(
@@ -1075,8 +1076,7 @@ mod password {
         let parsed = PasswordHash::new(&produced).unwrap();
         Argon2::default().verify_password(&secret, &parsed).unwrap();
 
-        let mut salt = [0_u8; 16];
-        aws_lc_rs::rand::fill(&mut salt).unwrap();
+        let salt: [u8; 16] = generate(&rng).unwrap().expose();
         let native = Argon2::default()
             .hash_password_with_salt(&secret, &salt)
             .unwrap()
