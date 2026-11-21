@@ -85,10 +85,15 @@ jobs:
             sleep 1
           done
           test "$ready" = true
-      - name: Run official Basic RP plan
+      - name: Run official Basic, Config and Back-Channel Logout RP plans
         run: |
-          /usr/bin/python3 tests/fixtures/oidf-rp/run-basic-rp.py \
-            --output "$OIDF_WORK_DIR/evidence/results" --tested-commit "$(git rev-parse HEAD)"
+          status=0
+          for profile in basic config backchannel; do
+            /usr/bin/python3 tests/fixtures/oidf-rp/run-rp.py --profile "$profile" \
+              --output "$OIDF_WORK_DIR/evidence/results/$profile" \
+              --tested-commit "$(git rev-parse HEAD)" || status=1
+          done
+          exit "$status"
       - name: Collect original outcomes
         if: always()
         run: |

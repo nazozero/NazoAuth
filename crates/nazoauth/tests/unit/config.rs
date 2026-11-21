@@ -346,6 +346,8 @@ fn typed_federation_registry_keeps_json_configuration_admission_rules() {
         adapter: ExternalLoginProviderAdapter::Oidc(OidcFederationSettings {
             discovery: false,
             backchannel_logout: false,
+            id_token_signed_response_alg: None,
+            post_logout_redirect_uri: None,
             provider_id: "oidc".into(),
             issuer: "https://identity.example".into(),
             authorization_endpoint: "https://identity.example/authorize".into(),

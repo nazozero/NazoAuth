@@ -509,6 +509,7 @@ where
                 subject_key: upstream.subject_key,
                 sid_key: upstream.sid_key,
                 issued_at: upstream.issued_at,
+                encrypted_logout: upstream.encrypted_logout,
                 expires_at: now
                     .as_second()
                     .saturating_add(i64::try_from(lifetime).unwrap_or(i64::MAX)),

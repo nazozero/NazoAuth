@@ -327,6 +327,7 @@ fn session() -> CurrentSession {
         amr: vec!["pwd".into()],
         oidc_sid: "device-session".into(),
         logged_in_client_ids: vec![],
+        upstream: None,
     }
 }
 fn form() -> DeviceAuthorizationForm {

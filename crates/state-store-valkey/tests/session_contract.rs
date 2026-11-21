@@ -276,6 +276,7 @@ async fn oidc_logout_scope_survives_rotation_and_rejects_stale_sessions_only() {
         sid_key: Some(uuid::Uuid::now_v7().to_string()),
         issued_at: now - 1,
         expires_at: now + 80,
+        encrypted_logout: None,
     }));
     let old = SessionId::generate();
     let rotated = SessionId::generate();

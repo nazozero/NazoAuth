@@ -16,6 +16,8 @@ pub struct OidcFederationSettings {
     pub issuer: String,
     pub discovery: bool,
     pub backchannel_logout: bool,
+    pub id_token_signed_response_alg: Option<nazo_crypto::jwt::Algorithm>,
+    pub post_logout_redirect_uri: Option<String>,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     pub jwks_url: String,

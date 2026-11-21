@@ -63,6 +63,9 @@ docker image inspect "$suite_image" "$nginx_image" "$mongo_image" \
       {key: image[key] for key in ("Id", "RepoDigests", "Created", "Architecture", "Os")}
       for image in json.load(sys.stdin)
     ], indent=2))' > "$task_dir/evidence/bootstrap/image-identities.json"
+docker run --rm --network none -v "$task_dir/tls:/fixture" --entrypoint keytool \
+  "$suite_image" -importcert -noprompt -alias oidf-fixture -file /fixture/ca.crt \
+  -keystore /fixture/java.p12 -storepass changeit
 docker run -d --name nazo-issue202-mongo --network host \
   "$mongo_image" --bind_ip 127.0.0.1
 docker run -d --name nazo-issue202-server --network host \
@@ -74,7 +77,8 @@ docker run -d --name nazo-issue202-server --network host \
   -e OIDC_GOOGLE_SECRET=unused-local-development-secret \
   -e OIDC_GITLAB_CLIENTID=unused-local-development-client \
   -e OIDC_GITLAB_SECRET=unused-local-development-secret \
-  -e JAVA_EXTRA_ARGS='-Dfintechlabs.devmode=true -Dserver.address=127.0.0.1' \
+  -e JAVA_EXTRA_ARGS='-Dfintechlabs.devmode=true -Dserver.address=127.0.0.1 -Djavax.net.ssl.trustStore=/fixture/java.p12 -Djavax.net.ssl.trustStorePassword=changeit' \
+  -v "$task_dir/tls/java.p12:/fixture/java.p12:ro" \
   "$suite_image"
 docker run -d --name nazo-issue202-nginx --network host \
   -v "$task_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \

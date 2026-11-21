@@ -43,6 +43,7 @@ pub(super) struct IdentityServices {
     pub(super) passkey_profile_endpoint: Arc<PasskeyProfileEndpoint>,
     pub(super) federation: Arc<LocalFederationService>,
     pub(super) federation_http_config: Arc<FederationHttpConfig>,
+    pub(super) federation_sessions: nazo_identity::SessionService,
 }
 
 pub(super) async fn build(
@@ -361,7 +362,7 @@ pub(super) async fn build(
                 pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
             },
         ),
-        identity_session_service,
+        identity_session_service.clone(),
     ));
     let passkey_login_endpoint = Arc::new(PasskeyLoginEndpoint::new(
         passkey_operations.clone(),
@@ -437,5 +438,6 @@ pub(super) async fn build(
         passkey_profile_endpoint,
         federation,
         federation_http_config,
+        federation_sessions: identity_session_service,
     })
 }

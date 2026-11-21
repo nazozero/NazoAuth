@@ -631,6 +631,17 @@ impl NazoAuth {
                 )
                 .await
             }),
+            Endpoint::FederationProviderLogout => Box::pin(async move {
+                crate::endpoints::auth::federation::federation_provider_logout(
+                    &self.identity.federation_sessions,
+                    self.identity.federation_http_config.as_ref(),
+                    request,
+                    extract!(http::parse_path(
+                        params.get("provider_id").expect("manifest capture")
+                    )),
+                )
+                .await
+            }),
             Endpoint::FederationProviderBackchannelLogout => Box::pin(async move {
                 crate::endpoints::auth::federation::federation_provider_backchannel_logout(
                     self.identity.auth_request_limiter.as_ref(),

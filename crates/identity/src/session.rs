@@ -64,6 +64,8 @@ pub struct UpstreamSession {
     pub sid_key: Option<String>,
     pub issued_at: i64,
     pub expires_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypted_logout: Option<String>,
 }
 
 impl UpstreamSession {
@@ -194,6 +196,7 @@ pub struct CurrentSession<A = PublicAccount> {
     pub amr: Vec<String>,
     pub oidc_sid: String,
     pub logged_in_client_ids: Vec<String>,
+    pub upstream: Option<UpstreamSession>,
 }
 
 impl<A> CurrentSession<A> {
@@ -498,6 +501,7 @@ impl SessionService {
             amr: record.amr,
             oidc_sid: record.oidc_sid.expect("validated session has an OIDC sid"),
             logged_in_client_ids: record.logged_in_client_ids,
+            upstream: record.upstream,
         })))
     }
 

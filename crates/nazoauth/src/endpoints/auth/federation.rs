@@ -325,6 +325,11 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
+    let end_session_endpoint = stored
+        .discovery
+        .as_ref()
+        .and_then(|metadata| metadata.end_session_endpoint.as_deref())
+        .and_then(rp::https_endpoint);
     let resolved;
     let provider = match (provider.discovery, stored.discovery) {
         (false, None) => provider,
@@ -363,12 +368,13 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let claims = match rp::verify_id_token(
+    let claims = match rp::verify_id_token_with_algorithm(
         &provider.issuer,
         &provider.client_id,
         &jwks,
         &token.id_token,
         &stored.nonce,
+        provider.id_token_signed_response_alg,
     ) {
         Ok(claims) => claims,
         Err(error) => {
@@ -403,7 +409,21 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             &provider.client_id,
             stored.created_at,
         ) {
-            Ok(upstream) => Some(upstream),
+            Ok(mut upstream) => {
+                if provider.post_logout_redirect_uri.is_some()
+                    && let Some(endpoint) = end_session_endpoint
+                {
+                    let logout = UpstreamLogoutRequest {
+                        endpoint: endpoint.into(),
+                        id_token_hint: token.id_token,
+                    };
+                    let Some(hint) = logout.seal(provider, upstream.subject_key()) else {
+                        return oidc_unavailable();
+                    };
+                    upstream.encrypted_logout = Some(hint);
+                }
+                Some(upstream)
+            }
             Err(_) => return oidc_access_denied(),
         }
     } else {
@@ -437,6 +457,71 @@ fn oidc_access_denied() -> HttpResponse {
     )
 }
 
+pub async fn federation_provider_logout(
+    sessions: &nazo_identity::SessionService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    provider_id: String,
+) -> HttpResponse {
+    use crate::http::{
+        SessionCookieConfig, form_post_authorization_response, login_required_response,
+    };
+    use nazo_identity::session::SessionResolution;
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
+        return unknown_provider_response();
+    };
+    let ExternalLoginProviderAdapter::Oidc(provider) = &provider.adapter else {
+        return unknown_provider_response();
+    };
+    let Some(return_uri) = provider.post_logout_redirect_uri.as_ref() else {
+        return unknown_provider_response();
+    };
+    let cookies = SessionCookieConfig::new(
+        &config.session_cookie_name,
+        &config.csrf_cookie_name,
+        config.cookie_secure,
+    );
+    let Some(session_id) = cookies.session_id(req) else {
+        return login_required_response(&cookies);
+    };
+    let csrf = url::form_urlencoded::parse(req.body())
+        .find_map(|(name, value)| (name == "csrf_token").then_some(value));
+    if !cookies.has_valid_csrf_token(req, csrf.as_deref()) {
+        return crate::http::csrf_error();
+    }
+    let current = match sessions
+        .current(&session_id, Timestamp::now().as_second())
+        .await
+    {
+        Ok(SessionResolution::Present(current)) => current,
+        Ok(_) => return login_required_response(&cookies),
+        Err(_) => return oidc_unavailable(),
+    };
+    let logout = current.upstream.as_ref().and_then(|upstream| {
+        UpstreamLogoutRequest::open(
+            upstream.encrypted_logout.as_deref()?,
+            provider,
+            &upstream.subject_key,
+        )
+    });
+    let Some(logout) = logout else {
+        return crate::http::authorization_error_response(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "This session has no upstream logout request.",
+        );
+    };
+    form_post_authorization_response(
+        &logout.endpoint,
+        &[
+            ("id_token_hint".into(), logout.id_token_hint),
+            ("post_logout_redirect_uri".into(), return_uri.clone()),
+        ],
+        None,
+        nazo_identity::SessionId::generate().as_str(),
+    )
+}
+
 pub async fn federation_provider_backchannel_logout(
     limiter: &AuthRequestLimiter,
     client_ip: &ClientIpConfig,
@@ -461,7 +546,7 @@ pub async fn federation_provider_backchannel_logout(
     }
 
     let invalid_token = || {
-        oauth_error(
+        crate::http::authorization_error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "Invalid OIDC Logout Token.",
@@ -511,13 +596,14 @@ pub async fn federation_provider_backchannel_logout(
         Err(_) => return oidc_unavailable(),
     };
     let now = Timestamp::now();
-    let logout = match rp::verify_logout_token(
+    let logout = match rp::verify_logout_token_with_algorithm(
         &provider.provider_id,
         &provider.issuer,
         &provider.client_id,
         &jwks,
         &token,
         now,
+        provider.id_token_signed_response_alg,
     ) {
         Ok(logout) => logout,
         Err(_) => return invalid_token(),

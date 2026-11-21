@@ -1,7 +1,8 @@
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_identity::federation::oidc::{
     OidcProviderMetadata, OidcTokenResponse, OidcUserInfo, discovery_url,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::OidcFederationSettings;
@@ -11,6 +12,57 @@ pub struct OidcCallbackQuery {
     pub code: Option<String>,
     pub state: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(super) struct UpstreamLogoutRequest {
+    pub endpoint: String,
+    pub id_token_hint: String,
+}
+
+impl UpstreamLogoutRequest {
+    pub fn seal(&self, provider: &OidcFederationSettings, subject_key: &str) -> Option<String> {
+        let key = logout_key(provider);
+        let nonce = rand::random::<[u8; 12]>();
+        let encoded = serde_json::to_vec(self).ok()?;
+        let sealed = nazo_crypto::aead::encrypt_prefixed(
+            &key,
+            &nonce,
+            subject_key.as_bytes(),
+            &encoded,
+            &nonce,
+        )
+        .ok()?;
+        Some(URL_SAFE_NO_PAD.encode(sealed))
+    }
+
+    pub fn open(
+        ciphertext: &str,
+        provider: &OidcFederationSettings,
+        subject_key: &str,
+    ) -> Option<Self> {
+        let key = logout_key(provider);
+        let mut sealed = URL_SAFE_NO_PAD.decode(ciphertext).ok()?;
+        let decoded =
+            nazo_crypto::aead::decrypt_nonce_prefixed(&key, subject_key.as_bytes(), &mut sealed)
+                .ok()?;
+        serde_json::from_slice(decoded).ok()
+    }
+}
+
+fn logout_key(provider: &OidcFederationSettings) -> [u8; 32] {
+    let mut hasher =
+        blake3::Hasher::new_derive_key("NazoAuth upstream OIDC logout hint encryption v1");
+    for field in [
+        &provider.provider_id,
+        &provider.issuer,
+        &provider.client_id,
+        &provider.client_secret,
+    ] {
+        hasher.update(&(field.len() as u64).to_be_bytes());
+        hasher.update(field.as_bytes());
+    }
+    *hasher.finalize().as_bytes()
 }
 
 pub async fn discover_oidc(
@@ -37,7 +89,13 @@ pub fn resolved_provider(
         authorization_endpoint: metadata.authorization_endpoint,
         token_endpoint: metadata.token_endpoint,
         jwks_url: metadata.jwks_url,
-        userinfo_endpoint: metadata.userinfo_endpoint,
+        // An authentication-only request uses the verified ID Token's subject.
+        userinfo_endpoint: metadata.userinfo_endpoint.filter(|_| {
+            provider
+                .scopes
+                .split_whitespace()
+                .any(|scope| scope != "openid")
+        }),
         ..provider.clone()
     }
 }

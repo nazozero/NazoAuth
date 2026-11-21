@@ -493,6 +493,10 @@ include `openid`.
 
 Set `backchannel_logout: true` and register the provider's logout callback at
 the OP to accept signed upstream logout requests. Both flags default to false.
+Set `id_token_signed_response_alg` to match a fixed signing algorithm on the
+OP client registration. To enable browser-initiated upstream logout, configure
+`post_logout_redirect_uri` on a discovery provider with back-channel logout
+enabled and register the return URL with the OP.
 See [external federation](../features/federation.md#external-oidc-login) for
 outbound network requirements, account linking and logout scope.
 

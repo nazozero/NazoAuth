@@ -600,6 +600,10 @@ retry from reviving a session. An embedding session backend that enables this
 feature implements the upstream logout operation and enforces its cutoff when
 reading sessions.
 
+Opted-in RP-initiated logout stores the verified ID Token hint and discovered
+end-session endpoint encrypted in the local session. The facade reuses the
+session and CSRF guards before handing the end-session form to the browser.
+
 ### Federation browser ownership
 
 OIDC/social HTTP owns canonical browser-seed cookies and their secure/dev

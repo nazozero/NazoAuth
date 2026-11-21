@@ -84,6 +84,8 @@ struct ProviderConfig {
     discovery: bool,
     #[serde(default)]
     backchannel_logout: bool,
+    id_token_signed_response_alg: Option<nazo_crypto::jwt::Algorithm>,
+    post_logout_redirect_uri: Option<String>,
     authorization_endpoint: Option<String>,
     token_endpoint: Option<String>,
     jwks_url: Option<String>,
@@ -218,6 +220,8 @@ impl ProviderConfig {
             issuer: required_text(self.issuer.take(), "issuer")?,
             discovery: self.discovery,
             backchannel_logout: self.backchannel_logout,
+            id_token_signed_response_alg: self.id_token_signed_response_alg,
+            post_logout_redirect_uri: self.post_logout_redirect_uri.take(),
             authorization_endpoint: oidc_endpoint(
                 self.discovery,
                 self.authorization_endpoint.take(),
@@ -346,7 +350,27 @@ pub fn validate_oidc_settings(
             validate_http_endpoint_url(endpoint)?;
         }
     }
-    validate_http_endpoint_url(&settings.redirect_uri)?;
+    let redirect_uri = validate_http_endpoint_url(&settings.redirect_uri)?;
+    if let Some(post_logout) = &settings.post_logout_redirect_uri {
+        let post_logout = validate_http_endpoint_url(post_logout)?;
+        if !settings.discovery
+            || !settings.backchannel_logout
+            || post_logout.origin() != redirect_uri.origin()
+        {
+            bail!(
+                "Upstream logout requires discovery, back-channel logout and a same-origin post_logout_redirect_uri"
+            );
+        }
+    }
+    use nazo_crypto::jwt::Algorithm;
+    if settings.id_token_signed_response_alg.is_some_and(|alg| {
+        !matches!(
+            alg,
+            Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 | Algorithm::EdDSA
+        )
+    }) {
+        bail!("unsupported id_token_signed_response_alg for OIDC federation");
+    }
     if !settings
         .scopes
         .split_whitespace()

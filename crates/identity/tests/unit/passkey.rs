@@ -35,6 +35,7 @@ fn uv_initialization_requires_fresh_independent_mfa_bound_to_the_account() {
         amr: vec!["passkey".into(), "otp".into(), "mfa".into()],
         oidc_sid: "test".into(),
         logged_in_client_ids: Vec::new(),
+        upstream: None,
     };
     for method in ["otp", "recovery_code"] {
         session.amr = vec!["passkey".into(), method.into(), "mfa".into()];

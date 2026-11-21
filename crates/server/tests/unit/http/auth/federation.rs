@@ -224,6 +224,8 @@ fn oidc_provider() -> OidcFederationSettings {
     OidcFederationSettings {
         discovery: false,
         backchannel_logout: false,
+        id_token_signed_response_alg: None,
+        post_logout_redirect_uri: None,
         provider_id: TEST_OIDC_PROVIDER_ID.to_owned(),
         issuer: "https://issuer.example".to_owned(),
         authorization_endpoint: "https://issuer.example/authorize".to_owned(),

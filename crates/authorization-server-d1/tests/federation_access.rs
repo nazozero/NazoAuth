@@ -1049,6 +1049,7 @@ fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
                 sid_key: Some(sid.into()),
                 issued_at,
                 expires_at: now + 60,
+                encrypted_logout: None,
             }));
             record
         };

@@ -116,6 +116,9 @@ upstream session ID if present and the upstream subject, scoped to the tenant,
 provider, issuer and client. Reauthenticate sessions established before the
 setting was enabled to attach them to the upstream session.
 
+Set `id_token_signed_response_alg` to the client's registered signing
+algorithm when it is fixed. Both ID Tokens and Logout Tokens must then use it.
+
 The OP posts a signed `logout_token` as form data. NazoAuth verifies it against
 the configured issuer and client, invalidates sessions by `sid` when provided,
 or by `sub` otherwise, and returns HTTP 200 even if those sessions have already
@@ -124,11 +127,28 @@ the matching local login sessions, including pending MFA. Downstream client
 logout delivery and downstream token revocation are outside this flow. See
 [OpenID Connect Back-Channel Logout](https://openid.net/specs/openid-connect-backchannel-1_0.html).
 
+### Initiating logout with the upstream OP
+
+For a discovery provider with back-channel logout enabled, set
+`post_logout_redirect_uri` to an application URL on the callback's origin and
+register that URL with the OP. The OP must publish an HTTPS
+`end_session_endpoint`. Send the signed-in browser to
+`POST /auth/federation/{provider_id}/logout` with its session and a CSRF token
+in the `csrf_token` form field or `X-CSRF-Token` header.
+
+The endpoint returns an auto-submitting form addressed to the upstream OP.
+The form carries the verified ID Token as an `id_token_hint` and the registered
+return URL. NazoAuth keeps the hint and endpoint encrypted in the session
+for this opt-in flow. Rotating the upstream client secret requires a fresh
+login to initiate logout. The incoming signed Back-Channel Logout request
+invalidates the local session.
+
 ### UserInfo and Profile Claims
 
 An OIDC provider can configure an optional `userinfo_endpoint` in its registry
-entry or obtain it through discovery. When available, the callback fetches JSON
-UserInfo after ID Token
+entry or obtain it through discovery. With discovery and only the `openid`
+scope, the callback uses the signed ID Token alone. When UserInfo is used, the
+callback fetches JSON UserInfo after ID Token
 verification, using the token response's Bearer access token. UserInfo `sub`
 must exactly match the subject in the verified ID Token before any profile
 claim is used. A failed request, invalid response or subject mismatch stops
@@ -137,8 +157,9 @@ the login.
 With UserInfo configured, its email and name claims supply the upstream profile.
 With the endpoint omitted, the profile comes from the signed ID Token.
 The identity projection retains issuer, subject, normalized verified email and
-name fields. Third-party tokens remain request-local and are never stored as
-NazoAuth tokens or session credentials.
+name fields. Third-party access and refresh tokens remain request-local.
+Opted-in upstream logout retains only the encrypted ID Token hint and its
+destination for the lifetime of the local session.
 
 An existing active `(tenant_id, provider_type, provider_id, subject)` link can
 authenticate without a verified email claim. Creating a new account requires

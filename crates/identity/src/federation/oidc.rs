@@ -41,11 +41,12 @@ pub struct OidcProviderMetadata {
     #[serde(rename = "jwks_uri")]
     pub jwks_url: String,
     pub userinfo_endpoint: Option<String>,
+    pub end_session_endpoint: Option<String>,
     pub response_types_supported: Vec<String>,
     pub token_endpoint_auth_methods_supported: Option<Vec<String>>,
 }
 
-fn https_endpoint(value: &str) -> Option<url::Url> {
+pub fn https_endpoint(value: &str) -> Option<url::Url> {
     let (scheme, authority) = value.split_once("://")?;
     let authority = authority.split(['/', '?', '#']).next()?;
     if !scheme.eq_ignore_ascii_case("https")
@@ -92,6 +93,12 @@ impl OidcProviderMetadata {
                 .userinfo_endpoint
                 .as_deref()
                 .is_none_or(|url| https_endpoint(url).is_some())
+    }
+}
+
+impl OidcUpstreamLogin {
+    pub fn subject_key(&self) -> &str {
+        &self.subject_key
     }
 }
 
@@ -151,6 +158,7 @@ pub struct OidcUpstreamLogin {
     pub(super) subject_key: String,
     pub(super) sid_key: Option<String>,
     pub(super) issued_at: i64,
+    pub encrypted_logout: Option<String>,
 }
 
 pub struct OidcLogout {
@@ -195,6 +203,7 @@ impl OidcIdTokenClaims {
                 .as_deref()
                 .map(|sid| scope_key(provider, &self.iss, client_id, "sid", sid)),
             issued_at: self.iat,
+            encrypted_logout: None,
         })
     }
 
@@ -267,7 +276,18 @@ pub fn verify_id_token(
     token: &str,
     expected_nonce: &str,
 ) -> Result<OidcIdTokenClaims, OidcError> {
-    let (header, key) = signing_key(jwks, token, OidcError::InvalidIdToken)?;
+    verify_id_token_with_algorithm(issuer, client_id, jwks, token, expected_nonce, None)
+}
+
+pub fn verify_id_token_with_algorithm(
+    issuer: &str,
+    client_id: &str,
+    jwks: &Value,
+    token: &str,
+    expected_nonce: &str,
+    expected_algorithm: Option<jwt::Algorithm>,
+) -> Result<OidcIdTokenClaims, OidcError> {
+    let (header, key) = signing_key(jwks, token, expected_algorithm, OidcError::InvalidIdToken)?;
     let mut validation = jwt::Validation::new(header.alg);
     validation.set_issuer(&[issuer]);
     validation.set_audience(&[client_id]);
@@ -291,16 +311,19 @@ pub fn verify_id_token(
 fn signing_key(
     jwks: &Value,
     token: &str,
+    expected_algorithm: Option<jwt::Algorithm>,
     error: OidcError,
 ) -> Result<(jwt::Header, jwt::VerificationKey), OidcError> {
     let header = jwt::decode_header(token).map_err(|_| error)?;
-    if !matches!(
-        header.alg,
-        jwt::Algorithm::RS256
-            | jwt::Algorithm::PS256
-            | jwt::Algorithm::ES256
-            | jwt::Algorithm::EdDSA
-    ) {
+    if expected_algorithm.is_some_and(|algorithm| header.alg != algorithm)
+        || !matches!(
+            header.alg,
+            jwt::Algorithm::RS256
+                | jwt::Algorithm::PS256
+                | jwt::Algorithm::ES256
+                | jwt::Algorithm::EdDSA
+        )
+    {
         return Err(error);
     }
     let key = if let Some(kid) = header.kid.as_deref() {
@@ -327,6 +350,18 @@ pub fn verify_logout_token(
     token: &str,
     now: Timestamp,
 ) -> Result<OidcLogout, OidcError> {
+    verify_logout_token_with_algorithm(provider, issuer, client_id, jwks, token, now, None)
+}
+
+pub fn verify_logout_token_with_algorithm(
+    provider: &str,
+    issuer: &str,
+    client_id: &str,
+    jwks: &Value,
+    token: &str,
+    now: Timestamp,
+    expected_algorithm: Option<jwt::Algorithm>,
+) -> Result<OidcLogout, OidcError> {
     #[derive(Deserialize)]
     struct Claims {
         sub: Option<String>,
@@ -340,7 +375,7 @@ pub fn verify_logout_token(
         extra: serde_json::Map<String, Value>,
     }
     let error = OidcError::InvalidLogoutToken;
-    let (header, key) = signing_key(jwks, token, error)?;
+    let (header, key) = signing_key(jwks, token, expected_algorithm, error)?;
     if header.typ.as_deref().is_some_and(|typ| {
         !typ.eq_ignore_ascii_case("logout+jwt") && !typ.eq_ignore_ascii_case("jwt")
     }) {

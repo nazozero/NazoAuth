@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the original OIDF Basic RP plan against the NazoAuth HTTP fixture.
+"""Exercise the original OIDF Basic, Config and Back-Channel Logout RP plans.
 
 This is a run driver, not an alternate RP implementation. It preserves Suite
 results and checks local login independently. WAITING stays incomplete. Evidence
@@ -11,9 +11,11 @@ Requires requests. Run only against the isolated instance from bootstrap-suite.s
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from urllib.parse import urljoin, urlsplit
@@ -21,16 +23,20 @@ from urllib.parse import urljoin, urlsplit
 import requests
 
 
-PLAN = "oidcc-client-basic-certification-test-plan"
+PLANS = {
+    "basic": ("oidcc-client-basic-certification-test-plan", "nazo-issue202", "oidf-rp-test"),
+    "config": ("oidcc-client-config-certification-test-plan", "nazo-config", "oidf-config"),
+    "backchannel": ("oidcc-client-back-channel-logout-rp-basic", "nazo-logout", "oidf-logout"),
+}
 TERMINAL = {"FINISHED", "INTERRUPTED"}
-POSITIVE_MODULES = {
+BASIC_POSITIVE = {
     "oidcc-client-test",
     "oidcc-client-test-kid-absent-single-jwks",
     "oidcc-client-test-idtoken-sig-rs256",
     "oidcc-client-test-scope-userinfo-claims",
     "oidcc-client-test-client-secret-basic",
 }
-REJECTED_MODULES = {
+BASIC_REJECTED = {
     "oidcc-client-test-invalid-iss",
     "oidcc-client-test-missing-sub",
     "oidcc-client-test-invalid-aud",
@@ -42,7 +48,24 @@ REJECTED_MODULES = {
     "oidcc-client-test-kid-absent-multiple-jwks",
     "oidcc-client-test-idtoken-sig-none",
 }
-EXPECTED_MODULES = POSITIVE_MODULES | REJECTED_MODULES
+CONFIG_ONLY = "oidcc-client-test-discovery-openid-config"
+ISSUER_MISMATCH = "oidcc-client-test-discovery-issuer-mismatch"
+DISCOVERED_JWKS = "oidcc-client-test-discovery-jwks-uri-keys"
+ROTATION = "oidcc-client-test-signing-key-rotation"
+UNSIGNED = "oidcc-client-test-idtoken-sig-none"
+BACKCHANNEL_VALID = "oidcc-client-test-rp-backchannel-rpinitlogout"
+PROFILE_MODULES = {
+    "basic": BASIC_POSITIVE | BASIC_REJECTED,
+    "config": {
+        CONFIG_ONLY, ISSUER_MISMATCH, ROTATION, UNSIGNED,
+        DISCOVERED_JWKS,
+        "oidcc-client-test-signing-key-rotation-just-before-signing",
+    },
+    "backchannel": {BACKCHANNEL_VALID} | {
+        f"{BACKCHANNEL_VALID}-{suffix}"
+        for suffix in ("alg-none", "no-event", "with-nonce", "wrong-alg", "wrong-aud", "wrong-event", "wrong-iss")
+    },
+}
 SESSION_COOKIE = "nazo_federation_session"
 CSRF_COOKIE = "nazo_federation_csrf"
 REDACTED_KEYS = {
@@ -50,15 +73,17 @@ REDACTED_KEYS = {
     "client_secret", "access_token", "refresh_token", "id_token",
     "authorization_code", "code", "code_verifier", "nonce", "state",
     "csrf_token", "session_id", "authorization", "cookie", "set-cookie",
-    "verifiable_jws", "incoming_body", "outgoing",
+    "verifiable_jws", "incoming_body", "outgoing", "logout_token", "id_token_hint",
+    "all_issued_id_tokens", "issued_id_tokens",
 }
+COMPACT_JOSE = re.compile(r"eyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*){2,4}")
 
 
 def evidence(value):
     """Redact known Suite payload fields only at the artifact boundary."""
     if isinstance(value, dict):
         return {
-            key: "[redacted]" if key.lower() in REDACTED_KEYS else evidence(item)
+            COMPACT_JOSE.sub("[redacted]", key): "[redacted]" if key.lower() in REDACTED_KEYS else evidence(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -72,6 +97,7 @@ def evidence(value):
                 pass
         if value.startswith(("https://", "http://")):
             return without_query(value)
+        return COMPACT_JOSE.sub("[redacted]", value)
     return value
 
 
@@ -84,7 +110,7 @@ def without_query(url):
     return parts._replace(query="", fragment="").geturl()
 
 
-def callback_errors(module, response, callback):
+def callback_errors(response, callback, expect_login):
     """Suite PASSED alone does not establish successful or rejected local login."""
     errors = []
     if response["url"] != without_query(callback):
@@ -95,7 +121,7 @@ def callback_errors(module, response, callback):
         return errors + ["callback did not return JSON"]
     if not isinstance(body, dict):
         return errors + ["callback did not return a JSON object"]
-    if module in POSITIVE_MODULES:
+    if expect_login:
         if response["status"] != 200:
             errors.append("valid upstream identity did not authenticate its existing link")
         if body.get("mfa_required") is not False:
@@ -116,14 +142,27 @@ def callback_errors(module, response, callback):
     return errors
 
 
+class LogoutForm(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.action = None
+        self.fields = {}
+        self.feed(html)
+
+    def handle_starttag(self, tag, attributes):
+        attrs = dict(attributes)
+        if tag == "form" and attrs.get("method") == "post":
+            self.action = attrs.get("action")
+        if tag == "input" and attrs.get("type") == "hidden":
+            self.fields[attrs.get("name")] = attrs.get("value")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--ca", default=os.environ.get("OIDF_SUITE_CA"))
     parser.add_argument("--suite", default="https://localhost:8443")
-    parser.add_argument("--start", default="https://localhost:8443/rp/auth/federation/oidf-rp-test/start")
-    parser.add_argument("--callback", default="https://localhost:8443/rp/auth/federation/oidf-rp-test/callback")
-    parser.add_argument("--alias", default="nazo-issue202")
+    parser.add_argument("--profile", choices=PLANS, default="basic")
     parser.add_argument("--finish-timeout", type=float, default=20)
     parser.add_argument("--tested-commit", required=True)
     args = parser.parse_args()
@@ -131,6 +170,11 @@ def main():
         parser.error("--ca or OIDF_SUITE_CA is required; TLS verification stays enabled")
     args.output.mkdir(parents=True, exist_ok=True)
     suite = args.suite.rstrip("/")
+    plan_name, alias, provider = PLANS[args.profile]
+    rp = f"{suite}/rp/auth/federation/{provider}"
+    callback = f"{rp}/callback"
+    keys_rp = f"{suite}/rp/auth/federation/oidf-config-keys"
+    post_logout = f"{suite}/rp/signed-out"
     api = requests.Session()
     api.verify = args.ca
     api.trust_env = False
@@ -149,13 +193,9 @@ def main():
                 return info
             time.sleep(0.5)
 
-    def follow_rp():
-        # A new cookie jar per module exercises production browser state binding.
-        browser = requests.Session()
-        browser.verify = args.ca
-        browser.trust_env = False
+    def follow_rp(browser, base):
         hops = []
-        url = args.start
+        url = f"{base}/start"
         for _ in range(10):
             response = browser.get(url, allow_redirects=False, timeout=40)
             location = response.headers.get("Location")
@@ -177,46 +217,121 @@ def main():
                 "status": response.status_code,
                 "body": response.text,
                 "cookie_names": sorted(cookies),
-                "session_cookie_set": bool(cookies.get(SESSION_COOKIE)),
-                "csrf_cookie_set": bool(cookies.get(CSRF_COOKIE)),
+                "session_cookie_set": bool(response.cookies.get(SESSION_COOKIE)),
+                "csrf_cookie_set": bool(response.cookies.get(CSRF_COOKIE)),
                 "csrf_cookie_matches_body": isinstance(body, dict)
                 and bool(body.get("csrf_token"))
                 and cookies.get(CSRF_COOKIE) == body["csrf_token"],
             }
         raise RuntimeError("RP flow exceeded ten redirects")
 
+    def drive_profile(module, folder):
+        # Each module starts with a distinct browser session.
+        with requests.Session() as browser:
+            browser.verify = args.ca
+            browser.trust_env = False
+            if module in (CONFIG_ONLY, ISSUER_MISMATCH):
+                start = browser.get(f"{rp}/start", allow_redirects=False, timeout=40)
+                redirect = start.headers.get("Location")
+                save(folder / "rp-start.json", {"status": start.status_code, "redirect": redirect})
+                if module == CONFIG_ONLY:
+                    expected = f"{suite}/test/a/{alias}/authorize"
+                    ok = start.status_code == 302 and redirect and without_query(redirect) == expected
+                else:
+                    ok = start.status_code == 503 and redirect is None and not browser.cookies
+                return start.status_code, [] if ok else ["unexpected discovery start outcome"]
+
+            expect_login = module not in BASIC_REJECTED
+            base = keys_rp if module == DISCOVERED_JWKS else rp
+            response = follow_rp(browser, base)
+            save(folder / "rp-response.json", response)
+            errors = callback_errors(response, f"{base}/callback", expect_login)
+            if module == ROTATION and not errors:
+                second = follow_rp(browser, rp)
+                save(folder / "rp-second-response.json", second)
+                errors.extend(callback_errors(second, callback, True))
+            if args.profile == "backchannel" and not errors:
+                errors.extend(drive_logout(browser, module, folder))
+            return response["status"], errors
+
+    def drive_logout(browser, module, folder):
+        check = f"{suite}/rp/session-status"
+        before = browser.get(check, timeout=40).status_code
+        forbidden = browser.post(f"{rp}/logout", timeout=40, allow_redirects=False).status_code
+        csrf = browser.cookies.get(CSRF_COOKIE)
+        intent = browser.post(f"{rp}/logout", data={"csrf_token": csrf}, timeout=40, allow_redirects=False)
+        form = LogoutForm(intent.text)
+        result = {"session_before": before, "without_csrf": forbidden, "intent_status": intent.status_code}
+        if (
+            intent.status_code != 200 or intent.headers.get("Cache-Control") != "no-store"
+            or form.action != f"{suite}/test/a/{alias}/end_session_endpoint"
+            or form.fields.get("post_logout_redirect_uri") != post_logout
+            or not form.fields.get("id_token_hint")
+        ):
+            save(folder / "rp-logout.json", result)
+            return ["the RP did not issue the upstream logout form"]
+        op = browser.post(form.action, data=form.fields, timeout=40, allow_redirects=False)
+        return_target = urljoin(form.action, op.headers.get("Location", ""))
+        returned = browser.get(return_target, timeout=40, allow_redirects=False) if return_target == post_logout else None
+        after = browser.get(check, timeout=40).status_code
+        result.update({
+            "end_session_status": op.status_code,
+            "returned_to_registered_uri": returned is not None and returned.status_code == 200,
+            "session_after": after,
+        })
+        save(folder / "rp-logout.json", result)
+        expected_session = 401 if module == BACKCHANNEL_VALID else 200
+        return [] if before == 200 and forbidden == 400 and result["returned_to_registered_uri"] and after == expected_session else [
+            "logout did not preserve the expected return or local session behavior"
+        ]
+
     variants = {"client_registration": "static_client", "request_type": "plain_http_request"}
+    if args.profile != "basic":
+        variants.update(client_auth_type="client_secret_basic", response_mode="default")
     config = {
-        "alias": args.alias,
+        "alias": alias,
         "description": f"NazoAuth issue 202: {args.tested_commit}",
         "waitTimeoutSeconds": 5,
         "client": {
             "client_id": os.environ.get("OIDF_RP_CLIENT_ID", "nazoauth-issue202"),
             "client_secret": os.environ.get("OIDF_RP_CLIENT_SECRET", "nazoauth-issue202-test-secret"),
-            "redirect_uri": args.callback,
+            "redirect_uri": callback,
             "id_token_signed_response_alg": "RS256",
         },
     }
+    if args.profile == "backchannel":
+        config["client"].update(
+            backchannel_logout_uri=f"{rp}/backchannel-logout",
+            backchannel_logout_session_required=True,
+            post_logout_redirect_uri=post_logout,
+        )
+    if args.profile == "config":
+        # This Suite module ends when JWKS is served. Use the RP's
+        # authentication-only configuration, with its own registered callback.
+        config["override"] = {
+            DISCOVERED_JWKS: {"client": config["client"] | {"redirect_uri": f"{keys_rp}/callback"}},
+        }
     suite_server = call("GET", "/api/server")
     save(args.output / "suite-server.json", suite_server)
     if (suite_server.get("version"), suite_server.get("tag"), suite_server.get("revision")) != (
         "5.3.4", "release-v5.3.4", "23353b3"
     ):
         raise RuntimeError("Suite runtime identity differs from the pinned tested image")
-    save(args.output / "plan-definition.json", call("GET", f"/api/plan/info/{PLAN}"))
-    plan = call("POST", "/api/plan", params={"planName": PLAN, "variant": json.dumps(variants)}, body=config)
+    save(args.output / "plan-definition.json", call("GET", f"/api/plan/info/{plan_name}"))
+    plan = call("POST", "/api/plan", params={"planName": plan_name, "variant": json.dumps(variants)}, body=config)
     save(args.output / "created-plan.json", plan)
     plan_id = plan["id"]
     modules = plan["modules"]
-    if len(modules) != 14 or {entry["testModule"] for entry in modules} != EXPECTED_MODULES:
-        raise RuntimeError("Suite Basic RP plan differs from the 14 reviewed modules")
+    expected = PROFILE_MODULES[args.profile]
+    if len(modules) != len(expected) or {entry["testModule"] for entry in modules} != expected:
+        raise RuntimeError(f"Suite {plan_name} differs from its reviewed modules")
     summary = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "tested_commit": args.tested_commit,
         "suite_runtime": suite_server,
         "evidence_policy": "Temporary secrets, private JWK fields, token values and URL queries are redacted at export; Suite statuses, results and condition records are preserved.",
         "suite_origin": suite,
-        "plan_name": PLAN,
+        "plan_name": plan_name,
         "plan_id": plan_id,
         "declared_modules": len(modules),
         "results": [],
@@ -240,10 +355,7 @@ def main():
             save(folder / "runner-before.json", call("GET", f"/api/runner/{module_id}"))
             if ready.get("status") == "WAITING":
                 try:
-                    rp_response = follow_rp()
-                    save(folder / "rp-response.json", rp_response)
-                    record["rp_status"] = rp_response["status"]
-                    record["application_errors"] = callback_errors(name, rp_response, args.callback)
+                    record["rp_status"], record["application_errors"] = drive_profile(name, folder)
                 except Exception as error:
                     # Request exceptions can contain the callback's code/state URL.
                     record["rp_driver_error"] = type(error).__name__
@@ -256,7 +368,7 @@ def main():
             record["status"] = observed.get("status")
             record["result"] = observed.get("result")
             record["expected_suite_result"] = (
-                "SKIPPED" if name == "oidcc-client-test-idtoken-sig-none" else "PASSED"
+                "SKIPPED" if name == UNSIGNED else "PASSED"
             )
             record["application_pass"] = not record["application_errors"]
             record["suite_expectation_met"] = (
