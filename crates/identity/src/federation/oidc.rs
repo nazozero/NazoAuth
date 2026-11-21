@@ -6,7 +6,7 @@ use nazo_crypto::{
     jwt,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{OidcFederationStart, VerifiedExternalIdentity};
 use crate::email::normalize_email_address;
@@ -43,6 +43,8 @@ pub struct OidcProviderMetadata {
     pub userinfo_endpoint: Option<String>,
     pub end_session_endpoint: Option<String>,
     pub response_types_supported: Vec<String>,
+    pub subject_types_supported: Vec<String>,
+    pub id_token_signing_alg_values_supported: Vec<String>,
     pub token_endpoint_auth_methods_supported: Option<Vec<String>>,
 }
 
@@ -83,6 +85,11 @@ impl OidcProviderMetadata {
                 .iter()
                 .any(|response| response == "code")
             && self
+                .subject_types_supported
+                .iter()
+                .any(|kind| matches!(kind.as_str(), "public" | "pairwise"))
+            && self.supports_signing_algorithm(jwt::Algorithm::RS256)
+            && self
                 .token_endpoint_auth_methods_supported
                 .as_ref()
                 .is_none_or(|methods| methods.iter().any(|method| method == "client_secret_basic"))
@@ -93,6 +100,19 @@ impl OidcProviderMetadata {
                 .userinfo_endpoint
                 .as_deref()
                 .is_none_or(|url| https_endpoint(url).is_some())
+    }
+
+    pub fn supports_signing_algorithm(&self, algorithm: jwt::Algorithm) -> bool {
+        let name = match algorithm {
+            jwt::Algorithm::RS256 => "RS256",
+            jwt::Algorithm::PS256 => "PS256",
+            jwt::Algorithm::ES256 => "ES256",
+            jwt::Algorithm::EdDSA => "EdDSA",
+            _ => return false,
+        };
+        self.id_token_signing_alg_values_supported
+            .iter()
+            .any(|supported| supported == name)
     }
 }
 
@@ -130,23 +150,19 @@ pub struct OidcIdTokenClaims {
     iss: String,
     sub: String,
     aud: Value,
-    azp: Option<String>,
     iat: i64,
     nonce: Option<String>,
     sid: Option<String>,
-    #[serde(flatten)]
-    profile: OidcProfile,
+    email: Option<String>,
+    email_verified: Option<bool>,
+    name: Option<String>,
+    given_name: Option<String>,
+    family_name: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct OidcUserInfo {
     sub: String,
-    #[serde(flatten)]
-    profile: OidcProfile,
-}
-
-#[derive(Deserialize)]
-struct OidcProfile {
     email: Option<String>,
     email_verified: Option<bool>,
     name: Option<String>,
@@ -157,13 +173,13 @@ struct OidcProfile {
 pub struct OidcUpstreamLogin {
     pub(super) subject_key: String,
     pub(super) sid_key: Option<String>,
-    pub(super) issued_at: i64,
+    pub(super) started_at: i64,
     pub encrypted_logout: Option<String>,
 }
 
 pub struct OidcLogout {
     pub(super) key: String,
-    pub(super) issued_at: i64,
+    pub(super) cutoff: i64,
 }
 
 fn scope_key(provider: &str, issuer: &str, client_id: &str, kind: &str, value: &str) -> String {
@@ -180,8 +196,8 @@ fn valid_oidc_subject(subject: &str) -> bool {
     !subject.is_empty() && subject.len() <= 255 && subject.is_ascii()
 }
 
-fn valid_opaque_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 1024 && !value.chars().any(char::is_control)
+fn valid_session_id(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
 }
 
 impl OidcIdTokenClaims {
@@ -192,7 +208,10 @@ impl OidcIdTokenClaims {
         started_at: i64,
     ) -> Result<OidcUpstreamLogin, OidcError> {
         if self.iat < started_at.saturating_sub(60)
-            || self.sid.as_deref().is_some_and(|sid| !valid_opaque_id(sid))
+            || self
+                .sid
+                .as_deref()
+                .is_some_and(|sid| !valid_session_id(sid))
         {
             return Err(OidcError::InvalidIdToken);
         }
@@ -202,7 +221,7 @@ impl OidcIdTokenClaims {
                 .sid
                 .as_deref()
                 .map(|sid| scope_key(provider, &self.iss, client_id, "sid", sid)),
-            issued_at: self.iat,
+            started_at,
             encrypted_logout: None,
         })
     }
@@ -217,9 +236,16 @@ impl OidcIdTokenClaims {
                 if userinfo.sub != self.sub {
                     return Err(OidcError::InvalidUserInfo);
                 }
-                userinfo.profile
+                userinfo
             }
-            None => self.profile,
+            None => OidcUserInfo {
+                sub: self.sub,
+                email: self.email,
+                email_verified: self.email_verified,
+                name: self.name,
+                given_name: self.given_name,
+                family_name: self.family_name,
+            },
         };
         // Subject identifies an existing link. Only a verified, valid email may
         // be offered to the identity service for provisioning a new account.
@@ -228,20 +254,35 @@ impl OidcIdTokenClaims {
             .as_deref()
             .filter(|_| profile.email_verified == Some(true))
             .and_then(|value| normalize_email_address(value).ok());
+        // Only fields used both by account resolution and by the persisted
+        // profile need a second owned value.
+        let mut claims = serde_json::Map::new();
+        for (name, value) in [
+            ("iss", Value::String(self.iss)),
+            ("sub", Value::String(profile.sub.clone())),
+            ("email", email.clone().map_or(Value::Null, Value::String)),
+            (
+                "name",
+                profile.name.clone().map_or(Value::Null, Value::String),
+            ),
+            (
+                "given_name",
+                profile.given_name.map_or(Value::Null, Value::String),
+            ),
+            (
+                "family_name",
+                profile.family_name.map_or(Value::Null, Value::String),
+            ),
+        ] {
+            claims.insert(name.to_owned(), value);
+        }
         Ok(VerifiedExternalIdentity {
             provider_type: "oidc".to_owned(),
             provider_id: provider_id.to_owned(),
-            subject: self.sub.clone(),
-            email: email.clone(),
-            display_name: profile.name.clone(),
-            claims: json!({
-                "iss": self.iss,
-                "sub": self.sub,
-                "email": email,
-                "name": profile.name,
-                "given_name": profile.given_name,
-                "family_name": profile.family_name,
-            }),
+            subject: profile.sub,
+            email,
+            display_name: profile.name,
+            claims: Value::Object(claims),
         })
     }
 }
@@ -297,15 +338,27 @@ pub fn verify_id_token_with_algorithm(
     let claims = jwt::decode::<OidcIdTokenClaims>(token, &key, &validation)
         .map_err(|_| OidcError::InvalidIdToken)?
         .claims;
-    let audience_count = claims.aud.as_array().map_or(1, Vec::len);
     if !valid_oidc_subject(&claims.sub)
         || claims.nonce.as_deref() != Some(expected_nonce)
-        || (audience_count > 1 && claims.azp.as_deref() != Some(client_id))
+        || has_untrusted_audience(&claims.aud, client_id)
         || claims.iat > Timestamp::now().as_second() + 60
     {
         return Err(OidcError::InvalidIdToken);
     }
     Ok(claims)
+}
+
+fn has_untrusted_audience(audience: &Value, client_id: &str) -> bool {
+    // JWT validation requires this client to be present. No other client is
+    // configured as trusted by this RP; azp cannot grant that trust.
+    audience
+        .as_array()
+        .is_some_and(|values| values.iter().any(|value| value.as_str() != Some(client_id)))
+}
+
+fn nonce_present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    serde::de::IgnoredAny::deserialize(deserializer)?;
+    Ok(true)
 }
 
 fn signing_key(
@@ -364,38 +417,45 @@ pub fn verify_logout_token_with_algorithm(
 ) -> Result<OidcLogout, OidcError> {
     #[derive(Deserialize)]
     struct Claims {
+        iss: String,
         sub: Option<String>,
         sid: Option<String>,
         aud: Value,
-        azp: Option<String>,
         iat: i64,
         jti: String,
         events: Value,
-        #[serde(flatten)]
-        extra: serde_json::Map<String, Value>,
+        #[serde(default, deserialize_with = "nonce_present")]
+        nonce: bool,
     }
     let error = OidcError::InvalidLogoutToken;
     let (header, key) = signing_key(jwks, token, expected_algorithm, error)?;
     if header.typ.as_deref().is_some_and(|typ| {
-        !typ.eq_ignore_ascii_case("logout+jwt") && !typ.eq_ignore_ascii_case("jwt")
+        ![
+            "logout+jwt",
+            "application/logout+jwt",
+            "jwt",
+            "application/jwt",
+        ]
+        .iter()
+        .any(|known| typ.eq_ignore_ascii_case(known))
     }) {
         return Err(error);
     }
     let mut validation = jwt::Validation::new(header.alg);
     validation.set_issuer(&[issuer]);
     validation.set_audience(&[client_id]);
-    validation.set_required_spec_claims(&["exp", "aud", "iss"]);
+    validation.set_required_spec_claims(&["exp", "aud"]);
     validation.leeway = 0;
+    validation.reject_tokens_expiring_in_less_than = 1;
     let claims = jwt::decode::<Claims>(token, &key, &validation)
         .map_err(|_| error)?
         .claims;
     let time = now.as_second();
-    let audience_count = claims.aud.as_array().map_or(1, Vec::len);
-    if (audience_count > 1 && claims.azp.as_deref() != Some(client_id))
+    if has_untrusted_audience(&claims.aud, client_id)
         || claims.iat > time.saturating_add(60)
         || claims.iat < time.saturating_sub(300)
-        || !valid_opaque_id(&claims.jti)
-        || claims.extra.contains_key("nonce")
+        || claims.jti.is_empty()
+        || claims.nonce
         || !claims
             .events
             .get("http://schemas.openid.net/event/backchannel-logout")
@@ -407,7 +467,7 @@ pub fn verify_logout_token_with_algorithm(
         || claims
             .sid
             .as_deref()
-            .is_some_and(|sid| !valid_opaque_id(sid))
+            .is_some_and(|sid| !valid_session_id(sid))
     {
         return Err(error);
     }
@@ -418,7 +478,9 @@ pub fn verify_logout_token_with_algorithm(
         .or_else(|| claims.sub.as_deref().map(|sub| ("sub", sub)))
         .ok_or(error)?;
     Ok(OidcLogout {
-        key: scope_key(provider, issuer, client_id, kind, value),
-        issued_at: claims.iat,
+        key: scope_key(provider, &claims.iss, client_id, kind, value),
+        // A sid identifies one upstream session. Subject logout covers every
+        // login started by local receipt time, independently of the OP's clock.
+        cutoff: if kind == "sid" { i64::MAX } else { time },
     })
 }

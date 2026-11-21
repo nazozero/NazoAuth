@@ -62,7 +62,8 @@ pub fn add_amr(amr: &mut Vec<String>, value: &str) {
 pub struct UpstreamSession {
     pub subject_key: String,
     pub sid_key: Option<String>,
-    pub issued_at: i64,
+    /// Local authorization flow start in Unix seconds, preserved across session rotation.
+    pub started_at: i64,
     pub expires_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encrypted_logout: Option<String>,

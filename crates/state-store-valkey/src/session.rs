@@ -24,10 +24,10 @@ return 'ok'
 "#;
 
 const CHECK_UPSTREAM_SCOPE: &str = r#"
-local issued = tonumber(ARGV[1])
+local started = tonumber(ARGV[1])
 for _, key in ipairs(KEYS) do
     local cutoff = tonumber(redis.call('GET', key))
-    if not cutoff or cutoff >= issued then return 'revoked' end
+    if not cutoff or cutoff >= started then return 'revoked' end
 end
 return 'active'
 "#;
@@ -86,7 +86,7 @@ struct SessionWireRecord<'a> {
     #[serde(default, skip_serializing_if = "<[String]>::is_empty")]
     logged_in_client_ids: Cow<'a, [String]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    upstream: Option<nazo_identity::session::UpstreamSession>,
+    upstream: Option<Cow<'a, nazo_identity::session::UpstreamSession>>,
 }
 
 impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
@@ -100,7 +100,7 @@ impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
             pending_mfa: value.pending_mfa(),
             oidc_sid: value.oidc_sid().map(Cow::Borrowed),
             logged_in_client_ids: Cow::Borrowed(value.logged_in_client_ids()),
-            upstream: value.upstream().cloned(),
+            upstream: value.upstream().map(Cow::Borrowed),
         }
     }
 }
@@ -125,7 +125,7 @@ impl TryFrom<SessionWireRecord<'_>> for SessionRecord {
                 "inconsistent stored authentication precision",
             ));
         }
-        record.set_upstream(value.upstream);
+        record.set_upstream(value.upstream.map(Cow::into_owned));
         for client_id in value.logged_in_client_ids.into_owned() {
             record.add_logged_in_client(client_id);
         }
@@ -190,7 +190,7 @@ impl SessionStore {
                 &self.connection,
                 CHECK_UPSTREAM_SCOPE,
                 upstream.keys().map(upstream_key).collect::<Vec<_>>(),
-                vec![upstream.issued_at.to_string()],
+                vec![upstream.started_at.to_string()],
             )
             .await?;
             if reply != "active" {
@@ -206,14 +206,14 @@ impl SessionStore {
     async fn advance_upstream(
         &self,
         keys: Vec<String>,
-        issued_at: i64,
+        cutoff: i64,
         retain_until: i64,
     ) -> Result<(), Error> {
         command::eval_string(
             &self.connection,
             ADVANCE_UPSTREAM_SCOPE,
             keys,
-            vec![issued_at.to_string(), retain_until.to_string()],
+            vec![cutoff.to_string(), retain_until.to_string()],
         )
         .await?;
         Ok(())
@@ -267,11 +267,11 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
     fn revoke_upstream<'a>(
         &'a self,
         key: &'a str,
-        issued_at: i64,
+        cutoff: i64,
         retain_until: i64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            self.advance_upstream(vec![upstream_key(key)], issued_at, retain_until)
+            self.advance_upstream(vec![upstream_key(key)], cutoff, retain_until)
                 .await
                 .map_err(crate::identity_repository_error)
         })

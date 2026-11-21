@@ -35,6 +35,7 @@ async fn upstream_basic_auth_form_encodes_each_credential_without_trimming() {
     exchange_oidc_code(
         &super::super::federation_http_client().unwrap(),
         &provider,
+        &provider.token_endpoint,
         "code",
         "verifier",
     )
@@ -104,6 +105,7 @@ async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request
     let token = exchange_oidc_code(
         &super::super::federation_http_client().unwrap(),
         &provider,
+        &provider.token_endpoint,
         " code-1 +% ",
         "verifier-1",
     )
@@ -146,9 +148,13 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
     provider.jwks_url = valid_endpoint;
 
     assert_eq!(
-        fetch_oidc_jwks(&super::super::federation_http_client().unwrap(), &provider)
-            .await
-            .expect("keys array should be accepted"),
+        fetch_oidc_jwks(
+            &super::super::federation_http_client().unwrap(),
+            &provider.jwks_url,
+            provider.discovery
+        )
+        .await
+        .expect("keys array should be accepted"),
         json!({"keys": []})
     );
     let valid_request = valid_request.await.expect("test server should finish");
@@ -159,9 +165,13 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
     provider.jwks_url = invalid_endpoint;
 
     assert!(
-        fetch_oidc_jwks(&super::super::federation_http_client().unwrap(), &provider)
-            .await
-            .is_err(),
+        fetch_oidc_jwks(
+            &super::super::federation_http_client().unwrap(),
+            &provider.jwks_url,
+            provider.discovery
+        )
+        .await
+        .is_err(),
         "JWKS responses without a keys array must fail closed"
     );
     invalid_request
@@ -250,16 +260,24 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
         let mut provider = provider();
         provider.jwks_url = endpoint;
         assert_eq!(
-            fetch_oidc_jwks(config.client.as_ref(), &provider)
-                .await
-                .unwrap(),
+            fetch_oidc_jwks(
+                config.client.as_ref(),
+                &provider.jwks_url,
+                provider.discovery
+            )
+            .await
+            .unwrap(),
             json!({"keys": []})
         );
         let shared_config = config.clone();
         assert_eq!(
-            fetch_oidc_jwks(shared_config.client.as_ref(), &provider)
-                .await
-                .unwrap(),
+            fetch_oidc_jwks(
+                shared_config.client.as_ref(),
+                &provider.jwks_url,
+                provider.discovery
+            )
+            .await
+            .unwrap(),
             json!({"keys": []})
         );
         server.await.unwrap();

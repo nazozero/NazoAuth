@@ -383,7 +383,7 @@ where
             .as_second()
             .saturating_add(self.config.state_ttl_seconds as i64);
         self.sessions
-            .revoke_upstream(&logout.key, logout.issued_at, retain_until)
+            .revoke_upstream(&logout.key, logout.cutoff, retain_until)
             .await
             .map_err(FederationError::Session)
     }
@@ -508,7 +508,7 @@ where
             session.set_upstream(Some(crate::session::UpstreamSession {
                 subject_key: upstream.subject_key,
                 sid_key: upstream.sid_key,
-                issued_at: upstream.issued_at,
+                started_at: upstream.started_at,
                 encrypted_logout: upstream.encrypted_logout,
                 expires_at: now
                     .as_second()

@@ -55,6 +55,12 @@ impl rp_http::FederationHttpClient for Issuer {
 
 #[actix_web::test]
 async fn discovered_login_keeps_its_endpoints_and_accepts_backchannel_logout() {
+    for by_sid in [false, true] {
+        discovered_login_and_logout(by_sid).await;
+    }
+}
+
+async fn discovered_login_and_logout(by_sid: bool) {
     let mut provider = oidc_provider();
     provider.discovery = true;
     provider.backchannel_logout = true;
@@ -69,6 +75,8 @@ async fn discovered_login_keeps_its_endpoints_and_accepts_backchannel_logout() {
         "token_endpoint": provider.token_endpoint,
         "jwks_uri": provider.jwks_url,
         "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
     });
     issuer
         .0
@@ -121,6 +129,9 @@ async fn discovered_login_keeps_its_endpoints_and_accepts_backchannel_logout() {
         json!({
             "sub": subject,
             "sid": sid,
+            // Both tokens are valid even when the OP's signing nodes disagree
+            // within the accepted clock skew. Logout must still end the session.
+            "iat": jiff::Timestamp::now().as_second() + 30,
             "email": format!("discovered-{suffix}@example.com"),
         }),
     );
@@ -163,6 +174,9 @@ async fn discovered_login_keeps_its_endpoints_and_accepts_backchannel_logout() {
         "jti": suffix,
         "events": { "http://schemas.openid.net/event/backchannel-logout": {} },
     });
+    if !by_sid {
+        claims.as_object_mut().unwrap().remove("sid");
+    }
     for valid in [false, true, true] {
         claims["aud"] = json!(if valid {
             provider.client_id.as_str()
@@ -203,6 +217,42 @@ async fn discovered_login_keeps_its_endpoints_and_accepts_backchannel_logout() {
             assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
         }
         assert_eq!(sessions.load(&cookie).await.unwrap().is_none(), valid);
+        assert!(issuer.0.lock().unwrap().is_empty());
+    }
+
+    // Discovery and key-fetch failures follow the same Back-Channel response
+    // contract as token or session-revocation failures.
+    for failed_metadata in [true, false] {
+        let mut document = metadata.clone();
+        if failed_metadata {
+            document["issuer"] = json!("https://other.example");
+        }
+        issuer.0.lock().unwrap().insert(metadata_path, document);
+        if !failed_metadata {
+            issuer.0.lock().unwrap().insert("/jwks", json!({}));
+        }
+        let token = key.encode_jwt(&logout_header, &claims);
+        let body = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("logout_token", &token)
+            .finish();
+        let request = http::Request::post("/backchannel-logout")
+            .header(
+                http::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(Bytes::from(body))
+            .unwrap();
+        let response = rp_http::federation_provider_backchannel_logout(
+            &limiter,
+            &client_ip,
+            &service,
+            &config,
+            &request,
+            TEST_OIDC_PROVIDER_ID.into(),
+        )
+        .await;
+        assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()[http::header::CACHE_CONTROL], "no-store");
         assert!(issuer.0.lock().unwrap().is_empty());
     }
 }

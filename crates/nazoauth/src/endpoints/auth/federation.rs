@@ -159,7 +159,7 @@ pub async fn federation_provider_start(
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
             let metadata = if provider.discovery {
-                match discover_oidc(config.client.as_ref(), &provider.issuer).await {
+                match discover_oidc(config.client.as_ref(), provider).await {
                     Ok(metadata) => Some(metadata),
                     Err(_) => return oidc_unavailable(),
                 }
@@ -325,23 +325,23 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
-    let end_session_endpoint = stored
-        .discovery
-        .as_ref()
-        .and_then(|metadata| metadata.end_session_endpoint.as_deref())
-        .and_then(rp::https_endpoint);
-    let resolved;
-    let provider = match (provider.discovery, stored.discovery) {
-        (false, None) => provider,
-        (true, Some(metadata)) if metadata.validate(&provider.issuer) => {
-            resolved = resolved_provider(provider, metadata);
-            &resolved
-        }
+    // Discovery was validated before storing this browser-bound, single-use state.
+    // A configuration change must not reinterpret it as another issuer's login.
+    let metadata = match (provider.discovery, stored.discovery.as_ref()) {
+        (false, None) => None,
+        (true, Some(metadata)) if metadata.issuer == provider.issuer => Some(metadata),
         _ => return federation_state_error(FederationError::InvalidState),
     };
+    let token_endpoint = metadata.map_or(provider.token_endpoint.as_str(), |document| {
+        document.token_endpoint.as_str()
+    });
+    let jwks_url = metadata.map_or(provider.jwks_url.as_str(), |document| {
+        document.jwks_url.as_str()
+    });
     let token = match exchange_oidc_code(
         config.client.as_ref(),
         provider,
+        token_endpoint,
         input.code,
         &stored.pkce_verifier,
     )
@@ -357,7 +357,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let jwks = match fetch_oidc_jwks(config.client.as_ref(), provider).await {
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider.discovery).await {
         Ok(jwks) => jwks,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC JWKS fetch failed");
@@ -374,7 +374,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         &jwks,
         &token.id_token,
         &stored.nonce,
-        provider.id_token_signed_response_alg,
+        Some(provider.signing_algorithm()),
     ) {
         Ok(claims) => claims,
         Err(error) => {
@@ -386,7 +386,20 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let userinfo = if let Some(endpoint) = provider.userinfo_endpoint.as_deref() {
+    let userinfo_endpoint = match metadata {
+        // An authentication-only request uses the verified ID Token's subject.
+        Some(document)
+            if provider
+                .scopes
+                .split_whitespace()
+                .any(|scope| scope != "openid") =>
+        {
+            document.userinfo_endpoint.as_deref()
+        }
+        Some(_) => None,
+        None => provider.userinfo_endpoint.as_deref(),
+    };
+    let userinfo = if let Some(endpoint) = userinfo_endpoint {
         match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider.discovery)
             .await
         {
@@ -411,7 +424,9 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         ) {
             Ok(mut upstream) => {
                 if provider.post_logout_redirect_uri.is_some()
-                    && let Some(endpoint) = end_session_endpoint
+                    && let Some(endpoint) = metadata
+                        .and_then(|document| document.end_session_endpoint.as_deref())
+                        .and_then(rp::https_endpoint)
                 {
                     let logout = UpstreamLogoutRequest {
                         endpoint: endpoint.into(),
@@ -552,6 +567,13 @@ pub async fn federation_provider_backchannel_logout(
             "Invalid OIDC Logout Token.",
         )
     };
+    let logout_failed = || {
+        crate::http::authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "server_error",
+            "OIDC logout could not be completed.",
+        )
+    };
     if !req
         .headers()
         .get(http::header::CONTENT_TYPE)
@@ -579,21 +601,22 @@ pub async fn federation_provider_backchannel_logout(
         return invalid_token();
     }
 
-    let resolved;
-    let provider = if provider.discovery {
-        match discover_oidc(config.client.as_ref(), &provider.issuer).await {
-            Ok(metadata) => {
-                resolved = resolved_provider(provider, metadata);
-                &resolved
-            }
-            Err(_) => return oidc_unavailable(),
+    let metadata = if provider.discovery {
+        match discover_oidc(config.client.as_ref(), provider).await {
+            Ok(metadata) => Some(metadata),
+            Err(_) => return logout_failed(),
         }
     } else {
-        provider
+        None
     };
-    let jwks = match fetch_oidc_jwks(config.client.as_ref(), provider).await {
+    let jwks_url = metadata
+        .as_ref()
+        .map_or(provider.jwks_url.as_str(), |document| {
+            document.jwks_url.as_str()
+        });
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider.discovery).await {
         Ok(jwks) => jwks,
-        Err(_) => return oidc_unavailable(),
+        Err(_) => return logout_failed(),
     };
     let now = Timestamp::now();
     let logout = match rp::verify_logout_token_with_algorithm(
@@ -603,13 +626,13 @@ pub async fn federation_provider_backchannel_logout(
         &jwks,
         &token,
         now,
-        provider.id_token_signed_response_alg,
+        Some(provider.signing_algorithm()),
     ) {
         Ok(logout) => logout,
         Err(_) => return invalid_token(),
     };
     if service.revoke_oidc(logout, now).await.is_err() {
-        return oidc_unavailable();
+        return logout_failed();
     }
     crate::http::empty_response_no_store(StatusCode::OK)
 }

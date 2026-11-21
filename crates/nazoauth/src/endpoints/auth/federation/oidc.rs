@@ -67,9 +67,10 @@ fn logout_key(provider: &OidcFederationSettings) -> [u8; 32] {
 
 pub async fn discover_oidc(
     client: &dyn super::FederationHttpClient,
-    issuer: &str,
+    provider: &OidcFederationSettings,
 ) -> anyhow::Result<OidcProviderMetadata> {
-    let url = discovery_url(issuer).ok_or_else(|| anyhow::anyhow!("invalid discovery issuer"))?;
+    let url = discovery_url(&provider.issuer)
+        .ok_or_else(|| anyhow::anyhow!("invalid discovery issuer"))?;
     let response = client
         .send_discovered(
             http::Request::get(url).body(bytes::Bytes::new())?,
@@ -77,27 +78,12 @@ pub async fn discover_oidc(
         )
         .await?;
     let metadata = super::federation_json_response::<OidcProviderMetadata>(response)?;
-    anyhow::ensure!(metadata.validate(issuer), "invalid OIDC discovery metadata");
+    anyhow::ensure!(
+        metadata.validate(&provider.issuer)
+            && metadata.supports_signing_algorithm(provider.signing_algorithm()),
+        "invalid OIDC discovery metadata"
+    );
     Ok(metadata)
-}
-
-pub fn resolved_provider(
-    provider: &OidcFederationSettings,
-    metadata: OidcProviderMetadata,
-) -> OidcFederationSettings {
-    OidcFederationSettings {
-        authorization_endpoint: metadata.authorization_endpoint,
-        token_endpoint: metadata.token_endpoint,
-        jwks_url: metadata.jwks_url,
-        // An authentication-only request uses the verified ID Token's subject.
-        userinfo_endpoint: metadata.userinfo_endpoint.filter(|_| {
-            provider
-                .scopes
-                .split_whitespace()
-                .any(|scope| scope != "openid")
-        }),
-        ..provider.clone()
-    }
 }
 
 async fn send(
@@ -117,6 +103,7 @@ async fn send(
 pub async fn exchange_oidc_code(
     client: &dyn super::FederationHttpClient,
     provider: &OidcFederationSettings,
+    token_endpoint: &str,
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<OidcTokenResponse> {
@@ -132,7 +119,7 @@ pub async fn exchange_oidc_code(
         url::form_urlencoded::byte_serialize(provider.client_id.as_bytes()).collect::<String>(),
         url::form_urlencoded::byte_serialize(provider.client_secret.as_bytes()).collect::<String>()
     );
-    let request = http::Request::post(&provider.token_endpoint)
+    let request = http::Request::post(token_endpoint)
         .header(
             http::header::AUTHORIZATION,
             format!("Basic {}", STANDARD.encode(credentials)),
@@ -147,12 +134,13 @@ pub async fn exchange_oidc_code(
 
 pub async fn fetch_oidc_jwks(
     client: &dyn super::FederationHttpClient,
-    provider: &OidcFederationSettings,
+    endpoint: &str,
+    discovered: bool,
 ) -> anyhow::Result<Value> {
     let response = send(
         client,
-        http::Request::get(&provider.jwks_url).body(bytes::Bytes::new())?,
-        provider.discovery,
+        http::Request::get(endpoint).body(bytes::Bytes::new())?,
+        discovered,
     )
     .await?;
     let value = super::federation_json_response::<Value>(response)?;

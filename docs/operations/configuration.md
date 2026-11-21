@@ -493,8 +493,10 @@ include `openid`.
 
 Set `backchannel_logout: true` and register the provider's logout callback at
 the OP to accept signed upstream logout requests. Both flags default to false.
-Set `id_token_signed_response_alg` to match a fixed signing algorithm on the
-OP client registration. To enable browser-initiated upstream logout, configure
+`id_token_signed_response_alg` defaults to `RS256`; set it to `PS256`, `ES256`,
+or `EdDSA` when that algorithm is registered with the OP. Discovery must advertise
+the selected algorithm, and both ID Tokens and Logout Tokens must use it.
+To enable browser-initiated upstream logout, configure
 `post_logout_redirect_uri` on a discovery provider with back-channel logout
 enabled and register the return URL with the OP.
 See [external federation](../features/federation.md#external-oidc-login) for

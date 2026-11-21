@@ -915,7 +915,7 @@ struct SessionWire<'a> {
     oidc_sid: Option<Cow<'a, str>>,
     logged_in_client_ids: Cow<'a, [String]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    upstream: Option<nazo_identity::session::UpstreamSession>,
+    upstream: Option<Cow<'a, nazo_identity::session::UpstreamSession>>,
 }
 
 impl<'a> From<&'a SessionRecord> for SessionWire<'a> {
@@ -929,7 +929,7 @@ impl<'a> From<&'a SessionRecord> for SessionWire<'a> {
             pending_mfa: value.pending_mfa(),
             oidc_sid: value.oidc_sid().map(Cow::Borrowed),
             logged_in_client_ids: Cow::Borrowed(value.logged_in_client_ids()),
-            upstream: value.upstream().cloned(),
+            upstream: value.upstream().map(Cow::Borrowed),
         }
     }
 }
@@ -950,7 +950,7 @@ impl TryFrom<SessionWire<'_>> for SessionRecord {
         if !record.restore_auth_time_micros(wire.auth_time_micros) {
             return Err(DbError::CorruptData);
         }
-        record.set_upstream(wire.upstream);
+        record.set_upstream(wire.upstream.map(Cow::into_owned));
         for client in wire.logged_in_client_ids.into_owned() {
             record.add_logged_in_client(client);
         }
@@ -1027,13 +1027,13 @@ const ADVANCE_UPSTREAM_SCOPE: &str = "
 ";
 
 impl D1Provider {
-    fn advance_upstream_scope(&self, key: &str, issued_at: i64, retain_until: i64) -> Statement {
+    fn advance_upstream_scope(&self, key: &str, cutoff: i64, retain_until: i64) -> Statement {
         Statement::new(
             ADVANCE_UPSTREAM_SCOPE,
             vec![
                 json!(self.tenant_id),
                 json!(key),
-                json!(issued_at.to_string()),
+                json!(cutoff.to_string()),
                 json!(Uuid::new_v4()),
                 json!(retain_until),
             ],
@@ -1081,16 +1081,12 @@ impl LoginSessionPort for D1Provider {
     fn revoke_upstream<'a>(
         &'a self,
         key: &'a str,
-        issued_at: i64,
+        cutoff: i64,
         retain_until: i64,
     ) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
             self.database
-                .batch(vec![self.advance_upstream_scope(
-                    key,
-                    issued_at,
-                    retain_until,
-                )])
+                .batch(vec![self.advance_upstream_scope(key, cutoff, retain_until)])
                 .await
                 .map_err(repository_error)?;
             Ok(())
@@ -1160,7 +1156,7 @@ impl SessionStorePort for D1Provider {
                         .await
                         .map_err(repository_error)?
                         .and_then(|row| row.value.parse::<i64>().ok())
-                        .is_some_and(|cutoff| cutoff < upstream.issued_at);
+                        .is_some_and(|cutoff| cutoff < upstream.started_at);
                     if !active {
                         return Ok(None);
                     }

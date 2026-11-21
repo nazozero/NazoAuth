@@ -176,6 +176,7 @@ fn issuer_audience_nonce_and_time_mismatches_are_rejected() {
         json!({"aud": "other-client"}),
         json!({"aud": [CLIENT, "other-client"]}),
         json!({"aud": [CLIENT, "other-client"], "azp": "other-client"}),
+        json!({"aud": [CLIENT, "other-client"], "azp": CLIENT}),
         json!({"nonce": "other-nonce"}),
         json!({"exp": Timestamp::now().as_second()}),
         json!({"iat": Timestamp::now().as_second() + 120}),
@@ -183,12 +184,10 @@ fn issuer_audience_nonce_and_time_mismatches_are_rejected() {
         let token = fixture.token(invalid, &[], Some("oidc-kid"));
         assert!(verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).is_err());
     }
-    let token = fixture.token(
-        json!({"aud": [CLIENT, "other-client"], "azp": CLIENT}),
-        &[],
-        Some("oidc-kid"),
-    );
-    assert!(verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).is_ok());
+    for audience in [json!([CLIENT]), json!([CLIENT, CLIENT])] {
+        let token = fixture.token(json!({"aud": audience}), &[], Some("oidc-kid"));
+        assert!(verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).is_ok());
+    }
     let token = fixture.token(
         json!({"iss": "https://issuer.example/"}),
         &[],
@@ -414,6 +413,36 @@ fn email_and_verification_must_come_from_the_same_profile() {
     wasm_bindgen_test::wasm_bindgen_test
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn unused_extensions_do_not_enter_the_identity_profile() {
+    let fixture = Fixture::new(Algorithm::RS256);
+    let token = fixture.token(
+        json!({
+            "azp": "extension-client",
+            "extension": {"nested": ["unused", {"value": 42}]}
+        }),
+        &[],
+        Some("oidc-kid"),
+    );
+    let userinfo = serde_json::from_value(json!({
+        "sub": "subject-1",
+        "name": "Selected Profile",
+        "extension": {"nested": ["unused", {"value": 42}]}
+    }))
+    .unwrap();
+    let identity = verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE)
+        .unwrap()
+        .into_identity("test-oidc", Some(userinfo))
+        .unwrap();
+    assert_eq!(identity.display_name.as_deref(), Some("Selected Profile"));
+    assert!(identity.claims.get("extension").is_none());
+    assert!(identity.claims.get("azp").is_none());
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn userinfo_requires_a_nonempty_bearer_access_token() {
     for token_type in ["Bearer", "bearer", "bEaReR"] {
         let response: OidcTokenResponse = serde_json::from_value(json!({
@@ -460,11 +489,40 @@ fn discovery_binds_the_exact_issuer_and_only_usable_https_endpoints() {
         "authorization_endpoint": "https://login.example/authorize",
         "token_endpoint": "https://api.example/token",
         "jwks_uri": "https://keys.example/jwks",
-        "response_types_supported": ["code"]
+        "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"]
     });
+    for claim in [
+        "subject_types_supported",
+        "id_token_signing_alg_values_supported",
+    ] {
+        let mut missing = document.clone();
+        missing.as_object_mut().unwrap().remove(claim);
+        assert!(serde_json::from_value::<OidcProviderMetadata>(missing).is_err());
+    }
+    for (field, value) in [
+        ("subject_types_supported", json!(["unrecognized"])),
+        ("id_token_signing_alg_values_supported", json!(["ES256"])),
+    ] {
+        let mut unsupported = document.clone();
+        unsupported[field] = value;
+        let metadata: OidcProviderMetadata = serde_json::from_value(unsupported).unwrap();
+        assert!(!metadata.validate(issuer));
+    }
     let metadata: OidcProviderMetadata = serde_json::from_value(document).unwrap();
     assert!(metadata.validate(issuer));
+    assert!(metadata.supports_signing_algorithm(Algorithm::RS256));
+    assert!(!metadata.supports_signing_algorithm(Algorithm::ES256));
+    assert!(!metadata.supports_signing_algorithm(Algorithm::HS256));
     assert!(!metadata.validate(issuer.trim_end_matches('/')));
+    let mut extended = metadata.clone();
+    extended.subject_types_supported.push("unknown".to_owned());
+    extended
+        .id_token_signing_alg_values_supported
+        .extend(["ES256".to_owned(), "unknown".to_owned()]);
+    assert!(extended.validate(issuer));
+    assert!(extended.supports_signing_algorithm(Algorithm::ES256));
     let mut wrong = metadata.clone();
     wrong.token_endpoint = "http://api.example/token".to_owned();
     assert!(!wrong.validate(issuer));
@@ -501,8 +559,10 @@ fn logout_requires_a_current_signed_token_for_this_client_and_a_logout_target() 
     assert!(verify(&signed(json!({}), &["nonce", "sid"])).is_ok());
     assert!(verify(&signed(json!({}), &[])).is_err());
     assert!(verify(&signed(json!({"nonce": null}), &[])).is_err());
+    assert!(verify(&signed(json!({"nonce": {"extension": [1, 2, 3]}}), &[])).is_err());
     assert!(verify(&signed(json!({}), &["nonce", "sub", "sid"])).is_err());
     assert!(verify(&signed(json!({}), &["nonce", "exp"])).is_err());
+    assert!(verify(&signed(json!({"exp": now.as_second()}), &["nonce"])).is_err());
     assert!(verify(&signed(json!({"aud": "other-client"}), &["nonce"])).is_err());
     assert!(
         verify(&signed(
@@ -516,9 +576,18 @@ fn logout_requires_a_current_signed_token_for_this_client_and_a_logout_target() 
             json!({"aud": [CLIENT, "other-client"], "azp": CLIENT}),
             &["nonce"]
         ))
-        .is_ok()
+        .is_err()
     );
+    assert!(verify(&signed(json!({"aud": [CLIENT, CLIENT]}), &["nonce"])).is_ok());
     assert!(verify(&signed(json!({"iss": "https://other.example"}), &["nonce"])).is_err());
+    assert!(verify(&signed(json!({"iss": [ISSUER]}), &["nonce"])).is_err());
+    assert!(
+        verify(&signed(
+            json!({"iss": [ISSUER, "https://other.example"]}),
+            &["nonce"]
+        ))
+        .is_err()
+    );
     assert!(verify(&signed(json!({"iat": now.as_second() - 301}), &["nonce"])).is_err());
     assert!(
         verify(&signed(
@@ -527,4 +596,163 @@ fn logout_requires_a_current_signed_token_for_this_client_and_a_logout_target() 
         ))
         .is_err()
     );
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn logout_typ_accepts_equivalent_media_type_names() {
+    use nazo_identity::federation::oidc::verify_logout_token;
+    let fixture = Fixture::new(Algorithm::ES256);
+    let token = fixture.token(
+        json!({
+            "jti": "logout-event",
+            "events": {"http://schemas.openid.net/event/backchannel-logout": {}}
+        }),
+        &["nonce"],
+        Some("oidc-kid"),
+    );
+    let payload = token.split('.').nth(1).unwrap();
+    for (typ, accepted) in [
+        ("logout+jwt", true),
+        ("application/logout+jwt", true),
+        ("Application/LoGoUt+JwT", true),
+        ("JWT", true),
+        ("application/jwt", true),
+        ("at+jwt", false),
+        ("text/logout+jwt", false),
+        ("application/example+jwt", false),
+    ] {
+        let header = json!({"alg": fixture.algorithm, "kid": "oidc-kid", "typ": typ});
+        let input = format!(
+            "{}.{payload}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap())
+        );
+        let signed = format!(
+            "{input}.{}",
+            URL_SAFE_NO_PAD.encode(fixture.key.sign(input.as_bytes()).unwrap())
+        );
+        assert_eq!(
+            verify_logout_token(
+                "provider",
+                ISSUER,
+                CLIENT,
+                &fixture.jwks,
+                &signed,
+                Timestamp::now()
+            )
+            .is_ok(),
+            accepted,
+            "typ={typ}"
+        );
+    }
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
+    use nazo_identity::federation::oidc::verify_logout_token;
+    let fixture = Fixture::new(Algorithm::ES256);
+    let now = Timestamp::now();
+    let long_sid = "s".repeat(2048);
+    let logout = |sid: &str, jti: &str| {
+        fixture.token(
+            json!({
+                "sid": sid,
+                "jti": jti,
+                "events": {"http://schemas.openid.net/event/backchannel-logout": {}}
+            }),
+            &["nonce"],
+            Some("oidc-kid"),
+        )
+    };
+    for (sid, accepted) in [
+        ("session !~", true),
+        (long_sid.as_str(), true),
+        ("session-é", false),
+        ("session\t", false),
+        ("session\u{7f}", false),
+        ("", false),
+    ] {
+        let token = fixture.token(json!({"sid": sid}), &[], Some("oidc-kid"));
+        let claims = verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).unwrap();
+        assert_eq!(
+            claims
+                .upstream_login("provider", CLIENT, now.as_second())
+                .is_ok(),
+            accepted,
+            "ID Token sid={sid:?}"
+        );
+        assert_eq!(
+            verify_logout_token(
+                "provider",
+                ISSUER,
+                CLIENT,
+                &fixture.jwks,
+                &logout(sid, "event"),
+                now
+            )
+            .is_ok(),
+            accepted,
+            "Logout Token sid={sid:?}"
+        );
+    }
+    let long_jti = "j".repeat(2048);
+    for jti in ["事件-1", "event\n1", long_jti.as_str()] {
+        assert!(
+            verify_logout_token(
+                "provider",
+                ISSUER,
+                CLIENT,
+                &fixture.jwks,
+                &logout("session", jti),
+                now
+            )
+            .is_ok()
+        );
+    }
+    assert!(
+        verify_logout_token(
+            "provider",
+            ISSUER,
+            CLIENT,
+            &fixture.jwks,
+            &logout("session", ""),
+            now
+        )
+        .is_err()
+    );
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn id_token_and_subject_logout_allow_independent_issuer_clock_skew() {
+    use nazo_identity::federation::oidc::verify_logout_token;
+    let fixture = Fixture::new(Algorithm::ES256);
+    let now = Timestamp::now();
+    let token = fixture.token(json!({"iat": now.as_second() + 30}), &[], Some("oidc-kid"));
+    let claims = verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).unwrap();
+    assert!(
+        claims
+            .upstream_login("provider", CLIENT, now.as_second() - 1)
+            .is_ok()
+    );
+    let logout = fixture.token(
+        json!({
+            "iat": now.as_second() - 10,
+            "jti": "subject-logout",
+            "events": {"http://schemas.openid.net/event/backchannel-logout": {}}
+        }),
+        &["nonce"],
+        Some("oidc-kid"),
+    );
+    assert!(verify_logout_token("provider", ISSUER, CLIENT, &fixture.jwks, &logout, now).is_ok());
 }

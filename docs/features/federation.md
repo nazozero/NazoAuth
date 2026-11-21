@@ -78,10 +78,13 @@ verification. The native host stores transient state in Valkey; the Worker
 host uses its D1 state adapter.
 
 ID Token verification checks the exact configured issuer, subject, client
-audience, expiry, required `iat`, nonce and signature. Tokens with multiple
-audiences must include an `azp` equal to the client ID. Expiry must be later
-than the current time, and `iat` may be at most 60 seconds in the future.
-Supported signing algorithms are RS256, PS256, ES256 and EdDSA with Ed25519.
+audience, expiry, required `iat`, nonce and signature. Each audience must equal
+the configured client ID; `azp` does not establish trust in another audience.
+Expiry must be later than the current time, and `iat` may be at most 60 seconds
+in the future. The default signing algorithm is RS256. Configure
+`id_token_signed_response_alg` to match a registration using PS256, ES256 or
+EdDSA with Ed25519. Both ID Tokens and Logout Tokens must use the selected
+algorithm.
 
 JWKS is fetched for each callback. A supplied `kid` must occur exactly once in
 the JWKS, and that key must be usable for the declared algorithm. An ID Token
@@ -94,13 +97,15 @@ Set `discovery: true` with a preconfigured HTTPS `issuer`, the existing client
 credentials and the registered callback. Omit the static authorization, token,
 JWKS and UserInfo endpoints. NazoAuth fetches the issuer's
 `/.well-known/openid-configuration` document at login start, checks the exact
-issuer and support for authorization code with `client_secret_basic`, and
-binds the resulting endpoints to that browser's callback state. Discovery is
-limited to the configured issuer. See
+issuer, required subject and signing capabilities, and support for authorization
+code with `client_secret_basic`. The document must advertise the selected
+signing algorithm. The validated endpoints are bound to that browser's callback
+state. Discovery is limited to the configured issuer. See
 [OpenID Connect Discovery §4](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig).
 
-Discovered endpoints must use HTTPS. Native pins each server-side request to
-validated DNS addresses and denies private and special-use networks. Worker
+Discovered endpoints must use HTTPS. Native validates the actual DNS answers
+when opening a connection and reuses admitted TLS connections. IP literals
+receive the same check against private and special-use networks. Worker
 requires each server-side origin, including any distinct JWKS or UserInfo origin,
 in the existing outbound allowlist. TLS validation and the response size limit
 apply to all discovery exchanges, and redirects are rejected. Use static
@@ -116,14 +121,18 @@ upstream session ID if present and the upstream subject, scoped to the tenant,
 provider, issuer and client. Reauthenticate sessions established before the
 setting was enabled to attach them to the upstream session.
 
-Set `id_token_signed_response_alg` to the client's registered signing
-algorithm when it is fixed. Both ID Tokens and Logout Tokens must then use it.
-
 The OP posts a signed `logout_token` as form data. NazoAuth verifies it against
 the configured issuer and client, invalidates sessions by `sid` when provided,
 or by `sub` otherwise, and returns HTTP 200 even if those sessions have already
-expired. A newer login survives retries of the same logout. This invalidates
-the matching local login sessions, including pending MFA. Downstream client
+expired. Invalid tokens and failed logout operations return HTTP 400.
+A logged-out `sid` remains invalid through the local session lifetime,
+including when another ID Token for that same upstream session has a later
+`iat`. A subject-only logout revokes matching local login sessions, including
+pending MFA and callbacks whose login flow began before the logout was accepted.
+This cutoff uses local flow start and receipt times at second precision; flows
+started in the same second are included. RP instances must keep their clocks
+synchronized. Each accepted subject-only retry applies to the sessions present
+at that time. Downstream client
 logout delivery and downstream token revocation are outside this flow. See
 [OpenID Connect Back-Channel Logout](https://openid.net/specs/openid-connect-backchannel-1_0.html).
 

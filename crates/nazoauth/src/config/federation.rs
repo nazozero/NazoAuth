@@ -28,6 +28,13 @@ pub struct OidcFederationSettings {
     pub scopes: String,
 }
 
+impl OidcFederationSettings {
+    pub fn signing_algorithm(&self) -> nazo_crypto::jwt::Algorithm {
+        self.id_token_signed_response_alg
+            .unwrap_or(nazo_crypto::jwt::Algorithm::RS256)
+    }
+}
+
 #[derive(Clone)]
 pub struct SamlGatewaySettings {
     pub issuer: String,

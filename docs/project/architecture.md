@@ -593,8 +593,12 @@ boundary. An embedding host can opt into discovery by implementing the
 discovered-request capability on the existing federation HTTP port.
 
 Opted-in sessions carry digests for the upstream subject and optional session
-ID. The session backend maintains a monotonic logout timestamp for each
-tenant-scoped digest and checks it when loading linked sessions. This preserves
+ID. The session backend maintains a monotonic revocation cutoff for each
+tenant-scoped digest and checks it when loading linked sessions. A subject
+cutoff compares the local login flow's start time with the local time at which
+the logout is accepted, both in seconds. Upstream `iat` only validates token
+freshness. A session ID cutoff revokes that entire upstream session through its
+retained lifetime. This preserves
 logout across local session rotation and prevents an older callback or logout
 retry from reviving a session. An embedding session backend that enables this
 feature implements the upstream logout operation and enforces its cutoff when

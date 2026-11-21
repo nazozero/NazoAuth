@@ -264,7 +264,7 @@ async fn unversioned_sessions_require_fresh_login() {
 }
 
 #[tokio::test]
-async fn oidc_logout_scope_survives_rotation_and_rejects_stale_sessions_only() {
+async fn oidc_logout_preserves_ceremony_binding_across_mfa_rotation() {
     use nazo_identity::{ports::LoginSessionPort, session::UpstreamSession};
     let Some((store, _)) = setup().await else {
         return;
@@ -274,9 +274,9 @@ async fn oidc_logout_scope_survives_rotation_and_rejects_stale_sessions_only() {
     federated.set_upstream(Some(UpstreamSession {
         subject_key: uuid::Uuid::now_v7().to_string(),
         sid_key: Some(uuid::Uuid::now_v7().to_string()),
-        issued_at: now - 1,
+        started_at: now - 1,
         expires_at: now + 80,
-        encrypted_logout: None,
+        encrypted_logout: Some("encrypted-logout-hint".into()),
     }));
     let old = SessionId::generate();
     let rotated = SessionId::generate();
@@ -287,21 +287,32 @@ async fn oidc_logout_scope_survives_rotation_and_rejects_stale_sessions_only() {
         .await
         .unwrap();
     let snapshot = SessionStorePort::load(&store, &old).await.unwrap().unwrap();
+    assert_eq!(snapshot.record().upstream(), federated.upstream());
+    let mut replacement = snapshot.record().clone();
+    replacement.set_pending_mfa(false);
+    replacement.record_authentication_at(jiff::Timestamp::from_second(now + 10).unwrap());
+    replacement.add_amr("mfa");
     assert_eq!(
         store
-            .rotate(&old, snapshot.version(), &rotated, snapshot.record(), 60)
+            .rotate(&old, snapshot.version(), &rotated, &replacement, 60)
             .await
             .unwrap(),
         SessionRotationOutcome::Applied
     );
-    assert!(
+    assert_eq!(
         SessionStorePort::load(&store, &rotated)
             .await
             .unwrap()
-            .is_some()
+            .unwrap()
+            .record()
+            .upstream(),
+        federated.upstream(),
     );
     let scope = federated.upstream().unwrap().sid_key.as_deref().unwrap();
-    store.revoke_upstream(scope, now, now + 30).await.unwrap();
+    store
+        .revoke_upstream(scope, i64::MAX, now + 30)
+        .await
+        .unwrap();
     store
         .revoke_upstream(scope, now - 2, now + 30)
         .await
@@ -328,7 +339,19 @@ async fn oidc_logout_scope_survives_rotation_and_rejects_stale_sessions_only() {
     );
 
     let mut renewed = federated.upstream().unwrap().clone();
-    renewed.issued_at = now + 1;
+    renewed.started_at = now + 1;
+    federated.set_upstream(Some(renewed.clone()));
+    let later_token = SessionId::generate();
+    store
+        .create(later_token.as_str(), &federated, 60)
+        .await
+        .unwrap();
+    assert!(
+        SessionStorePort::load(&store, &later_token)
+            .await
+            .unwrap()
+            .is_none()
+    );
     renewed.sid_key = Some(uuid::Uuid::now_v7().to_string());
     let new = SessionId::generate();
     federated.set_upstream(Some(renewed));
@@ -339,13 +362,52 @@ async fn oidc_logout_scope_survives_rotation_and_rejects_stale_sessions_only() {
             .unwrap()
             .is_some()
     );
-    let subject = &federated.upstream().unwrap().subject_key;
+    let subject = federated.upstream().unwrap().subject_key.clone();
     store
-        .revoke_upstream(subject, now + 1, now + 30)
+        .revoke_upstream(&subject, now + 1, now + 30)
         .await
         .unwrap();
     assert!(
         SessionStorePort::load(&store, &new)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let mut next = federated.upstream().unwrap().clone();
+    next.sid_key = None;
+    federated.set_upstream(Some(next.clone()));
+    let same_second = SessionId::generate();
+    store
+        .create(same_second.as_str(), &federated, 60)
+        .await
+        .unwrap();
+    assert!(
+        SessionStorePort::load(&store, &same_second)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    next.started_at = now + 2;
+    federated.set_upstream(Some(next));
+    let later_ceremony = SessionId::generate();
+    store
+        .create(later_ceremony.as_str(), &federated, 60)
+        .await
+        .unwrap();
+    assert!(
+        SessionStorePort::load(&store, &later_ceremony)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    store
+        .revoke_upstream(&subject, now + 3, now + 30)
+        .await
+        .unwrap();
+    assert!(
+        SessionStorePort::load(&store, &later_ceremony)
             .await
             .unwrap()
             .is_none()

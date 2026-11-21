@@ -1035,7 +1035,7 @@ fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
         let (db, provider) = fixture().await;
         let foreign = D1Provider::new(db.clone(), TenantId::new(Uuid::new_v4()).unwrap());
         let now = Timestamp::now().as_second();
-        let new_record = |issued_at, sid: &str| {
+        let new_record = |started_at, sid: &str| {
             let mut record = SessionRecord::new(
                 user(),
                 0,
@@ -1047,9 +1047,9 @@ fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
             record.set_upstream(Some(UpstreamSession {
                 subject_key: "upstream-subject".into(),
                 sid_key: Some(sid.into()),
-                issued_at,
+                started_at,
                 expires_at: now + 60,
-                encrypted_logout: None,
+                encrypted_logout: Some("encrypted-logout-hint".into()),
             }));
             record
         };
@@ -1071,7 +1071,7 @@ fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
             .await
             .unwrap();
         provider
-            .revoke_upstream("sid-a", now, now + 15)
+            .revoke_upstream("sid-a", i64::MAX, now + 15)
             .await
             .unwrap();
         provider
@@ -1090,15 +1090,33 @@ fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
                 .unwrap()
                 .is_none()
         );
-        assert!(
+        assert_eq!(
             SessionStorePort::load(&provider, &second)
                 .await
                 .unwrap()
-                .is_some()
+                .unwrap()
+                .record()
+                .upstream(),
+            new_record(now - 1, "sid-b").upstream(),
         );
         assert_sql(
             &db,
             "EXISTS(SELECT 1 FROM nazo_state WHERE kind='upstream_session' AND key='sid-a' AND expires_at>unixepoch()+30)",
+        );
+        let later_token = SessionId::new("later-token-same-session");
+        LoginSessionPort::create(
+            &provider,
+            later_token.as_str(),
+            &new_record(now + 1, "sid-a"),
+            60,
+        )
+        .await
+        .unwrap();
+        assert!(
+            SessionStorePort::load(&provider, &later_token)
+                .await
+                .unwrap()
+                .is_none()
         );
 
         provider
@@ -1117,6 +1135,37 @@ fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
             .unwrap();
         assert!(
             SessionStorePort::load(&provider, &new)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let same_second = SessionId::new("same-second");
+        LoginSessionPort::create(
+            &provider,
+            same_second.as_str(),
+            &new_record(now, "sid-d"),
+            60,
+        )
+        .await
+        .unwrap();
+        assert!(
+            SessionStorePort::load(&provider, &same_second)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        provider
+            .revoke_upstream("upstream-subject", now + 1, now + 15)
+            .await
+            .unwrap();
+        assert!(
+            SessionStorePort::load(&provider, &new)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            SessionStorePort::load(&foreign, &first)
                 .await
                 .unwrap()
                 .is_some()
