@@ -2,12 +2,12 @@ use std::time::Duration;
 use web_time::SystemTime;
 
 use crate::{
-    CasOutcome, DisablePolicy, InstanceStateRecord, LifecycleFailure, ModuleEventType, ModuleId,
-    ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository, ReconcileOutcome,
-    RegistryError,
+    CasOutcome, DesiredStateRecord, DisablePolicy, DrainProgress, InstanceStateRecord,
+    LifecycleFailure, ModuleEventType, ModuleId, ModuleLifecycle, ModuleRevision, ModuleState,
+    ModuleStateRepository, ReconcileOutcome, RegistryError,
 };
 
-use super::RuntimeModuleRegistry;
+use super::{DrainObservation, ReconcileMode, RuntimeModuleRegistry};
 
 impl<R, L> RuntimeModuleRegistry<R, L>
 where
@@ -19,37 +19,58 @@ where
         module_id: ModuleId,
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
+        mode: ReconcileMode,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let mut can_restore = false;
         let result = self
             .enable_transition(module_id, revision, current, &mut can_restore)
             .await;
-        self.finish_admission(module_id, can_restore, result).await
+        self.finish_admission(module_id, can_restore, true, mode, result)
+            .await
     }
 
     pub(super) async fn disable(
         &self,
-        module_id: ModuleId,
-        revision: ModuleRevision,
+        desired: DesiredStateRecord,
         current: Option<InstanceStateRecord>,
+        mode: ReconcileMode,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let can_restore = current.as_ref().is_some_and(|state| {
+        let module_id = desired.module_id;
+        let mut can_restore = current.as_ref().is_some_and(|state| {
             matches!(state.state, ModuleState::Enabled | ModuleState::Draining)
         });
-        let result = self.disable_transition(module_id, revision, current).await;
-        self.finish_admission(module_id, can_restore, result).await
+        let mut allow_stored_admission = true;
+        let result = self
+            .disable_transition(
+                &desired,
+                current,
+                mode,
+                &mut can_restore,
+                &mut allow_stored_admission,
+            )
+            .await;
+        self.finish_admission(module_id, can_restore, allow_stored_admission, mode, result)
+            .await
     }
 
     async fn finish_admission(
         &self,
         module_id: ModuleId,
         can_restore: bool,
+        allow_stored_admission: bool,
+        mode: ReconcileMode,
         result: Result<ReconcileOutcome, RegistryError<R::Error>>,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let completed_enable = matches!(&result, Ok(ReconcileOutcome::Enabled));
         let can_restore = can_restore && !matches!(&result, Ok(ReconcileOutcome::Disabled));
         let compensation = self
-            .align_admission_with_current_intent(module_id, can_restore, completed_enable)
+            .align_admission_with_current_intent(
+                module_id,
+                can_restore,
+                completed_enable,
+                allow_stored_admission,
+                mode,
+            )
             .await;
         match (result, compensation) {
             (Ok(outcome), Ok(())) => Ok(outcome),
@@ -148,18 +169,34 @@ where
 
     async fn disable_transition(
         &self,
-        module_id: ModuleId,
-        revision: ModuleRevision,
+        desired: &DesiredStateRecord,
         current: Option<InstanceStateRecord>,
+        mode: ReconcileMode,
+        can_restore: &mut bool,
+        allow_stored_admission: &mut bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        let module_id = desired.module_id;
+        let revision = desired.revision;
         let disable_policy = self.catalog.effective_disable_policy(module_id);
-        if current
+        let drain_deadline = self.drain_deadline(desired, current.as_ref())?;
+        let stored_window_open =
+            drain_deadline.is_some_and(|deadline| SystemTime::now() < deadline);
+        if current.as_ref().is_some_and(|instance| {
+            instance.state == ModuleState::Disabled && instance.applied_revision == Some(revision)
+        }) || (current
             .as_ref()
             .is_none_or(|instance| instance.state == ModuleState::Disabled)
+            && !stored_window_open)
         {
             self.publish(module_id, false, false)?;
             if !matches!(disable_policy, DisablePolicy::Immediate) {
-                self.snapshots.wait_until_idle(module_id).await;
+                if mode == ReconcileMode::Step {
+                    if !self.snapshots.is_idle(module_id) {
+                        return Ok(ReconcileOutcome::Pending);
+                    }
+                } else {
+                    self.snapshots.wait_until_idle(module_id).await;
+                }
             }
             if !self.revision_is_current(module_id, revision).await? {
                 self.discard_stale(module_id, revision, current.as_ref())
@@ -191,33 +228,46 @@ where
                 CasOutcome::Stale { .. } => Ok(ReconcileOutcome::StaleDiscarded),
             };
         }
-        let drain_deadline = match disable_policy {
-            DisablePolicy::DrainStoredTransactions { max_duration } => current
-                .as_ref()
-                .filter(|instance| {
-                    instance.state == ModuleState::Draining
-                        && instance.transition_revision == revision
-                })
-                .and_then(|instance| instance.drain_deadline)
-                .or_else(|| SystemTime::now().checked_add(max_duration)),
-            _ => None,
+        let observation = self
+            .drain_observations
+            .lock()
+            .expect("drain observations")
+            .get(&module_id)
+            .copied()
+            .filter(|observation| {
+                observation.revision == revision && observation.deadline == drain_deadline
+            });
+        let stored_complete = mode == ReconcileMode::Step
+            && observation.is_some_and(|observation| observation.stored_complete);
+        let resumed = mode == ReconcileMode::Step
+            && observation.is_some()
+            && current.as_ref().is_some_and(|instance| {
+                instance.state == ModuleState::Draining
+                    && instance.transition_revision == revision
+                    && instance.drain_deadline == drain_deadline
+            });
+        let draining = if resumed {
+            current.clone().expect("a resumed drain has an instance")
+        } else {
+            let outcome = self
+                .persist_state(
+                    module_id,
+                    revision,
+                    current.as_ref().map(|state| state.transition_revision),
+                    ModuleState::Draining,
+                    None,
+                    ModuleEventType::TransitionStarted,
+                    current.as_ref().map(|state| state.state),
+                    drain_deadline,
+                    None,
+                )
+                .await?;
+            let CasOutcome::Applied(draining) = outcome else {
+                return Ok(ReconcileOutcome::StaleDiscarded);
+            };
+            draining
         };
-        let draining = self
-            .persist_state(
-                module_id,
-                revision,
-                current.as_ref().map(|state| state.transition_revision),
-                ModuleState::Draining,
-                None,
-                ModuleEventType::TransitionStarted,
-                current.as_ref().map(|state| state.state),
-                drain_deadline,
-                None,
-            )
-            .await?;
-        let CasOutcome::Applied(draining) = draining else {
-            return Ok(ReconcileOutcome::StaleDiscarded);
-        };
+        *can_restore = true;
         if self.first_enabled_dependent(module_id).await?.is_some() {
             let failed = self
                 .persist_failure(
@@ -241,10 +291,7 @@ where
         self.publish(
             module_id,
             false,
-            matches!(
-                disable_policy,
-                DisablePolicy::DrainStoredTransactions { .. }
-            ),
+            !stored_complete && drain_deadline.is_some_and(|deadline| SystemTime::now() < deadline),
         )?;
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(module_id, revision, Some(&draining))
@@ -252,51 +299,82 @@ where
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         if !matches!(disable_policy, DisablePolicy::Immediate) {
-            if !matches!(
-                self.persist_state(
-                    module_id,
-                    revision,
-                    Some(revision),
-                    ModuleState::Draining,
-                    None,
-                    ModuleEventType::DrainStarted,
-                    Some(ModuleState::Draining),
-                    drain_deadline,
-                    None,
+            if !resumed
+                && !matches!(
+                    self.persist_state(
+                        module_id,
+                        revision,
+                        Some(revision),
+                        ModuleState::Draining,
+                        None,
+                        ModuleEventType::DrainStarted,
+                        Some(ModuleState::Draining),
+                        drain_deadline,
+                        None,
+                    )
+                    .await?,
+                    CasOutcome::Applied(_)
                 )
-                .await?,
-                CasOutcome::Applied(_)
-            ) {
+            {
                 return Ok(ReconcileOutcome::StaleDiscarded);
+            }
+            if mode == ReconcileMode::Step && !resumed {
+                // Keep only completed local observations, never a request-owned
+                // future. Recovery after a failed/unknown start writes its own
+                // DrainStarted evidence before a later completion.
+                self.drain_observations
+                    .lock()
+                    .expect("drain observations")
+                    .insert(
+                        module_id,
+                        DrainObservation {
+                            revision,
+                            deadline: drain_deadline,
+                            stored_complete,
+                        },
+                    );
             }
             if matches!(
                 disable_policy,
                 DisablePolicy::DrainStoredTransactions { .. }
-            ) {
+            ) && !stored_complete
+            {
                 let remaining_duration = drain_deadline
                     .and_then(|deadline| deadline.duration_since(SystemTime::now()).ok())
                     .unwrap_or(Duration::ZERO);
-                match self
-                    .lifecycle
-                    .drain_stored_transactions(module_id, revision, remaining_duration)
-                    .await
-                {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        let failed = self
-                            .persist_failure(
-                                &draining,
-                                LifecycleFailure {
+                let progress = if mode == ReconcileMode::Step {
+                    self.lifecycle
+                        .poll_stored_transactions(module_id, revision, remaining_duration)
+                        .await
+                } else {
+                    self.lifecycle
+                        .drain_stored_transactions(module_id, revision, remaining_duration)
+                        .await
+                        .and_then(|complete| {
+                            if complete {
+                                Ok(DrainProgress::Complete)
+                            } else {
+                                Err(LifecycleFailure {
                                     code: "drain_deadline_elapsed",
+                                })
+                            }
+                        })
+                };
+                match progress {
+                    Ok(DrainProgress::Complete) => {
+                        self.drain_observations
+                            .lock()
+                            .expect("drain observations")
+                            .insert(
+                                module_id,
+                                DrainObservation {
+                                    revision,
+                                    deadline: drain_deadline,
+                                    stored_complete: true,
                                 },
-                            )
-                            .await?;
-                        return Ok(if failed {
-                            ReconcileOutcome::Failed
-                        } else {
-                            ReconcileOutcome::StaleDiscarded
-                        });
+                            );
                     }
+                    Ok(DrainProgress::Pending) => return Ok(ReconcileOutcome::Pending),
                     Err(failure) => {
                         let failed = self.persist_failure(&draining, failure).await?;
                         return Ok(if failed {
@@ -309,8 +387,15 @@ where
             }
             // Stop both new and stored-transaction admissions before waiting,
             // so later requests cannot keep extending the drain.
+            *allow_stored_admission = false;
             self.publish(module_id, false, false)?;
-            self.snapshots.wait_until_idle(module_id).await;
+            if mode == ReconcileMode::Step {
+                if !self.snapshots.is_idle(module_id) {
+                    return Ok(ReconcileOutcome::Pending);
+                }
+            } else {
+                self.snapshots.wait_until_idle(module_id).await;
+            }
             if !self.revision_is_current(module_id, revision).await? {
                 self.discard_stale(module_id, revision, Some(&draining))
                     .await?;
@@ -376,8 +461,16 @@ where
         module_id: ModuleId,
         can_restore: bool,
         completed_enable: bool,
+        allow_stored_admission: bool,
+        mode: ReconcileMode,
     ) -> Result<(), RegistryError<R::Error>> {
+        let mut attempts = 0;
         loop {
+            attempts += 1;
+            if mode == ReconcileMode::Step && attempts > 2 {
+                self.publish(module_id, false, false)?;
+                return Err(RegistryError::SynchronizationChanged);
+            }
             let desired = match self.repository.read_desired(module_id).await {
                 Ok(Some(desired)) => desired,
                 Ok(None) => {
@@ -392,20 +485,25 @@ where
             let enabled = self
                 .catalog
                 .effective_enabled(module_id, desired.mode.is_enabled());
-            let runtime_ready = if can_restore && !completed_enable {
+            let current = if can_restore && !completed_enable {
                 match self
                     .repository
                     .read_instance(&self.instance_id, module_id)
                     .await
                 {
-                    Ok(state) => state.is_some_and(|state| {
-                        matches!(state.state, ModuleState::Enabled | ModuleState::Draining)
-                    }),
+                    Ok(state) => state,
                     Err(error) => {
                         self.publish(module_id, false, false)?;
                         return Err(RegistryError::Repository(error));
                     }
                 }
+            } else {
+                None
+            };
+            let runtime_ready = if can_restore && !completed_enable {
+                current.as_ref().is_some_and(|state| {
+                    matches!(state.state, ModuleState::Enabled | ModuleState::Draining)
+                })
             } else {
                 can_restore
             };
@@ -425,11 +523,10 @@ where
                 runtime_ready && enabled && dependencies_ready,
                 runtime_ready
                     && !enabled
-                    && self.catalog.is_available(module_id)
-                    && matches!(
-                        self.catalog.effective_disable_policy(module_id),
-                        DisablePolicy::DrainStoredTransactions { .. }
-                    ),
+                    && allow_stored_admission
+                    && self
+                        .drain_deadline(&desired, current.as_ref())?
+                        .is_some_and(|deadline| SystemTime::now() < deadline),
             )?;
             match self.revision_is_current(module_id, desired.revision).await {
                 Ok(true) => return Ok(()),
@@ -440,5 +537,30 @@ where
                 }
             }
         }
+    }
+
+    pub(super) fn drain_deadline(
+        &self,
+        desired: &DesiredStateRecord,
+        current: Option<&InstanceStateRecord>,
+    ) -> Result<Option<SystemTime>, RegistryError<R::Error>> {
+        if desired.mode.is_enabled()
+            || !matches!(
+                self.catalog.effective_disable_policy(desired.module_id),
+                DisablePolicy::DrainStoredTransactions { .. }
+            )
+        {
+            return Ok(None);
+        }
+        let Some(deadline) = self.catalog.stored_transaction_deadline(desired) else {
+            self.publish(desired.module_id, false, false)?;
+            return Err(RegistryError::DrainDeadlineOverflow(desired.module_id));
+        };
+        Ok(Some(
+            current
+                .filter(|instance| instance.transition_revision == desired.revision)
+                .and_then(|instance| instance.drain_deadline)
+                .map_or(deadline, |persisted| persisted.min(deadline)),
+        ))
     }
 }

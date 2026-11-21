@@ -34,6 +34,8 @@ pub mod key_wrap;
 pub mod password;
 #[cfg(feature = "jose")]
 pub mod signature;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown", feature = "jose"))]
+mod worker_signing;
 
 #[cfg(any(feature = "jose", feature = "ecdh"))]
 /// Records header-member presence, including `null` and empty values.

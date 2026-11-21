@@ -242,6 +242,7 @@ fn cas_registration_endpoint(
 ) -> crate::test_support::http::DynamicRegistrationEndpoint {
     let application = Arc::new(nazo_oauth_server::domain::dynamic_registration::DynamicRegistrationApplication::new(
         nazo_oauth_server::domain::dynamic_registration::DynamicRegistrationConfig {
+        capabilities: Default::default(),
             require_fapi2: false,
         tenant: nazo_identity::TenantContext::default_system(),
             issuer: "https://issuer.example".to_owned(),

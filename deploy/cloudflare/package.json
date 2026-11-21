@@ -1,0 +1,20 @@
+{
+  "name": "nazoauth-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js dev --config wrangler.toml",
+    "bundle": "node bundle.mjs",
+    "db:migrate": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js d1 migrations apply NAZO_DB --remote --config wrangler.toml",
+    "test": "node --test test/*.mjs",
+    "deploy": "cd ../.. && node deploy/cloudflare/node_modules/wrangler/bin/wrangler.js deploy --config wrangler.toml"
+  },
+  "devDependencies": {
+    "@babel/generator": "7.29.14",
+    "@babel/parser": "7.29.14",
+    "@babel/traverse": "7.29.14",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261118.0-beta",
+    "wrangler": "4.165.0"
+  }
+}

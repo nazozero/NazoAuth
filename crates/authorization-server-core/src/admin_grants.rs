@@ -18,8 +18,9 @@ pub struct AdminGrantView {
     pub email: String,
     pub client_id: String,
     pub client_name: String,
-    pub last_authorized_at: Timestamp,
-    pub authorization_count: i32,
+    /// Legacy grants may lack authoritative historical timestamps.
+    pub last_authorized_at: Option<Timestamp>,
+    pub authorization_count: Option<i32>,
     pub last_scopes: Vec<String>,
     pub last_authorization_details: Value,
 }

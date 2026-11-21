@@ -211,6 +211,21 @@ pub(super) fn verify_certificate_signature(
     certificate: &x509_parser::certificate::X509Certificate<'_>,
     issuer: &x509_parser::x509::SubjectPublicKeyInfo<'_>,
 ) -> Result<(), InvalidSignature> {
+    verify_signed_data(
+        &certificate.signature_algorithm,
+        issuer,
+        certificate.tbs_certificate.as_ref(),
+        certificate.signature_value.data.as_ref(),
+    )
+}
+
+/// The same signed-data algorithm selection serves certificates and CRLs.
+pub(super) fn verify_signed_data(
+    algorithm: &x509_parser::x509::AlgorithmIdentifier<'_>,
+    issuer: &x509_parser::x509::SubjectPublicKeyInfo<'_>,
+    message: &[u8],
+    signature: &[u8],
+) -> Result<(), InvalidSignature> {
     use x509_parser::oid_registry::{
         OID_EC_P256, OID_NIST_EC_P384, OID_NIST_HASH_SHA256, OID_NIST_HASH_SHA384,
         OID_NIST_HASH_SHA512, OID_PKCS1_RSASSAPSS, OID_PKCS1_SHA1WITHRSA, OID_PKCS1_SHA256WITHRSA,
@@ -219,7 +234,6 @@ pub(super) fn verify_certificate_signature(
     };
     use x509_parser::signature_algorithm::RsaSsaPssParams;
 
-    let algorithm = &certificate.signature_algorithm;
     let oid = &algorithm.algorithm;
     let kind = if *oid == OID_PKCS1_SHA1WITHRSA || *oid == OID_SHA1_WITH_RSA {
         Kind::RsaPkcs1(Hash::Sha1)
@@ -270,8 +284,8 @@ pub(super) fn verify_certificate_signature(
     verify(
         kind,
         issuer.subject_public_key.data.as_ref(),
-        certificate.tbs_certificate.as_ref(),
-        certificate.signature_value.data.as_ref(),
+        message,
+        signature,
     )
 }
 

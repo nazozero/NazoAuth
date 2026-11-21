@@ -110,8 +110,8 @@ session/CSRF cookies and SAML processing are unchanged.
 Quiesce old OIDC/social callback handlers and upgrade their routing before
 enabling new starts. Old unbound state is rejected by the new callback path
 throughout its remaining 300-second lifetime; users must restart those flows.
-There is no legacy grace acceptance and no safety guarantee for mixed old/new
-callback handlers. No database migration or queue is required.
+Keep callback routing on one version throughout this cutover. The transition
+requires no database migration.
 
 ## OAuth2 Social Login
 

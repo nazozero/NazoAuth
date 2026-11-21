@@ -1,5 +1,13 @@
 # Rust build output
 /target/
+/crates/server-worker/build/
+/deploy/cloudflare/node_modules/
+/deploy/cloudflare/.wrangler/
+/deploy/cloudflare/.dev.vars*
+/deploy/cloudflare/bundled/
+/deploy/cloudflare/bundled-*/
+/deploy/cloudflare/web-build/
+/deploy/cloudflare/web-dist/
 /artifacts/
 **/__pycache__/
 
@@ -42,3 +50,11 @@ perf-results-mirror/
 /docs/performance/reports/
 /docs/performance/archive/
 /docs/operations/reports/
+
+# Cloudflare bootstrap inputs/credentials belong outside the repository.
+/.dev.vars*
+!/.dev.vars.example
+/provisioning.json
+/credentials.json
+/seed.sqlite
+/seed.sql

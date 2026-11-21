@@ -38,7 +38,7 @@ pub trait PersistenceLauncher: Send + Sync {
     fn server_bindings<'a>(
         &'a self,
         config: &'a ConfigSource,
-    ) -> LauncherFuture<'a, nazo_oauth_server::ports::persistence::ServerPersistenceBindings>;
+    ) -> LauncherFuture<'a, crate::bootstrap::ServerPersistence>;
 
     fn operator_persistence<'a>(
         &'a self,

@@ -173,8 +173,51 @@ bundled timezone index. Integration targets share one feature closure to avoid
 recompiling common dependencies; the separate library invocation runs only the
 named profile test. The native and WASM harnesses
 execute the same assertions. Signature tampering and token revocation must
-remain failures on both platforms. This gate supplements the native workspace
-and HTTP/security suites; it does not certify a concrete WASM host deployment.
+remain failures on both platforms. Run the concrete host's integration suite
+alongside this shared portability gate.
+
+### Cloudflare Workers host and adapters
+
+The [Workers workflow](../../.github/workflows/cloudflare-workers.yml) checks the
+concrete host separately from the portable inner-package gate. It verifies the
+production dependency graph, the D1 adapter's semantic SQL contracts, transport
+conformance, and the bundled application in local workerd. The
+[deployment guide](../operations/cloudflare-workers.md) describes the supported
+profile and the authenticated ingress requirement.
+
+```sh
+python scripts/verify_static_contracts.py --check
+python scripts/check_crypto_boundary.py
+python -m unittest tests.unit.test_worker_portability
+python scripts/check_worker_portability.py
+cargo test --locked -p nazo-oauth-server-d1 -p nazo-http-worker -p nazo-server-worker \
+  --features nazo-oauth-server-d1/local-sqlite
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+  cargo test --locked --target wasm32-unknown-unknown -p nazo-http-worker --test ingress
+cargo clippy --locked --target wasm32-unknown-unknown -p nazo-http-worker --all-targets -- -D warnings
+cargo install worker-build --version 0.9.0 --locked
+npm ci --prefix deploy/cloudflare
+npm run bundle --prefix deploy/cloudflare
+npm test --prefix deploy/cloudflare
+```
+
+Install the lockfile-matched `wasm-bindgen-cli` as described above before running
+the WASM ingress target. Its tests execute the production forwarding helpers
+against JavaScript streams: canonical request heads, duplicate-header
+normalization, explicit authenticated source facts, decoded body limits,
+malformed compression, incremental multipart reads, and unchanged response
+`Bytes` allocations. This ingress target runs on WASM. Node lacks Cloudflare's
+`FixedLengthStream`, so the SDK's outgoing Fetch conversion is exercised by the
+real workerd host suite.
+
+`local-sqlite` tests execute the adapter's production SQL and migrations against
+SQLite, including concurrent single-use decisions, atomic audit rollback,
+tenant isolation, replay state, session replacement, and expiry cleanup. The
+workerd suite uses the actual WASM application and local D1 binding for login,
+authorization, token issuance, refresh, UserInfo, DPoP, revocation, logout,
+concurrent redemption and isolate replacement. It also records local request
+latencies. Measure Cloudflare throughput, latency and database capacity against
+an isolated deployment on the selected plan.
 
 ### Audit backlog scale checks
 
@@ -185,8 +228,8 @@ and fifteen-million row SQL plan assertions run as the explicitly ignored
 [audit-scale workflow](../../.github/workflows/audit-scale.yml) owns that test:
 it runs only on manual dispatch. Ordinary functional/security checks remain
 in automatic CI, including the zero/10,000-row claim and cross-connection ACK
-regressions. The million-row test is reported as ignored in the ordinary suite;
-that result does not claim scale validation.
+regressions. The ordinary suite reports the million-row test as ignored; use
+the manual workflow for its result.
 
 The manual workflow uses its own PostgreSQL database and the shared Cargo cache.
 It always executes the selected scale test. Maintainers can run it for changes
@@ -505,10 +548,10 @@ timeout or explicit server cancellation replaces physical connection disposal.
 
 PostgreSQL's default zero interval detects a closed client at a later socket
 interaction, so a backend blocked inside the artificial barrier can retain its
-locks after the client driver closes. These fixtures qualify `DiscardOnDrop`
-retirement under the declared observation setting; they do not establish a
-three-second lock-release bound under the production default or qualify physical
-commit-acknowledgement loss. The setting is confined to those test connections.
+locks after the client driver closes. These fixtures observe `DiscardOnDrop`
+retirement with a 100 ms connection check and a three-second peer lock timeout.
+The setting is confined to those test connections. Production lock-release time
+depends on the server's connection-check settings and socket activity.
 See the [PostgreSQL connection-check documentation](https://www.postgresql.org/docs/18/runtime-config-connection.html#GUC-CLIENT-CONNECTION-CHECK-INTERVAL).
 
 `audit_bounded_reads` executes real finalize/ACK functions with stale pending

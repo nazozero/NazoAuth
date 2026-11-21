@@ -17,9 +17,8 @@ request descriptions.
 3. Delete names not referenced by a current workflow.
 4. Fail if a workflow reference has no repository or explicitly documented
    organization/environment Secret.
-5. Rotate a retained value only from its authoritative provider. GitHub does
-   not expose stored values, so an audit must never claim value freshness from
-   a name or timestamp alone.
+5. Rotate a retained value only from its authoritative provider. GitHub cannot
+   return stored values; verify a rotated credential through its service.
 
 Organization Secrets require organization-administrator access and must be
 audited separately. This repository does not use GitHub Environments.

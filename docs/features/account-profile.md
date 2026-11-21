@@ -12,6 +12,16 @@ separate from OAuth bearer-token endpoints. Its current route contract is:
 There is no account-delete route and no user-facing application-revocation
 route in this surface. Refactoring must not add either route implicitly.
 
+## Authorization history
+
+Application and administrator grant views keep valid legacy grants visible even
+when an earlier store did not record complete history. `last_authorized_at` and
+`authorization_count` are nullable: `null` means the authoritative history is
+unavailable, not zero authorizations. Native PostgreSQL grants retain their
+recorded timestamp and count. A later recorded authorization can supply a known
+latest time without reconstructing a missing earlier count. Revocation removes
+that grant generation and its history together.
+
 ## Authentication states
 
 New local passwords, whether set through public registration, administrative
@@ -34,11 +44,9 @@ closed.
 
 ## Response caching and cross-origin access
 
-Successful profile and authorized-application responses deliberately include
-`Cache-Control: no-store` and `Pragma: no-cache`. This is a security hardening
-for personally identifiable and authorization-history data. Error status,
-body, content type, cookie clearing, and pre-existing error headers remain
-unchanged.
+Successful profile and authorized-application responses include
+`Cache-Control: no-store` and `Pragma: no-cache` to prevent caching personal
+details and authorization history.
 
 The routes are statically registered under the credentialed `/auth/me` CORS
 policy. Allowed origins may send `GET` and CSRF-bearing `PATCH` requests with

@@ -19,6 +19,9 @@ EXACT_RUST_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 # Canonical package roles: the single architectural dependency model shared by
 # this gate, the persistence graph guard, and the crypto boundary guard.
 PACKAGE_ROLES = {
+    "nazo-http-worker": "http-adapter",
+    "nazo-oauth-server-d1": "adapter",
+    "nazo-server-worker": "host",
     "nazo-oauth-server": "application",
     "nazo-auth": "domain",
     "nazo-crypto": "domain",
@@ -68,6 +71,7 @@ EXECUTION_DEPENDENCIES = {
     "opentelemetry-appender-tracing", "opentelemetry-otlp", "opentelemetry_sdk",
     "process-wrap", "reqwest", "rustix", "smol", "tokio", "tokio-postgres",
     "tokio-postgres-rustls", "tonic", "tracing-opentelemetry", "tracing-subscriber",
+    "wasm-streams", "worker", "worker-macros", "worker-sys",
 }
 # Host/OS execution surfaces that inner source must not call even through a
 # non-denied dependency. Checked against resolved Rust paths, not bare names.

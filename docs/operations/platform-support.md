@@ -1,10 +1,9 @@
 # Release Platform Support
 
-## What the Release Matrix Proves
+## Release matrix
 
 The tagged Release workflow builds and executes the server binary on a native runner
-with the same operating system and CPU architecture as the target. It does not
-label a cross-compiled file as supported without executing it. Every matrix
+with the same operating system and CPU architecture as the target. Every matrix
 entry executes `nazoauth` and checks its `release-identity` JSON against the
 release tag and operator protocol version.
 
@@ -39,9 +38,8 @@ install accepts Linux and Windows target path models, then selects only a
 runtime advertised by that helper. Podman/Docker require a usable engine;
 `host` is the Linux systemd backend. Direct TLS clean install currently requires
 a Linux Podman or Docker target. macOS is not an accepted clean-install target.
-Native binary smoke and unit tests do not establish an end-to-end lifecycle,
-mount, permission, or recovery guarantee on any target; retain target-specific
-execution evidence. The controller repository owns this qualification boundary.
+The controller repository owns target-specific install, mount, permission and
+recovery tests.
 
 On Linux x86-64, the controller selects the x86-64 GNU or musl Release artifact
 and binds container operations to the signed `linux/amd64` platform-manifest

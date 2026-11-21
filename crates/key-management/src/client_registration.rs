@@ -301,7 +301,11 @@ fn valid_current_x5c_certificate(value: &str) -> bool {
     let Ok((remainder, x509)) = x509_parser::parse_x509_certificate(&der) else {
         return false;
     };
-    remainder.is_empty() && x509.validity().is_valid()
+    let Ok(now) = x509_parser::time::ASN1Time::from_timestamp(jiff::Timestamp::now().as_second())
+    else {
+        return false;
+    };
+    remainder.is_empty() && x509.validity().is_valid_at(now)
 }
 
 fn random_urlsafe_token() -> String {

@@ -109,8 +109,8 @@ If a client successfully rotates a refresh token but loses the HTTP response bef
 The spent proof's clock is sampled once after the source advisory and row locks
 are acquired, and also checks the locked source's expiry. It does not use the
 successor's earlier signing-time `issued_at`. Retry eligibility uses request
-admission time; audit and transaction commit may still consume part of the
-budget. This does not promise 60 seconds from delivery of the HTTP response.
+admission time; audit and transaction commit consume part of that 60-second
+window before the HTTP response is delivered.
 The successor's issuance/expiry and the spent proof's original expiry are unchanged.
 
 The retry continues from the active successor and rotates again. It requires an
@@ -150,8 +150,7 @@ The public-client rotation requirement does not require complete historical
 reuse detection for confidential clients. Confidential families, and families
 with a persisted DPoP or mTLS binding, retain at most the newest 64 proofs as
 an additional bounded reuse/lost-response signal. Beyond that window a spent
-presentation is unknown and does not trigger family compromise. This is an
-explicit local limit, not an all-history security guarantee. Client-instance
+presentation is unknown and does not trigger family compromise. Client-instance
 attestation alone does not select the sender-bound retention exception.
 
 The Core policy uses the client type read under the existing principal lock
@@ -253,8 +252,8 @@ Real PostgreSQL coverage in `tests/refresh_authority.rs` includes resource narro
 and reordering, expansion rejection, Preserve/revoke and Preserve/capacity races
 in both orders, post-lock expiry, content/binding drift, and rotation after the
 actual legacy migration chain. `auth_repositories` retains Active -> Rotated ->
-Reused and lost-response coverage. These tests must pass against the final
-migration head before production guarantees are claimed.
+Reused and lost-response coverage. Run these tests against the final migration
+head before deployment.
 
 Additional real PostgreSQL regressions in `tests/refresh_authority.rs` cover
 unbound public reuse after 65 rotations, confidential and DPoP/mTLS 64-proof

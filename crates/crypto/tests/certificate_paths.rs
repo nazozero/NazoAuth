@@ -15,6 +15,25 @@ const SUBISSUER: &[u8] = include_bytes!("fixtures/certificates/subissuer.der");
 const SUBCLIENT: &[u8] = include_bytes!("fixtures/certificates/subclient.der");
 const NOW: u64 = 1_800_000_000;
 
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn portable_crl_signature_accepts_native_issuance_and_rejects_tampering() {
+    let issuer = include_bytes!("fixtures/certificates/mdoc-iaca.der");
+    let der = include_bytes!("fixtures/certificates/mdoc.crl.der");
+    let (_, issuer) = x509_parser::parse_x509_certificate(issuer).unwrap();
+    let (_, crl) = x509_parser::parse_x509_crl(der).unwrap();
+    certs::verify_crl_signature(&crl, issuer.public_key()).unwrap();
+    let (_, wrong_issuer) = x509_parser::parse_x509_certificate(INTERMEDIATE).unwrap();
+    assert!(certs::verify_crl_signature(&crl, wrong_issuer.public_key()).is_err());
+    let mut tampered = der.to_vec();
+    *tampered.last_mut().unwrap() ^= 1;
+    let (_, tampered) = x509_parser::parse_x509_crl(&tampered).unwrap();
+    assert!(certs::verify_crl_signature(&tampered, issuer.public_key()).is_err());
+}
+
 fn root() -> CertificateDer<'static> {
     CertificateDer::from_pem_slice(ROOT.as_bytes()).unwrap()
 }

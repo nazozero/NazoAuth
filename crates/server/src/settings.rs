@@ -192,6 +192,7 @@ impl Settings {
                 },
             },
             modules: app::ModuleSettings {
+                dynamic_client_registration_capabilities: Default::default(),
                 enable_openid4vci_issuer: self.modules.enable_openid4vci_issuer,
                 enable_openid4vp_verifier: self.modules.enable_openid4vp_verifier,
                 register_openid4vci_routes: self.modules.register_openid4vci_routes,

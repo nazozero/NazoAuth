@@ -338,16 +338,16 @@ where
             })
             .ok_or(PasskeyError::LoginFailed)?;
         let credential_id = response.id.to_b64url();
-        let row = self
+        let observed = self
             .credentials
             .by_credential_id(stored.tenant_id, stored.user_id, &credential_id)
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
-        let credential = row.credential;
+        let credential = &observed.row.credential;
         let outcome = self
             .webauthn
-            .finish_authentication(&stored.state, &response, &credential)
+            .finish_authentication(&stored.state, &response, credential)
             .map_err(|error| {
                 if matches!(
                     error,
@@ -378,9 +378,7 @@ where
         }
         self.credentials
             .update_authentication(
-                stored.tenant_id,
-                stored.user_id,
-                &credential_id,
+                &observed,
                 PasskeyAuthenticationUpdate {
                     credential: outcome.update,
                     initialize_user_verification: outcome.user_verified

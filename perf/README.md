@@ -252,8 +252,8 @@ Each scenario writes:
 New runs explicitly declare `blackbox-db-v1`. Application performance endpoints,
 pool acquire/wait counters and in-process audit counters are removed. Missing
 internal dimensions are `UNAVAILABLE`; process queue gates are `UNVERIFIED`.
-DB outbox drainage and receiver chain/ACK reconciliation remain required and
-do not establish best-effort in-process queue emptiness. Historical records keep
+DB outbox drainage and receiver chain/ACK reconciliation are required; in-process
+queue state remains outside the observation contract. Historical records keep
 their original evidence contract and are not silently reclassified or pooled
 with new runs. See `perf/docs/blackbox-evidence-contract.md`.
 
@@ -326,9 +326,8 @@ CPU IDs come only from the process affinity. With fewer than four available
 logical CPUs, infrastructure shares the available set; this topology is recorded
 and must not be described as isolated infrastructure. Default main VUs scale at
 64 per allocated application CPU, users at 16 per CPU with a minimum of 64,
-and the pool at two connections per allocated PostgreSQL CPU. These are initial
-calibration recipes, not resource availability guarantees or validated maxima.
-Use deployment-local observations to fit memory and database connection limits.
+and the pool at two connections per allocated PostgreSQL CPU. Calibrate these
+starting values against the deployment's memory and database connection limits.
 `--application-cpus` sets the multicore application count after measuring
 component costs. CPU IDs still come from visible affinity; PostgreSQL keeps
 its default count unless `--database-cpus` explicitly calibrates its budget;

@@ -19,7 +19,7 @@ test = false
 
 [dependencies]
 bytes.workspace = true
-nazoauth.workspace = true
+nazoauth = { workspace = true, features = ["deployment-control"] }
 hex.workspace = true
 http.workspace = true
 actix-files = { workspace = true }

@@ -12,5 +12,7 @@ mod backend;
 
 pub use backend::{
     RsaOaep256PrivateKey, aes_wrap, generate_rsa_pkcs8_der, rsa_oaep256_encrypt,
-    rsa_public_components,
+    rsa_oaep256_keypair, rsa_public_components,
 };
+
+pub type RsaPublicComponents = (Vec<u8>, Vec<u8>, Vec<u8>);

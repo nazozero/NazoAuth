@@ -61,18 +61,23 @@ pub struct Capabilities {
     pub certificate_verifier: Option<Arc<dyn CertificateChainVerifier>>,
 }
 
+#[cfg(feature = "deployment-control")]
 pub use crate::control_discovery::DeploymentIdentity;
 
 /// Current membership in the host's atomically published tenant index.
+#[cfg(feature = "deployment-control")]
 pub trait TenantAvailability: Send + Sync {
     fn contains_tenant(&self, tenant: nazo_identity::TenantId) -> bool;
 }
 
 /// Optional deployment-wide controls, admitted only through the configured control tenant.
+#[cfg(feature = "deployment-control")]
 pub struct DeploymentCapabilities {
     pub identity: DeploymentIdentity,
     pub control_tenant: nazo_identity::TenantId,
     pub tenants: Arc<dyn TenantAvailability>,
+    pub controller_registry: Arc<dyn nazo_persistence::ControllerRegistryPort>,
+    pub recovery_root: Arc<dyn nazo_persistence::RecoveryRootPort>,
 }
 
 /// Supplies signed CRL bytes; native key provisioning remains in the host.

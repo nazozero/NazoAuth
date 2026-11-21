@@ -33,6 +33,7 @@ impl MetadataHandles {
                 issuer: &self.config.issuer,
                 mtls_endpoint_base_url: &self.config.mtls_endpoint_base_url,
                 mtls_enabled: self.config.mtls_enabled,
+                backchannel_logout_supported: self.config.backchannel_logout_supported,
                 profile: self.config.authorization_server_profile,
                 ciba_profile: self.config.ciba_profile,
                 pairwise_subject_enabled: self.config.pairwise_subject_enabled,

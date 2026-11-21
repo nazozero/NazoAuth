@@ -60,7 +60,5 @@ validator and Valkey owner with a slow validating-node clock after marker expiry
 
 The host token/PAR fixture also hides the first successful real NX ACK at the
 semantic port and verifies `503`, the retained physical marker, and cross-endpoint
-replay rejection. This injection proves application behavior after a real state
-effect; it is not driver packet-loss, replication-loss or failover evidence.
-Fixture definitions require execution at the exact candidate SHA before being
-counted as passing evidence.
+replay rejection. Run it at the candidate revision to check application behavior
+after a committed state change whose acknowledgement is lost at that boundary.

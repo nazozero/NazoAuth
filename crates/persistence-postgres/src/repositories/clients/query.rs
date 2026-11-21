@@ -241,8 +241,8 @@ impl OAuthClientRepository {
                         client_id,
                         client_name,
                         last_scopes,
-                        last_authorized_at: last_authorized_at.into(),
-                        authorization_count,
+                        last_authorized_at: Some(last_authorized_at.into()),
+                        authorization_count: Some(authorization_count),
                     }
                 },
             )

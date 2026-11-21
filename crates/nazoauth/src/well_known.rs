@@ -113,9 +113,9 @@ pub async fn mdoc_crl(
     issuer_id: &str,
 ) -> HttpResponse {
     let Some(source) = source else {
-        return empty_response(StatusCode::NOT_FOUND);
+        return crate::http::empty_response_no_store(StatusCode::NOT_FOUND);
     };
-    match source.signed_crl(issuer_id).await {
+    let mut response = match source.signed_crl(issuer_id).await {
         Ok(Some(crl)) => finish(
             ::http::Response::builder()
                 .header(::http::header::CONTENT_TYPE, "application/pkix-crl"),
@@ -126,5 +126,14 @@ pub async fn mdoc_crl(
             tracing::warn!(%error, "mdoc CRL is unavailable");
             empty_response(StatusCode::SERVICE_UNAVAILABLE)
         }
-    }
+    };
+    response.headers_mut().insert(
+        http::header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-store"),
+    );
+    response
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/well_known_crl.rs"]
+mod crl_tests;

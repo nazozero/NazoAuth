@@ -1,0 +1,17 @@
+.worker-security { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 28px; }
+.worker-security h3 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin-bottom: 12px; }
+.worker-security-section + .worker-security-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
+.worker-security .profile-form { margin-top: 16px; }
+.worker-passkey-list { list-style: none; padding: 0; display: grid; gap: 12px; margin: 16px 0; }
+.worker-passkey-list li { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.worker-passkey-list li > div { min-width: 0; }
+.worker-passkey-list strong { display: block; overflow-wrap: anywhere; }
+.worker-passkey-list small { color: var(--muted); }
+.worker-security-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.worker-secret { display: block; padding: 14px; overflow-wrap: anywhere; user-select: all; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.worker-backup-codes { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; }
+.worker-backup-codes ul { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 14px 0; }
+.worker-backup-codes code { user-select: all; overflow-wrap: anywhere; }
+.worker-mfa-challenge h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.worker-mfa-challenge .auth-help-text { margin-bottom: 18px; }
+.worker-security .worker-confirmation { width: 100%; margin: 8px 0; }

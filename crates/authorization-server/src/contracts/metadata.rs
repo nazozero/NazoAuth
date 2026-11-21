@@ -10,6 +10,7 @@ pub struct MetadataEndpointConfig {
     pub issuer: String,
     pub mtls_endpoint_base_url: String,
     pub mtls_enabled: bool,
+    pub backchannel_logout_supported: bool,
     pub authorization_server_profile: MetadataAuthorizationServerProfile,
     pub ciba_profile: CibaMetadataProfile,
     pub pairwise_subject_enabled: bool,

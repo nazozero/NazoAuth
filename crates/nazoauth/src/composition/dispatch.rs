@@ -90,9 +90,12 @@ impl NazoAuth {
     fn guard_enabled(&self, guard: RouteGuard) -> bool {
         match guard {
             RouteGuard::None => true,
+            #[cfg(feature = "deployment-control")]
             RouteGuard::ControlTenant => self.deployment.as_ref().is_some_and(|deployment| {
                 deployment.capabilities.control_tenant == self.settings.tenant.context.tenant_id
             }),
+            #[cfg(not(feature = "deployment-control"))]
+            RouteGuard::ControlTenant => false,
             RouteGuard::Openid4vci => {
                 self.settings.modules.register_openid4vci_routes
                     && self.core.credential_issuer_endpoint.is_some()
@@ -223,6 +226,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::ControlDiscovery => Box::pin(async move {
                 crate::control_discovery::control_discovery(
                     &require!(self.deployment.as_ref()).capabilities.identity,
@@ -256,6 +260,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminControllerSlotCommit => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_slot_commit(
                     self.core.security_audit.as_ref(),
@@ -267,6 +272,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminControllerSlotRotate => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_slot_rotate(
                     self.core.security_audit.as_ref(),
@@ -278,6 +284,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminControllerSlotRevoke => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_slot_revoke(
                     self.core.security_audit.as_ref(),
@@ -289,6 +296,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminControllerApproval => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_approval(
                     self.core.security_audit.as_ref(),
@@ -300,6 +308,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminRecoveryRoot => Box::pin(async move {
                 crate::endpoints::admin::recovery_root::admin_recovery_root(
                     self.identity.admin_sessions.as_ref(),
@@ -309,6 +318,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminRecoveryRootApproval => Box::pin(async move {
                 crate::endpoints::admin::recovery_root::admin_recovery_root_approval(
                     self.core.security_audit.as_ref(),
@@ -320,6 +330,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::AdminRecoveryRootRotate => Box::pin(async move {
                 crate::endpoints::admin::recovery_root::admin_recovery_root_rotate(
                     self.core.security_audit.as_ref(),
@@ -853,6 +864,7 @@ impl NazoAuth {
             Endpoint::ProfileLogout => Box::pin(async move {
                 http::profile_logout(self.identity.profile_logout_endpoint.as_ref(), request).await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::ControllerSlots => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::controller_slots(
                     &require!(self.deployment.as_ref()).controller_registry,
@@ -895,6 +907,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::SystemSetTenantAdmin => Box::pin(async move {
                 crate::endpoints::admin::users::system_set_tenant_admin(
                     self.core.security_audit.as_ref(),
@@ -1149,6 +1162,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::ControllerRecoveryChallenge => Box::pin(async move {
                 crate::endpoints::admin::controller_recovery::controller_recovery_challenge(
                     &require!(self.deployment.as_ref()).recovery_root,
@@ -1156,6 +1170,7 @@ impl NazoAuth {
                 )
                 .await
             }),
+            #[cfg(feature = "deployment-control")]
             Endpoint::ControllerRecoveryCommit => Box::pin(async move {
                 crate::endpoints::admin::controller_recovery::controller_recovery_commit(
                     &require!(self.deployment.as_ref()).recovery_root,

@@ -22,6 +22,7 @@ pub mod tenancy;
 pub use access_request::{AccessRequest, AccessRequestPage, AccessRequestStatus, NewAccessRequest};
 pub use admin::{
     AdminPolicyError, AdminUserUpdateOutcome, ResolvedAdminUserUpdate, authorize_admin_update,
+    authorize_tenant_admin_update,
 };
 pub use audit::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,

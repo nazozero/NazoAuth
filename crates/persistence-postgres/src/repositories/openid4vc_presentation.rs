@@ -478,7 +478,8 @@ async fn load_presentation(
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
          ephemeral_private_key_ciphertext, expires_at, created_at \
-         FROM openid4vp_transactions WHERE id = $1 AND tenant_id = $2 AND expires_at > $3 \
+         FROM openid4vp_transactions WHERE id = $1 AND tenant_id = $2 \
+           AND completed_at IS NULL AND expires_at > $3 \
            AND openid4vc_presentation_trust_policy_is_active( \
                tenant_id, openid4vc_trust_policy_binding_id, \
                openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest)",

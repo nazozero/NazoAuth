@@ -6,6 +6,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 const POLICY: DynamicRegistrationPolicy<'static> = DynamicRegistrationPolicy {
+    capabilities: &crate::DynamicRegistrationCapabilities::ALL,
     default_audience: "https://api.example",
     pairwise_subject_supported: true,
     id_token_signing_algs: &["RS256", "PS256"],
@@ -13,6 +14,52 @@ const POLICY: DynamicRegistrationPolicy<'static> = DynamicRegistrationPolicy {
     request_object_encryption_algs: &["RSA-OAEP-256"],
     request_object_encryption_encs: &["A256GCM"],
 };
+
+#[test]
+fn deployment_capabilities_reject_unbacked_metadata_before_resolution_or_storage() {
+    let capabilities = DynamicRegistrationCapabilities {
+        remote_documents: false,
+        mtls: false,
+        backchannel_logout: false,
+        grant_types: Some(vec!["authorization_code".into(), "refresh_token".into()]),
+    };
+    for value in [
+        json!({"jwks_uri":"https://client.example/jwks"}),
+        json!({"sector_identifier_uri":"https://client.example/sector"}),
+        json!({"request_uris":["https://client.example/request.jwt"]}),
+        json!({"backchannel_logout_uri":"https://client.example/logout"}),
+        json!({"token_endpoint_auth_method":"tls_client_auth"}),
+        json!({"tls_client_certificate_bound_access_tokens":true}),
+        json!({"tls_client_auth_san_dns":"client.example"}),
+        json!({"grant_types":["urn:openid:params:grant-type:ciba"]}),
+    ] {
+        let error = prepare_dynamic_client_registration(
+            serde_json::from_value(value).unwrap(),
+            DynamicRegistrationPolicy {
+                capabilities: &capabilities,
+                ..POLICY
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.error, "invalid_client_metadata");
+    }
+    let prepared = prepare_dynamic_client_registration(
+        serde_json::from_value(json!({
+            "token_endpoint_auth_methods_supported":["tls_client_auth","private_key_jwt"],
+            "jwks":{"keys":[]}
+        }))
+        .unwrap(),
+        DynamicRegistrationPolicy {
+            capabilities: &capabilities,
+            ..POLICY
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        prepared.request.token_endpoint_auth_method,
+        "private_key_jwt"
+    );
+}
 
 #[test]
 fn default_registration_contract_matches_oidc_code_client_behavior() {
@@ -418,6 +465,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
             ..Default::default()
         },
         DynamicRegistrationPolicy {
+            capabilities: &crate::DynamicRegistrationCapabilities::ALL,
             default_audience: "https://api.example",
             pairwise_subject_supported: false,
             id_token_signing_algs: &["RS256", "PS256"],

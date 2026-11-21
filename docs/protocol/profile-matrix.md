@@ -329,8 +329,8 @@ profile. NazoAuthWeb is the first-party same-origin authorization-server
 frontend with a server-managed session and receives no OAuth tokens. A
 third-party browser-only application remains a public `oauth2-oidc-baseline`
 client using authorization code + S256 PKCE, exact redirects, and
-non-credentialed endpoint-specific CORS. The final RFC requires a separate
-delta audit before any final-standard claim.
+non-credentialed endpoint-specific CORS. The server-side controls are reviewed against RFC 10017; third-party browser
+applications apply its client and deployment requirements.
 
 FAPI HTTP Signatures is the second bounded M8 implementation candidate. It is
 available only while the persisted `http_message_signatures` module is enabled on `/fapi/resource`;
@@ -338,8 +338,8 @@ it is not an authorization-server profile, emits no metadata, and leaves every
 existing profile unchanged while disabled. The implementation is pinned to the
 working draft built 2026-06-26 and the RFC 9421/RFC 9530 primitives listed in
 the [resource contract](fapi-http-signatures.md). Local Rust vectors and
-real-HTTP positive/negative coverage are implementation evidence. A newer draft or Final Specification triggers a
-fresh delta audit before any version claim changes.
+real-HTTP positive/negative tests cover the implemented profile. Review normative
+differences before adopting a newer draft or Final Specification.
 
 RFC 9967 is the third admitted M8 candidate. It is a separate default-closed
 SCIM runtime module, not an OAuth profile. It emits notice-only provisioning

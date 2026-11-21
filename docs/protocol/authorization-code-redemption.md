@@ -78,15 +78,14 @@ Only after all version-two receipts have safely drained under retention may the
 guarded down migration run. A coherent pre-upgrade restore is a separate recovery
 operation; restoring a database or cache snapshot alone is not a safe rollback.
 
-## Evidence boundaries
+## Tests
 
 The application regression delegates effects to real PostgreSQL and Valkey and
 uses freshly signed DPoP requests. Its one-shot wrapper hides a successful commit
-ACK at the semantic port boundary; it is not a physical driver/network fault test.
+ACK at the semantic port boundary.
 The migration test applies actual up/down SQL to a transaction-owned table copied
 from the complete migrated schema. It tests the old insert shape and rollback
-guard, not execution of an old binary. Both require isolated CNB fixtures and an
-exact source SHA before any acceptance claim.
+guard. Run both against isolated CNB fixtures and record the source revision.
 
 ## Historical mTLS policy boundary
 

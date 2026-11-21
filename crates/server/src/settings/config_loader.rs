@@ -493,6 +493,8 @@ impl Settings {
                 }
             },
             protocol: ProtocolSettings {
+                user_authorization_supported: true,
+                backchannel_logout_supported: true,
                 default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
                 protected_resource_identifier,
                 additional_scopes_supported,

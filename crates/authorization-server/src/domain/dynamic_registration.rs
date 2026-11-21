@@ -25,6 +25,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct DynamicRegistrationConfig {
+    pub capabilities: nazo_auth::DynamicRegistrationCapabilities,
     pub require_fapi2: bool,
     pub tenant: nazo_identity::TenantContext,
     pub issuer: String,
@@ -321,6 +322,7 @@ impl DynamicRegistrationApplication {
 
     fn registration_policy(&self) -> DynamicRegistrationPolicy<'_> {
         DynamicRegistrationPolicy {
+            capabilities: &self.config.capabilities,
             default_audience: &self.config.default_audience,
             pairwise_subject_supported: self.config.pairwise_subject_secret.is_some(),
             id_token_signing_algs: &self.config.id_token_signing_algs,

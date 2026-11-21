@@ -1,6 +1,6 @@
 use crate::{
-    InstanceStateRecord, LifecycleFailure, ModuleId, ModuleLifecycle, ModuleStateRepository,
-    ReconcileOutcome, RegistryError,
+    ActiveModuleSnapshot, DesiredStateRecord, InstanceStateRecord, LifecycleFailure, ModuleId,
+    ModuleLifecycle, ModuleState, ModuleStateRepository, ReconcileOutcome, RegistryError,
 };
 
 use super::RuntimeModuleRegistry;
@@ -65,16 +65,54 @@ where
                 .iter()
                 .find(|record| record.module_id == dependent)
                 .ok_or(RegistryError::MissingDesiredState(dependent))?;
-            if self
-                .catalog
-                .effective_enabled(dependent, desired.mode.is_enabled())
-                || snapshot.admits(dependent)
-                || snapshot.draining.contains(&dependent)
-            {
+            if self.dependent_has_work(desired, &snapshot).await? {
                 return Ok(Some(dependent));
             }
         }
         Ok(None)
+    }
+
+    /// Closing admission is not proof that a dependent finished. A cold or
+    /// budgeted step may still have a live global window or local execution.
+    pub(super) async fn dependent_has_work(
+        &self,
+        desired: &DesiredStateRecord,
+        snapshot: &ActiveModuleSnapshot,
+    ) -> Result<bool, RegistryError<R::Error>> {
+        let module_id = desired.module_id;
+        if !self.catalog.is_available(module_id) {
+            return Ok(false);
+        }
+        if desired.mode.is_enabled()
+            || snapshot.admits(module_id)
+            || snapshot.draining.contains(&module_id)
+            || !self.snapshots.is_idle(module_id)
+        {
+            return Ok(true);
+        }
+        let pending = self
+            .synchronization
+            .lock()
+            .expect("synchronization state")
+            .pending
+            .contains(&module_id);
+        if !pending
+            && self
+                .drain_deadline(desired, None)?
+                .is_none_or(|deadline| web_time::SystemTime::now() >= deadline)
+        {
+            return Ok(false);
+        }
+        let instance = self
+            .repository
+            .read_instance(&self.instance_id, module_id)
+            .await
+            .map_err(RegistryError::Repository)?;
+        Ok(!instance.is_some_and(|instance| {
+            instance.state == ModuleState::Disabled
+                && instance.applied_revision == Some(desired.revision)
+                && instance.transition_revision == desired.revision
+        }))
     }
 
     pub(super) async fn fail_dependency_loss(

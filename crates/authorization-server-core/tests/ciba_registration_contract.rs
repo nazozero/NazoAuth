@@ -4,6 +4,7 @@ use nazo_auth::{
 };
 
 const POLICY: DynamicRegistrationPolicy<'_> = DynamicRegistrationPolicy {
+    capabilities: &nazo_auth::DynamicRegistrationCapabilities::ALL,
     default_audience: "resource://default",
     pairwise_subject_supported: true,
     id_token_signing_algs: &["RS256", "PS256"],
@@ -92,6 +93,7 @@ fn ciba_choices_select_an_algorithm_supported_by_both_profile_and_keys() {
         Some("PS256")
     );
     let policy = DynamicRegistrationPolicy {
+        capabilities: &nazo_auth::DynamicRegistrationCapabilities::ALL,
         id_token_signing_algs: &["RS256"],
         ..POLICY
     };

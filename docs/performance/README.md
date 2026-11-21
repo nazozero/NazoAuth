@@ -33,8 +33,8 @@ nonces, and a synthetic DS/IACA certificate pair using the native certificate
 backend. The DS has the mdoc purpose, critical KeyUsage, SKI/AKI, contact and CRL
 extensions, PrintableString country and bounded validity required by the tested
 profile. Required certificate revocation uses an explicit synthetic Good
-operator snapshot. The test does not fetch a CRL or claim that its contact and
-CRL addresses are deployed endpoints.
+operator snapshot. The fixture uses local revocation state and synthetic contact
+and CRL addresses.
 
 The actual native `CredentialSignerPort` produces the IssuerSigned bytes for
 three claims. An independent synthetic wallet splices that complete original
@@ -75,17 +75,17 @@ NAZO_MDOC_API_SAMPLES=2000 \
 The runner performs 100 warmups per operation, then at least 1,000 measurements
 of each operation, serially at concurrency one. Signing uses three claims
 (`given_name`, `age`, `issuing_country`); verification uses the same separate
-three-claim signed presentation on every revision. The signing metric is native port `Ok`-return latency, not proof that every
-legacy issuer output is protocol-conformant. Inspect actual signed outputs
-separately and retain rejections. Signing
+three-claim signed presentation on every revision. The signing metric measures
+native port `Ok`-return latency. Check signed outputs through the interoperability
+steps below and retain rejections. Signing
 includes dropping the returned String; verification records elapsed time before
 checking and dropping the verified result. Both variants use identical timing
 boundaries. Failures stop the run. Results include the fixture digest, ordered
 raw samples and nearest-rank P50/P95/P99, mean, minimum and maximum latency.
 
 These are application-port elapsed times. They exclude HTTP, PostgreSQL,
-Valkey, network certificate-status checks and credential-status servers. They
-do not replace complete HTTP latency evidence.
+Valkey, network certificate-status checks and credential-status servers.
+The HTTP measurement below includes transport and storage.
 
 ## Actual issued-output interoperability
 
@@ -101,9 +101,9 @@ Run the other revision with `NAZO_MDOC_ACTION=interop-verify`,
 `NAZO_MDOC_INTEROP_OUTPUT`. It checks the shared fixture identity, the persisted random interop nonce and
 exact issuer slice, verifies with the actual application port, and requires
 rejection after changing one bit of that nonce and rebuilding the transcript. Source and verifier variant names must be
-nonempty and different. Repeat in the reverse direction. A pair of self-checks
-or acceptance of helper-generated fixtures does not establish this contract.
-These checks do not claim interoperability with a third-party wallet.
+nonempty and different. Repeat in the reverse direction. This checks the two
+application revisions with the synthetic wallet; test production wallet
+integrations with the selected wallet implementations.
 
 ## mdoc OID4VP HTTP response
 

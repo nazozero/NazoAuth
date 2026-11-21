@@ -46,6 +46,7 @@ impl MetadataSnapshotSource for TestSnapshots {
 fn handles(source: Arc<TestSnapshots>) -> MetadataHandles {
     MetadataHandles::new(
         MetadataEndpointConfig {
+            backchannel_logout_supported: true,
             issuer: "https://issuer.example".to_owned(),
             mtls_endpoint_base_url: "https://mtls.issuer.example".to_owned(),
             mtls_enabled: false,

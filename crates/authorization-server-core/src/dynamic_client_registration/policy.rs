@@ -12,6 +12,7 @@ use super::{
 
 #[derive(Clone, Copy, Debug)]
 pub struct DynamicRegistrationPolicy<'a> {
+    pub capabilities: &'a DynamicRegistrationCapabilities,
     pub default_audience: &'a str,
     pub pairwise_subject_supported: bool,
     pub id_token_signing_algs: &'a [&'a str],
@@ -19,6 +20,32 @@ pub struct DynamicRegistrationPolicy<'a> {
     pub request_object_encryption_algs: &'a [&'a str],
     pub request_object_encryption_encs: &'a [&'a str],
 }
+
+/// Deployment capabilities admitted before remote resolution or persistence.
+/// Native deployments retain the complete protocol surface by default.
+#[derive(Clone, Debug)]
+pub struct DynamicRegistrationCapabilities {
+    pub remote_documents: bool,
+    pub mtls: bool,
+    pub backchannel_logout: bool,
+    pub grant_types: Option<Vec<String>>,
+}
+
+impl DynamicRegistrationCapabilities {
+    pub const ALL: Self = Self {
+        remote_documents: true,
+        mtls: true,
+        backchannel_logout: true,
+        grant_types: None,
+    };
+}
+
+impl Default for DynamicRegistrationCapabilities {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
 pub fn prepare_dynamic_client_registration(
     mut request: DynamicClientRegistrationRequest,
     policy: DynamicRegistrationPolicy<'_>,
@@ -27,6 +54,36 @@ pub fn prepare_dynamic_client_registration(
         .grant_types
         .take()
         .unwrap_or_else(default_dynamic_client_grant_types);
+    if policy
+        .capabilities
+        .grant_types
+        .as_ref()
+        .is_some_and(|supported| grant_types.iter().any(|grant| !supported.contains(grant)))
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "A requested grant type is unavailable in this deployment.",
+        ));
+    }
+    if !policy.capabilities.remote_documents
+        && (request.jwks_uri.is_some()
+            || request.sector_identifier_uri.is_some()
+            || request
+                .request_uris
+                .as_ref()
+                .is_some_and(|uris| !uris.is_empty()))
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "Remote client documents are unavailable in this deployment; use inline jwks and request objects.",
+        ));
+    }
+    if !policy.capabilities.backchannel_logout
+        && (request.backchannel_logout_uri.is_some()
+            || request.backchannel_logout_session_required.unwrap_or(false))
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "Backchannel logout is unavailable in this deployment.",
+        ));
+    }
     let ciba_enabled = grant_types
         .iter()
         .any(|grant| grant == "urn:openid:params:grant-type:ciba");
@@ -52,19 +109,42 @@ pub fn prepare_dynamic_client_registration(
         request.subject_types_supported,
         subject_types,
     )?;
+    let authentication_methods = [
+        "private_key_jwt",
+        "tls_client_auth",
+        "self_signed_tls_client_auth",
+        "client_secret_basic",
+        "client_secret_post",
+        "none",
+    ]
+    .into_iter()
+    .filter(|method| {
+        policy.capabilities.mtls
+            || !matches!(*method, "tls_client_auth" | "self_signed_tls_client_auth")
+    })
+    .collect::<Vec<_>>();
     request.token_endpoint_auth_method = negotiate_metadata_choice(
         "token_endpoint_auth_method",
         request.token_endpoint_auth_method,
         request.token_endpoint_auth_methods_supported,
-        &[
-            "private_key_jwt",
-            "tls_client_auth",
-            "self_signed_tls_client_auth",
-            "client_secret_basic",
-            "client_secret_post",
-            "none",
-        ],
+        &authentication_methods,
     )?;
+    if !policy.capabilities.mtls
+        && (request.tls_client_certificate_bound_access_tokens
+            || matches!(
+                request.token_endpoint_auth_method.as_deref(),
+                Some("tls_client_auth" | "self_signed_tls_client_auth")
+            )
+            || request.tls_client_auth_subject_dn.is_some()
+            || request.tls_client_auth_san_dns.is_some()
+            || request.tls_client_auth_san_uri.is_some()
+            || request.tls_client_auth_san_ip.is_some()
+            || request.tls_client_auth_san_email.is_some())
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "mTLS client authentication and certificate-bound tokens are unavailable in this deployment.",
+        ));
+    }
     request.id_token_signed_response_alg = negotiate_metadata_choice(
         "id_token_signed_response_alg",
         request.id_token_signed_response_alg,

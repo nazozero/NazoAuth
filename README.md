@@ -83,6 +83,25 @@ release on a local or SSH host. Choose Docker, Podman, or a host binary. The
 current distribution uses the PostgreSQL and Valkey adapters. Prepare a public
 HTTPS issuer, PostgreSQL with separate runtime and lifecycle roles, and Valkey.
 
+For a WASM deployment with Cloudflare D1, see the
+[Cloudflare Workers adapter](docs/operations/cloudflare-workers.md) and its
+[comparison with native deployment](docs/operations/worker-native-comparison.md).
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
+
+The button creates an unpublished Worker and D1 schema. Offline bootstrap
+provisions signing keys and service clients before the HTTPS domain and WAF
+rule can be enabled. **Workers Free** defaults to a machine-to-machine
+profile (Client Credentials, token management and JWKS). For interactive Free login, the offline
+bootstrap selects the Passkey-only mode and issues a one-use setup ticket for
+the first device: this Passkey mode keeps password login blocked. The password-enabled
+profile retains the shared Argon2id policy and can be selected on either plan.
+Both plans now permit 64 MiB uncompressed Worker code. Workers Free publishes a
+10 ms CPU budget per HTTP request. Measure the selected profile under the intended
+sustained load and report actual platform rejections separately from CPU samples
+above that budget. See the
+[setup instructions](docs/operations/cloudflare-workers.md#deploy-to-cloudflare-button).
+
 <details>
 <summary><strong>Install on an SSH host</strong></summary>
 

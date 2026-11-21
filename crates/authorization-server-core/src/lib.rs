@@ -154,11 +154,12 @@ pub use dpop::{
     validate_authorization_server_dpop, validate_authorization_server_dpop_at,
 };
 pub use dynamic_client_registration::{
-    ClientSecretDigesterPort, DynamicClientRegistrationRequest, DynamicRegistrationClientStore,
-    DynamicRegistrationDependencyError, DynamicRegistrationError, DynamicRegistrationFuture,
-    DynamicRegistrationPolicy, DynamicRegistrationSecretPort, PreparedDynamicClientRegistration,
-    RegistrationClientSnapshot, parse_client_configuration_update,
-    prepare_dynamic_client_registration, response_types_from_client,
+    ClientSecretDigesterPort, DynamicClientRegistrationRequest, DynamicRegistrationCapabilities,
+    DynamicRegistrationClientStore, DynamicRegistrationDependencyError, DynamicRegistrationError,
+    DynamicRegistrationFuture, DynamicRegistrationPolicy, DynamicRegistrationSecretPort,
+    PreparedDynamicClientRegistration, RegistrationClientSnapshot,
+    parse_client_configuration_update, prepare_dynamic_client_registration,
+    response_types_from_client,
 };
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use extension_grants::{

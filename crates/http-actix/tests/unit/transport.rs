@@ -403,6 +403,7 @@ async fn connection_facts_come_from_the_connection_and_ignore_proxy_claims() {
     };
     let expected = ConnectionFacts {
         peer_addr: None,
+        authenticated_client_ip: None,
         server_name: Some("issuer.example".into()),
         client_certificate: Some(std::sync::Arc::new(certificate)),
     };

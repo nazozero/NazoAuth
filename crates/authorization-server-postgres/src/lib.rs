@@ -5,12 +5,11 @@ use std::sync::Arc;
 use nazo_oauth_server::ports::persistence::ServerPersistenceProvider;
 use nazo_postgres::{
     AccessRequestRepository, AuditLedgerRepository, AuditRepository, AuthorizationFlowRepository,
-    ControllerRegistryRepository, DbPool, FederationRepository, GrantRepository, MfaRepository,
-    MtlsTrustAnchorRepository, OAuthClientRepository, Openid4vciDatasetRepository,
-    Openid4vciRepository, Openid4vpRepository, PasskeyRepository, PostgresHealthCheck,
-    RecoveryRootRepository, RuntimeModuleRepository, ScimEventRepository, ScimRepository,
-    SecurityStateMaintenanceRepository, TenantDirectoryRepository, TenantResourceRepository,
-    TokenIssuanceRepository, TokenRepository, UserRepository,
+    DbPool, FederationRepository, GrantRepository, MfaRepository, MtlsTrustAnchorRepository,
+    OAuthClientRepository, Openid4vciDatasetRepository, Openid4vciRepository, Openid4vpRepository,
+    PasskeyRepository, PostgresHealthCheck, RuntimeModuleRepository, ScimEventRepository,
+    ScimRepository, SecurityStateMaintenanceRepository, TenantDirectoryRepository,
+    TenantResourceRepository, TokenIssuanceRepository, TokenRepository, UserRepository,
 };
 
 #[derive(Clone)]
@@ -218,14 +217,6 @@ impl ServerPersistenceProvider for PostgresProvider {
 
     fn logout_delivery_store(&self) -> Arc<dyn nazo_persistence::BackchannelLogoutDeliveryStore> {
         Arc::new(AuditRepository::new(self.pool.clone()))
-    }
-
-    fn controller_registry(&self) -> Arc<dyn nazo_persistence::ControllerRegistryPort> {
-        Arc::new(ControllerRegistryRepository::new(self.pool.clone()))
-    }
-
-    fn recovery_root(&self) -> Arc<dyn nazo_persistence::RecoveryRootPort> {
-        Arc::new(RecoveryRootRepository::new(self.pool.clone()))
     }
 
     fn mtls_trust_anchors(&self) -> Arc<dyn nazo_identity::ports::MtlsTrustAnchorStore> {

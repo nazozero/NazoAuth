@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use crate::policy::validate_dependencies;
-use crate::{DisablePolicy, ModuleCatalogError, ModuleId, ModuleSpec};
+use crate::{
+    DesiredStateRecord, DisablePolicy, InstanceStateRecord, ModuleCatalogError, ModuleId,
+    ModuleSpec, ModuleState,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CatalogDurations {
@@ -134,6 +137,52 @@ impl ModuleCatalog {
         } else {
             self.spec(module_id).disable_policy
         }
+    }
+
+    /// Every instance derives the same horizon from the authoritative intent.
+    /// Catalog durations must remain stable until that disable has drained;
+    /// changing them requires a persisted policy revision, never a later start.
+    /// An unrepresentable deadline is absent and must not reopen admission.
+    #[must_use]
+    pub fn stored_transaction_deadline(
+        &self,
+        desired: &DesiredStateRecord,
+    ) -> Option<web_time::SystemTime> {
+        if desired.mode.is_enabled() {
+            return None;
+        }
+        match self.effective_disable_policy(desired.module_id) {
+            DisablePolicy::DrainStoredTransactions { max_duration } => {
+                desired.updated_at.checked_add(max_duration)
+            }
+            _ => None,
+        }
+    }
+
+    /// Existing transactions can survive a cold instance with no observation.
+    /// A same-revision failed/completed instance or an elapsed horizon cannot
+    /// be reopened by this projection. It does not acknowledge completion.
+    #[must_use]
+    pub fn stored_transaction_admission(
+        &self,
+        desired: &DesiredStateRecord,
+        instance: Option<&InstanceStateRecord>,
+        now: web_time::SystemTime,
+    ) -> bool {
+        self.is_available(desired.module_id)
+            && instance.is_none_or(|instance| {
+                instance.transition_revision != desired.revision
+                    || matches!(instance.state, ModuleState::Enabled | ModuleState::Draining)
+            })
+            && self
+                .stored_transaction_deadline(desired)
+                .map(|deadline| {
+                    instance
+                        .filter(|instance| instance.transition_revision == desired.revision)
+                        .and_then(|instance| instance.drain_deadline)
+                        .map_or(deadline, |persisted| persisted.min(deadline))
+                })
+                .is_some_and(|deadline| now < deadline)
     }
 }
 

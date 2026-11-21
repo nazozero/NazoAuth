@@ -25,22 +25,24 @@ use crate::{
 
 const MAX_CAS_ATTEMPTS: usize = 8;
 
-pub(crate) async fn load_or_create(
+pub(crate) async fn load(
     settings: &KeySettings,
     external_signer: Option<Arc<dyn ExternalKeySigner>>,
     tenant_id: Uuid,
     repository: Arc<dyn SigningKeyRepository>,
     wrapping_keys: SigningKeyWrappingKeyRing,
+    create_if_missing: bool,
 ) -> anyhow::Result<(LoadedKeyset, DatabaseKeysetBinding)> {
     let record = match repository.load().await? {
         Some(record) => record,
-        None => {
+        None if create_if_missing => {
             let candidate = persist_payload(tenant_id, 1, initial_payload()?, &wrapping_keys)?;
             match repository.create_if_absent(candidate).await? {
                 SigningKeysetCreateResult::Created(record)
                 | SigningKeysetCreateResult::Existing(record) => record,
             }
         }
+        None => anyhow::bail!("provision signing keys before serving requests"),
     };
     let binding = DatabaseKeysetBinding {
         tenant_id,
@@ -1081,11 +1083,8 @@ fn load_payload(
     )?;
     let request_object_der =
         crate::serialization::rsa_pkcs8_from_pem(&request_object_decryption_key)?;
-    let request_object_encryption_jwk =
-        crate::request_object_encryption::request_object_encryption_jwk(&request_object_der)?;
-    let request_object_decryption_key = Arc::new(
-        nazo_crypto::key_wrap::RsaOaep256PrivateKey::from_pkcs8(&request_object_der)?,
-    );
+    let (request_object_decryption_key, request_object_encryption_jwk) =
+        crate::request_object_encryption::prepare_key(&request_object_der)?;
     let mut active = None;
     let mut active_alg = None;
     let mut verification_keys = Vec::new();

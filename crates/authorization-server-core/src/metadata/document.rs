@@ -2,7 +2,7 @@ use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{CapabilityAdmission, MetadataCapabilities, module_admissible};
 use crate::{
-    SUPPORTED_AUTHORIZATION_DETAILS_TYPES, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+    GrantType, SUPPORTED_AUTHORIZATION_DETAILS_TYPES, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
     SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
 };
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
@@ -63,6 +63,7 @@ const BASELINE_ACR_VALUE: &str = "1";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MetadataAuthorizationServerProfile {
     Composable,
+    MachineToMachine,
     Oauth2Baseline,
     Fapi2Security,
     Fapi2MessageSigningAuthorizationRequest,
@@ -72,7 +73,10 @@ pub enum MetadataAuthorizationServerProfile {
 
 impl MetadataAuthorizationServerProfile {
     const fn requires_fapi2_security(self) -> bool {
-        !matches!(self, Self::Composable | Self::Oauth2Baseline)
+        !matches!(
+            self,
+            Self::Composable | Self::MachineToMachine | Self::Oauth2Baseline
+        )
     }
 
     const fn requires_signed_authorization_request(self) -> bool {
@@ -108,6 +112,7 @@ pub struct AuthorizationServerMetadataInput<'a> {
     pub issuer: &'a str,
     pub mtls_endpoint_base_url: &'a str,
     pub mtls_enabled: bool,
+    pub backchannel_logout_supported: bool,
     pub profile: MetadataAuthorizationServerProfile,
     pub ciba_profile: CibaMetadataProfile,
     pub pairwise_subject_enabled: bool,
@@ -143,7 +148,19 @@ struct AuthorizationServerMetadata<'a> {
 impl Serialize for AuthorizationServerMetadata<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let input = self.input;
-        let capabilities = MetadataCapabilities::from_snapshot(self.snapshot);
+        let user_authorization =
+            input.profile != MetadataAuthorizationServerProfile::MachineToMachine;
+        let mut capabilities = MetadataCapabilities::from_snapshot(self.snapshot);
+        if !user_authorization {
+            capabilities.grant_types.retain(|grant| {
+                [
+                    GrantType::ClientCredentials.as_str(),
+                    GrantType::JwtBearer.as_str(),
+                    GrantType::TokenExchange.as_str(),
+                ]
+                .contains(grant)
+            });
+        }
         let issuer = input.issuer;
         let response_signing_algs: Vec<_> = input
             .signing_algorithms
@@ -162,11 +179,14 @@ impl Serialize for AuthorizationServerMetadata<'_> {
             id_token_signing_algs
                 .retain(|algorithm| crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm));
         }
-        let token_auth_methods = token_endpoint_auth_methods_supported(
+        let mut token_auth_methods = token_endpoint_auth_methods_supported(
             input.profile,
             input.mtls_enabled,
-            capabilities.openid4vci_issuer,
+            user_authorization && capabilities.openid4vci_issuer,
         );
+        if !user_authorization {
+            token_auth_methods.retain(|method| *method != "none");
+        }
         let revocation_auth_methods: Vec<_> = token_auth_methods
             .iter()
             .copied()
@@ -185,15 +205,19 @@ impl Serialize for AuthorizationServerMetadata<'_> {
         if !capabilities.jarm {
             response_modes.retain(|mode| *mode != "jwt");
         }
-        let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
-        if capabilities.native_sso {
+        let mut scopes_supported = if user_authorization {
+            SCOPES_SUPPORTED.to_vec()
+        } else {
+            Vec::new()
+        };
+        if user_authorization && capabilities.native_sso {
             scopes_supported.push("device_sso");
         }
         for scope in input.additional_scopes_supported.iter().chain(
             input
                 .credential_scopes
                 .iter()
-                .filter(|_| capabilities.openid4vci_issuer),
+                .filter(|_| user_authorization && capabilities.openid4vci_issuer),
         ) {
             if !scopes_supported.contains(&scope.as_str()) {
                 scopes_supported.push(scope.as_str());
@@ -202,8 +226,10 @@ impl Serialize for AuthorizationServerMetadata<'_> {
         // Preserve the previous JSON object's lexical field order without building
         // an owned Value tree. Static strings and snapshot lists serialize by reference.
         let mut metadata = serializer.serialize_map(None)?;
-        metadata.serialize_entry("acr_values_supported", &[BASELINE_ACR_VALUE])?;
-        if capabilities.authorization_details {
+        if user_authorization {
+            metadata.serialize_entry("acr_values_supported", &[BASELINE_ACR_VALUE])?;
+        }
+        if user_authorization && capabilities.authorization_details {
             metadata.serialize_entry(
                 "authorization_details_types_supported",
                 &SUPPORTED_AUTHORIZATION_DETAILS_TYPES
@@ -213,21 +239,23 @@ impl Serialize for AuthorizationServerMetadata<'_> {
                     .collect::<Vec<_>>(),
             )?;
         }
-        metadata.serialize_entry(
-            "authorization_encryption_alg_values_supported",
-            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        )?;
-        metadata.serialize_entry(
-            "authorization_encryption_enc_values_supported",
-            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        )?;
-        metadata.serialize_entry("authorization_endpoint", &format!("{issuer}/authorize"))?;
-        metadata.serialize_entry("authorization_response_iss_parameter_supported", &true)?;
-        metadata.serialize_entry(
-            "authorization_signing_alg_values_supported",
-            &response_signing_algs,
-        )?;
-        if capabilities.ciba {
+        if user_authorization {
+            metadata.serialize_entry(
+                "authorization_encryption_alg_values_supported",
+                SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+            )?;
+            metadata.serialize_entry(
+                "authorization_encryption_enc_values_supported",
+                SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+            )?;
+            metadata.serialize_entry("authorization_endpoint", &format!("{issuer}/authorize"))?;
+            metadata.serialize_entry("authorization_response_iss_parameter_supported", &true)?;
+            metadata.serialize_entry(
+                "authorization_signing_alg_values_supported",
+                &response_signing_algs,
+            )?;
+        }
+        if user_authorization && capabilities.ciba {
             metadata.serialize_entry(
                 "backchannel_authentication_endpoint",
                 &format!("{issuer}/bc-authorize"),
@@ -237,21 +265,31 @@ impl Serialize for AuthorizationServerMetadata<'_> {
                 crate::CIBA_JWT_SIGNING_ALGS,
             )?;
         }
-        metadata.serialize_entry("backchannel_logout_session_supported", &true)?;
-        metadata.serialize_entry("backchannel_logout_supported", &true)?;
-        if capabilities.ciba {
+        if user_authorization {
+            metadata.serialize_entry(
+                "backchannel_logout_session_supported",
+                &input.backchannel_logout_supported,
+            )?;
+            metadata.serialize_entry(
+                "backchannel_logout_supported",
+                &input.backchannel_logout_supported,
+            )?;
+        }
+        if user_authorization && capabilities.ciba {
             metadata.serialize_entry(
                 "backchannel_token_delivery_modes_supported",
                 &["poll", "ping"],
             )?;
             metadata.serialize_entry("backchannel_user_code_parameter_supported", &false)?;
         }
-        if capabilities.session_management {
+        if user_authorization && capabilities.session_management {
             metadata.serialize_entry("check_session_iframe", &format!("{issuer}/check_session"))?;
         }
-        metadata.serialize_entry("claims_parameter_supported", &true)?;
-        metadata.serialize_entry("claims_supported", &CLAIMS_SUPPORTED)?;
-        if capabilities.openid4vci_issuer {
+        if user_authorization {
+            metadata.serialize_entry("claims_parameter_supported", &true)?;
+            metadata.serialize_entry("claims_supported", &CLAIMS_SUPPORTED)?;
+        }
+        if user_authorization && capabilities.openid4vci_issuer {
             metadata.serialize_entry(
                 "client_attestation_pop_signing_alg_values_supported",
                 &["ES256"],
@@ -261,32 +299,38 @@ impl Serialize for AuthorizationServerMetadata<'_> {
                 &["ES256"],
             )?;
         }
-        metadata.serialize_entry("code_challenge_methods_supported", &["S256"])?;
-        if capabilities.device_authorization {
+        if user_authorization {
+            metadata.serialize_entry("code_challenge_methods_supported", &["S256"])?;
+        }
+        if user_authorization && capabilities.device_authorization {
             metadata.serialize_entry(
                 "device_authorization_endpoint",
                 &format!("{issuer}/device_authorization"),
             )?;
         }
         metadata.serialize_entry("dpop_signing_alg_values_supported", &DPOP_SIGNING_ALGS)?;
-        metadata.serialize_entry("end_session_endpoint", &format!("{issuer}/logout"))?;
-        if capabilities.frontchannel_logout {
+        if user_authorization {
+            metadata.serialize_entry("end_session_endpoint", &format!("{issuer}/logout"))?;
+        }
+        if user_authorization && capabilities.frontchannel_logout {
             metadata.serialize_entry("frontchannel_logout_session_supported", &true)?;
             metadata.serialize_entry("frontchannel_logout_supported", &true)?;
         }
         metadata.serialize_entry("grant_types_supported", &capabilities.grant_types)?;
-        metadata.serialize_entry(
-            "id_token_encryption_alg_values_supported",
-            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        )?;
-        metadata.serialize_entry(
-            "id_token_encryption_enc_values_supported",
-            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        )?;
-        metadata.serialize_entry(
-            "id_token_signing_alg_values_supported",
-            &id_token_signing_algs,
-        )?;
+        if user_authorization {
+            metadata.serialize_entry(
+                "id_token_encryption_alg_values_supported",
+                SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+            )?;
+            metadata.serialize_entry(
+                "id_token_encryption_enc_values_supported",
+                SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+            )?;
+            metadata.serialize_entry(
+                "id_token_signing_alg_values_supported",
+                &id_token_signing_algs,
+            )?;
+        }
         metadata.serialize_entry(
             "introspection_encryption_alg_values_supported",
             SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
@@ -315,23 +359,28 @@ impl Serialize for AuthorizationServerMetadata<'_> {
                 "mtls_endpoint_aliases",
                 &MtlsEndpointAliases {
                     base: input.mtls_endpoint_base_url,
-                    ciba: capabilities.ciba,
+                    ciba: user_authorization && capabilities.ciba,
+                    user_authorization,
                 },
             )?;
         }
-        metadata.serialize_entry("prompt_values_supported", &PROMPT_VALUES_SUPPORTED)?;
+        if user_authorization {
+            metadata.serialize_entry("prompt_values_supported", &PROMPT_VALUES_SUPPORTED)?;
+        }
         metadata.serialize_entry(
             "protected_resources",
             &[input.protected_resource_identifier],
         )?;
-        metadata.serialize_entry(
-            "pushed_authorization_request_endpoint",
-            &format!("{issuer}/par"),
-        )?;
+        if user_authorization {
+            metadata.serialize_entry(
+                "pushed_authorization_request_endpoint",
+                &format!("{issuer}/par"),
+            )?;
+        }
         if capabilities.dynamic_client_registration {
             metadata.serialize_entry("registration_endpoint", &format!("{issuer}/register"))?;
         }
-        if capabilities.request_objects {
+        if user_authorization && capabilities.request_objects {
             metadata.serialize_entry(
                 "request_object_encryption_alg_values_supported",
                 &["RSA-OAEP-256"],
@@ -346,20 +395,23 @@ impl Serialize for AuthorizationServerMetadata<'_> {
             )?;
             metadata.serialize_entry("request_parameter_supported", &true)?;
         }
-        // External request_uri is available only with the dynamically registered,
-        // signed-Request-Object baseline. FAPI continues to require AS-issued PAR handles.
-        metadata.serialize_entry(
-            "request_uri_parameter_supported",
-            &(capabilities.dynamic_client_registration
-                && capabilities.request_objects
-                && !input.profile.requires_fapi2_security()),
-        )?;
-        metadata.serialize_entry(
-            "require_pushed_authorization_requests",
-            &input.require_pushed_authorization_requests,
-        )?;
-        metadata.serialize_entry("response_modes_supported", &response_modes)?;
-        metadata.serialize_entry("response_types_supported", &["code"])?;
+        if user_authorization {
+            // External request_uri is available only with the dynamically registered,
+            // signed-Request-Object baseline. FAPI continues to require AS-issued PAR handles.
+            metadata.serialize_entry(
+                "request_uri_parameter_supported",
+                &(capabilities.dynamic_client_registration
+                    && capabilities.request_objects
+                    && !input.profile.requires_fapi2_security()),
+            )?;
+            metadata.serialize_entry(
+                "require_pushed_authorization_requests",
+                &input.require_pushed_authorization_requests,
+            )?;
+            metadata.serialize_entry("response_modes_supported", &response_modes)?;
+        }
+        let response_types: &[&str] = if user_authorization { &["code"] } else { &[] };
+        metadata.serialize_entry("response_types_supported", response_types)?;
         metadata.serialize_entry("revocation_endpoint", &format!("{issuer}/revoke"))?;
         metadata.serialize_entry(
             "revocation_endpoint_auth_methods_supported",
@@ -370,7 +422,9 @@ impl Serialize for AuthorizationServerMetadata<'_> {
             token_auth_signing_algs,
         )?;
         metadata.serialize_entry("scopes_supported", &scopes_supported)?;
-        metadata.serialize_entry("subject_types_supported", subject_types_supported(input))?;
+        if user_authorization {
+            metadata.serialize_entry("subject_types_supported", subject_types_supported(input))?;
+        }
         if input.mtls_enabled {
             metadata.serialize_entry("tls_client_certificate_bound_access_tokens", &true)?;
         }
@@ -380,19 +434,21 @@ impl Serialize for AuthorizationServerMetadata<'_> {
             "token_endpoint_auth_signing_alg_values_supported",
             token_auth_signing_algs,
         )?;
-        metadata.serialize_entry(
-            "userinfo_encryption_alg_values_supported",
-            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        )?;
-        metadata.serialize_entry(
-            "userinfo_encryption_enc_values_supported",
-            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        )?;
-        metadata.serialize_entry("userinfo_endpoint", &format!("{issuer}/userinfo"))?;
-        metadata.serialize_entry(
-            "userinfo_signing_alg_values_supported",
-            &response_signing_algs,
-        )?;
+        if user_authorization {
+            metadata.serialize_entry(
+                "userinfo_encryption_alg_values_supported",
+                SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+            )?;
+            metadata.serialize_entry(
+                "userinfo_encryption_enc_values_supported",
+                SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+            )?;
+            metadata.serialize_entry("userinfo_endpoint", &format!("{issuer}/userinfo"))?;
+            metadata.serialize_entry(
+                "userinfo_signing_alg_values_supported",
+                &response_signing_algs,
+            )?;
+        }
         metadata.end()
     }
 }
@@ -400,12 +456,15 @@ impl Serialize for AuthorizationServerMetadata<'_> {
 struct MtlsEndpointAliases<'a> {
     base: &'a str,
     ciba: bool,
+    user_authorization: bool,
 }
 
 impl Serialize for MtlsEndpointAliases<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let base = self.base;
-        let mut aliases = serializer.serialize_map(Some(if self.ciba { 6 } else { 5 }))?;
+        let mut aliases = serializer.serialize_map(Some(
+            3 + usize::from(self.ciba) + 2 * usize::from(self.user_authorization),
+        ))?;
         if self.ciba {
             aliases.serialize_entry(
                 "backchannel_authentication_endpoint",
@@ -413,13 +472,17 @@ impl Serialize for MtlsEndpointAliases<'_> {
             )?;
         }
         aliases.serialize_entry("introspection_endpoint", &format!("{base}/introspect"))?;
-        aliases.serialize_entry(
-            "pushed_authorization_request_endpoint",
-            &format!("{base}/par"),
-        )?;
+        if self.user_authorization {
+            aliases.serialize_entry(
+                "pushed_authorization_request_endpoint",
+                &format!("{base}/par"),
+            )?;
+        }
         aliases.serialize_entry("revocation_endpoint", &format!("{base}/revoke"))?;
         aliases.serialize_entry("token_endpoint", &format!("{base}/token"))?;
-        aliases.serialize_entry("userinfo_endpoint", &format!("{base}/userinfo"))?;
+        if self.user_authorization {
+            aliases.serialize_entry("userinfo_endpoint", &format!("{base}/userinfo"))?;
+        }
         aliases.end()
     }
 }

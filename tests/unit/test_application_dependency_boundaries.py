@@ -90,6 +90,16 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
                 with self.subTest(table=table, dependency=dependency):
                     self.assert_manifest_boundary("nazoauth", f'[{table}]\nhidden = {{ package = "{dependency}", version = "1", optional = true }}\n', True)
 
+    def test_worker_runtime_belongs_to_adapters_and_host(self) -> None:
+        for dependency in ("worker", "worker-sys", "worker-macros", "wasm-streams"):
+            edge = f'[target.\'cfg(target_arch = "wasm32")\'.dependencies]\nhidden = {{ package = "{dependency}", version = "1", optional = true }}\n'
+            for consumer in ("nazo-auth", "nazo-oauth-server", "nazoauth"):
+                with self.subTest(dependency=dependency, consumer=consumer):
+                    self.assert_manifest_boundary(consumer, edge, True)
+            for consumer in ("nazo-http-worker", "nazo-oauth-server-d1", "nazo-server-worker"):
+                with self.subTest(dependency=dependency, consumer=consumer):
+                    self.assert_manifest_boundary(consumer, edge, False)
+
     def test_unclassified_external_dependency_is_allowed(self) -> None:
         """Third-party crates use a denylist, not an allowlist: ordinary
         algorithm/data crates need no review entry."""
@@ -246,6 +256,17 @@ class InnerSourceBoundaries(unittest.TestCase):
             "pub async fn handle(request: Request<Bytes>) -> Response<Bytes> { todo!() }",
             False, package="nazoauth",
         )
+
+    def test_worker_bindings_cannot_enter_shared_protocols(self) -> None:
+        source = (
+            'use hidden::{Env as Environment, D1Database}; '
+            'pub struct Runtime { env: Environment, db: D1Database }'
+        )
+        dependency = '[target.\'cfg(target_arch = "wasm32")\'.dependencies]\nhidden={package="worker",version="1"}\n'
+        for consumer in ("nazo-auth", "nazo-oauth-server", "nazoauth"):
+            with self.subTest(consumer=consumer):
+                self.assert_source_boundary(source, True, package=consumer, dependencies=dependency)
+        self.assert_source_boundary(source, False, package="nazo-http-worker", dependencies=dependency)
 
     def test_native_and_adapter_execution_and_test_executor_are_allowed(self) -> None:
         execution = "fn run() { tokio::spawn(async {}); std::fs::read(\"fixture\"); }"

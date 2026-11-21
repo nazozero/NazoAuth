@@ -15,6 +15,7 @@ mod ingress;
 
 pub(crate) fn deployment(
     control_tenant: nazo_identity::TenantId,
+    database: &nazo_postgres::DbPool,
 ) -> Arc<nazoauth::capabilities::DeploymentCapabilities> {
     use nazo_operator_protocol::{
         CONTROL_DISCOVERY_PRODUCT, CONTROL_DISCOVERY_SCHEMA, DeploymentStatement, PROTOCOL_VERSION,
@@ -47,6 +48,10 @@ pub(crate) fn deployment(
         identity,
         control_tenant,
         tenants: Arc::new(ControlTenant(control_tenant)),
+        controller_registry: Arc::new(nazo_postgres::ControllerRegistryRepository::new(
+            database.clone(),
+        )),
+        recovery_root: Arc::new(nazo_postgres::RecoveryRootRepository::new(database.clone())),
     })
 }
 

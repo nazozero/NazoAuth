@@ -1048,6 +1048,7 @@ mod ed25519 {
 #[cfg(feature = "password")]
 mod password {
     use argon2::{Argon2, PasswordHash, PasswordHasher as _, PasswordVerifier as _};
+    use aws_lc_rs::rand::{SystemRandom, generate};
     use nazo_crypto::{CryptoError, password};
 
     const LEGACY_PHC: &str =
@@ -1064,27 +1065,68 @@ mod password {
             b"password"
         ));
 
-        let produced = password::hash_argon2id(b"correct horse battery staple", 256, 2, 1).unwrap();
+        let rng = SystemRandom::new();
+        let secret: [u8; 32] = generate(&rng).unwrap().expose();
+        let produced = password::hash_argon2id(&secret, 256, 2, 1).unwrap();
         assert!(produced.starts_with("$argon2id$v=19$m=256,t=2,p=1$"));
+        assert_eq!(
+            password::validate_argon2id_phc(&produced, 256, 2, 1),
+            Ok(())
+        );
         let parsed = PasswordHash::new(&produced).unwrap();
-        Argon2::default()
-            .verify_password(b"correct horse battery staple", &parsed)
-            .unwrap();
+        Argon2::default().verify_password(&secret, &parsed).unwrap();
 
+        let salt: [u8; 16] = generate(&rng).unwrap().expose();
         let native = Argon2::default()
-            .hash_password_with_salt(b"native secret", b"saltsalt")
+            .hash_password_with_salt(&secret, &salt)
             .unwrap()
             .to_string();
-        assert!(password::verify_argon2_phc(&native, b"native secret"));
+        assert!(password::verify_argon2_phc(&native, &secret));
 
         assert!(matches!(
-            password::hash_argon2id(b"x", 0, 2, 1),
+            password::hash_argon2id(&secret, 0, 2, 1),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(
-            password::hash_argon2id(b"x", 256, 0, 1),
+            password::hash_argon2id(&secret, 256, 0, 1),
             Err(CryptoError::InvalidInput)
         ));
+    }
+
+    #[test]
+    fn argon2_phc_validation_requires_a_complete_verifier_with_exact_work_parameters() {
+        assert_eq!(
+            password::validate_argon2id_phc(LEGACY_PHC, 256, 2, 1),
+            Ok(())
+        );
+        let reordered = LEGACY_PHC.replace("m=256,t=2,p=1", "p=1,m=256,t=2");
+        assert_eq!(
+            password::validate_argon2id_phc(&reordered, 256, 2, 1),
+            Ok(())
+        );
+        for malformed in [
+            "not a phc".into(),
+            "$argon2id$v=19$m=256,t=2,p=1$".into(),
+            "$argon2id$v=19$m=256,t=2,p=1$c29tZXNhbHQ".into(),
+            LEGACY_PHC.replace("argon2id", "argon2i"),
+            LEGACY_PHC.replace("v=19", "v=16"),
+            LEGACY_PHC.replace("v=19$", ""),
+            LEGACY_PHC.replace("m=256", "m=128"),
+            LEGACY_PHC.replace("t=2", "t=1"),
+            LEGACY_PHC.replace("p=1", "p=2"),
+            LEGACY_PHC.replace(",p=1", ""),
+            LEGACY_PHC.replace("p=1", "p=1,extra=1"),
+            LEGACY_PHC.replace("c29tZXNhbHQ", "!invalid!"),
+            LEGACY_PHC.replace("c29tZXNhbHQ", "c2hvcnQ"),
+            LEGACY_PHC.replace("nf65EOgLrQMR/uIPnA4rEsF5h7TKyQwu9U1bMCHGi/4", "c2hvcnQ"),
+            format!("{LEGACY_PHC}$trailing"),
+        ] {
+            assert_eq!(
+                password::validate_argon2id_phc(&malformed, 256, 2, 1),
+                Err(CryptoError::InvalidInput),
+                "{malformed}"
+            );
+        }
     }
 }
 

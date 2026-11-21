@@ -44,8 +44,8 @@ impl From<GrantRecord> for AdminGrantView {
             email: record.email,
             client_id: record.client_id,
             client_name: record.client_name,
-            last_authorized_at: record.last_authorized_at,
-            authorization_count: record.authorization_count,
+            last_authorized_at: Some(record.last_authorized_at),
+            authorization_count: Some(record.authorization_count),
             last_scopes: match record.last_scopes {
                 Value::Array(scopes) => scopes
                     .into_iter()

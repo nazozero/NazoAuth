@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('../../../', import.meta.url));
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+test('Cloudflare button uses the complete Rust workspace root', () => {
+  const rootPkg = JSON.parse(read('../../../package.json'));
+  const wrangler = read('../../../wrangler.toml');
+  assert.match(rootPkg.scripts.build, /prepare-build\.sh/);
+  assert.match(rootPkg.scripts.deploy, /publish\.sh/);
+  assert.match(wrangler, /^main = "deploy\/cloudflare\/shim\.mjs"$/m);
+  assert.match(wrangler, /^migrations_dir = "crates\/authorization-server-d1\/migrations"$/m);
+  assert.match(wrangler, /^binding = "NAZO_DB"$/m);
+  assert.match(wrangler, /^workers_dev = false$/m);
+  assert.doesNotMatch(wrangler, /^database_id =/m);
+  assert.doesNotMatch(wrangler, /^cpu_ms =/m);
+  assert.match(wrangler, /"machine_only":true/);
+  assert.match(wrangler, /^binding = "NAZO_VERSION"$/m);
+  const nested = JSON.parse(read('../package.json'));
+  assert.equal(nested.scripts.bundle, 'node bundle.mjs');
+  assert.match(read('../shim.mjs'), /export \{ default \} from "\.\.\/\.\.\/crates\/server-worker\/build\/index\.js"/);
+  assert.match(read('../build-worker.sh'), /worker-build --release --locked --no-default-features/);
+  assert.match(wrangler, /^cwd = "crates\/server-worker"$/m);
+  assert.match(nested.scripts['db:migrate'], /NAZO_DB --remote --config wrangler\.toml/);
+  assert.match(nested.scripts.deploy, /--config wrangler\.toml/);
+});
+
+test('build and publish entrypoints use pinned tooling and migration before deploy', () => {
+  const build = read('../prepare-build.sh');
+  const publish = read('../publish.sh');
+  assert.match(build, /1\.100\.0/);
+  assert.match(build, /wasm32-unknown-unknown/);
+  assert.match(build, /worker-build --version 0\.9\.0 --locked/);
+  assert.match(publish, /grep -Eq/);
+  assert.match(publish, /npm run db:migrate/);
+  assert.match(publish, /npm run deploy/);
+  assert.match(read('../bootstrap.mjs'), /machine_only/);
+});
+
+test('bootstrap refuses missing private input without touching remote resources', () => {
+  const outcome = spawnSync(process.execPath, [fileURLToPath(new URL('../bootstrap.mjs', import.meta.url))], {
+    cwd: root, encoding: 'utf8',
+  });
+  assert.notEqual(outcome.status, 0);
+  assert.match(outcome.stderr, /Usage: npm run bootstrap/);
+});

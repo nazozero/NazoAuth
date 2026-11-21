@@ -1,9 +1,8 @@
-# Issuance maintenance acceptance evidence
+# Issuance maintenance measurement
 
-`single_instance_scaling.py` phase 3 now requires explicit issuance-maintenance
-acceptance evidence. The old refresh-family/spent-proof checks do not establish
-that `oauth_token_issuances` is being reclaimed fast enough. Historical reports
-retain their original verdict and measurement contract.
+`single_instance_scaling.py` phase 3 measures reclamation of
+`oauth_token_issuances` separately from refresh-family and spent-proof cleanup.
+The gate checks the age of expired issuance rows against a declared objective.
 
 ## Declare the test contract before running
 
@@ -12,7 +11,7 @@ Add these fields to the existing `SIS_POINT` JSON for the phase-3 candidate:
 | Field | Meaning |
 | --- | --- |
 | `issuance_retention_seconds` | Maximum issuance-row retention horizon for the actual tested flows, including access-token clock skew and any longer single-use grant deadline. Confirm this from the test configuration and flow mix. |
-| `issuance_max_expired_age_seconds` | Predeclared maximum allowed age of an expired row during the mature observation window. This is a test acceptance objective, not a cleanup scheduling guarantee. |
+| `issuance_max_expired_age_seconds` | Predeclared maximum allowed age of an expired row during the mature observation window; the gate compares sampled ages with this test objective. |
 
 For example, **only when the tested configuration has a confirmed 360-second
 maximum issuance retention**, a point may declare:

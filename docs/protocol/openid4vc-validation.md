@@ -16,8 +16,8 @@ token. An epoch-less token without a retained live credential authorization is
 rejected instead of guessing its origin. Epoch-bound ordinary access tokens can
 establish their registered-client projection; pre-authorized issuance persists
 the verified origin before returning the token. Projection refreshes preserve
-that immutable origin. Drain old VCI consumers during the rollout; an old binary
-does not acquire these validation guarantees merely by sharing the new schema.
+that immutable origin. Drain old VCI consumers during the rollout and upgrade
+all consumers before reopening issuance.
 The guarded down migration refuses to lose retained anonymous provenance.
 
 Pre-authorized token issuance first verifies the offer and transaction code without
@@ -72,12 +72,10 @@ or a signing time after `notAfter` rejects issuance. The verifier's historical
 certificate-time and signature checks remain unchanged.
 
 Locally generated mdoc DS and IACA certificates start at the beginning of their
-creation day in UTC. Their end dates use that same boundary (457 days for DS,
-3650 days for IACA), so this does not extend certificate lifetimes or credential
-expiry. A new signer therefore covers the day-rounded MSO time without exposing
-its creation second. Key creation, publication, rotation, revocation and signing
-lease ownership remain unchanged; certificate time rounding does not make a key
-available before it exists.
+creation day in UTC. Their end dates use that same boundary: 457 days for DS and
+3650 days for IACA. A new signer therefore covers the day-rounded MSO time
+without exposing its creation second. Key availability follows the key manager's
+publication and activation lifecycle.
 
 Existing and imported certificates retain their signed validity fields. They are
 not silently regenerated, backdated or accepted outside their validity. Their
@@ -138,11 +136,10 @@ a self-issued rollover link is not identified as a root from its name alone.
 
 Rollover verification requires the corresponding self-signed certificates for
 both keys. Keep them in the existing trust-anchor material, including intermediate
-rollover generations. A cross-signed link supplies neither the old root's lifetime
-nor proof of the new root's certificate fields. Missing evidence rejects that
-chain. The actual path must still pass RFC 5280 at the presentation time. The
-auxiliary root certificates establish rollover relationships, not an additional
-trust path or a new current-time requirement for unused roots.
+rollover generations. The corresponding self-signed certificates supply each
+root's lifetime and profile fields; missing certificates reject the chain. The
+actual path must pass RFC 5280 at presentation time. Auxiliary root certificates
+are used only to validate rollover relationships.
 
 The issuer delegates digest-ID generation to the pinned `nazo-mdoc` builder,
 which selects random identifiers below `2^31`. The core verifier enforces this
@@ -185,8 +182,8 @@ non-CA subject with CN and correctly encoded country, critical
 AKI binding to the actual issuing CA, noncritical issuer contact and CRL URI
 extensions, and the profile's prohibited extensions. Extra noncritical
 extensions remain supported; unknown critical or duplicate extensions fail
-closed. These checks do not establish serial-generation entropy or contact URI
-reachability. The existing X.509 path engine checks version, matching signature
+closed. The certificate issuer supplies serial entropy and operates the contact
+URI. The X.509 path engine checks version, matching signature
 identifiers and exact issuer/subject names; the core checks SPKI encoding and
 algorithm/key compatibility. There is no second path validator.
 
@@ -219,8 +216,8 @@ Each link requires critical `keyCertSign`/`cRLSign`-only KU, critical CA constra
 with path length zero, and a noncritical AKI matching its actual issuer's SKI.
 A link whose subject DN differs from its issuer DN also carries that new subject
 DN as a `directoryName` in its noncritical SAN. A link signed directly by the
-authenticated root cannot expire after that root. An intermediate link's expiry
-does not establish the lifetime of its corresponding self-signed root.
+authenticated root cannot expire after that root. Each independently trusted
+self-signed root supplies its own validity interval.
 These checks reuse the existing path result and parsed CA certificates; they do
 not repeat signature verification. The current certificate backend accepts
 direct-root paths and paths with one IACA link; its path-length calculation
@@ -241,11 +238,8 @@ The mdoc core also defines the separate Final DC API Handover. NazoAuth exposes
 `direct_post` and `direct_post.jwt`; it does not advertise DC API, proximity
 transport, wallet, DeviceMAC or transaction-data support. The redirect binding
 follows [OpenID4VP 1.0 Final B.2.6.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html#section-b.2.6.1).
-The one-document constraint belongs to
-[HAIP 1.0 Final 5.3.1](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#section-5.3.1),
-not to every possible ISO mdoc profile. Retained certification records describe
-their tested implementation versions; they do not certify this dependency
-migration or unsupported profiles.
+The one-document constraint follows
+[HAIP 1.0 Final 5.3.1](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#section-5.3.1).
 
 ## Regression coverage
 

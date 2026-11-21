@@ -71,10 +71,8 @@ where
                     .find(|record| record.module_id == dependent.id)
                     .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
                 if self
-                    .catalog
-                    .effective_enabled(dependent.id, dependent_desired.mode.is_enabled())
-                    || snapshot.admits(dependent.id)
-                    || snapshot.draining.contains(&dependent.id)
+                    .dependent_has_work(dependent_desired, &snapshot)
+                    .await?
                 {
                     return Err(RegistryError::ActiveDependent {
                         module_id,

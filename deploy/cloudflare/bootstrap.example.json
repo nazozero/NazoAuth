@@ -1,0 +1,38 @@
+{
+  "issuer": "https://auth.example.com",
+  "frontend_base_url": "https://auth.example.com/ui/",
+  "machine_only": false,
+  "passkey_only": true,
+  "modules": [],
+  "clients": [
+    {
+      "client_name": "Example browser client",
+      "client_type": "public",
+      "redirect_uris": [
+        "https://app.example.com/callback"
+      ],
+      "scopes": [
+        "openid",
+        "profile",
+        "offline_access"
+      ],
+      "allowed_audiences": [
+        "resource://default"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "token_endpoint_auth_method": "none",
+      "security_policy": {
+        "version": 1
+      }
+    }
+  ],
+  "users": [
+    {
+      "email": "operator@example.com",
+      "username": "operator"
+    }
+  ]
+}

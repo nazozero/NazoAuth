@@ -5,12 +5,15 @@ use http::StatusCode;
 pub mod access_requests;
 pub mod clients;
 
+#[cfg(feature = "deployment-control")]
 pub mod controller_recovery;
+#[cfg(feature = "deployment-control")]
 pub mod controller_registry;
 pub mod federation;
 pub mod grants;
 pub mod mtls_trust;
 pub mod openid4vc;
+#[cfg(feature = "deployment-control")]
 pub mod recovery_root;
 
 pub mod users;

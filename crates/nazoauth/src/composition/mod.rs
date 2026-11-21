@@ -86,6 +86,7 @@ pub struct NazoAuth {
     runtime_modules: Arc<RuntimeModules>,
     mtls: Arc<MtlsCertificateSource>,
     readiness: crate::well_known::ReadinessDependencies,
+    #[cfg(feature = "deployment-control")]
     deployment: Option<DeploymentServices>,
     mdoc_crls: Option<Arc<dyn crate::capabilities::MdocCrlProvider>>,
     password_hasher: Arc<dyn crate::capabilities::SecretHashPort>,
@@ -97,8 +98,10 @@ pub struct NazoAuthBuilder {
     capabilities: Capabilities,
     instance_id: String,
     avatar: AvatarProfileService,
+    #[cfg(feature = "deployment-control")]
     deployment: Option<Arc<crate::capabilities::DeploymentCapabilities>>,
     mdoc_crls: Option<Arc<dyn crate::capabilities::MdocCrlProvider>>,
+    runtime_module_availability: Option<std::collections::BTreeSet<nazo_runtime_modules::ModuleId>>,
 }
 
 impl NazoAuthBuilder {
@@ -112,8 +115,10 @@ impl NazoAuthBuilder {
             capabilities,
             instance_id: instance_id.into(),
             avatar: AvatarProfileService::Disabled,
+            #[cfg(feature = "deployment-control")]
             deployment: None,
             mdoc_crls: None,
+            runtime_module_availability: None,
         }
     }
 
@@ -152,6 +157,7 @@ impl NazoAuthBuilder {
         self
     }
 
+    #[cfg(feature = "deployment-control")]
     pub fn with_deployment(
         mut self,
         deployment: Arc<crate::capabilities::DeploymentCapabilities>,
@@ -168,14 +174,26 @@ impl NazoAuthBuilder {
         self
     }
 
+    /// Limit runtime administration to services this host actually constructs.
+    /// This is a deployment capability ceiling, not the current desired state.
+    pub fn with_runtime_module_availability(
+        mut self,
+        modules: impl IntoIterator<Item = nazo_runtime_modules::ModuleId>,
+    ) -> Self {
+        self.runtime_module_availability = Some(modules.into_iter().collect());
+        self
+    }
+
     pub async fn build(self) -> anyhow::Result<NazoAuth> {
         let Self {
             settings,
             capabilities,
             instance_id,
             avatar,
+            #[cfg(feature = "deployment-control")]
             deployment,
             mdoc_crls,
+            runtime_module_availability,
         } = self;
         settings.validate()?;
         let password_hasher = capabilities.passwords.hasher.clone();
@@ -184,17 +202,17 @@ impl NazoAuthBuilder {
             capabilities.transient_state.provider().health(),
             capabilities.keys.clone(),
         );
-        let persistence = capabilities.persistence.provider();
+        #[cfg(feature = "deployment-control")]
         let deployment = deployment.map(|capabilities| {
             let deployment_id = capabilities.identity.deployment_id();
             DeploymentServices {
                 controller_registry:
                     crate::control::controller_registry::ControllerRegistryService::new(
-                        persistence.controller_registry(),
+                        capabilities.controller_registry.clone(),
                         deployment_id,
                     ),
                 recovery_root: crate::control::recovery_root::RecoveryRootService::new(
-                    persistence.recovery_root(),
+                    capabilities.recovery_root.clone(),
                     deployment_id,
                 ),
                 capabilities,
@@ -209,6 +227,7 @@ impl NazoAuthBuilder {
                 capabilities.module_lifecycle.clone(),
                 &settings,
                 &instance_id,
+                runtime_module_availability.as_ref(),
             )
             .await?,
         );
@@ -232,6 +251,7 @@ impl NazoAuthBuilder {
             runtime_modules: startup.runtime_modules,
             mtls,
             readiness,
+            #[cfg(feature = "deployment-control")]
             deployment,
             mdoc_crls,
             password_hasher,
@@ -239,6 +259,7 @@ impl NazoAuthBuilder {
     }
 }
 
+#[cfg(feature = "deployment-control")]
 struct DeploymentServices {
     capabilities: Arc<crate::capabilities::DeploymentCapabilities>,
     controller_registry: crate::control::controller_registry::ControllerRegistryService,
@@ -253,6 +274,25 @@ struct StartupConfiguration {
 }
 
 impl NazoAuth {
+    /// Synchronize durable intent using bounded lifecycle steps. Requests own
+    /// their reads; stable concurrent requests share no pending I/O future.
+    pub async fn synchronize_runtime_modules_step(
+        &self,
+    ) -> Result<
+        Vec<(
+            nazo_runtime_modules::ModuleId,
+            nazo_runtime_modules::ReconcileOutcome,
+        )>,
+        nazo_runtime_modules::RegistryError<nazo_identity::ports::RepositoryError>,
+    > {
+        self.runtime_modules.registry.synchronize_step().await
+    }
+
+    #[must_use]
+    pub fn runtime_module_snapshot(&self) -> Arc<nazo_runtime_modules::ActiveModuleSnapshot> {
+        self.runtime_modules.registry.snapshot()
+    }
+
     pub async fn plan_reconciliation(
         &self,
     ) -> Result<

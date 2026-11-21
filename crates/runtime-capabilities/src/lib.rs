@@ -20,8 +20,8 @@ pub use management::{
 pub use model::{DesiredMode, HistoricalDesiredMode, ModuleEventType, ModuleId, ModuleState};
 pub use policy::{DisablePolicy, ModuleCatalogError, ModuleSpec};
 pub use reconcile::{
-    LifecycleFailure, LifecycleFuture, ModuleLifecycle, NoopModuleLifecycle, ReconcileOutcome,
-    RegistryError,
+    DrainProgress, LifecycleFailure, LifecycleFuture, ModuleLifecycle, NoopModuleLifecycle,
+    ReconcileOutcome, RegistryError,
 };
 pub use registry::RuntimeModuleRegistry;
 pub use repository::{

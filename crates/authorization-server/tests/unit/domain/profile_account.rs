@@ -313,8 +313,8 @@ fn update_validation_and_application_projection_stay_in_focused_services() {
             client_id: "client-1".to_owned(),
             client_name: "Example Client".to_owned(),
             last_scopes: json!(["openid", 42, null, "profile"]),
-            last_authorized_at: Timestamp::new(1_700_000_000, 0).unwrap(),
-            authorization_count: 3,
+            last_authorized_at: Some(Timestamp::new(1_700_000_000, 0).unwrap()),
+            authorization_count: Some(3),
         };
         let operations = operations(Ok(Some(snapshot(false))), vec![application]);
 
@@ -340,7 +340,7 @@ fn update_validation_and_application_projection_stay_in_focused_services() {
             .unwrap();
         assert_eq!(applications.total, 1);
         assert_eq!(applications.items[0].last_scopes, vec!["openid", "profile"]);
-        assert_eq!(applications.items[0].authorization_count, 3);
+        assert_eq!(applications.items[0].authorization_count, Some(3));
     });
 }
 

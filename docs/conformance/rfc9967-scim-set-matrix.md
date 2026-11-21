@@ -13,7 +13,7 @@ The authoritative case registry is
 CI executes it through
 [`scripts/rfc9967_scim_set_e2e.py`](../../scripts/rfc9967_scim_set_e2e.py).
 
-| Case | External behavior proved |
+| Case | Behavior checked |
 | --- | --- |
 | `discovery_exact_event_uris` | Discovery advertises only the five deliverable notice/lifecycle event URIs and `asyncRequest=none`; the matrix separately exercises the poll endpoint. |
 | `poll_authorization_boundaries` | Missing bearer, an unregistered bearer, missing scope, and missing receiver audience fail closed. |
@@ -23,7 +23,7 @@ CI executes it through
 | `set_error_requires_content_language` | A described `setErrs` disposition requires `Content-Language` and becomes terminal only when accepted. |
 | `patch_notice_and_deactivate_events` | An active-to-inactive patch emits the patch notice and deactivate event in one SET. |
 | `put_notice_and_activate_events` | An inactive-to-active replacement emits the put notice and activate event in one SET. |
-| `poll_pagination_preserves_order` | `maxEvents` bounds each page, `moreAvailable` is truthful, and acknowledgement advances to the next event. |
+| `poll_pagination_preserves_order` | `maxEvents` bounds each page, `moreAvailable` matches the remaining events, and acknowledgement advances to the next event. |
 | `long_poll_wakes_on_new_event` | A bounded long poll wakes after a later SCIM mutation instead of waiting for its full timeout. |
 | `invalid_poll_shapes_fail_closed` | Excessive bounds, duplicate acknowledgements, and unknown fields are rejected. |
 

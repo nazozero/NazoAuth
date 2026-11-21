@@ -29,10 +29,15 @@ pub(super) struct StartupRuntime {
 
 pub(super) async fn load(
     config: ConfigSource,
-    persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
+    persistence: ServerPersistence,
     transient_state_launcher: &dyn crate::cli::TransientStateLauncher,
     avatar_object_store_launcher: &dyn crate::cli::AvatarObjectStoreLauncher,
 ) -> anyhow::Result<StartupRuntime> {
+    let ServerPersistence {
+        application: persistence,
+        controller_registry,
+        recovery_root,
+    } = persistence;
     let password_hash_max_concurrency = config.parse::<usize>(
         "PASSWORD_HASH_MAX_CONCURRENCY",
         default_password_hash_max_concurrency(),
@@ -114,6 +119,8 @@ pub(super) async fn load(
         identity: control_discovery,
         control_tenant: control_tenant_id,
         tenants: registry.availability(),
+        controller_registry,
+        recovery_root,
     });
     let direct_tls = crate::bootstrap::direct_tls_listeners(&config, &route_settings)?;
     let client_verifier = match direct_tls.as_ref() {

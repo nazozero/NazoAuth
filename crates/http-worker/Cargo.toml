@@ -1,0 +1,29 @@
+[package]
+name = "nazo-http-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytes.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+nazoauth.workspace = true
+futures-util.workspace = true
+wasm-streams.workspace = true
+web-sys = { workspace = true, features = ["ReadableStream", "ReadableWritablePair"] }
+worker = { workspace = true, features = ["http"] }
+
+[dev-dependencies]
+nazoauth = { workspace = true, features = ["conformance"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+flate2.workspace = true
+wasm-bindgen-test.workspace = true
+
+[lints]
+workspace = true

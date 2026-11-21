@@ -232,6 +232,135 @@ class CryptoBoundaryTest(unittest.TestCase):
         )
         self.assertViolation("x509 verification feature")
 
+    def worker_http(self, *, features='"ReadableStream", "ReadableWritablePair"', target=True):
+        section = '[target.\'cfg(target_arch = "wasm32")\'.dependencies]' if target else '[dependencies]'
+        manifest = _write(
+            self._tmp, "crates/http-worker/Cargo.toml",
+            '[package]\nname = "nazo-http-worker"\nversion = "0.1.0"\n'
+            f'{section}\nweb-sys = {{ version = "0.3", features = [{features}] }}\n',
+        )
+        source = _write(
+            self._tmp, "crates/http-worker/src/lib.rs",
+            "use web_sys::ReadableStream as Stream;\n"
+            "fn decode(stream: Stream, pair: web_sys::ReadableWritablePair) {}\n",
+        )
+        return manifest, source
+
+    def test_worker_http_stream_types_pass(self):
+        self.worker_http()
+        self.assertClean()
+
+    def test_worker_http_cannot_enable_webcrypto(self):
+        self.worker_http(features='"ReadableStream", "Crypto", "SubtleCrypto"')
+        self.assertViolation("backend dependency: web-sys")
+
+    def test_worker_http_stream_dependency_is_wasm_only(self):
+        self.worker_http(target=False)
+        self.assertViolation("backend dependency: web-sys")
+
+    def test_worker_http_cannot_use_webcrypto_through_alias_or_sdk(self):
+        _, source = self.worker_http()
+        _append(source, "use web_sys::Crypto as DirectCrypto;\n")
+        _append(source, "use worker::web_sys::SubtleCrypto as SdkCrypto;\n")
+        self.assertViolation("backend path web_sys::Crypto")
+        self.assertViolation("backend path web_sys::SubtleCrypto")
+
+    def test_worker_http_stream_exception_does_not_extend_to_other_packages(self):
+        manifest, _ = self.worker_http()
+        manifest.write_text(manifest.read_text().replace('"nazo-http-worker"', '"other-http"'))
+        self.assertViolation("backend dependency: web-sys")
+        self.assertViolation("backend path web_sys::ReadableStream")
+
+    def test_worker_http_inherited_webcrypto_features_remain_forbidden(self):
+        manifest, _ = self.worker_http()
+        _append(self._tmp / "Cargo.toml", 'web-sys = { version = "0.3", features = ["Crypto"] }\n')
+        manifest.write_text(manifest.read_text().replace('version = "0.3",', 'workspace = true,'))
+        self.assertViolation("backend dependency: web-sys")
+
+    def worker_tls_metadata(self):
+        manifest = _write(
+            self._tmp, "crates/server-worker/Cargo.toml",
+            '[package]\nname = "nazo-server-worker"\nversion = "0.1.0"\n'
+            '[dependencies]\nworker = "0.9"\n',
+        )
+        source = _write(
+            self._tmp, "crates/server-worker/src/mtls.rs",
+            "use worker::{js_sys::Reflect as Metadata, wasm_bindgen::JsValue};\n"
+            'fn field(request: &JsValue) { let _ = Metadata::get(request, &JsValue::from_str("cf")); }\n',
+        )
+        return manifest, source
+
+    def test_worker_tls_metadata_read_passes(self):
+        self.worker_tls_metadata()
+        self.assertClean()
+
+    def test_worker_tls_metadata_exception_is_source_and_package_scoped(self):
+        manifest, source = self.worker_tls_metadata()
+        source.rename(source.with_name("other.rs"))
+        self.assertViolation("backend path js_sys::Reflect")
+        source.with_name("other.rs").rename(source)
+        manifest.write_text(manifest.read_text().replace('"nazo-server-worker"', '"other-host"'))
+        self.assertViolation("backend path js_sys::Reflect")
+
+    def test_worker_tls_metadata_exception_does_not_allow_crypto_or_generic_calls(self):
+        _, source = self.worker_tls_metadata()
+        _append(source, "use worker::web_sys::SubtleCrypto as Crypto;\n")
+        _append(source, "use worker::js_sys::Function as Callable;\n")
+        _append(source, "fn change() { let _ = Metadata::set; let _ = Metadata::apply; }\n")
+        self.assertViolation("backend path web_sys::SubtleCrypto")
+        self.assertViolation("backend path js_sys::Function")
+        self.assertViolation("backend path js_sys::Reflect::set")
+        self.assertViolation("backend path js_sys::Reflect::apply")
+
+    def test_worker_tls_metadata_exception_does_not_allow_direct_backend_dependency(self):
+        manifest, _ = self.worker_tls_metadata()
+        _append(manifest, 'js-sys = "0.3"\n')
+        self.assertViolation("backend dependency: js-sys")
+
+    def test_worker_ingress_stream_interop_passes(self):
+        self.worker_http()
+        _write(
+            self._tmp, "crates/http-worker/src/ingress.rs",
+            "use worker::js_sys::{Array, Function, Reflect, Uint8Array};\n"
+            "fn decode() { let _ = Reflect::get; let _ = Reflect::construct; "
+            "let _ = Array::of1; let _ = worker::js_sys::global(); }\n",
+        )
+        self.assertClean()
+
+    def test_worker_ingress_interop_is_source_scoped_and_excludes_other_calls(self):
+        self.worker_http()
+        source = _write(
+            self._tmp, "crates/http-worker/src/ingress.rs",
+            "use worker::js_sys::{Reflect, Function};\n"
+            "fn bad() { let _ = Reflect::set; let _ = Function::new_with_args; }\n",
+        )
+        self.assertViolation("backend path js_sys::Reflect::set")
+        self.assertViolation("backend path js_sys::Function::new_with_args")
+        source.rename(source.with_name("other.rs"))
+        self.assertViolation("backend path js_sys::Reflect")
+
+    def test_worker_outbound_body_copy_passes(self):
+        self.worker_tls_metadata()
+        _write(
+            self._tmp, "crates/server-worker/src/outbound.rs",
+            "fn body(bytes: &[u8]) { let _ = worker::js_sys::Uint8Array::from(bytes); }\n",
+        )
+        self.assertClean()
+
+    def test_worker_outbound_body_copy_does_not_allow_generic_js_or_crypto(self):
+        self.worker_tls_metadata()
+        source = _write(
+            self._tmp, "crates/server-worker/src/outbound.rs",
+            "fn bad() { let _ = worker::js_sys::Reflect::get; "
+            "let _ = worker::js_sys::eval; let _ = worker::web_sys::Crypto::subtle; }\n",
+        )
+        self.assertViolation("backend path js_sys::Reflect::get")
+        self.assertViolation("backend path js_sys::eval")
+        self.assertViolation("backend path web_sys::Crypto::subtle")
+        source.write_text("fn body() { let _ = worker::js_sys::Uint8Array::from; }\n")
+        source.rename(source.with_name("other.rs"))
+        self.assertViolation("backend path js_sys::Uint8Array::from")
+
     def test_crypto_local_dependency_fails(self):
         _write(
             self._tmp,

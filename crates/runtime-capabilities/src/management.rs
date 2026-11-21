@@ -177,6 +177,8 @@ where
                 || {
                     if snapshot.admits(module_id) {
                         ModuleState::Enabled
+                    } else if snapshot.draining.contains(&module_id) {
+                        ModuleState::Draining
                     } else {
                         ModuleState::Disabled
                     }
@@ -194,6 +196,10 @@ where
         let updated_at = instance
             .map(|record| record.updated_at)
             .unwrap_or(desired.updated_at);
+        let projected_revision = instance
+            .is_none()
+            .then(|| self.registry.projected_applied_revision(desired, snapshot))
+            .flatten();
         Ok(RuntimeModuleView {
             module_id,
             desired_state,
@@ -202,13 +208,23 @@ where
                 .effective_enabled(module_id, desired_state.is_enabled()),
             actual_state,
             revision: Some(desired.revision),
-            transition_revision: instance.map(|record| record.transition_revision),
-            applied_revision: instance.and_then(|record| record.applied_revision),
+            transition_revision: instance
+                .map(|record| record.transition_revision)
+                .or(projected_revision),
+            applied_revision: instance
+                .and_then(|record| record.applied_revision)
+                .or(projected_revision),
             dependencies: spec.dependencies.iter().copied().collect(),
             dependents,
             allowed_actions: self.allowed_actions(module_id, desired_state, snapshot),
             disable_policy: self.catalog.effective_disable_policy(module_id),
-            drain_deadline: instance.and_then(|record| record.drain_deadline),
+            drain_deadline: instance
+                .and_then(|record| record.drain_deadline)
+                .or_else(|| {
+                    (actual_state == ModuleState::Draining)
+                        .then(|| self.catalog.stored_transaction_deadline(desired))
+                        .flatten()
+                }),
             failure_code: if !self.catalog.is_available(module_id) {
                 Some("service_not_constructed".to_owned())
             } else {

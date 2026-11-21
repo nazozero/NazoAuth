@@ -34,8 +34,8 @@ The OAuth 2.1 profile requires user interaction for native private-use and
 loopback redirects. `prompt=none` returns `interaction_required` even with prior
 consent; the client must restart an interactive authorization request. Registered
 HTTPS callbacks retain silent SSO subject to the existing session and grant
-checks. This is the selected policy for draft-17 section 7.3.1, not a claim that
-prior consent or PKCE authenticates a native application.
+checks. This applies draft-17 section 7.3.1 through an explicit interaction
+requirement for native redirects.
 
 ## New-install server defaults
 

@@ -39,8 +39,8 @@ impl ProfileAccountOperations for ContractProfileOperations {
                     client_id: "contract-client".to_owned(),
                     client_name: "Contract Client".to_owned(),
                     last_scopes: vec!["openid".to_owned()],
-                    last_authorized_at: Timestamp::new(1_700_000_000, 0).unwrap(),
-                    authorization_count: 1,
+                    last_authorized_at: Some(Timestamp::new(1_700_000_000, 0).unwrap()),
+                    authorization_count: Some(1),
                 }],
             })
         })

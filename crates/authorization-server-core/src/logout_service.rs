@@ -274,7 +274,7 @@ impl LogoutService {
         &self,
         prepared: PreparedLogout,
     ) -> Result<LogoutExecution, LogoutServiceError> {
-        if prepared.execution.operation_key.is_some() {
+        if !prepared.deliveries.is_empty() {
             self.outbox
                 .enqueue_idempotent_batch(&prepared.deliveries)
                 .await

@@ -1,7 +1,12 @@
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0543"
+allow = ["worker@0.9.0"]
+expiry = "2026-12-19"
+reason = "Informational unmaintained notice: the latest official SDK, worker 0.9.0, requires chrono unconditionally and no patched chrono version exists. Remove when the SDK drops chrono."
 
 [licenses]
 version = 2

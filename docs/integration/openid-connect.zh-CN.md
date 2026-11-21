@@ -56,7 +56,7 @@ OAuth 2.1 draft-17 授权码客户端由管理员设置
 | OpenID4VCI 1.0 Final | 完整支持 | 默认关闭；启用 Credential Issuer 角色并完成 credential/trust 配置后，通过 OpenID4VCI issuer metadata 宣告 | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | 不属于普通 OIDC RP 登录。 |
 | OpenID4VP 1.0 Final | 完整支持 | 默认关闭；启用 Verifier 角色并完成 trust 配置后，通过 OpenID4VP verifier metadata 宣告 | [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | 不属于普通 OIDC RP 登录。 |
 | OpenID4VC High Assurance Interoperability Profile 1.0 / HAIP | 完整支持 | 默认关闭；通过 HAIP-compatible Credential Issuer 和 Verifier 角色配置、credential-format 配置、trust 配置启用 | [OpenID4VC HAIP 1.0](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html), [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html), [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | 面向高保障 OpenID4VC 签发和出示流程的 profile 级支持；不属于普通 OIDC RP 登录。 |
-| OpenID Connect Native SSO for Mobile Apps | 支持；默认关闭；待 Final 审计 | 仅在持久化 `native_sso` 模块启用且客户端具备 `device_sso` 范围/策略时宣告 | [OpenID Connect Native SSO](https://openid.net/specs/openid-connect-native-sso-1_0.html), [Second Implementer's Draft](https://openid.net/specs/openid-connect-native-sso-1_0-ID2.html) | 已实现 ID Token `ds_hash`、`device_secret`、refresh-family 活性校验和目标客户端绑定；当前是 draft 07 / ID2 兼容，不宣称 Final Specification。 |
+| OpenID Connect Native SSO for Mobile Apps | 支持；默认关闭；待 Final 审计 | 仅在持久化 `native_sso` 模块启用且客户端具备 `device_sso` 范围/策略时宣告 | [OpenID Connect Native SSO](https://openid.net/specs/openid-connect-native-sso-1_0.html), [Second Implementer's Draft](https://openid.net/specs/openid-connect-native-sso-1_0-ID2.html) | 已实现 ID Token `ds_hash`、`device_secret`、refresh-family 活性校验和目标客户端绑定；当前按 draft 07 / ID2 实现。 |
 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | 不支持（待实现） | 不宣告；没有 Federation Entity Configuration 或 `/.well-known/openid-federation` endpoint | [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html), [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html) | 将作为独立 federation trust-chain 能力实现，不属于普通 OIDC RP 登录。 |
 | OIDC Implicit OP | 永不支持 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | NazoAuth 的产品策略排除所有 implicit 响应；RFC 9700 的相应要求具体针对前通道 access token 交付。 |
 | OIDC Hybrid OP | 永不支持 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 由 [NazoAuth 产品策略](../protocol/not-implemented-security-policy.md) 排除；对 `code id_token` 的限制严于 RFC 9700。 |
@@ -74,7 +74,7 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | --- | --- | --- | --- |
 | OAuth 2.1 Authorization Framework | 显式 draft-17 授权码 profile | 当前跟踪 [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。授权 redirect URI 不得预先包含响应参数。 | 设置 `security_policy.authorization_code_profile=oauth21`，以强制 S256 PKCE 替代令牌请求重复 redirect URI。该草案 profile 与 OAuth 2.0/OIDC、FAPI 注册契约分开。 |
 | OAuth 2.0 for Browser-Based Applications | 已复核服务端要求 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 保留相关 draft-27 要求；公共客户端的刷新令牌轮换不能延长初始期限。 | 托管前端不是 BFF；第三方浏览器客户端及其部署仍须负责自身适用的 BCP 要求。 |
-| Cross-Device Flows: Security BCP | 需要部署方评估 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 要求风险评估和适当的缓解措施。现有 Device 和 CIBA 授权门禁不能证明设备邻近或用户意图。 | 启用跨设备授权前按部署场景评估并选择缓解措施；参见[跨设备部署说明](../protocol/cross-device-decision-preparation.md)。 |
+| Cross-Device Flows: Security BCP | 需要部署方评估 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 要求风险评估和适当的缓解措施。Device 和 CIBA 提供授权门禁及事务生命周期控制；应用负责呈现交易上下文，并按需要验证设备邻近。 | 启用跨设备授权前按部署场景评估并选择缓解措施；参见[跨设备部署说明](../protocol/cross-device-decision-preparation.md)。 |
 | OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
 | JWT BCP / JWT Assertion | JWT BCP bis 待审计；支持 RFC 10070 的 issuer-only 客户端认证 | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 仍是草案。[RFC 10070](https://www.rfc-editor.org/info/rfc10070) 将客户端认证 audience 限定为 issuer。 | 保留的旧 audience 配置不再放宽此规则。JWT bearer grant 限于客户端自断言和 issuer audience。 |
 | OAuth Client Attestation | 支持 OpenID4VCI 1.0 固定引用的 draft-07；默认关闭 | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) 是 OpenID4VCI 1.0 Final 明确固定的版本；当前实现支持 `attest_jwt_client_auth`，并将 refresh token 绑定到 Client Instance `cnf` 公钥。只有模块启用且客户端策略要求时才宣告。 | 后续草案及最终 RFC 必须作为独立 delta audit；不能把更新草案的破坏性语法变化混入 HAIP 1.0 / OpenID4VCI 1.0 profile。 |
@@ -343,7 +343,7 @@ Content encryption algorithms：
 | `authorization_code` | 支持 | [RFC 6749 Section 4.1](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | 客户端 grant allowlist 包含它 | 主要 OIDC 登录 grant。 |
 | `refresh_token` | 支持 | [RFC 6749 Section 6](https://www.rfc-editor.org/rfc/rfc6749.html#section-6) | 客户端策略、consent 和 grant 允许 | 永远不从 implicit/front-channel flow 返回。 |
 | `client_credentials` | 支持 | [RFC 6749 Section 4.4](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.4) | 客户端 grant allowlist 包含它 | 仅 OAuth 资源访问；不是 OIDC login flow。 |
-| `urn:ietf:params:oauth:grant-type:device_code` | 支持 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Device Authorization Grant 模块启用且客户端 allowlist 包含 | 禁用部署不声明该 grant。 |
+| `urn:ietf:params:oauth:grant-type:device_code` | 支持 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Device Authorization Grant 模块启用且客户端 allowlist 包含 | 启用后，Discovery 包含该 grant。 |
 | OpenID CIBA grant | 支持 | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | CIBA 模块启用且客户端注册 poll 或 ping delivery | FAPI-CIBA 只支持 poll 与 ping；push delivery mode 永不支持。 |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | 支持 | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | 客户端 grant allowlist 包含它 | 用于有边界的资源访问。 |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | 支持 | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html) | 显式 bounded local profile / client policy | 不是通用任意委托机制。 |
@@ -370,7 +370,6 @@ CIBA 后端认证 endpoint 复用 OAuth 错误处理：Basic 认证失败返回 
 并与[官方 OIDF 一致性测试接受的 400/401 响应](https://gitlab.com/openid/conformance-suite/-/blob/daca6ad2068468d42557ea1152f899cc3ac01a10/src/main/java/net/openid/conformance/condition/client/CheckBackchannelAuthenticationEndpointErrorHttpStatus.java)一致。
 CIBA Core 1.0 第 13 节仍只列出 401，相关勘误由尚未关闭的
 [MODRNA #213](https://github.com/openid/modrna/issues/213) 跟踪。
-这里不宣称正式规范已修订，也不为 JWT/mTLS 失败宣告无关的 challenge。
 
 | Method | 状态 | 引用 | 客户端类型 / 条件 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -381,7 +380,7 @@ CIBA Core 1.0 第 13 节仍只列出 401，相关勘误由尚未关闭的
 | `private_key_jwt` | 支持 | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | 客户端有有效注册签名密钥 | 支持签名算法为 `EdDSA`、`RS256`、`ES256`、`PS256`；高保障 profile 可收窄。 |
 | `tls_client_auth` | 支持 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html)、[RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html)、[RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | 配置可信 mTLS/proxy 边界；客户端元数据只能包含一个证书 subject DN 或 SAN selector | DN 先解析再规范比较；IP SAN 按二进制地址比较。管理员证书 pin 只能进一步收紧匹配。 |
 | `self_signed_tls_client_auth` | 支持 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | 配置可信 mTLS/proxy 边界；客户端注册 self-signed certificate material | 仅在部署 mTLS 支持激活时宣告。 |
-| `attest_jwt_client_auth` | 支持 | [OAuth Client Attestation draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) | Client Attestation 模块启用且客户端策略要求 | 禁用部署不声明该客户端认证方式。 |
+| `attest_jwt_client_auth` | 支持 | [OAuth Client Attestation draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) | Client Attestation 模块启用且客户端策略要求 | 启用后，Discovery 包含该客户端认证方式。 |
 
 高保障集成应优先使用非对称或 sender-constrained 客户端认证。FAPI profile 排除 shared-secret POST 认证。
 

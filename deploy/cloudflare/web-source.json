@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/nazozero/NazoAuthWeb.git",
+  "revision": "d9267eaead4641dcf5ebc96d32ef9f4d7631d12a",
+  "version": "0.2.12",
+  "node": "26.12.1",
+  "npm": "12.2.1",
+  "base": "/ui/"
+}

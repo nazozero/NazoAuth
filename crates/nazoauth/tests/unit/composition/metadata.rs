@@ -29,6 +29,7 @@ fn metadata_config_maps_only_the_focused_settings_boundary() {
     assert_eq!(
         metadata_config(&settings).endpoint_config(),
         MetadataEndpointConfig {
+            backchannel_logout_supported: true,
             issuer: "https://issuer.example".to_owned(),
             mtls_endpoint_base_url: "https://mtls.issuer.example".to_owned(),
             mtls_enabled: true,
@@ -64,6 +65,16 @@ fn metadata_config_uses_composable_discovery_for_every_legacy_profile() {
         );
         assert!(!config.require_pushed_authorization_requests);
     }
+}
+
+#[test]
+fn metadata_config_selects_machine_profile_for_hosts_without_user_authorization() {
+    let mut settings = settings();
+    settings.protocol.user_authorization_supported = false;
+    assert_eq!(
+        metadata_config(&settings).authorization_server_profile,
+        MetadataAuthorizationServerProfile::MachineToMachine
+    );
 }
 
 #[test]
