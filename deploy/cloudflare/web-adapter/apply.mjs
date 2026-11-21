@@ -48,8 +48,6 @@ export function applyWorkerOverlay(work) {
     }
     const account = await refreshSession();
     if (!account) throw new Error(t('auth.error.login'));
-    if (nextAfterLogin) window.location.assign(nextAfterLogin);
-    else navigate('/profile', { replace: true });
   };
 
   const performAction = async (action: AuthAction) => {
@@ -72,6 +70,28 @@ export function applyWorkerOverlay(work) {
             <div className="auth-form-wrapper" hidden={mfaPending} style={mfaPending ? { display: 'none' } : undefined}>`, 'auth MFA view');
   authPatch('<div className="auth-footer">', '<div className="auth-footer" hidden={mfaPending} style={mfaPending ? { display: \'none\' } : undefined}>', 'auth MFA footer');
   writeFileSync(authPath, auth);
+
+  // The guest guard owns navigation for both new and existing sessions. Web
+  // routes go through the router basename; /authorize is a Worker endpoint.
+  const guestPath = resolve(work, 'src/components/RequireGuest.tsx');
+  let guest = readFileSync(guestPath, 'utf8');
+  guest = replaceOnce(guest, '  const location = useLocation();', `  const location = useLocation();
+  const next = resolveSafeNextFromSearch(location.search);
+  const nextPath = next?.split(/[?#]/, 1)[0];
+  const authorizationNext = nextPath === '/authorize' ? next : null;
+  useEffect(() => {
+    if (user && !loading && authorizationNext) window.location.replace(authorizationNext);
+  }, [user, loading, authorizationNext]);`, 'authorization endpoint return');
+  guest = replaceOnce(guest, `    const next = resolveSafeNextFromSearch(location.search);
+    return <Navigate to={next ?? '/profile'} replace />;`, `    if (authorizationNext) return null;
+    const base = import.meta.env.BASE_URL.replace(/\\/$/, '');
+    const hasBase = nextPath === base || nextPath?.startsWith(base + '/');
+    const relative = hasBase ? next!.slice(base.length) : next;
+    const target = relative?.startsWith('/') ? relative : '/' + (relative ?? '');
+    const targetPath = target.split(/[?#]/, 1)[0].replace(/\\/+$/, '').toLowerCase();
+    const returnTo = next && !target.startsWith('//') && targetPath !== '/auth' ? target : '/profile';
+    return <Navigate to={returnTo} replace />;`, 'basename-aware Web return');
+  writeFileSync(guestPath, guest);
 
   const contextPath = resolve(work, 'src/auth/AuthContext.tsx');
   let context = readFileSync(contextPath, 'utf8');
