@@ -101,12 +101,11 @@ fn form_body_value(request: &str, key: &str) -> Option<String> {
 
 #[actix_web::test]
 async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request() {
-    let (endpoint, request) =
-        one_shot_json_server(
-            "200 OK",
-            json!({"id_token": "signed-id-token", "access_token": "access", "token_type": "Bearer"}),
-        )
-        .await;
+    let (endpoint, request) = one_shot_json_server(
+        "200 OK",
+        json!({"id_token": "signed-id-token", "access_token": "access", "token_type": "Bearer"}),
+    )
+    .await;
     let mut provider = provider();
     provider.token_endpoint = endpoint;
 
@@ -160,13 +159,17 @@ async fn authorization_code_requires_bearer_access_token_even_without_userinfo()
         let (endpoint, request) = one_shot_json_server("200 OK", response).await;
         let mut provider = provider();
         provider.token_endpoint = endpoint;
-        assert!(exchange_oidc_code(
-            &super::super::federation_http_client().unwrap(),
-            &provider,
-            &provider.token_endpoint,
-            "code",
-            "verifier",
-        ).await.is_err());
+        assert!(
+            exchange_oidc_code(
+                &super::super::federation_http_client().unwrap(),
+                &provider,
+                &provider.token_endpoint,
+                "code",
+                "verifier",
+            )
+            .await
+            .is_err()
+        );
         request.await.unwrap();
     }
 }

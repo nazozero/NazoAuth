@@ -144,7 +144,12 @@ fn upstream_login(started_at: i64) -> OidcUpstreamLogin {
     }))
     .unwrap();
     claims
-        .upstream_login(TenantContext::default_system().tenant_id, "provider", "client", started_at)
+        .upstream_login(
+            TenantContext::default_system().tenant_id,
+            "provider",
+            "client",
+            started_at,
+        )
         .unwrap()
 }
 

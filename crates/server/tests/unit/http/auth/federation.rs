@@ -703,13 +703,12 @@ async fn provider_backed_by_local_oidc(
     let key = client_signing_fixture(Algorithm::RS256);
     let jwk = key.public_jwk("oidc-kid");
     let id_token = signed_oidc_token(&provider, "oidc-kid", &key, &nonce, id_token_overrides);
-    let (token_endpoint, token_request) =
-        one_shot_json_server(json!({
-            "id_token": id_token,
-            "access_token": "access",
-            "token_type": "Bearer"
-        }))
-        .await;
+    let (token_endpoint, token_request) = one_shot_json_server(json!({
+        "id_token": id_token,
+        "access_token": "access",
+        "token_type": "Bearer"
+    }))
+    .await;
     let (jwks_url, jwks_request) = one_shot_json_server(json!({ "keys": [jwk] })).await;
     provider.token_endpoint = token_endpoint;
     provider.jwks_url = jwks_url;
@@ -1550,13 +1549,12 @@ async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
     let key = client_signing_fixture(Algorithm::RS256);
     let nonce = random_urlsafe_token();
     let id_token = signed_oidc_token(&provider, "oidc-kid", &key, &nonce, json!({}));
-    let (token_endpoint, token_request) =
-        one_shot_json_server(json!({
-            "id_token": id_token,
-            "access_token": "access",
-            "token_type": "Bearer"
-        }))
-        .await;
+    let (token_endpoint, token_request) = one_shot_json_server(json!({
+        "id_token": id_token,
+        "access_token": "access",
+        "token_type": "Bearer"
+    }))
+    .await;
     let (jwks_url, jwks_request) = one_shot_json_server(json!({ "not_keys": [] })).await;
     provider.token_endpoint = token_endpoint;
     provider.jwks_url = jwks_url;
