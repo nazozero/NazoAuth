@@ -135,6 +135,49 @@ fn concurrent_federation_creation_has_one_account_link_and_required_event() {
 }
 
 #[test]
+fn social_federation_migration_preserves_existing_links() {
+    let db = Database::in_memory().unwrap();
+    db.execute_sql(include_str!("../migrations/0001.sql"))
+        .unwrap();
+    db.execute_sql(include_str!("../migrations/0010_federation_access.sql"))
+        .unwrap();
+    db.execute_sql(&format!(
+        "INSERT INTO nazo_users (tenant_id,id,email,principal,claims,password_hash,epoch,active,created_at,updated_at)
+         VALUES ('{TENANT}','{USER}','test@example.com','{{}}','{{}}','unused',0,1,0,0);
+         INSERT INTO nazo_federation_links VALUES
+           ('{TENANT}','legacy','{USER}','social','upstream','subject','test@example.com','{{}}',1,2,3);",
+    ))
+    .unwrap();
+    db.execute_sql(include_str!("../migrations/0017_social_federation.sql"))
+        .unwrap();
+    assert_sql(
+        &db,
+        "(SELECT count(*) FROM nazo_federation_links)=1
+         AND EXISTS(SELECT 1 FROM nazo_federation_links WHERE id='legacy' AND provider_type='oauth2_social'
+            AND provider_id='upstream' AND subject='subject' AND last_login_at=3)
+         AND NOT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
+    );
+}
+
+#[test]
+fn social_federation_round_trips_the_shared_provider_type() {
+    block_on(async {
+        let (_, provider) = fixture().await;
+        let mut identity = identity("social-subject", "social@example.com");
+        identity.login.provider_type = "oauth2_social".into();
+        let login = identity.login.clone();
+        let account = provider.create_federated(identity).await.unwrap();
+        let user = account.principal.user_id;
+
+        let restored = provider.resolve_existing(&login).await.unwrap().unwrap();
+        assert_eq!(restored.principal.user_id, user);
+        let links = provider.list_summaries(tenant(), user).await.unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].provider_type, "oauth2_social");
+    });
+}
+
+#[test]
 fn federation_never_links_an_email_collision_and_refreshes_only_provider_metadata() {
     block_on(async {
         let (db, provider) = fixture().await;

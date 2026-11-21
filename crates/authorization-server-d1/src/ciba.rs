@@ -224,11 +224,13 @@ impl CibaPingDeliveryPort for D1Provider {
             // The partial expression index is the queue. Updating a snapshot
             // and its queue position is therefore a single primary mutation.
             // Every claim changes the opaque version, fencing concurrent polls.
+            // D1 binds JS numbers as REALs. Keep JSON deadlines integral for
+            // CibaRequestState's integer deserialization.
             let rows = self.database.query::<Claim>(
                 "UPDATE nazo_state SET value=CASE
                     WHEN expires_at<=unixepoch() OR json_extract(value,'$.expires_at')<=?2
                     THEN json_remove(json_set(value,'$.ping_notification.status','failed'),'$.ping_notification.next_attempt_at','$.ping_notification.client_notification_token')
-                    ELSE json_set(value,'$.ping_notification.attempts',coalesce(json_extract(value,'$.ping_notification.attempts'),0)+1,'$.ping_notification.next_attempt_at',?3) END,
+                    ELSE json_set(value,'$.ping_notification.attempts',coalesce(json_extract(value,'$.ping_notification.attempts'),0)+1,'$.ping_notification.next_attempt_at',CAST(?3 AS INTEGER)) END,
                     version=?5
                  WHERE tenant_id=?1 AND kind='ciba' AND key IN (
                     SELECT key FROM nazo_state WHERE tenant_id=?1 AND kind='ciba'
@@ -280,7 +282,7 @@ impl CibaPingDeliveryPort for D1Provider {
                 CibaPingFinishOutcome::RetryAt(at) => ("pending", Some(at)),
             };
             let results=self.database.batch(vec![
-                Statement::new("UPDATE nazo_state SET value=CASE WHEN ?6 IS NOT NULL THEN json_set(value,'$.ping_notification.next_attempt_at',?6) ELSE json_remove(json_set(value,'$.ping_notification.status',?5),'$.ping_notification.next_attempt_at','$.ping_notification.client_notification_token') END,version=?7
+                Statement::new("UPDATE nazo_state SET value=CASE WHEN ?6 IS NOT NULL THEN json_set(value,'$.ping_notification.next_attempt_at',CAST(?6 AS INTEGER)) ELSE json_remove(json_set(value,'$.ping_notification.status',?5),'$.ping_notification.next_attempt_at','$.ping_notification.client_notification_token') END,version=?7
                     WHERE tenant_id=?1 AND kind='ciba' AND key=?2 AND expires_at>unixepoch()
                     AND json_extract(value,'$.ping_notification.status')='pending'
                     AND json_extract(value,'$.ping_notification.attempts')=?3
