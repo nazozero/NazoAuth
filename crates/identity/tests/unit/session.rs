@@ -193,6 +193,7 @@ fn current_session_exposes_exact_logged_in_clients() {
         amr: vec!["password".to_owned()],
         oidc_sid: "oidc-sid".to_owned(),
         logged_in_client_ids: vec!["client-a".to_owned(), "client-b".to_owned()],
+        upstream: None,
     };
 
     assert_eq!(

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, bail};
-use nazo_auth::{validate_http_endpoint_url, validate_issuer_url};
+use nazo_auth::validate_http_endpoint_url;
 use serde::Deserialize;
 
 use super::OidcFederationSettings;
@@ -80,6 +80,12 @@ struct ProviderConfig {
     redirect_uri: Option<String>,
     scopes: Option<String>,
     issuer: Option<String>,
+    #[serde(default)]
+    discovery: bool,
+    #[serde(default)]
+    backchannel_logout: bool,
+    id_token_signed_response_alg: Option<nazo_crypto::jwt::Algorithm>,
+    post_logout_redirect_uri: Option<String>,
     authorization_endpoint: Option<String>,
     token_endpoint: Option<String>,
     jwks_url: Option<String>,
@@ -171,6 +177,14 @@ impl ExternalLoginProvider {
     }
 }
 
+fn oidc_endpoint(discovery: bool, value: Option<String>, field: &str) -> anyhow::Result<String> {
+    if discovery {
+        Ok(String::new())
+    } else {
+        required_text(value, field)
+    }
+}
+
 impl ProviderConfig {
     // 将松散配置转换成强类型 provider。配置不完整时直接启动失败，
     // 而不是在用户点击登录时再进入半配置状态。
@@ -191,18 +205,35 @@ impl ProviderConfig {
         })
     }
 
-    // OIDC provider 必须提供 issuer、端点、JWKS、client 凭据和 openid scope。
-    // 这些字段共同决定 ID Token 校验边界，不能在运行时补默认值。
+    // A provider always fixes the issuer and client credentials at configuration time.
     fn take_oidc(&mut self) -> anyhow::Result<OidcFederationSettings> {
+        if self.discovery
+            && (self.authorization_endpoint.is_some()
+                || self.token_endpoint.is_some()
+                || self.jwks_url.is_some()
+                || self.userinfo_endpoint.is_some())
+        {
+            bail!("discovery and manually configured OIDC endpoints are mutually exclusive");
+        }
         let settings = OidcFederationSettings {
             provider_id: self.provider_id.clone(),
             issuer: required_text(self.issuer.take(), "issuer")?,
-            authorization_endpoint: required_text(
+            discovery: self.discovery,
+            backchannel_logout: self.backchannel_logout,
+            id_token_signed_response_alg: self.id_token_signed_response_alg,
+            post_logout_redirect_uri: self.post_logout_redirect_uri.take(),
+            authorization_endpoint: oidc_endpoint(
+                self.discovery,
                 self.authorization_endpoint.take(),
                 "authorization_endpoint",
             )?,
-            token_endpoint: required_text(self.token_endpoint.take(), "token_endpoint")?,
-            jwks_url: required_text(self.jwks_url.take(), "jwks_url")?,
+            token_endpoint: oidc_endpoint(
+                self.discovery,
+                self.token_endpoint.take(),
+                "token_endpoint",
+            )?,
+            jwks_url: oidc_endpoint(self.discovery, self.jwks_url.take(), "jwks_url")?,
+            userinfo_endpoint: self.userinfo_endpoint.take().and_then(trimmed_optional),
             client_id: required_credential(self.client_id.take(), "client_id")?,
             client_secret: required_credential(self.client_secret.take(), "client_secret")?,
             redirect_uri: required_text(self.redirect_uri.take(), "redirect_uri")?,
@@ -297,11 +328,49 @@ pub fn validate_oidc_settings(
     settings: &OidcFederationSettings,
     scopes_key: &str,
 ) -> anyhow::Result<()> {
-    validate_issuer_url(&settings.issuer)?;
-    validate_http_endpoint_url(&settings.authorization_endpoint)?;
-    validate_http_endpoint_url(&settings.token_endpoint)?;
-    validate_http_endpoint_url(&settings.jwks_url)?;
-    validate_http_endpoint_url(&settings.redirect_uri)?;
+    // An upstream OP owns its exact issuer identifier, including a trailing '/'.
+    let issuer = validate_http_endpoint_url(&settings.issuer)?;
+    if issuer.query().is_some() {
+        bail!("OIDC issuer cannot contain a query");
+    }
+    if settings.discovery {
+        if nazo_identity::federation::oidc::discovery_url(&settings.issuer).is_none()
+            || !settings.authorization_endpoint.is_empty()
+            || !settings.token_endpoint.is_empty()
+            || !settings.jwks_url.is_empty()
+            || settings.userinfo_endpoint.is_some()
+        {
+            bail!("OIDC discovery requires an HTTPS issuer and no static endpoints");
+        }
+    } else {
+        validate_http_endpoint_url(&settings.authorization_endpoint)?;
+        validate_http_endpoint_url(&settings.token_endpoint)?;
+        validate_http_endpoint_url(&settings.jwks_url)?;
+        if let Some(endpoint) = &settings.userinfo_endpoint {
+            validate_http_endpoint_url(endpoint)?;
+        }
+    }
+    let redirect_uri = validate_http_endpoint_url(&settings.redirect_uri)?;
+    if let Some(post_logout) = &settings.post_logout_redirect_uri {
+        let post_logout = validate_http_endpoint_url(post_logout)?;
+        if !settings.discovery
+            || !settings.backchannel_logout
+            || post_logout.origin() != redirect_uri.origin()
+        {
+            bail!(
+                "Upstream logout requires discovery, back-channel logout and a same-origin post_logout_redirect_uri"
+            );
+        }
+    }
+    use nazo_crypto::jwt::Algorithm;
+    if settings.id_token_signed_response_alg.is_some_and(|alg| {
+        !matches!(
+            alg,
+            Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 | Algorithm::EdDSA
+        )
+    }) {
+        bail!("unsupported id_token_signed_response_alg for OIDC federation");
+    }
     if !settings
         .scopes
         .split_whitespace()

@@ -49,6 +49,7 @@ pkcs8 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
+sha2 = { workspace = true, features = ["oid"], optional = true }
 rustls-pki-types = { workspace = true, optional = true }
 thiserror.workspace = true
 x509-parser = { workspace = true, optional = true }
@@ -74,7 +75,6 @@ p384 = { version = "0.14.0", features = ["ecdsa"], optional = true }
 p521 = { version = "0.14.0", features = ["ecdsa"], optional = true }
 rsa = { version = "0.10.0", features = ["pkcs1v15", "encoding"], optional = true }
 sha1 = { workspace = true, features = ["oid"], optional = true }
-sha2 = { workspace = true, features = ["oid"], optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 aws-lc-rs.workspace = true

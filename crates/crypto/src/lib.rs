@@ -27,6 +27,8 @@ pub mod ec;
 #[cfg(feature = "ed25519")]
 pub mod ed25519;
 #[cfg(feature = "jose")]
+pub mod jwk;
+#[cfg(feature = "jose")]
 pub mod jwt;
 #[cfg(feature = "jose")]
 pub mod key_wrap;
@@ -36,6 +38,16 @@ pub mod password;
 pub mod signature;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown", feature = "jose"))]
 mod worker_signing;
+
+/// Derives the unpadded base64url S256 PKCE challenge.
+#[cfg(feature = "jose")]
+#[must_use]
+pub fn pkce_s256(verifier: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sha2::{Digest as _, Sha256};
+
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
 
 #[cfg(any(feature = "jose", feature = "ecdh"))]
 /// Records header-member presence, including `null` and empty values.

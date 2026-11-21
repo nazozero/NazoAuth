@@ -478,11 +478,27 @@ credentials, federation client secrets, and SAML shared secrets must not be
 committed to Git.
 
 `FEDERATION_PROVIDER_CONFIGS` is a JSON array for modular third-party login
-providers. Each enabled entry must include `provider_id`, `enabled`,
-`display_name`, `adapter_type`, client credentials, redirect URI, scope,
-endpoint or issuer configuration, and claim mapping. Providers default to
-disabled unless `enabled` is true. Incomplete enabled provider configuration
-fails startup; disabled providers do not appear in `/auth/federation/providers`.
+providers. Each entry supplies `provider_id`, `display_name`, `adapter_type`
+and that adapter's configuration. Providers default to disabled unless
+`enabled` is true. Incomplete configuration fails startup; disabled providers
+do not appear in `/auth/federation/providers`.
+
+OIDC entries require an issuer, client credentials and a redirect URI. For
+static configuration, supply authorization/token endpoints and `jwks_url` with
+an optional `userinfo_endpoint`. Set `discovery: true` to resolve endpoints from
+the configured HTTPS issuer and omit the static endpoints. Explicitly
+configured endpoints may use HTTPS or loopback HTTP. Endpoint URLs reject
+credentials and fragments. `scopes` defaults to `openid email profile` and must
+include `openid`.
+
+Set `backchannel_logout: true` and register the provider's logout callback at
+the OP to accept signed upstream logout requests. Both flags default to false.
+Set `id_token_signed_response_alg` to match a fixed signing algorithm on the
+OP client registration. To enable browser-initiated upstream logout, configure
+`post_logout_redirect_uri` on a discovery provider with back-channel logout
+enabled and register the return URL with the OP.
+See [external federation](../features/federation.md#external-oidc-login) for
+outbound network requirements, account linking and logout scope.
 
 Security-state lifetimes and cooldowns must be positive. Startup rejects zero
 or negative values for session, authorization-code, access-token, ID-token,

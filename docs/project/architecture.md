@@ -46,7 +46,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | --- | --- | --- |
 | `authorization-server-core` | `nazo-auth` | Framework-independent OAuth, OIDC, FAPI and CIBA authorization-server policy, protocol types, grants, claims, metadata capability projection, sender constraints, and security profiles. It does not depend on Actix, Diesel, Fred, database rows, or configuration loading. |
 | `digital-credentials` | `nazo-digital-credentials` | Framework-independent credential contracts, JSON claim models, status, revocation and application trust policy shared by OpenID4VC issuance, verification and key management. ISO mdoc parsing, cryptography and certificate profiles belong to `nazo-mdoc`. |
-| `identity` | `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. It depends on `nazo-scim-events` for SCIM event types, not on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
+| `identity` | `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. Federation owns OIDC RP authorization requests, ID Token validation and upstream identity normalization. It depends on `nazo-crypto` for cryptographic operations and `nazo-scim-events` for SCIM event types, not on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
 | `resource-server` | `nazo-resource-server` | Standalone JWT access-token and sender-constraint verification. It is independent of the authorization server, identity, and every Web framework. |
 | `http-signatures` | `nazo-http-signatures` | Reusable HTTP Message Signatures, structured-field, content-digest, signing, and verification primitives. Authorization-server FAPI policy remains in `nazo-auth`. |
 | `key-management` | `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, an external-signer port, and OpenID4VC signing material. The native host owns external-command execution and refresh scheduling. |
@@ -583,15 +583,36 @@ proof expansion and before nonce claiming. A configuration without proof types
 and holder-binding methods issues its unbound credential without a proof nonce;
 stray proofs remain invalid. The same rules apply to deferred preparation.
 
+### Federation upstream configuration and logout
+
+The facade resolves configured OIDC issuer metadata through the federation
+HTTP port and binds the validated endpoints to the browser's login state.
+Identity owns issuer, token and upstream session semantics. Native and Worker
+enforce their outbound policies on discovered destinations at the transport
+boundary. An embedding host can opt into discovery by implementing the
+discovered-request capability on the existing federation HTTP port.
+
+Opted-in sessions carry digests for the upstream subject and optional session
+ID. The session backend maintains a monotonic logout timestamp for each
+tenant-scoped digest and checks it when loading linked sessions. This preserves
+logout across local session rotation and prevents an older callback or logout
+retry from reviving a session. An embedding session backend that enables this
+feature implements the upstream logout operation and enforces its cutoff when
+reading sessions.
+
+Opted-in RP-initiated logout stores the verified ID Token hint and discovered
+end-session endpoint encrypted in the local session. The facade reuses the
+session and CSRF guards before handing the end-session form to the browser.
+
 ### Federation browser ownership
 
 OIDC/social HTTP owns canonical browser-seed cookies and their secure/dev
 attributes. Identity owns domain-separated tenant-and-seed hashing and passes
-the expected digest through `FederationStatePort`. The Valkey adapter owns
-atomic matching take: nonowners preserve raw state and expiry; only the matching
-browser removes it before the existing typed and protocol checks. Callback
-never rotates or clears the seed, so established-cookie flows can run in
-parallel. Deployment cutover and the cold-start race are documented in
+the expected digest through `FederationStatePort`. Native Valkey and Worker D1
+adapters provide atomic matching take: nonowners preserve raw state and expiry;
+only the matching browser removes it before the existing typed and protocol
+checks. Callback never rotates or clears the seed, so established-cookie flows
+can run in parallel. Deployment cutover and the cold-start race are documented in
 [external federation](../features/federation.md#browser-binding-and-callback-state).
 
 ### Short authentication validity boundaries

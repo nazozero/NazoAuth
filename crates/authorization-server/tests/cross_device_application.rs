@@ -305,6 +305,7 @@ fn fixture_with_client(
         amr: vec!["pwd".into(), "otp".into()],
         oidc_sid: "session-1".into(),
         logged_in_client_ids: vec![],
+        upstream: None,
     };
     (application, ports, session, authorization)
 }

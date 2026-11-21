@@ -84,6 +84,7 @@ fn identity(subject: &str, email: &str) -> NewFederatedIdentity {
 }
 fn oidc() -> OidcFederationState {
     OidcFederationState {
+        discovery: None,
         browser_binding_hash: Some("browser-binding".into()),
         provider_id: Some("upstream".into()),
         nonce: "nonce".into(),
@@ -1019,6 +1020,106 @@ fn access_rejection_is_atomic_and_admin_pages_search_literals() {
                 .await
                 .unwrap()
                 .is_empty()
+        );
+    });
+}
+
+#[test]
+fn oidc_logout_cutoff_is_monotonic_and_tenant_scoped() {
+    use nazo_identity::{
+        SessionId,
+        ports::{LoginSessionPort, SessionStorePort},
+        session::{SessionRecord, UpstreamSession},
+    };
+    block_on(async {
+        let (db, provider) = fixture().await;
+        let foreign = D1Provider::new(db.clone(), TenantId::new(Uuid::new_v4()).unwrap());
+        let now = Timestamp::now().as_second();
+        let new_record = |issued_at, sid: &str| {
+            let mut record = SessionRecord::new(
+                user(),
+                0,
+                now,
+                vec!["oidc".into()],
+                false,
+                Some("local".into()),
+            );
+            record.set_upstream(Some(UpstreamSession {
+                subject_key: "upstream-subject".into(),
+                sid_key: Some(sid.into()),
+                issued_at,
+                expires_at: now + 60,
+                encrypted_logout: None,
+            }));
+            record
+        };
+        let first = SessionId::new("first");
+        let second = SessionId::new("second");
+        LoginSessionPort::create(&provider, first.as_str(), &new_record(now - 1, "sid-a"), 60)
+            .await
+            .unwrap();
+        LoginSessionPort::create(
+            &provider,
+            second.as_str(),
+            &new_record(now - 1, "sid-b"),
+            60,
+        )
+        .await
+        .unwrap();
+
+        LoginSessionPort::create(&foreign, first.as_str(), &new_record(now - 1, "sid-a"), 60)
+            .await
+            .unwrap();
+        provider
+            .revoke_upstream("sid-a", now, now + 15)
+            .await
+            .unwrap();
+        provider
+            .revoke_upstream("sid-a", now - 2, now + 15)
+            .await
+            .unwrap();
+        assert!(
+            SessionStorePort::load(&foreign, &first)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            SessionStorePort::load(&provider, &first)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            SessionStorePort::load(&provider, &second)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_sql(
+            &db,
+            "EXISTS(SELECT 1 FROM nazo_state WHERE kind='upstream_session' AND key='sid-a' AND expires_at>unixepoch()+30)",
+        );
+
+        provider
+            .revoke_upstream("upstream-subject", now, now + 15)
+            .await
+            .unwrap();
+        assert!(
+            SessionStorePort::load(&provider, &second)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let new = SessionId::new("new");
+        LoginSessionPort::create(&provider, new.as_str(), &new_record(now + 1, "sid-c"), 60)
+            .await
+            .unwrap();
+        assert!(
+            SessionStorePort::load(&provider, &new)
+                .await
+                .unwrap()
+                .is_some()
         );
     });
 }

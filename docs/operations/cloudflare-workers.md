@@ -489,9 +489,13 @@ The `services` object contains only declared host capabilities and public policy
 | `data_encryption_key` | Standard Base64 encoding of an independent 32-byte key for MFA seeds and protected service state; required when enabling OpenID4VC and needed for MFA enrollment |
 | `issuer_management_token`, `verifier_management_token` | Separate OpenID4VC issuer/verifier management credentials, each at least 32 bytes; enabling a role requires its token |
 | `email_relay_token` | Bearer credential for the configured HTTPS relay; at least 16 bytes |
-| `federation_provider_configs` | The shared provider-registry JSON array, including provider IDs, adapter types, endpoints, callback URLs and client credentials |
+| `federation_provider_configs` | The shared [provider-registry JSON array](../features/federation.md#provider-registry), including provider IDs, adapter types, endpoints, callback URLs, client credentials and optional OIDC `userinfo_endpoint` |
 | `saml_gateway` | Optional shared gateway `{ "issuer": "...", "audience": "...", "secret": "..." }` configuration |
 | `openid4vc_import` | Temporary operator import described below; remove after its generation is persisted |
+
+For OIDC federation, add the origins of `token_endpoint`, `jwks_url` and any
+configured `userinfo_endpoint` to `services.outbound_origins`. These outbound
+endpoints must use the Worker's admitted public HTTPS origins.
 
 The email relay receives a JSON POST containing `from`, `to`, `subject` and
 `text` with a bearer authorization header; a successful HTTP response acknowledges

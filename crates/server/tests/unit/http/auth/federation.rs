@@ -42,6 +42,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
+#[path = "federation/oidf.rs"]
+mod oidf;
+#[path = "federation/upstream_lifecycle.rs"]
+mod upstream_lifecycle;
+
 #[test]
 fn federation_transport_has_no_identity_or_storage_orchestration() {
     let source = include_str!(concat!(
@@ -217,11 +222,16 @@ const TEST_OIDC_PROVIDER_ID: &str = "test-oidc";
 
 fn oidc_provider() -> OidcFederationSettings {
     OidcFederationSettings {
+        discovery: false,
+        backchannel_logout: false,
+        id_token_signed_response_alg: None,
+        post_logout_redirect_uri: None,
         provider_id: TEST_OIDC_PROVIDER_ID.to_owned(),
         issuer: "https://issuer.example".to_owned(),
         authorization_endpoint: "https://issuer.example/authorize".to_owned(),
         token_endpoint: "https://issuer.example/token".to_owned(),
         jwks_url: "https://issuer.example/jwks".to_owned(),
+        userinfo_endpoint: None,
         client_id: "client-1".to_owned(),
         client_secret: "secret".to_owned(),
         redirect_uri: "https://auth.example/federation/test-oidc/callback".to_owned(),
@@ -239,9 +249,12 @@ fn oidc_provider_registry_config(provider: &OidcFederationSettings) -> ConfigSou
             "display_name": "OIDC",
             "adapter_type": "oidc",
             "issuer": provider.issuer.as_str(),
-            "authorization_endpoint": provider.authorization_endpoint.as_str(),
-            "token_endpoint": provider.token_endpoint.as_str(),
-            "jwks_url": provider.jwks_url.as_str(),
+            "discovery": provider.discovery,
+            "backchannel_logout": provider.backchannel_logout,
+            "authorization_endpoint": (!provider.discovery).then_some(provider.authorization_endpoint.as_str()),
+            "token_endpoint": (!provider.discovery).then_some(provider.token_endpoint.as_str()),
+            "jwks_url": (!provider.discovery).then_some(provider.jwks_url.as_str()),
+            "userinfo_endpoint": provider.userinfo_endpoint.as_deref(),
             "client_id": provider.client_id.as_str(),
             "client_secret": provider.client_secret.as_str(),
             "redirect_uri": provider.redirect_uri.as_str(),
@@ -777,7 +790,7 @@ async fn oidc_callback_input_requires_urlsafe_state_and_bounded_non_empty_code()
     };
     let input = validate_oidc_callback_input(&valid).expect("valid callback input should parse");
     assert_eq!(input.state_token, valid_state);
-    assert_eq!(input.code, "code-1");
+    assert_eq!(input.code, " code-1 ");
 
     for query in [
         OidcCallbackQuery {
@@ -800,13 +813,13 @@ async fn oidc_callback_input_requires_urlsafe_state_and_bounded_non_empty_code()
         );
     }
 
-    for code in [None, Some("   ".to_owned()), Some("x".repeat(4097))] {
+    for code in [None, Some(String::new()), Some("x".repeat(4097))] {
         let response = validate_oidc_callback_input(&OidcCallbackQuery {
             code,
             state: Some(valid_state.clone()),
             error: None,
         })
-        .expect_err("missing, blank, or oversized authorization code must fail closed");
+        .expect_err("missing, empty, or oversized authorization code must fail closed");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             oauth_error_code(response).await.as_deref(),
@@ -1023,161 +1036,123 @@ async fn oidc_callback_rejects_state_bound_to_another_provider_before_token_exch
 }
 
 #[actix_web::test]
-async fn oidc_callback_requires_normalized_email_claim_before_identity_resolution() {
-    let (provider, token_request, jwks_request, nonce) =
-        provider_backed_by_local_oidc(json!({"email": null})).await;
-    let Some(state) = live_federation_state(Some(provider.clone()), None).await else {
-        return;
-    };
-    let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(
-        &state,
-        &state_token,
-        &nonce,
-        jiff::Timestamp::now().as_second(),
-    )
-    .await;
-    let state = Data::new(state);
-    let req = bound_federation_test_request()
-        .uri("/auth/federation/test-oidc/callback?state=email&code=code")
-        .to_http_request();
-    let query = OidcCallbackQuery {
-        code: Some("code-1".to_owned()),
-        state: Some(state_token),
-        error: None,
-    };
-
-    let response = oidc_callback_after_rate_limit_for_provider(state, req, query, provider).await;
-    token_request
-        .await
-        .expect("token request should finish before email validation");
-    jwks_request
-        .await
-        .expect("JWKS request should finish before email validation");
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        oauth_error_code(response).await.as_deref(),
-        Some("access_denied")
-    );
+async fn oidc_callback_cannot_provision_without_a_verified_normalized_email() {
+    for profile in [
+        json!({"email": null}),
+        json!({"email_verified": false}),
+        json!({"email_verified": null}),
+        json!({"email": "not-an-email"}),
+    ] {
+        let suffix = Uuid::now_v7().simple().to_string();
+        let email = format!("oidc-unverified-{suffix}@example.com");
+        let subject = format!("oidc-unverified-{suffix}");
+        let mut overrides = json!({"sub": subject, "email": email});
+        overrides
+            .as_object_mut()
+            .unwrap()
+            .extend(profile.as_object().unwrap().clone());
+        let (provider, token_request, jwks_request, nonce) =
+            provider_backed_by_local_oidc(overrides).await;
+        let Some(fixture) = LiveFederationFixture::new(Some(provider.clone()), None).await else {
+            return;
+        };
+        let state_token = random_urlsafe_token();
+        store_oidc_state_with_nonce(
+            &fixture.state,
+            &state_token,
+            &nonce,
+            jiff::Timestamp::now().as_second(),
+        )
+        .await;
+        let response = oidc_callback_after_rate_limit_for_provider(
+            fixture.state.clone(),
+            bound_federation_test_request().to_http_request(),
+            OidcCallbackQuery {
+                code: Some("code-1".to_owned()),
+                state: Some(state_token),
+                error: None,
+            },
+            provider,
+        )
+        .await;
+        token_request.await.expect("token request should finish");
+        jwks_request.await.expect("JWKS request should finish");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(
+            cookie_value_from_response(
+                &response,
+                &fixture.state.settings.session.session_cookie_name,
+            )
+            .is_none()
+        );
+        assert_eq!(
+            oauth_error_code(response).await.as_deref(),
+            Some("access_denied")
+        );
+        assert!(fixture.user_by_email(&email).await.is_none());
+        assert!(
+            fixture
+                .external_identity_link("oidc", TEST_OIDC_PROVIDER_ID, &subject)
+                .await
+                .is_none()
+        );
+    }
 }
 
 #[actix_web::test]
-async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
-    let (provider, token_request, jwks_request, nonce) =
-        provider_backed_by_local_oidc(json!({"email_verified": false})).await;
-    let Some(state) = live_federation_state(Some(provider.clone()), None).await else {
+async fn oidc_callback_uses_existing_subject_link_without_verified_email() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("oidc-linked-{suffix}@example.com");
+    let subject = format!("oidc-linked-{suffix}");
+    let (provider, token_request, jwks_request, nonce) = provider_backed_by_local_oidc(json!({
+        "sub": subject,
+        "email": null,
+        "email_verified": null,
+    }))
+    .await;
+    let Some(fixture) = LiveFederationFixture::new(Some(provider.clone()), None).await else {
         return;
     };
+    let user = fixture.create_user(&email, true).await;
+    fixture
+        .insert_external_identity_link(&user, "oidc", TEST_OIDC_PROVIDER_ID, &subject, &email)
+        .await;
     let state_token = random_urlsafe_token();
     store_oidc_state_with_nonce(
-        &state,
+        &fixture.state,
         &state_token,
         &nonce,
         jiff::Timestamp::now().as_second(),
     )
     .await;
-    let state = Data::new(state);
-    let req = bound_federation_test_request()
-        .uri("/auth/federation/test-oidc/callback?state=email&code=code")
-        .to_http_request();
-    let query = OidcCallbackQuery {
-        code: Some("code-1".to_owned()),
-        state: Some(state_token),
-        error: None,
-    };
-
-    let response = oidc_callback_after_rate_limit_for_provider(state, req, query, provider).await;
-    token_request
-        .await
-        .expect("token request should finish before email verification");
-    jwks_request
-        .await
-        .expect("JWKS request should finish before email verification");
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        oauth_error_code(response).await.as_deref(),
-        Some("access_denied")
-    );
-}
-
-#[actix_web::test]
-async fn oidc_callback_rejects_missing_email_verification_before_identity_resolution() {
-    let (provider, token_request, jwks_request, nonce) =
-        provider_backed_by_local_oidc(json!({"email_verified": null})).await;
-    let Some(state) = live_federation_state(Some(provider.clone()), None).await else {
-        return;
-    };
-    let state_token = random_urlsafe_token();
-    store_oidc_state_with_nonce(
-        &state,
-        &state_token,
-        &nonce,
-        jiff::Timestamp::now().as_second(),
+    let response = oidc_callback_after_rate_limit_for_provider(
+        fixture.state.clone(),
+        bound_federation_test_request().to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+        provider,
     )
     .await;
-    let state = Data::new(state);
-    let req = bound_federation_test_request()
-        .uri("/auth/federation/test-oidc/callback?state=email&code=code")
-        .to_http_request();
-    let query = OidcCallbackQuery {
-        code: Some("code-1".to_owned()),
-        state: Some(state_token),
-        error: None,
-    };
-
-    let response = oidc_callback_after_rate_limit_for_provider(state, req, query, provider).await;
-    token_request
-        .await
-        .expect("token request should finish before email verification");
-    jwks_request
-        .await
-        .expect("JWKS request should finish before email verification");
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    token_request.await.expect("token request should finish");
+    jwks_request.await.expect("JWKS request should finish");
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookie = cookie_value_from_response(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("verified subject must resolve its existing account");
+    assert_eq!(fixture.session_payload(&cookie).await.user_id, user.id);
+    assert_eq!(fixture.user_by_email(&email).await.unwrap().id(), user.id);
     assert_eq!(
-        oauth_error_code(response).await.as_deref(),
-        Some("access_denied")
-    );
-}
-
-#[test]
-fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
-    let provider = oidc_provider();
-    let nonce = random_urlsafe_token();
-
-    let location = oidc_authorization_url(&provider, "state-1", &nonce, "verifier-1");
-    let url = url::Url::parse(&location).unwrap();
-    let params = url
-        .query_pairs()
-        .collect::<std::collections::HashMap<_, _>>();
-
-    assert_eq!(
-        url.as_str().split('?').next(),
-        Some("https://issuer.example/authorize")
-    );
-    assert_eq!(
-        params.get("response_type").map(|value| value.as_ref()),
-        Some("code")
-    );
-    assert_eq!(
-        params.get("state").map(|value| value.as_ref()),
-        Some("state-1")
-    );
-    assert_eq!(
-        params.get("nonce").map(|value| value.as_ref()),
-        Some(nonce.as_str())
-    );
-    assert_eq!(
-        params
-            .get("code_challenge_method")
-            .map(|value| value.as_ref()),
-        Some("S256")
-    );
-    assert_eq!(
-        params.get("code_challenge").map(|value| value.as_ref()),
-        Some(pkce_s256("verifier-1").as_str())
+        fixture
+            .external_identity_link("oidc", TEST_OIDC_PROVIDER_ID, &subject)
+            .await
+            .unwrap()
+            .user_id,
+        user.id
     );
 }
 

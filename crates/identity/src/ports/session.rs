@@ -16,6 +16,16 @@ pub trait LoginSessionPort: Send + Sync {
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate>;
 
+    /// Advance one verified upstream logout scope without shortening its lifetime.
+    fn revoke_upstream<'a>(
+        &'a self,
+        _key: &'a str,
+        _issued_at: i64,
+        _retain_until: i64,
+    ) -> RepositoryFuture<'a, ()> {
+        Box::pin(async { Err(super::RepositoryError::Unavailable) })
+    }
+
     /// Creates a new login session and, when supplied, invalidates the
     /// previously presented session in the same storage transaction.
     ///
@@ -42,6 +52,15 @@ where
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate> {
         self.as_ref().create(session_id, record, ttl_seconds)
+    }
+
+    fn revoke_upstream<'a>(
+        &'a self,
+        key: &'a str,
+        issued_at: i64,
+        retain_until: i64,
+    ) -> RepositoryFuture<'a, ()> {
+        self.as_ref().revoke_upstream(key, issued_at, retain_until)
     }
 
     fn create_replacing<'a>(
