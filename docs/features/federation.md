@@ -118,7 +118,8 @@ Enable `backchannel_logout: true` on an OIDC entry and register
 back-channel logout URI at the upstream OP. Register an absolute URL for the
 same tenant host used for sign-in. For new logins, the RP records the verified
 upstream session ID if present and the upstream subject, scoped to the tenant,
-provider, issuer and client. Reauthenticate sessions established before the
+provider, issuer and client. The tenant UUID is part of each upstream scope digest;
+Valkey and D1 therefore cannot share revocation markers across tenants. Reauthenticate sessions established before the
 setting was enabled to attach them to the upstream session.
 
 The OP posts a signed `logout_token` as form data. NazoAuth verifies it against

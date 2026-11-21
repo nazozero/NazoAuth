@@ -136,7 +136,10 @@ async fn discovered_login_and_logout(by_sid: bool) {
         }),
     );
     issuer.0.lock().unwrap().extend([
-        ("/token", json!({ "id_token": id_token })),
+        (
+            "/token",
+            json!({ "id_token": id_token, "access_token": "access", "token_type": "Bearer" }),
+        ),
         ("/jwks", jwks.clone()),
     ]);
     let response = rp_http::federation_provider_callback(

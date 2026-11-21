@@ -27,7 +27,11 @@ fn provider() -> OidcFederationSettings {
 #[actix_web::test]
 async fn upstream_basic_auth_form_encodes_each_credential_without_trimming() {
     use base64::Engine as _;
-    let (endpoint, request) = one_shot_json_server("200 OK", json!({"id_token":"token"})).await;
+    let (endpoint, request) = one_shot_json_server(
+        "200 OK",
+        json!({"id_token": "token", "access_token": "access", "token_type": "Bearer"}),
+    )
+    .await;
     let mut provider = provider();
     provider.token_endpoint = endpoint;
     provider.client_id = "client:+%".into();
@@ -98,7 +102,11 @@ fn form_body_value(request: &str, key: &str) -> Option<String> {
 #[actix_web::test]
 async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request() {
     let (endpoint, request) =
-        one_shot_json_server("200 OK", json!({"id_token": "signed-id-token"})).await;
+        one_shot_json_server(
+            "200 OK",
+            json!({"id_token": "signed-id-token", "access_token": "access", "token_type": "Bearer"}),
+        )
+        .await;
     let mut provider = provider();
     provider.token_endpoint = endpoint;
 
@@ -139,6 +147,28 @@ async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request
         form_body_value(&request, "code_verifier").as_deref(),
         Some("verifier-1")
     );
+}
+
+#[actix_web::test]
+async fn authorization_code_requires_bearer_access_token_even_without_userinfo() {
+    for response in [
+        json!({"id_token": "token"}),
+        json!({"id_token": "token", "access_token": "access"}),
+        json!({"id_token": "token", "access_token": "", "token_type": "Bearer"}),
+        json!({"id_token": "token", "access_token": "access", "token_type": "MAC"}),
+    ] {
+        let (endpoint, request) = one_shot_json_server("200 OK", response).await;
+        let mut provider = provider();
+        provider.token_endpoint = endpoint;
+        assert!(exchange_oidc_code(
+            &super::super::federation_http_client().unwrap(),
+            &provider,
+            &provider.token_endpoint,
+            "code",
+            "verifier",
+        ).await.is_err());
+        request.await.unwrap();
+    }
 }
 
 #[actix_web::test]

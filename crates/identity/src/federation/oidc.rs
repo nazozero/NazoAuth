@@ -25,7 +25,7 @@ impl std::fmt::Display for OidcError {
             Self::InvalidIdToken => "OIDC ID Token validation failed",
             Self::InvalidLogoutToken => "OIDC Logout Token validation failed",
             Self::InvalidUserInfo => "OIDC UserInfo subject does not match the ID Token",
-            Self::InvalidTokenResponse => "OIDC UserInfo requires a Bearer access token",
+            Self::InvalidTokenResponse => "OIDC Token Response validation failed",
         })
     }
 }
@@ -122,26 +122,39 @@ impl OidcUpstreamLogin {
     }
 }
 
+// The token endpoint response is validated exactly once during JSON decoding.
+// Later UserInfo requests only borrow the accepted Bearer token.
 #[derive(Deserialize)]
+#[serde(try_from = "OidcTokenResponseWire")]
 pub struct OidcTokenResponse {
     pub id_token: String,
-    access_token: Option<String>,
-    token_type: Option<String>,
+    access_token: String,
+}
+
+#[derive(Deserialize)]
+struct OidcTokenResponseWire {
+    id_token: String,
+    access_token: String,
+    token_type: String,
+}
+
+impl TryFrom<OidcTokenResponseWire> for OidcTokenResponse {
+    type Error = OidcError;
+
+    fn try_from(wire: OidcTokenResponseWire) -> Result<Self, Self::Error> {
+        if wire.access_token.is_empty() || !wire.token_type.eq_ignore_ascii_case("Bearer") {
+            return Err(OidcError::InvalidTokenResponse);
+        }
+        Ok(Self {
+            id_token: wire.id_token,
+            access_token: wire.access_token,
+        })
+    }
 }
 
 impl OidcTokenResponse {
-    pub fn userinfo_access_token(&self) -> Result<&str, OidcError> {
-        if !self
-            .token_type
-            .as_deref()
-            .is_some_and(|kind| kind.eq_ignore_ascii_case("Bearer"))
-        {
-            return Err(OidcError::InvalidTokenResponse);
-        }
-        self.access_token
-            .as_deref()
-            .filter(|token| !token.is_empty())
-            .ok_or(OidcError::InvalidTokenResponse)
+    pub fn userinfo_access_token(&self) -> &str {
+        &self.access_token
     }
 }
 
@@ -182,9 +195,17 @@ pub struct OidcLogout {
     pub(super) cutoff: i64,
 }
 
-fn scope_key(provider: &str, issuer: &str, client_id: &str, kind: &str, value: &str) -> String {
+fn scope_key(
+    tenant_id: crate::TenantId,
+    provider: &str,
+    issuer: &str,
+    client_id: &str,
+    kind: &str,
+    value: &str,
+) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"NazoAuth/oidc-logout/v1\0");
+    hasher.update(tenant_id.as_uuid().as_bytes());
     for component in [provider, issuer, client_id, kind, value] {
         hasher.update(&(component.len() as u64).to_be_bytes());
         hasher.update(component.as_bytes());
@@ -203,6 +224,7 @@ fn valid_session_id(value: &str) -> bool {
 impl OidcIdTokenClaims {
     pub fn upstream_login(
         &self,
+        tenant_id: crate::TenantId,
         provider: &str,
         client_id: &str,
         started_at: i64,
@@ -216,11 +238,11 @@ impl OidcIdTokenClaims {
             return Err(OidcError::InvalidIdToken);
         }
         Ok(OidcUpstreamLogin {
-            subject_key: scope_key(provider, &self.iss, client_id, "sub", &self.sub),
+            subject_key: scope_key(tenant_id, provider, &self.iss, client_id, "sub", &self.sub),
             sid_key: self
                 .sid
                 .as_deref()
-                .map(|sid| scope_key(provider, &self.iss, client_id, "sid", sid)),
+                .map(|sid| scope_key(tenant_id, provider, &self.iss, client_id, "sid", sid)),
             started_at,
             encrypted_logout: None,
         })
@@ -396,6 +418,7 @@ fn signing_key(
 }
 
 pub fn verify_logout_token(
+    tenant_id: crate::TenantId,
     provider: &str,
     issuer: &str,
     client_id: &str,
@@ -403,10 +426,13 @@ pub fn verify_logout_token(
     token: &str,
     now: Timestamp,
 ) -> Result<OidcLogout, OidcError> {
-    verify_logout_token_with_algorithm(provider, issuer, client_id, jwks, token, now, None)
+    verify_logout_token_with_algorithm(
+        tenant_id, provider, issuer, client_id, jwks, token, now, None,
+    )
 }
 
 pub fn verify_logout_token_with_algorithm(
+    tenant_id: crate::TenantId,
     provider: &str,
     issuer: &str,
     client_id: &str,
@@ -478,7 +504,7 @@ pub fn verify_logout_token_with_algorithm(
         .or_else(|| claims.sub.as_deref().map(|sub| ("sub", sub)))
         .ok_or(error)?;
     Ok(OidcLogout {
-        key: scope_key(provider, &claims.iss, client_id, kind, value),
+        key: scope_key(tenant_id, provider, &claims.iss, client_id, kind, value),
         // A sid identifies one upstream session. Subject logout covers every
         // login started by local receipt time, independently of the OP's clock.
         cutoff: if kind == "sid" { i64::MAX } else { time },

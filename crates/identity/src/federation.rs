@@ -157,6 +157,10 @@ where
     S: LoginSessionPort,
     A: FederationAuditPort,
 {
+    pub fn tenant_id(&self) -> crate::TenantId {
+        self.config.tenant.tenant_id
+    }
+
     pub fn new<R>(
         accounts: R,
         states: T,

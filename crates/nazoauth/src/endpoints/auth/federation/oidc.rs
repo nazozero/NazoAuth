@@ -159,7 +159,7 @@ pub async fn fetch_oidc_userinfo(
     let request = http::Request::get(endpoint)
         .header(
             http::header::AUTHORIZATION,
-            format!("Bearer {}", token.userinfo_access_token()?),
+            format!("Bearer {}", token.userinfo_access_token()),
         )
         .header(http::header::ACCEPT, "application/json")
         .body(bytes::Bytes::new())?;

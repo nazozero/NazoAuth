@@ -418,6 +418,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
     };
     let upstream = if provider.backchannel_logout {
         match claims.upstream_login(
+            service.tenant_id(),
             &provider.provider_id,
             &provider.client_id,
             stored.created_at,
@@ -620,6 +621,7 @@ pub async fn federation_provider_backchannel_logout(
     };
     let now = Timestamp::now();
     let logout = match rp::verify_logout_token_with_algorithm(
+        service.tenant_id(),
         &provider.provider_id,
         &provider.issuer,
         &provider.client_id,

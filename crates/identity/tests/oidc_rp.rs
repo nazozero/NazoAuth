@@ -13,6 +13,10 @@ const ISSUER: &str = "https://issuer.example";
 const CLIENT: &str = "client-1";
 const NONCE: &str = "nonce-1";
 
+fn tenant_id() -> nazo_identity::TenantId {
+    nazo_identity::TenantContext::default_system().tenant_id
+}
+
 struct Fixture {
     key: PreparedSigningKey,
     algorithm: Algorithm,
@@ -451,7 +455,7 @@ fn userinfo_requires_a_nonempty_bearer_access_token() {
             "token_type": token_type
         }))
         .unwrap();
-        assert_eq!(response.userinfo_access_token().unwrap(), "access-token+/=");
+        assert_eq!(response.userinfo_access_token(), "access-token+/=");
     }
 
     for response in [
@@ -461,11 +465,7 @@ fn userinfo_requires_a_nonempty_bearer_access_token() {
         json!({"id_token": "id-token", "access_token": "access-token", "token_type": "MAC"}),
         json!({"id_token": "id-token", "access_token": "access-token", "token_type": "Bearer "}),
     ] {
-        let response: OidcTokenResponse = serde_json::from_value(response).unwrap();
-        assert_eq!(
-            response.userinfo_access_token().unwrap_err(),
-            OidcError::InvalidTokenResponse
-        );
+        assert!(serde_json::from_value::<OidcTokenResponse>(response).is_err());
     }
 }
 
@@ -554,7 +554,17 @@ fn logout_requires_a_current_signed_token_for_this_client_and_a_logout_target() 
         fixture.token(claims, remove, Some("oidc-kid"))
     };
     let verify =
-        |token: &str| verify_logout_token("provider", ISSUER, CLIENT, &fixture.jwks, token, now);
+        |token: &str| {
+            verify_logout_token(
+                tenant_id(),
+                "provider",
+                ISSUER,
+                CLIENT,
+                &fixture.jwks,
+                token,
+                now,
+            )
+        };
     assert!(verify(&signed(json!({}), &["nonce"])).is_ok());
     assert!(verify(&signed(json!({}), &["nonce", "sid"])).is_ok());
     assert!(verify(&signed(json!({}), &[])).is_err());
@@ -635,7 +645,7 @@ fn logout_typ_accepts_equivalent_media_type_names() {
             URL_SAFE_NO_PAD.encode(fixture.key.sign(input.as_bytes()).unwrap())
         );
         assert_eq!(
-            verify_logout_token(
+            verify_logout_token(tenant_id(), 
                 "provider",
                 ISSUER,
                 CLIENT,
@@ -683,13 +693,13 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
         let claims = verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).unwrap();
         assert_eq!(
             claims
-                .upstream_login("provider", CLIENT, now.as_second())
+                .upstream_login(tenant_id(), "provider", CLIENT, now.as_second())
                 .is_ok(),
             accepted,
             "ID Token sid={sid:?}"
         );
         assert_eq!(
-            verify_logout_token(
+            verify_logout_token(tenant_id(), 
                 "provider",
                 ISSUER,
                 CLIENT,
@@ -705,7 +715,7 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
     let long_jti = "j".repeat(2048);
     for jti in ["事件-1", "event\n1", long_jti.as_str()] {
         assert!(
-            verify_logout_token(
+            verify_logout_token(tenant_id(), 
                 "provider",
                 ISSUER,
                 CLIENT,
@@ -717,7 +727,7 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
         );
     }
     assert!(
-        verify_logout_token(
+        verify_logout_token(tenant_id(), 
             "provider",
             ISSUER,
             CLIENT,
@@ -734,6 +744,22 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
     wasm_bindgen_test::wasm_bindgen_test
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn upstream_logout_scopes_are_separate_across_tenants() {
+    let fixture = Fixture::new(Algorithm::RS256);
+    let token = fixture.valid_token();
+    let claims = verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).unwrap();
+    let other_tenant = nazo_identity::TenantId::new(uuid::Uuid::now_v7()).unwrap();
+    let at = Timestamp::now().as_second();
+    let first = claims.upstream_login(tenant_id(), "provider", CLIENT, at).unwrap();
+    let other = claims.upstream_login(other_tenant, "provider", CLIENT, at).unwrap();
+    assert_ne!(first.subject_key(), other.subject_key());
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn id_token_and_subject_logout_allow_independent_issuer_clock_skew() {
     use nazo_identity::federation::oidc::verify_logout_token;
     let fixture = Fixture::new(Algorithm::ES256);
@@ -742,7 +768,7 @@ fn id_token_and_subject_logout_allow_independent_issuer_clock_skew() {
     let claims = verify_id_token(ISSUER, CLIENT, &fixture.jwks, &token, NONCE).unwrap();
     assert!(
         claims
-            .upstream_login("provider", CLIENT, now.as_second() - 1)
+            .upstream_login(tenant_id(), "provider", CLIENT, now.as_second() - 1)
             .is_ok()
     );
     let logout = fixture.token(
@@ -754,5 +780,16 @@ fn id_token_and_subject_logout_allow_independent_issuer_clock_skew() {
         &["nonce"],
         Some("oidc-kid"),
     );
-    assert!(verify_logout_token("provider", ISSUER, CLIENT, &fixture.jwks, &logout, now).is_ok());
+    assert!(
+        verify_logout_token(
+            tenant_id(),
+            "provider",
+            ISSUER,
+            CLIENT,
+            &fixture.jwks,
+            &logout,
+            now
+        )
+        .is_ok()
+    );
 }
