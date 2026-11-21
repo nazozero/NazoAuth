@@ -86,6 +86,10 @@ construction in `NAZO_CONFIG.modules`, enabled durable intent and the correspond
 client grants, scopes and security policy. Runtime administration cannot construct
 a capability omitted from the deployment.
 
+Device and client registration resources return `404` when their module is absent
+from the deployment. Runtime disablement of a deployed Device module rejects new
+authorizations with `400`; existing transactions follow the shared drain policy.
+
 | Module | Workers binding and conditions |
 | --- | --- |
 | `device_authorization` | D1 device/user-code mappings, compare-and-set polling state, durable user decision and single-use redemption. Clients must allow `urn:ietf:params:oauth:grant-type:device_code` and set `security_policy.allow_cross_device_flows: true`. |
