@@ -366,3 +366,49 @@ fn typed_federation_registry_keeps_json_configuration_admission_rules() {
     }
     assert!(FederationProviderRegistry::new(vec![provider]).is_err());
 }
+
+#[test]
+fn oidc_provider_issuer_preserves_trailing_slash_and_rejects_url_credentials() {
+    let mut provider = serde_json::json!({
+        "provider_id": "oidf-rp-test",
+        "enabled": true,
+        "display_name": "OIDF RP test",
+        "adapter_type": "oidc",
+        "issuer": "https://localhost:8443/test/a/nazo-issue202/",
+        "authorization_endpoint": "https://localhost:8443/test/a/nazo-issue202/authorize",
+        "token_endpoint": "https://localhost:8443/test/a/nazo-issue202/token",
+        "jwks_url": "https://localhost:8443/test/a/nazo-issue202/jwks",
+        "client_id": "nazoauth-issue202",
+        "client_secret": "test-secret",
+        "redirect_uri": "https://localhost:8443/rp/auth/federation/oidf-rp-test/callback",
+        "scopes": "openid email profile"
+    });
+    let registry = crate::config::FederationProviderRegistry::from_json(
+        &serde_json::json!([provider]).to_string(),
+    )
+    .expect("an external OP issuer may end in a slash");
+    let crate::config::ExternalLoginProviderAdapter::Oidc(settings) =
+        &registry.enabled_provider("oidf-rp-test").unwrap().adapter
+    else {
+        panic!("OIDC provider expected");
+    };
+    assert_eq!(
+        settings.issuer,
+        "https://localhost:8443/test/a/nazo-issue202/"
+    );
+    for invalid in [
+        "https://localhost:8443/?query=1",
+        "https://localhost:8443/#fragment",
+        "https://user:secret@localhost:8443/",
+        "http://public.example/",
+    ] {
+        provider["issuer"] = serde_json::json!(invalid);
+        assert!(
+            crate::config::FederationProviderRegistry::from_json(
+                &serde_json::json!([provider]).to_string(),
+            )
+            .is_err(),
+            "invalid issuer accepted: {invalid}"
+        );
+    }
+}

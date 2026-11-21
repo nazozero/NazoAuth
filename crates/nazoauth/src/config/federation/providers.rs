@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, bail};
-use nazo_auth::{validate_http_endpoint_url, validate_issuer_url};
+use nazo_auth::validate_http_endpoint_url;
 use serde::Deserialize;
 
 use super::OidcFederationSettings;
@@ -297,7 +297,11 @@ pub fn validate_oidc_settings(
     settings: &OidcFederationSettings,
     scopes_key: &str,
 ) -> anyhow::Result<()> {
-    validate_issuer_url(&settings.issuer)?;
+    // An upstream OP owns its exact issuer identifier, including a trailing '/'.
+    let issuer = validate_http_endpoint_url(&settings.issuer)?;
+    if issuer.query().is_some() {
+        bail!("OIDC issuer cannot contain a query");
+    }
     validate_http_endpoint_url(&settings.authorization_endpoint)?;
     validate_http_endpoint_url(&settings.token_endpoint)?;
     validate_http_endpoint_url(&settings.jwks_url)?;

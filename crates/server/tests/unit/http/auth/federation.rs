@@ -42,6 +42,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
+#[path = "federation/oidf.rs"]
+mod oidf;
+
 #[test]
 fn federation_transport_has_no_identity_or_storage_orchestration() {
     let source = include_str!(concat!(
