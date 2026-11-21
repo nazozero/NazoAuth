@@ -8,8 +8,9 @@ use nazo_auth::{
     AuthorizationDecisionCommit, AuthorizationDecisionCommitResult, AuthorizationDecisionKind,
 };
 use nazo_identity::{
-    AccountProfileService, ProfilePatch, SessionId, SessionService, TenantId, UserId,
-    ports::{LoginSessionCreate, RepositoryError},
+    AccountProfileService, AvatarContentType, AvatarObject, ProfilePatch, SessionId,
+    SessionService, TenantId, UserId,
+    ports::{AvatarRepositoryPort, LoginSessionCreate, RepositoryError},
     session::SessionRecord,
 };
 use nazo_oauth_server::{
@@ -37,6 +38,76 @@ fn profile_operations(provider: &D1Provider) -> ServerProfileAccountOperations {
             provider.authorized_applications(),
         ),
     )
+}
+
+#[test]
+fn r2_avatar_cas_only_selects_ready_versions_and_fences_retirement() {
+    block_on(async {
+        let (_database, provider) = fixture().await;
+        let tenant = TenantId::new(TENANT).unwrap();
+        let user = UserId::new(USER).unwrap();
+        let candidate = AvatarObject {
+            bytes: vec![1, 2, 3],
+            content_type: AvatarContentType::Png,
+            version: Uuid::new_v4().to_string(),
+        };
+        let url = format!("/auth/me/avatar?v={}", candidate.version);
+        provider.prepare_r2_avatar(user, &candidate).await.unwrap();
+        assert!(
+            provider
+                .compare_and_set_avatar(tenant, user, None, 0, Some(url.clone()))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        provider
+            .publish_r2_avatar(user, &candidate.version)
+            .await
+            .unwrap();
+        assert!(
+            provider
+                .compare_and_set_avatar(tenant, user, None, 0, Some(url.clone()))
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            !provider
+                .retire_r2_avatar(user, &candidate.version)
+                .await
+                .unwrap()
+        );
+
+        assert!(
+            provider
+                .compare_and_set_avatar(tenant, user, Some(&url), 1, None)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            provider
+                .retire_r2_avatar(user, &candidate.version)
+                .await
+                .unwrap()
+        );
+        assert!(
+            provider
+                .compare_and_set_avatar(tenant, user, None, 2, Some(url))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            provider.stale_r2_avatars().await.unwrap(),
+            [(user, candidate.version.clone())]
+        );
+        provider
+            .forget_retired_r2_avatar(user, &candidate.version)
+            .await
+            .unwrap();
+        assert!(provider.stale_r2_avatars().await.unwrap().is_empty());
+    });
 }
 
 #[test]

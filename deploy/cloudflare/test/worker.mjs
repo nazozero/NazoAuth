@@ -156,7 +156,7 @@ before(async () => {
     'run', '--quiet', '--locked', '--release', '-p', 'nazo-server-worker', '--features', 'provisioning',
     '--bin', 'nazo-worker-provision', '--', sqlite,
   ], { cwd: root, input: JSON.stringify(input), encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }));
-  const statements = JSON.parse(execFileSync('python3', ['-c', [
+  const statements = JSON.parse(execFileSync(process.env.PYTHON ?? 'python3', ['-c', [
     'import json,sqlite3,sys',
     'c=sqlite3.connect(sys.argv[1])',
     'print(json.dumps([s for s in c.iterdump() if s not in ("BEGIN TRANSACTION;","COMMIT;")]))',
@@ -177,6 +177,7 @@ before(async () => {
       env: { ...Object.fromEntries(Object.entries(values).map(([name, value]) => [name, { type: 'text', value }])),
         NAZO_DB: { type: 'd1', id: 'nazoauth-test' },
         NAZO_EMPTY_DB: { type: 'd1', id: 'nazoauth-empty' },
+        NAZO_AVATARS: { type: 'r2', name: 'nazoauth-test-avatars' },
         NAZO_VERSION: { type: 'version-metadata' } },
     } }],
   };
@@ -210,6 +211,51 @@ async function login() {
   assert.equal(cookies.length, 2, 'session and CSRF cookies must remain separate');
   return { cookie: cookies.map((value) => value.split(';')[0]).join('; '), csrf: body.csrf_token };
 }
+
+test('R2 avatar storage reads a D1 avatar and replaces and deletes R2 versions', async () => {
+  const session = await login();
+  const auth = { cookie: session.cookie };
+  const headers = { ...auth, origin: 'https://client.example', 'x-csrf-token': session.csrf };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
+  const bucket = await mf.getR2Bucket('NAZO_AVATARS');
+  async function upload(extra = {}) {
+    const boundary = 'nazo-avatar-test-boundary';
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="avatar"; filename="test.png"\r\nContent-Type: image/png\r\n\r\n`),
+      png, Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    return expectJson(await request('/auth/me/avatar', { method: 'POST',
+      headers: { ...headers, ...extra, 'content-type': `multipart/form-data; boundary=${boundary}` }, body }));
+  }
+  const getVersion = account => new URL(account.avatar_url, issuer).searchParams.get('v');
+  const content = async () => {
+    const response = await request('/auth/me/avatar', { headers: auth });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    return Buffer.from(await response.arrayBuffer());
+  };
+
+  const legacy = await upload({ 'x-nazo-test-binding': 'without-avatar-bucket' });
+  assert.deepEqual(await content(), png);
+  assert.equal((await bucket.list()).objects.length, 0);
+  const first = await upload();
+  const firstVersion = getVersion(first);
+  const firstObject = `avatars/${configuration.tenant.tenant_id}/${first.id}/${firstVersion}`;
+  assert.notEqual(firstVersion, getVersion(legacy));
+  assert.equal(await database.prepare('SELECT count(*) AS n FROM nazo_avatar_chunks').first('n'), 0);
+  assert.equal(await database.prepare('SELECT storage FROM nazo_avatar_objects WHERE version=?').bind(firstVersion).first('storage'), 'r2_ready');
+  assert.deepEqual(Buffer.from(await (await bucket.get(firstObject)).arrayBuffer()), png);
+  assert.deepEqual(await content(), png);
+
+  const second = await upload();
+  assert.notEqual(getVersion(second), firstVersion);
+  assert.equal(await bucket.head(firstObject), null);
+  assert.equal((await bucket.list()).objects.length, 1);
+  const removed = await expectJson(await request('/auth/me/avatar', { method: 'DELETE', headers }));
+  assert.equal(removed.avatar_url, null);
+  assert.equal((await bucket.list()).objects.length, 0);
+  assert.equal((await request('/auth/me/avatar', { headers: auth })).status, 404);
+});
 
 async function authorize(client, session, { pushed = false, signed = false, ...extra } = {}) {
   const verifier = randomBytes(32).toString('base64url');

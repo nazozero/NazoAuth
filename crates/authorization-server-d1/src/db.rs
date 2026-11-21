@@ -196,6 +196,10 @@ impl Database {
                 "0015_runtime_modules.sql",
                 include_str!("../migrations/0015_runtime_modules.sql"),
             ),
+            (
+                "0016_avatar_r2.sql",
+                include_str!("../migrations/0016_avatar_r2.sql"),
+            ),
         ] {
             let digest = blake3::hash(sql.as_bytes()).to_hex().to_string();
             let applied: Option<String> = transaction

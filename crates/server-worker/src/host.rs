@@ -12,7 +12,7 @@ use worker::{Env, HttpRequest, event, wasm_bindgen::JsValue};
 use crate::{Ingress, WorkerApplication, WorkerConfiguration, WorkerSecrets};
 
 struct Cached {
-    bindings: ([JsValue; 9], String),
+    bindings: ([JsValue; 10], String),
     prepared: WorkerApplication,
     refresh_after: Cell<i64>,
     refreshing: Cell<bool>,
@@ -163,9 +163,19 @@ fn configuration(env: &Env) -> anyhow::Result<WorkerConfiguration> {
     Ok(serde_json::from_str(&env.var("NAZO_CONFIG")?.to_string())?)
 }
 
+fn avatar_bucket(env: &Env) -> anyhow::Result<Option<worker::Bucket>> {
+    let name = crate::avatars::AVATAR_BUCKET;
+    let binding =
+        worker::js_sys::Reflect::get(env, &JsValue::from(name)).map_err(worker::Error::from)?;
+    if binding.is_undefined() {
+        return Ok(None);
+    }
+    Ok(Some(env.bucket(name)?))
+}
+
 async fn application(
     env: &Env,
-    bindings: ([JsValue; 9], String),
+    bindings: ([JsValue; 10], String),
     configuration: WorkerConfiguration,
 ) -> anyhow::Result<Rc<Cached>> {
     let mut secrets: WorkerSecrets = env
@@ -191,6 +201,7 @@ async fn application(
             .ok()
             .map(|token| token.to_string()),
         secrets,
+        avatar_bucket(env)?,
     )
     .await?;
     let initialized = Rc::new(Cached {
@@ -214,7 +225,7 @@ async fn application(
     }))
 }
 
-fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 9], String)> {
+fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 10], String)> {
     // Binding-only deployments may reuse an isolate. Compare the actual values
     // in JS (including D1 object identity), without copying secrets or parsing
     // configuration on every request. Never reuse a graph for changed bindings.
@@ -232,6 +243,9 @@ fn binding_values(env: &Env) -> anyhow::Result<([JsValue; 9], String)> {
             .map(JsValue::from)
             .unwrap_or(JsValue::UNDEFINED),
         env.secret("NAZO_PREVIOUS_SIGNING_KEY")
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED),
+        avatar_bucket(env)?
             .map(JsValue::from)
             .unwrap_or(JsValue::UNDEFINED),
     ];
@@ -278,6 +292,18 @@ async fn scheduled(_: worker::ScheduledEvent, env: Env, context: worker::Schedul
             // One bounded pass per Cron event on every deployment profile.
             // Enabling password login does not change the Workers plan budget.
             let total = provider.prune_expired(500).await?;
+            if let Some(bucket) = avatar_bucket(&env)?
+                && crate::avatars::R2Avatars::new(
+                    provider,
+                    configuration.tenant.tenant_id.as_uuid(),
+                    bucket,
+                )
+                .clean_up()
+                .await
+                .is_err()
+            {
+                worker::console_error!("NazoAuth R2 avatar cleanup failed");
+            }
             let bindings = binding_values(&env)?;
             let cached = APPLICATION.with_borrow(|cached| {
                 cached

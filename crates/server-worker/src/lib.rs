@@ -13,6 +13,8 @@ pub use composition::WorkerApplication;
 pub use config::{Ingress, WorkerConfiguration, WorkerMdocCrl, WorkerSecrets, WorkerServices};
 
 #[cfg(target_arch = "wasm32")]
+mod avatars;
+#[cfg(target_arch = "wasm32")]
 mod host;
 #[cfg(target_arch = "wasm32")]
 mod mtls;

@@ -133,7 +133,7 @@ administrator-limited scopes or change administrator-owned audiences/policy.
 | Email registration and verification | Shared registration uses D1 account creation, owner-bound send reservations, a fixed verification-attempt budget and single-use challenge consumption. Delivery requires the configured HTTPS email relay, its admitted origin and secret. Concurrent sends and cleanup cannot overwrite or delete a later owner's challenge. |
 | MFA | D1 stores encrypted TOTP seeds, one-use counters, hashed backup codes, remembered-device bindings and required audit mutations. Configure the service data-encryption key. Shared recent-MFA and interactive-proof requirements apply to administration; a remembered device does not grant recent-MFA authority. Backup-code hashing retains the native Argon2id policy and needs measured CPU capacity. |
 | Authorized-application list | The shared profile lists current grants with canonical authorization audit history for counts and last authorization. Legacy grants explicitly marked as having unknown history return `null` for these fields; the Web interface shows “History unavailable” / “历史未记录” rather than inventing timestamps or counts. Administrator grant revocation retires the associated token families and credential access in the same D1 transaction. |
-| Avatars and object storage | Authenticated multipart upload, binary proxy read and deletion use bounded immutable D1 image chunks and the shared account-revision compare-and-set lifecycle. R2/direct-to-storage uploads are not configured; adding them requires the corresponding direct-upload state and storage adapter. |
+| Avatars and object storage | Authenticated multipart upload, binary proxy read and deletion use the shared account-revision compare-and-set lifecycle. A private `NAZO_AVATARS` R2 binding stores new image bytes in R2, and D1 retains avatar metadata and existing D1-backed images. Browser-direct uploads are unsupported on Workers. |
 | Tenant administration | User/client listing, creation and updates use shared preparation and hierarchy policy. D1 rechecks current actor context and prepared target metadata at transaction admission; mutations, dependent-token retirement and canonical required audit commit together. Client downgrade to public authentication retires its refresh families and secret. |
 | Deployment administration and recovery | Controller registry, recovery roots and cross-tenant administration routes are compiled out of the Worker. The D1 user port can update administrators across tenant rows within one database transaction, but the single-issuer host does not expose that control-plane operation. Dynamic hostname/tenant registry replacement and native audit anchors are not adapted; this does not prohibit a future multi-host Worker composition. |
 | Runtime module lifecycle | The shared registry owns dependency policy and transitions. D1 persists revision CAS, per-instance state and append-only events. Each protocol request synchronizes current intent before admission; bounded steps retain existing-transaction admission during the drain window and never wait for a whole session/refresh lifetime inside one invocation. |
@@ -304,6 +304,31 @@ selected UI redirects. SPA fallback is restricted to `/ui/`, so an unknown
 protocol route never turns into a successful HTML page. Rebuild the Web assets
 before a local deployment when the pinned revision or overlay changes. The
 repository-root cloud build performs this step automatically.
+
+### Optional R2 avatar storage
+
+Apply D1 migrations before deploying a Worker that uses avatar storage. Bind a
+private bucket only to the intended deployment, using the fixed binding name:
+
+```toml
+[[r2_buckets]]
+binding = "NAZO_AVATARS"
+bucket_name = "your-private-avatar-bucket"
+```
+
+The same authenticated multipart endpoint validates and uploads each avatar.
+D1 owns its account reference, version, content type, and length. New image
+bytes go to R2, while avatars already stored in D1 remain readable and can be
+replaced or deleted through the same API. Each bucket object key is scoped to
+the tenant, user, and immutable avatar version. The scheduled Worker reclaims
+unreferenced R2 candidates in bounded batches. Keep the binding attached while
+D1 references avatar objects in that bucket. Back up D1 and R2 together. To
+roll back to a version without R2 avatar support, first move referenced avatar
+bytes back to storage that version can read.
+
+An unbound deployment stores new avatars as bounded D1 chunks. R2 bindings
+require neither a public bucket nor S3 credentials. Browser-direct uploads
+remain a [native S3 capability](avatar-direct-upload.md).
 
 ## Deploy to Cloudflare button
 

@@ -37,6 +37,7 @@ impl WorkerApplication {
         dummy_password_hash: String,
         dynamic_client_registration_initial_access_token: Option<String>,
         secrets: WorkerSecrets,
+        #[cfg(target_arch = "wasm32")] avatar_bucket: Option<worker::Bucket>,
     ) -> anyhow::Result<Self> {
         ensure!(
             secrets
@@ -196,13 +197,23 @@ impl WorkerApplication {
             scim_events: Arc::new(scim_events),
             certificate_verifier: None,
         };
-        let mut builder = nazoauth::NazoAuthBuilder::new(
+        let builder = nazoauth::NazoAuthBuilder::new(
             settings,
             capabilities,
             uuid::Uuid::new_v4().to_string(),
         )
-        .with_runtime_module_availability(configuration.modules.iter().copied())
-        .with_avatar_storage(provider.as_ref().clone());
+        .with_runtime_module_availability(configuration.modules.iter().copied());
+        #[cfg(target_arch = "wasm32")]
+        let mut builder = match avatar_bucket {
+            Some(bucket) => builder.with_avatar_storage(crate::avatars::R2Avatars::new(
+                provider.as_ref().clone(),
+                tenant,
+                bucket,
+            )),
+            None => builder.with_avatar_storage(provider.as_ref().clone()),
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let mut builder = builder.with_avatar_storage(provider.as_ref().clone());
         if !configuration.services.mdoc_crls.is_empty() {
             builder = builder.with_mdoc_crls(crate::mdoc_crls::PresignedMdocCrls::new(
                 keys.clone(),

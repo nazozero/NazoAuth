@@ -77,7 +77,8 @@ Implicit、Hybrid、密码授权、未签名 Request Object 和 CIBA push 不受
 部署前需要准备公网 HTTPS issuer、具有独立 runtime/lifecycle 角色的 PostgreSQL，以及 Valkey。
 
 使用 Cloudflare D1 的 WASM 部署方式见
-[Cloudflare Workers 适配器指南](docs/operations/cloudflare-workers.md)，请按其中的能力范围与入口配置部署。
+[Cloudflare Workers 适配器指南](docs/operations/cloudflare-workers.md)和
+[Worker 与原生部署的功能对照](docs/operations/worker-native-comparison.md)。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
 

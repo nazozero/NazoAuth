@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Miniflare } from 'miniflare';
+import { verifyJwt } from '../test-support/public-acceptance.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -40,7 +41,7 @@ async function modules(directory) {
   return { mainModule: 'test-driver.mjs', modulesRoot: directory, modules: included };
 }
 
-test('Workers Free machine-only build has honest metadata and rejects interactive login', async () => {
+test('Workers Free machine-only build gates login and rotates its persisted signing keys', async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), 'nazo-free-worker-'));
   let worker;
   try {
@@ -73,7 +74,7 @@ test('Workers Free machine-only build has honest metadata and rejects interactiv
       'run', '--quiet', '--locked', '--release', '-p', 'nazo-server-worker',
       '--features', 'provisioning', '--bin', 'nazo-worker-provision', '--', sqlite,
     ], { cwd: root, input: JSON.stringify(input), encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }));
-    const dump = JSON.parse(execFileSync('python3', ['-c', [
+    const dump = JSON.parse(execFileSync(process.env.PYTHON ?? 'python3', ['-c', [
       'import json,sqlite3,sys',
       'with sqlite3.connect(sys.argv[1]) as c:',
       ' print(json.dumps([s for s in c.iterdump() if s not in ("BEGIN TRANSACTION;","COMMIT;")]))',
@@ -138,6 +139,43 @@ test('Workers Free machine-only build has honest metadata and rejects interactiv
       body: 'grant_type=client_credentials&scope=service',
     });
     assert.notEqual(bad.status, 200);
+
+    // The test driver changes only the clock and the isolate's binding cache key.
+    // The built Worker, key generation and all D1 writes are the normal paths.
+    const hour = 3_600_000;
+    const before = Date.now();
+    const prepublishAt = before + 29 * 24 * hour + 60_000;
+    const activateAt = prepublishAt + 24 * hour + 60_000;
+    const clock = ms => ({ 'x-nazo-test-clock-ms': String(ms) });
+    async function keysAt(ms) {
+      const response = await request('/jwks.json', { headers: clock(ms) });
+      assert.equal(response.status, 200);
+      return (await response.json()).keys;
+    }
+    async function issueAt(ms) {
+      const response = await request('/token', {
+        method: 'POST',
+        headers: { ...clock(ms), authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=client_credentials&scope=service',
+      });
+      assert.equal(response.status, 200);
+      return (await response.json()).access_token;
+    }
+    const kid = jwt => JSON.parse(Buffer.from(jwt.split('.')[0], 'base64url')).kid;
+    const initial = await keysAt(before);
+    const prepublished = await keysAt(prepublishAt);
+    assert.ok(prepublished.some(key => !initial.some(original => original.kid === key.kid)));
+    const beforeActivation = await issueAt(activateAt - 120_000);
+    assert.equal(kid(beforeActivation), kid(issued.access_token), 'prepublished keys do not sign yet');
+    const newToken = await issueAt(activateAt);
+    assert.notEqual(kid(newToken), kid(beforeActivation));
+    assert.ok(prepublished.some(key => key.kid === kid(newToken)), 'the active key was prepublished');
+    const grace = await keysAt(activateAt);
+    assert.ok(verifyJwt(beforeActivation, grace, issuer).exp > activateAt / 1000);
+    verifyJwt(newToken, grace, issuer);
+    const retired = await keysAt(activateAt + 27 * hour);
+    assert.ok(!retired.some(key => key.kid === kid(beforeActivation)), 'old key retired after the verification window');
+    verifyJwt(await issueAt(activateAt + 27 * hour), retired, issuer);
     console.log(JSON.stringify({ profile: 'Workers Free machine-only', token: 'issued', browser_login: 'blocked', runtime: 'local workerd' }));
   } finally {
     await worker?.dispose();

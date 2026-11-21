@@ -85,7 +85,7 @@ HTTPS issuer, PostgreSQL with separate runtime and lifecycle roles, and Valkey.
 
 For a WASM deployment with Cloudflare D1, see the
 [Cloudflare Workers adapter](docs/operations/cloudflare-workers.md) and its
-supported deployment profile.
+[comparison with native deployment](docs/operations/worker-native-comparison.md).
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nazozero/NazoAuth)
 
