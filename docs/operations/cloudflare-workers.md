@@ -539,6 +539,15 @@ wrapping changes leave this public-authority binding intact. Receipts remain
 after CRL expiration so renewal cannot reset the counter. The Worker does not
 automatically renew or sign CRLs; the IACA signing key remains offline.
 
+Renew before `nextUpdate` using the current D1 key generation and highest CRL
+number. Prepare a fresh revocation snapshot from the current certificate status
+and sign a higher-numbered CRL offline. Stage the public artifact and matching
+one-shot `openid4vc_import` in the same version. Publish that version, query the
+public CRL, and verify the DER digest and persisted publication number. Then
+deploy the same public artifact with the one-shot import removed. Retain the
+latest public artifact in subsequent deployments. Worker version rollback
+cannot revert a committed D1 generation or publication fence.
+
 Generate a 32-byte random signing wrapping key, encode it with standard Base64,
 and select its non-secret ID. Generate an independent client-secret pepper of
 at least 32 bytes. The wrapping key encrypts persisted private signing material;

@@ -99,6 +99,46 @@ fn mtls_migration_already_applied(transaction: &rusqlite::Transaction<'_>) -> an
     Ok(true)
 }
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "local-sqlite"))]
+fn r2_avatar_migration_already_applied(
+    transaction: &rusqlite::Transaction<'_>,
+) -> anyhow::Result<bool> {
+    use rusqlite::OptionalExtension as _;
+
+    let storage_columns: i64 = transaction.query_row(
+        "SELECT count(*) FROM pragma_table_info('nazo_avatar_objects') WHERE name='storage'",
+        [],
+        |row| row.get(0),
+    )?;
+    let index: Option<String> = transaction
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='index' AND name='nazo_avatar_objects_r2_cleanup'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if storage_columns == 0 && index.is_none() {
+        return Ok(false);
+    }
+    let table: String = transaction.query_row(
+        "SELECT sql FROM sqlite_schema WHERE type='table' AND name='nazo_avatar_objects'",
+        [],
+        |row| row.get(0),
+    )?;
+    let compact = |sql: &str| {
+        sql.split_whitespace()
+            .collect::<String>()
+            .to_ascii_lowercase()
+    };
+    anyhow::ensure!(
+        storage_columns == 1
+            && compact(&table).contains("storagetextnotnulldefault'd1'check(storagein('d1','r2_pending','r2_ready','r2_retired'))")
+            && index.as_deref().is_some_and(|sql| compact(sql).contains("onnazo_avatar_objects(tenant_id,storage,created_at)wherestorage<>'d1'")),
+        "unrecognized avatar storage schema without a migration receipt"
+    );
+    Ok(true)
+}
+
 impl Database {
     #[cfg(target_arch = "wasm32")]
     pub fn from_binding(database: worker::D1Database) -> Self {
@@ -214,11 +254,12 @@ impl Database {
                 continue;
             }
             // Older offline stores and imported D1 databases have no local
-            // ledger. CREATE IF NOT EXISTS migrations can be replayed; the
-            // one-time MFA column replacement needs an explicit schema check.
+            // ledger. CREATE IF NOT EXISTS migrations can be replayed;
+            // one-time schema changes need explicit shape checks.
             let already_applied = match name {
                 "0008_mfa.sql" => mfa_migration_already_applied(&transaction)?,
                 "0011_mtls_trust.sql" => mtls_migration_already_applied(&transaction)?,
+                "0016_avatar_r2.sql" => r2_avatar_migration_already_applied(&transaction)?,
                 _ => false,
             };
             if !already_applied {
