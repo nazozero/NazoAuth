@@ -43,7 +43,7 @@ zeroize.workspace = true
 worker = { workspace = true, features = ["d1"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rusqlite = { version = "0.38.0", features = ["bundled"], optional = true }
+rusqlite = { version = "0.43.0", features = ["bundled"], optional = true }
 
 [dev-dependencies]
 futures-executor.workspace = true
