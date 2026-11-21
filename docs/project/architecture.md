@@ -600,7 +600,10 @@ the logout is accepted, both in seconds. Upstream `iat` only validates token
 freshness. A session ID cutoff revokes that entire upstream session through its
 retained lifetime. This preserves
 logout across local session rotation and prevents an older callback or logout
-retry from reviving a session. An embedding session backend that enables this
+retry from reviving a session. Before returning a linked session, identity
+rechecks the original flow deadline after the final storage await, so an
+expired revocation marker cannot admit a callback that ran past its deadline.
+An embedding session backend that enables this
 feature implements the upstream logout operation and enforces its cutoff when
 reading sessions.
 

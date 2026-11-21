@@ -1,4 +1,5 @@
 use jiff::Timestamp;
+use nazo_identity::federation::oidc::{OidcIdTokenClaims, OidcUpstreamLogin};
 use nazo_identity::{
     AccountIdentity, FederationAuditEvent, FederationService, FederationServiceConfig,
     OidcFederationState, Principal, PublicAccount, SocialFederationState, TenantContext, TenantId,
@@ -11,6 +12,36 @@ use std::sync::{Arc, Mutex};
 struct Ports {
     account: PublicAccount,
     sessions: Arc<Mutex<Vec<(SessionRecord, u64)>>>,
+    audit: Arc<Mutex<Vec<FederationAuditEvent>>>,
+    defer_session_completion: bool,
+}
+
+impl Ports {
+    fn new(mfa_enabled: bool) -> Self {
+        Self {
+            account: PublicAccount {
+                principal: Principal {
+                    authorization_epoch: 0,
+                    user_id: UserId::new(uuid::Uuid::now_v7()).unwrap(),
+                    tenant: TenantContext::default_system(),
+                    role: UserRole::User,
+                    active: true,
+                },
+                account: AccountIdentity {
+                    username: "linked".into(),
+                    email: "linked@example.com".into(),
+                    email_verified: true,
+                    mfa_enabled,
+                },
+                profile: UserProfile::default(),
+                created_at: Timestamp::now(),
+                updated_at: Timestamp::now(),
+            },
+            sessions: Arc::new(Mutex::new(Vec::new())),
+            audit: Arc::new(Mutex::new(Vec::new())),
+            defer_session_completion: false,
+        }
+    }
 }
 impl FederationLoginRepositoryPort for Ports {
     fn resolve_existing<'a>(
@@ -67,8 +98,11 @@ impl FederationPasswordHasherPort for Ports {
     }
 }
 impl FederationAuditPort for Ports {
-    fn record(&self, _: FederationAuditEvent) {}
-    fn record_required<'a>(&'a self, _: FederationAuditEvent) -> RepositoryFuture<'a, ()> {
+    fn record(&self, event: FederationAuditEvent) {
+        self.audit.lock().unwrap().push(event);
+    }
+    fn record_required<'a>(&'a self, event: FederationAuditEvent) -> RepositoryFuture<'a, ()> {
+        self.audit.lock().unwrap().push(event);
         Box::pin(async { Ok(()) })
     }
 }
@@ -80,7 +114,15 @@ impl LoginSessionPort for Ports {
         ttl: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate> {
         self.sessions.lock().unwrap().push((record.clone(), ttl));
-        Box::pin(async { Ok(LoginSessionCreate::Created) })
+        let mut defer = self.defer_session_completion;
+        Box::pin(std::future::poll_fn(move |context| {
+            if std::mem::take(&mut defer) {
+                context.waker().wake_by_ref();
+                std::task::Poll::Pending
+            } else {
+                std::task::Poll::Ready(Ok(LoginSessionCreate::Created))
+            }
+        }))
     }
     fn create_replacing<'a>(
         &'a self,
@@ -93,6 +135,19 @@ impl LoginSessionPort for Ports {
     }
 }
 
+fn upstream_login(started_at: i64) -> OidcUpstreamLogin {
+    let claims: OidcIdTokenClaims = serde_json::from_value(json!({
+        "iss": "https://issuer.example",
+        "aud": "client",
+        "sub": "linked-subject",
+        "iat": started_at,
+    }))
+    .unwrap();
+    claims
+        .upstream_login("provider", "client", started_at)
+        .unwrap()
+}
+
 #[cfg_attr(
     all(target_arch = "wasm32", target_os = "unknown"),
     wasm_bindgen_test::wasm_bindgen_test
@@ -102,27 +157,7 @@ async fn linked_federation_obeys_local_mfa_and_uses_pending_session_lifetime() {
     for enabled in [false, true] {
         for method in ["oidc", "social", "saml"] {
             for existing_only in [false, true] {
-                let ports = Ports {
-                    account: PublicAccount {
-                        principal: Principal {
-                            authorization_epoch: 0,
-                            user_id: UserId::new(uuid::Uuid::now_v7()).unwrap(),
-                            tenant: TenantContext::default_system(),
-                            role: UserRole::User,
-                            active: true,
-                        },
-                        account: AccountIdentity {
-                            username: "linked".into(),
-                            email: "linked@example.com".into(),
-                            email_verified: true,
-                            mfa_enabled: enabled,
-                        },
-                        profile: UserProfile::default(),
-                        created_at: Timestamp::now(),
-                        updated_at: Timestamp::now(),
-                    },
-                    sessions: Arc::new(Mutex::new(Vec::new())),
-                };
+                let ports = Ports::new(enabled);
                 let service = FederationService::new(
                     ports.clone(),
                     ports.clone(),
@@ -150,6 +185,14 @@ async fn linked_federation_obeys_local_mfa_and_uses_pending_session_lifetime() {
                     service
                         .complete_existing_only(identity, method.into(), "127.0.0.1".into())
                         .await
+                } else if method == "oidc" {
+                    service
+                        .complete_oidc(
+                            identity,
+                            Some(upstream_login(Timestamp::now().as_second())),
+                            "127.0.0.1".into(),
+                        )
+                        .await
                 } else {
                     service
                         .complete_verified(identity, method.into(), "127.0.0.1".into())
@@ -165,7 +208,80 @@ async fn linked_federation_obeys_local_mfa_and_uses_pending_session_lifetime() {
                 assert_eq!(stored.len(), 1);
                 assert_eq!(stored[0].0, result.session);
                 assert_eq!(stored[0].1, if enabled { 120 } else { 3600 });
+                assert!(matches!(
+                    ports.audit.lock().unwrap().as_slice(),
+                    [FederationAuditEvent::LoginSuccess { .. }]
+                ));
             }
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
+async fn oidc_completion_expiring_during_session_storage_is_not_delivered_or_audited() {
+    use nazo_identity::FederationError;
+    use std::{
+        future::Future,
+        task::{Context, Poll, Waker},
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    let mut ports = Ports::new(false);
+    ports.defer_session_completion = true;
+    let service = FederationService::new(
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        FederationServiceConfig {
+            tenant: TenantContext::default_system(),
+            state_ttl_seconds: 2,
+            saml_replay_ttl_seconds: 300,
+            session_ttl_seconds: 3600,
+            pending_mfa_session_ttl_seconds: 120,
+        },
+    );
+    let started_at = Timestamp::now().as_second();
+    let expires_at = started_at + 2;
+    let identity = VerifiedExternalIdentity {
+        provider_type: "oidc".into(),
+        provider_id: "provider".into(),
+        subject: "linked-subject".into(),
+        email: None,
+        display_name: None,
+        claims: json!({}),
+    };
+    let mut completion = Box::pin(service.complete_oidc(
+        identity,
+        Some(upstream_login(started_at)),
+        "127.0.0.1".into(),
+    ));
+    assert!(matches!(
+        completion
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Pending,
+    ));
+    {
+        let stored = ports.sessions.lock().unwrap();
+        assert_eq!(stored.len(), 1);
+        assert!(stored[0].0.auth_time() < expires_at);
+    }
+    assert!(ports.audit.lock().unwrap().is_empty());
+
+    // Resume the already pending storage operation at the absolute ceremony deadline.
+    let deadline = UNIX_EPOCH + Duration::from_secs(expires_at as u64);
+    std::thread::sleep(
+        deadline
+            .duration_since(SystemTime::now())
+            .unwrap_or_default(),
+    );
+    assert!(matches!(
+        completion.await,
+        Err(FederationError::StateExpired)
+    ));
+    assert_eq!(ports.sessions.lock().unwrap().len(), 1);
+    assert!(ports.audit.lock().unwrap().is_empty());
 }

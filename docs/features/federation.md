@@ -131,8 +131,9 @@ including when another ID Token for that same upstream session has a later
 pending MFA and callbacks whose login flow began before the logout was accepted.
 This cutoff uses local flow start and receipt times at second precision; flows
 started in the same second are included. RP instances must keep their clocks
-synchronized. Each accepted subject-only retry applies to the sessions present
-at that time. Downstream client
+synchronized. An in-flight callback must finish within the original login flow's
+lifetime before its session is returned. Each accepted subject-only retry applies
+to the sessions present at that time. Downstream client
 logout delivery and downstream token revocation are outside this flow. See
 [OpenID Connect Back-Channel Logout](https://openid.net/specs/openid-connect-backchannel-1_0.html).
 

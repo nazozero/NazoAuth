@@ -533,6 +533,9 @@ where
             LoginSessionCreate::Created => {}
             LoginSessionCreate::Collision => return Err(FederationError::SessionCollision),
         }
+        if let Some(upstream) = session.upstream() {
+            self.ensure_fresh(upstream.started_at, Timestamp::now())?;
+        }
         self.audit.record(FederationAuditEvent::LoginSuccess {
             user_id: account.user_id(),
             method,
@@ -546,7 +549,7 @@ where
     }
 
     fn ensure_fresh(&self, created_at: i64, now: Timestamp) -> Result<(), FederationError> {
-        if now.as_second().saturating_sub(created_at) > self.config.state_ttl_seconds as i64 {
+        if now.as_second().saturating_sub(created_at) >= self.config.state_ttl_seconds as i64 {
             Err(FederationError::StateExpired)
         } else {
             Ok(())
