@@ -47,6 +47,8 @@ impl D1Provider {
             )
             .await?;
         let event = Uuid::new_v4();
+        let payload = audit(client, actor, source)?;
+        let registration = encode(&client.registration)?;
         let admitted = "EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2)";
         let mut statements=vec![
             Statement::new(format!(
@@ -56,15 +58,23 @@ impl D1Provider {
                    AND NOT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND (id=?8 OR client_id=?9))
                  UNION ALL SELECT ?1,?2,'duplicate','client_lifecycle',{NOW},'{{}}' WHERE EXISTS(SELECT 1 FROM nazo_audit WHERE event_id=?2)
                  RETURNING event_id"),
-                vec![json!(self.tenant_id),json!(event),json!(audit(client,actor,source)?),json!(actor),json!(snapshot.principal),json!(snapshot.epoch),json!(snapshot.active),json!(client.id),json!(client.client_id)]),
+                vec![json!(self.tenant_id),json!(event),json!(payload),json!(actor),json!(snapshot.principal),json!(snapshot.epoch),json!(snapshot.active),json!(client.id),json!(client.client_id)]),
             Statement::new(format!(
                 "INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens)
                  SELECT ?1,?3,?4,?5,?6,?7,?8,0,?9,?10 WHERE {admitted}"),
-                vec![json!(self.tenant_id),json!(event),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(encode(&client.registration)?),json!(secret),json!(client.is_active),json!(client.require_mtls_bound_tokens)]),
+                vec![json!(self.tenant_id),json!(event),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(registration),json!(secret),json!(client.is_active),json!(client.require_mtls_bound_tokens)]),
         ];
         if let Some(token) = registration_token {
             statements.push(Statement::new(format!("INSERT INTO nazo_client_registrations(tenant_id,client_id,token_hash) SELECT ?1,?3,?4 WHERE {admitted}"),vec![json!(self.tenant_id),json!(event),json!(client.id),json!(token)]));
         }
+        statements.push(Statement::new(
+            "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2) OR (
+                EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='client_created' AND category='client_lifecycle' AND payload=?12)
+                AND EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?3 AND client_id=?4 AND realm_id=?5 AND organization_id=?6 AND registration=?7 AND secret_digest IS ?8 AND epoch=0 AND active=?9 AND require_mtls_bound_tokens=?10)
+                AND (?11 IS NULL OR EXISTS(SELECT 1 FROM nazo_client_registrations WHERE tenant_id=?1 AND client_id=?3 AND token_hash=?11)))
+                THEN 1 ELSE json('client creation effects were not accepted') END",
+            vec![json!(self.tenant_id),json!(event),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(registration),json!(secret),json!(client.is_active),json!(client.require_mtls_bound_tokens),json!(registration_token),json!(payload)],
+        ));
         let result = self.database.batch(statements).await?;
         if result.first().ok_or(Error::CorruptData)?.rows.is_empty() {
             return Err(Error::Conflict);
@@ -107,6 +117,8 @@ impl D1Provider {
             )
             .await?;
         let event = Uuid::new_v4();
+        let payload = audit(client, actor, source)?;
+        let replacement = encode(&client.registration)?;
         let deactivate = expected.is_active && !client.is_active;
         let downgrade = expected.client_type == "confidential" && client.client_type == "public";
         let admitted = "EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3)";
@@ -118,21 +130,28 @@ impl D1Provider {
                AND EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?8 AND registration=?9 AND epoch=?10 AND active=?11 AND realm_id=?12 AND organization_id=?13 AND require_mtls_bound_tokens=?14)
              UNION ALL SELECT ?1,?2,'duplicate','client_lifecycle',{NOW},'{{}}' WHERE EXISTS(SELECT 1 FROM nazo_audit WHERE event_id=?2)
              RETURNING event_id"),
-            vec![json!(self.tenant_id),json!(event),json!(audit(client,actor,source)?),json!(actor),json!(snapshot.principal),json!(snapshot.epoch),json!(snapshot.active),json!(client.id),json!(registration),json!(epoch),json!(active),json!(client.realm_id),json!(client.organization_id),json!(mtls)])];
+            vec![json!(self.tenant_id),json!(event),json!(payload),json!(actor),json!(snapshot.principal),json!(snapshot.epoch),json!(snapshot.active),json!(client.id),json!(registration),json!(epoch),json!(active),json!(client.realm_id),json!(client.organization_id),json!(mtls)])];
         if downgrade {
             statements.push(Statement::new(format!(
                 "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
                  SELECT tenant_id,lower(hex(randomblob(16))),'refresh_family_security_revoked','token_lifecycle',{NOW},
                    json_object('schema_version','nazo.audit.v1','event_category','token_lifecycle','tenant_id',tenant_id,
-                     'token_family_id',id,'client_id',client_id,'reason','client_authentication_class_downgrade')
+                     'token_family_id',id,'client_id',client_id,'reason','client_authentication_class_downgrade','mutation_id',?3)
                  FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=?2 AND revoked_at IS NULL AND {admitted}"),effect()));
+            statements.push(Statement::new(format!(
+                "SELECT CASE WHEN NOT ({admitted}) OR NOT EXISTS(
+                    SELECT 1 FROM nazo_refresh_families f WHERE f.tenant_id=?1 AND f.client_id=?2 AND f.revoked_at IS NULL
+                    AND NOT EXISTS(SELECT 1 FROM nazo_audit a WHERE a.tenant_id=f.tenant_id AND a.event_type='refresh_family_security_revoked' AND a.category='token_lifecycle'
+                        AND json_extract(a.payload,'$.mutation_id')=?3 AND json_extract(a.payload,'$.token_family_id')=f.id
+                        AND json_extract(a.payload,'$.client_id')=f.client_id AND json_extract(a.payload,'$.reason')='client_authentication_class_downgrade'))
+                    THEN 1 ELSE json('client refresh revocation audit was not accepted') END"),effect()));
         }
         if downgrade || deactivate {
             statements.push(Statement::new(format!("UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND client_id=?2 AND revoked_at IS NULL AND {admitted}"),effect()));
         }
         let mut update = effect();
         update.extend([
-            json!(encode(&client.registration)?),
+            json!(replacement),
             json!(client.is_active),
             json!(i64::from(deactivate)),
             json!(downgrade),
@@ -149,6 +168,15 @@ impl D1Provider {
                 effect(),
             ));
         }
+        statements.push(Statement::new(
+            "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3) OR (
+                EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3 AND event_type='client_updated' AND category='client_lifecycle' AND payload=?11)
+                AND EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND registration=?4 AND active=?5 AND epoch=?6 AND require_mtls_bound_tokens=?7 AND (?8=0 OR secret_digest IS NULL))
+                AND (?9=0 OR NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=?2 AND revoked_at IS NULL))
+                AND (?10=0 OR NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND client_id=?2)))
+                THEN 1 ELSE json('client update effects were not accepted') END",
+            vec![json!(self.tenant_id),json!(client.id),json!(event),json!(replacement),json!(client.is_active),json!(epoch+i64::from(deactivate)),json!(client.require_mtls_bound_tokens),json!(downgrade),json!(downgrade||deactivate),json!(deactivate),json!(payload)],
+        ));
         let result = self.database.batch(statements).await?;
         if result.first().ok_or(Error::CorruptData)?.rows.is_empty() {
             return Err(Error::Conflict);

@@ -65,12 +65,23 @@ impl NazoAuth {
         let uri = request.uri().clone();
         let routing_path = crate::integration::routing_path(uri.path());
         let matched = crate::integration::match_path(&routing_path);
+        let profile = self.settings.protocol.deployment_profile;
+        if profile != nazo_auth::DeploymentProfile::Full
+            && !matched
+                .as_ref()
+                .is_some_and(|(route, _)| route.available_in(profile, request.method()))
+        {
+            return http::empty_response(StatusCode::NOT_FOUND);
+        }
         let (cors, guard) = matched.as_ref().map_or_else(
             || crate::integration::unmatched_policy(&routing_path),
             |(route, _)| (route.cors, route.guard),
         );
         let enabled = self.guard_enabled(guard);
-        if crate::integration::guard_precedes_cors(&routing_path) && !enabled {
+        if !enabled
+            && (matches!(guard, RouteGuard::Module(_))
+                || crate::integration::guard_precedes_cors(&routing_path))
+        {
             return http::empty_response(StatusCode::NOT_FOUND);
         }
         let origins = &self.settings.endpoint.cors_allowed_origins;
@@ -90,6 +101,7 @@ impl NazoAuth {
     fn guard_enabled(&self, guard: RouteGuard) -> bool {
         match guard {
             RouteGuard::None => true,
+            RouteGuard::Module(module) => self.runtime_modules.catalog.is_available(module),
             #[cfg(feature = "deployment-control")]
             RouteGuard::ControlTenant => self.deployment.as_ref().is_some_and(|deployment| {
                 deployment.capabilities.control_tenant == self.settings.tenant.context.tenant_id

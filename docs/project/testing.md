@@ -534,7 +534,6 @@ without I/O. Existing staged-read and publication regressions remain applicable.
   live deferred fixture cover encrypted HTTP 202 and exact stored response
   replay. VP service and endpoint mapping tests preserve completion dependency
   failures as server errors and reject unsupported holder-binding waivers.
-  These mounted tests are source evidence until executed at the candidate SHA.
   See [validation boundaries](../protocol/openid4vc-validation.md).
 
 ## PostgreSQL cancellation observation

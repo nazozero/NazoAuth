@@ -6,8 +6,8 @@ and application crates. `nazo-http-worker` converts transport values;
 ports. `nazo-server-worker` owns bindings, configuration, key refresh and the
 prepared application graph. Protocol parsing, grants, DPoP validation,
 redirects, discovery metadata and response policy stay in the shared
-implementation. Machine-only deployments select the shared service-client
-capabilities before metadata serialization.
+implementation. Hosts select the shared `DeploymentProfile`; endpoint admission,
+grant availability, dynamic registration and metadata use that same profile.
 
 ## Deployment profile
 
@@ -36,16 +36,19 @@ the Device route also requires its module. The pinned Web build includes a
 Worker overlay for Passkey login, MFA challenges after password or Passkey
 authentication, pending-session handling, account Passkey registration/listing/
 deletion, and TOTP/backup-code management. It calls the shared server endpoints.
+“Sign in again” confirms logout before opening the login page and preserves the
+return path. OIDC `prompt=login` and expired `max_age` requests keep the login
+form open until new authentication and any required MFA finish.
 The operator's single-use `/auth/setup` enrollment page remains separate from
 ordinary account registration. A separately hosted frontend is also possible.
 
-`passkey_only` remains a restricted HTTP deployment profile: it admits its
-Passkey/MFA account operations and selected authorization/token flows, not the
-complete administrator, federation, SCIM, CIBA or digital-credential API surface.
-Use
+`passkey_only` admits Passkey/MFA account operations and selected
+authorization/token flows. For the complete administrator, federation, SCIM,
+CIBA and digital-credential APIs, use
 `machine_only: false`, `passkey_only: false` for the full Web and all adapted
 service routes; that profile offers both password and Passkey authentication.
-Each profile's route allowlist applies to Web requests and selected modules.
+The flags map to the shared `Full`, `PasskeyOnly` and `MachineToMachine` profiles.
+The facade applies their endpoint policy after normalizing the request path.
 
 | Capability | Workers profile |
 | --- | --- |
@@ -83,6 +86,10 @@ construction in `NAZO_CONFIG.modules`, enabled durable intent and the correspond
 client grants, scopes and security policy. Runtime administration cannot construct
 a capability omitted from the deployment.
 
+Device and client registration resources return `404` when their module is absent
+from the deployment. Runtime disablement of a deployed Device module rejects new
+authorizations with `400`; existing transactions follow the shared drain policy.
+
 | Module | Workers binding and conditions |
 | --- | --- |
 | `device_authorization` | D1 device/user-code mappings, compare-and-set polling state, durable user decision and single-use redemption. Clients must allow `urn:ietf:params:oauth:grant-type:device_code` and set `security_policy.allow_cross_device_flows: true`. |
@@ -103,10 +110,17 @@ a capability omitted from the deployment.
 | `openid4vp_verifier` | Shared signed authorization requests, encrypted presentation responses, holder/issuer validation and result retrieval with D1 idempotency, replay state and trust policy. Requires verifier management authority, wallet origins, certificate/trust material, and admitted remote status-list origins where applicable. The Worker selects the shared required-revocation policy. |
 
 The machine-only profile permits `token_exchange`, `jwt_bearer_grant`,
-`http_message_signatures` and `dynamic_client_registration`; its registration
-policy permits service grants only. The full interactive profile exposes the
-shared service and browser routes. Selecting a module never grants a client permission
-to use it. Configuration and registration enforce both boundaries.
+`http_message_signatures` and `dynamic_client_registration`; discovery,
+registration and token dispatch allow service grants only. Switching an existing
+deployment to this profile also rejects redemption of outstanding authorization
+codes and refresh tokens. Token Exchange accepts service subjects and actors;
+requests carrying a user subject or actor are rejected.
+
+Passkey-only accepts the remaining interactive OAuth modules but rejects
+`ciba`, `scim`, `scim_security_events`, `openid4vci_issuer` and
+`openid4vp_verifier` during configuration. Use the full profile for those modules.
+Each client still needs its own grants, scopes and security policy to use an
+enabled module.
 
 When selecting dynamic registration, supply `NAZO_DCR_INITIAL_ACCESS_TOKEN`
 as a secret of at least 32 bytes before deploying that module selection.
@@ -289,7 +303,9 @@ revision into generated build output, applies only the local
 the upstream source/distribution security checks, and builds with `/ui/` as
 the base path. The upstream repository is not changed. Build output includes
 `/ui/source.json` with source provenance and a generated `_headers` file whose
-script hashes match the final HTML.
+script hashes match the final HTML. The asset policy includes HSTS, framing,
+referrer and content-type protections. Host responses use the shared security
+header policy while retaining each page's more specific CSP.
 
 Wrangler binds `deploy/cloudflare/web-dist` as `ASSETS`. Hashed asset/icon paths
 are served by the asset service; the Worker owns the application shell and
@@ -411,8 +427,12 @@ hostname). With `frontend_base_url` set to that origin's `/ui/` path, both
 interactive profiles use the bundled Web application. A separately hosted frontend can instead
 use the same protocol endpoints.
 The public one-click button uses `main`. Later Git pushes build/deploy via Workers
-Builds; `npm run deploy` remains idempotent for D1 schema migrations and
-preserves existing Worker secrets. Do not publish the private bootstrap JSON
+Builds. Repository-root `npm run deploy` reads the Wrangler configuration: the
+private template deploys first to provision D1, while configured public endpoints
+run migrations before deployment. Keep public routes in root `wrangler.toml`;
+`route`, `routes` arrays and TOML arrays of route tables are supported. A failed
+migration stops the public deployment. Existing Worker secrets are preserved.
+Do not publish the private bootstrap JSON
 or credentials in a Git repository or CI log.
 
 Migration `0013_access_request_pending.sql` enforces the native rule of at most

@@ -2,6 +2,7 @@
 use std::{borrow::Cow, sync::OnceLock};
 
 use http::{HeaderName, Method, StatusCode, header};
+use nazo_runtime_modules::ModuleId;
 
 use crate::http::{CorsPolicy, Response, finish};
 
@@ -44,6 +45,8 @@ impl BodyMode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RouteGuard {
     None,
+    /// Require the deployed module; endpoint leases control runtime admission and draining.
+    Module(ModuleId),
     ControlTenant,
     Openid4vci,
     Openid4vp,
@@ -197,6 +200,71 @@ pub enum Endpoint {
     Userinfo,
 }
 
+impl Endpoint {
+    pub const fn available_in(self, profile: nazo_auth::DeploymentProfile) -> bool {
+        use nazo_auth::DeploymentProfile;
+
+        if matches!(profile, DeploymentProfile::Full) {
+            return true;
+        }
+        if matches!(
+            self,
+            Self::OauthAuthorizationServerMetadata
+                | Self::OauthProtectedResourceMetadata
+                | Self::Jwks
+                | Self::Ready
+                | Self::Live
+                | Self::Startup
+                | Self::FapiResource
+                | Self::Token
+                | Self::Revoke
+                | Self::Introspect
+                | Self::DynamicClientRegistration
+                | Self::ClientConfigurationGet
+                | Self::ClientConfigurationPut
+                | Self::ClientConfigurationDelete
+        ) {
+            return true;
+        }
+        matches!(profile, DeploymentProfile::PasskeyOnly)
+            && matches!(
+                self,
+                Self::Discovery
+                    | Self::CheckSessionIframe
+                    | Self::CheckSessionStatus
+                    | Self::DeviceAuthorization
+                    | Self::DeviceDecision
+                    | Self::DeviceVerification
+                    | Self::DeviceVerificationPage
+                    | Self::AuthorizeGet
+                    | Self::AuthorizePost
+                    | Self::AuthorizeConsent
+                    | Self::AuthorizeDecision
+                    | Self::AuthorizeClientPresentation
+                    | Self::Userinfo
+                    | Self::ProfileMe
+                    | Self::ProfileUpdate
+                    | Self::ProfileLogout
+                    | Self::Csrf
+                    | Self::PasskeyDelete
+                    | Self::PasskeyList
+                    | Self::PasskeyLoginBegin
+                    | Self::PasskeyLoginFinish
+                    | Self::PasskeyRegistrationBegin
+                    | Self::PasskeyRegistrationFinish
+                    | Self::MfaVerify
+                    | Self::MfaOptions
+                    | Self::MfaTotpBegin
+                    | Self::MfaTotpConfirm
+                    | Self::MfaStepUp
+                    | Self::MfaBackupCodesRegenerate
+                    | Self::MfaDisable
+                    | Self::OidcLogout
+                    | Self::Par
+            )
+    }
+}
+
 #[derive(Debug)]
 pub struct RouteMethod {
     pub method: Method,
@@ -217,6 +285,14 @@ pub struct Route {
 }
 
 impl Route {
+    pub fn available_in(&self, profile: nazo_auth::DeploymentProfile, method: &Method) -> bool {
+        profile == nazo_auth::DeploymentProfile::Full
+            || self.methods.iter().any(|entry| {
+                (method == Method::OPTIONS || entry.method == *method)
+                    && entry.endpoint.available_in(profile)
+            })
+    }
+
     const fn new(
         path: &'static str,
         methods: &'static [RouteMethod],
@@ -440,7 +516,7 @@ pub fn resolve<'path>(method: &Method, path: &'path str) -> Result<RouteMatch<'p
 }
 
 macro_rules! route {
-    ($path:literal, $cors:ident, $guard:ident, $first_method:ident => $first_endpoint:ident ($first_body:expr) $(, $method:ident => $endpoint:ident ($body:expr))* $(,)?) => {
+    ($path:literal, $cors:ident, $guard:ident $(($module:expr))?, $first_method:ident => $first_endpoint:ident ($first_body:expr) $(, $method:ident => $endpoint:ident ($body:expr))* $(,)?) => {
         Route::new(
             $path,
             &[
@@ -448,7 +524,7 @@ macro_rules! route {
                 $(RouteMethod { method: Method::$method, endpoint: Endpoint::$endpoint, body: $body },)*
             ],
             CorsPolicy::$cors,
-            RouteGuard::$guard,
+            RouteGuard::$guard $(($module))?,
             concat!(stringify!($first_method), $(", ", stringify!($method),)*),
         )
     };
@@ -491,10 +567,10 @@ static ROUTES: &[Route] = &[
     route!("/par", None, None, POST => Par(BodyMode::Bytes)),
     route!("/bc-authorize", None, None, POST => BackchannelAuthentication(BodyMode::Raw { limit: 16384 })),
     route!("/ciba/{auth_req_id}", None, None, GET => CibaVerificationPage(BodyMode::None)),
-    route!("/device_authorization", None, None, POST => DeviceAuthorization(BodyMode::Bytes)),
-    route!("/device", None, None, GET => DeviceVerificationPage(BodyMode::None)),
-    route!("/device/verification", None, None, GET => DeviceVerification(BodyMode::None)),
-    route!("/device/decision", None, None, POST => DeviceDecision(BodyMode::Form)),
+    route!("/device_authorization", None, Module(ModuleId::DeviceAuthorization), POST => DeviceAuthorization(BodyMode::Bytes)),
+    route!("/device", None, Module(ModuleId::DeviceAuthorization), GET => DeviceVerificationPage(BodyMode::None)),
+    route!("/device/verification", None, Module(ModuleId::DeviceAuthorization), GET => DeviceVerification(BodyMode::None)),
+    route!("/device/decision", None, Module(ModuleId::DeviceAuthorization), POST => DeviceDecision(BodyMode::Form)),
     route!("/token", BrowserTokenManagement, None, POST => Token(BodyMode::Bytes)),
     route!("/logout", None, None, GET => OidcLogout(BodyMode::None), POST => OidcLogout(BodyMode::Raw { limit: 16384 })),
     route!("/check_session", None, None, GET => CheckSessionIframe(BodyMode::None)),
@@ -567,8 +643,8 @@ static ROUTES: &[Route] = &[
     route!("/controller-recovery/challenges", None, ControlTenant, POST => ControllerRecoveryChallenge(BodyMode::Json { limit: 8192 })),
     #[cfg(feature = "deployment-control")]
     route!("/controller-recovery/recover", None, ControlTenant, POST => ControllerRecoveryCommit(BodyMode::Json { limit: 8192 })),
-    route!("/register", None, None, POST => DynamicClientRegistration(BodyMode::Json { limit: 2097152 })),
-    route!("/register/{client_id}", None, None, GET => ClientConfigurationGet(BodyMode::None), PUT => ClientConfigurationPut(BodyMode::Json { limit: 2097152 }), DELETE => ClientConfigurationDelete(BodyMode::None)),
+    route!("/register", None, Module(ModuleId::DynamicClientRegistration), POST => DynamicClientRegistration(BodyMode::Json { limit: 2097152 })),
+    route!("/register/{client_id}", None, Module(ModuleId::DynamicClientRegistration), GET => ClientConfigurationGet(BodyMode::None), PUT => ClientConfigurationPut(BodyMode::Json { limit: 2097152 }), DELETE => ClientConfigurationDelete(BodyMode::None)),
     route!("/openid4vci/offers", None, Openid4vci, POST => CreateCredentialOffer(BodyMode::Json { limit: 2097152 })),
     route!("/openid4vci/offers/{offer_id}", None, Openid4vci, GET => CredentialOffer(BodyMode::None)),
     route!("/openid4vci/nonce", None, Openid4vci, POST => CredentialNonce(BodyMode::None)),

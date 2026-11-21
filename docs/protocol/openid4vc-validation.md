@@ -486,14 +486,17 @@ retrieval does not allocate or reserve an entry. The ordinary endpoints supply
 `status: None` and do not enable this policy. Credentials without status do not
 trigger a fetch.
 
-Fetching uses the existing bounded HTTPS resolver: validated TLS and DNS-pinned
-addresses, no redirects or ambient proxy, 10-second deadline, shared 16-request
-limit, and 128 KiB response bound. Decompression streams at most 16 MiB without
-allocating the complete list. Each verification fetches a fresh complete list;
-there is no status cache or stale fallback. The request sends no credential,
-index, authorization token or cookie, but its timing and the verifier's network
-address remain observable to the list host. Private origins require the existing
-explicit `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` allowlist.
+Both hosts fetch status lists over validated HTTPS with a 10-second deadline,
+a 128 KiB response bound and redirects disabled. The native resolver filters and
+pins DNS answers, uses a shared 16-request limit and requires
+`REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` for private destinations. The Workers
+Fetch adapter requires each exact HTTPS origin in `services.outbound_origins`;
+Cloudflare owns DNS resolution and the connection.
+
+Decompression streams at most 16 MiB without allocating the complete list.
+Each verification fetches a fresh complete list. The request sends the list URI
+without credential, index, authorization token or cookie. Its timing and the
+verifier's network address remain observable to the list host.
 
 ### DCQL known-shape admission
 

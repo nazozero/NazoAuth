@@ -4,7 +4,8 @@
 means the capability is unavailable through that adapter. The Workers column
 uses the full profile. Modules must be constructed and enabled, and clients
 need the corresponding grants and policies. The machine-only and Passkey-only
-profiles restrict routes as described in the [Workers adapter guide](cloudflare-workers.md#deployment-profile).
+profiles restrict endpoints, modules and grants through the shared deployment
+policy described in the [Workers adapter guide](cloudflare-workers.md#deployment-profile).
 Native refers to the native NazoAuth service, with NazoAuthCtl for the rows
 that name it.
 

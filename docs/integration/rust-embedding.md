@@ -290,6 +290,13 @@ URI: ordinary escapes are decoded for matching, while escaped slash, percent and
 plus remain protected until parameter extraction. Framework glue does not apply
 OAuth or administrative policy to captures.
 
+`Configuration.protocol.deployment_profile` defaults to `DeploymentProfile::Full`.
+An embedding can select `PasskeyOnly` or `MachineToMachine`; the shared core owns
+their module and grant limits, and the facade owns their endpoint admission.
+The same profile constrains token dispatch, dynamic registration and discovery.
+Host adapters pass requests through the canonical manifest and select the
+profile during composition.
+
 The facade applies its security headers to every response it produces. Hosts
 also need the same policy on listener rejections and static UI responses.
 `integration::security_headers(path)` supplies immutable default headers for

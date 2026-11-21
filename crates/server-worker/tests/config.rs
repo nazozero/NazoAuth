@@ -27,78 +27,66 @@ fn configuration() -> WorkerConfiguration {
 }
 
 #[test]
-fn free_profile_limits_routes_and_modules() {
+fn machine_profile_limits_modules() {
+    use nazo_runtime_modules::ModuleId;
     let mut config = configuration();
     config.machine_only = true;
-    for (method, path) in [
-        (http::Method::GET, "/.well-known/oauth-authorization-server"),
-        (http::Method::GET, "/jwks.json"),
-        (http::Method::POST, "/token"),
-        (http::Method::POST, "/revoke"),
-    ] {
-        assert!(config.allows_route(&method, path), "{path}");
+    assert_eq!(
+        config
+            .application("p".repeat(32))
+            .unwrap()
+            .protocol
+            .deployment_profile,
+        nazo_auth::DeploymentProfile::MachineToMachine
+    );
+    for module in ModuleId::ALL {
+        config.modules = vec![module];
+        assert_eq!(
+            config.application("p".repeat(32)).is_ok(),
+            matches!(
+                module,
+                ModuleId::TokenExchange
+                    | ModuleId::JwtBearerGrant
+                    | ModuleId::HttpMessageSignatures
+                    | ModuleId::DynamicClientRegistration
+            ),
+            "{module:?}"
+        );
     }
-    for (method, path) in [
-        (http::Method::POST, "/auth/login"),
-        (http::Method::POST, "/auth/register"),
-        (http::Method::GET, "/authorize"),
-        (http::Method::GET, "/userinfo"),
-        (http::Method::GET, "/.well-known/openid-configuration"),
-    ] {
-        assert!(!config.allows_route(&method, path), "{path}");
-    }
-    let settings = config.application("p".repeat(32)).unwrap();
-    assert!(!settings.protocol.user_authorization_supported);
-    config
-        .modules
-        .push(nazo_runtime_modules::ModuleId::SessionManagement);
-    assert!(config.application("p".repeat(32)).is_err());
 }
 
 #[test]
-fn free_passkey_profile_never_exposes_password_authentication() {
+fn passkey_profile_rejects_modules_without_an_admitted_endpoint() {
+    use nazo_runtime_modules::ModuleId;
     let mut config = configuration();
     config.passkey_only = true;
-    config
-        .modules
-        .push(nazo_runtime_modules::ModuleId::DeviceAuthorization);
-    for (method, path) in [
-        (http::Method::GET, "/.well-known/openid-configuration"),
-        (http::Method::GET, "/authorize"),
-        (http::Method::GET, "/auth/setup"),
-        (http::Method::POST, "/auth/passkey/begin"),
-        (http::Method::POST, "/auth/passkey/finish"),
-        (http::Method::POST, "/auth/mfa/verify"),
-        (http::Method::OPTIONS, "/auth/mfa/verify"),
-        (http::Method::POST, "/auth/me/mfa/totp/begin"),
-        (http::Method::POST, "/auth/me/mfa/totp/confirm"),
-        (http::Method::POST, "/auth/me/mfa/step-up"),
-        (http::Method::POST, "/auth/me/mfa/backup-codes/regenerate"),
-        (http::Method::POST, "/auth/me/mfa/disable"),
-        (http::Method::POST, "/auth/me/passkeys/registration/begin"),
-        (http::Method::POST, "/auth/me/passkeys/registration/finish"),
-        (http::Method::POST, "/auth/setup/claim"),
-        (http::Method::PATCH, "/auth/me"),
-        (http::Method::OPTIONS, "/auth/me"),
-        (http::Method::POST, "/device_authorization"),
-        (http::Method::GET, "/device"),
-        (http::Method::GET, "/device/verification"),
-        (http::Method::POST, "/device/decision"),
-    ] {
-        assert!(config.allows_route(&method, path), "{path}");
+    for module in ModuleId::ALL {
+        config.modules = vec![module];
+        if module == ModuleId::NativeSso {
+            config.modules.push(ModuleId::TokenExchange);
+        }
+        assert_eq!(
+            config.application("p".repeat(32)).is_ok(),
+            !matches!(
+                module,
+                ModuleId::Ciba
+                    | ModuleId::Scim
+                    | ModuleId::ScimSecurityEvents
+                    | ModuleId::Openid4vciIssuer
+                    | ModuleId::Openid4vpVerifier
+            ),
+            "{module:?}"
+        );
     }
-    for (method, path) in [
-        (http::Method::POST, "/auth/login"),
-        (http::Method::POST, "/auth/register"),
-        (http::Method::GET, "/auth/mfa/verify"),
-        (http::Method::POST, "/auth/me/mfa/unknown"),
-        (http::Method::POST, "/auth/me/mfa/totp/begin/nested"),
-        (http::Method::GET, "/admin/users"),
-        (http::Method::GET, "/auth/me/applications"),
-        (http::Method::POST, "/auth/setup"),
-    ] {
-        assert!(!config.allows_route(&method, path), "{path}");
-    }
+    config.modules.clear();
+    assert_eq!(
+        config
+            .application("p".repeat(32))
+            .unwrap()
+            .protocol
+            .deployment_profile,
+        nazo_auth::DeploymentProfile::PasskeyOnly
+    );
     config.machine_only = true;
     assert!(config.application("p".repeat(32)).is_err());
 }
@@ -111,7 +99,10 @@ fn all_shared_modules_are_admitted_by_the_host_profile() {
     config.services.mtls = true;
     assert!(config.application("p".repeat(32)).is_ok());
     let settings = config.application("p".repeat(32)).unwrap();
-    assert!(settings.protocol.user_authorization_supported);
+    assert_eq!(
+        settings.protocol.deployment_profile,
+        nazo_auth::DeploymentProfile::Full
+    );
     assert!(matches!(
         settings.endpoint.mtls_certificate_source,
         nazoauth::config::MtlsCertificateSourceMode::DirectTls
@@ -133,32 +124,18 @@ fn portable_extensions_and_service_metadata_follow_the_selected_modules() {
     ];
     config.passkey_only = true;
     assert!(config.application("p".repeat(32)).is_ok());
-    for (method, path) in [
-        (http::Method::GET, "/check_session"),
-        (http::Method::GET, "/check_session/status"),
-        (http::Method::POST, "/logout"),
-        (http::Method::GET, "/fapi/resource"),
-        (http::Method::POST, "/fapi/resource"),
-        (http::Method::OPTIONS, "/token"),
-        (http::Method::OPTIONS, "/userinfo"),
-    ] {
-        assert!(config.allows_route(&method, path), "{path}");
-    }
-    assert!(!config.allows_route(&http::Method::OPTIONS, "/auth/login"));
-    assert!(!config.allows_route(&http::Method::OPTIONS, "/admin/users"));
     config.passkey_only = false;
     config.machine_only = true;
     config.modules = vec![ModuleId::TokenExchange, ModuleId::JwtBearerGrant];
     assert!(config.application("p".repeat(32)).is_ok());
-    assert!(
-        !config
+    assert_eq!(
+        config
             .application("p".repeat(32))
             .unwrap()
             .protocol
-            .user_authorization_supported
+            .deployment_profile,
+        nazo_auth::DeploymentProfile::MachineToMachine
     );
-    assert!(config.allows_route(&http::Method::OPTIONS, "/token"));
-    assert!(!config.allows_route(&http::Method::OPTIONS, "/authorize"));
 }
 
 #[test]
@@ -350,22 +327,10 @@ fn registration_admission_follows_the_deployment_capabilities() {
     use nazo_runtime_modules::ModuleId;
     let mut config = configuration();
     config.passkey_only = true;
-    assert!(!config.allows_route(&http::Method::POST, "/register"));
-    assert!(!config.allows_route(&http::Method::GET, "/device"));
     config.modules = vec![
         ModuleId::DynamicClientRegistration,
         ModuleId::DeviceAuthorization,
     ];
-    for (method, path) in [
-        (http::Method::POST, "/register"),
-        (http::Method::GET, "/register/client"),
-        (http::Method::PUT, "/register/client"),
-        (http::Method::DELETE, "/register/client"),
-        (http::Method::GET, "/device"),
-    ] {
-        assert!(config.allows_route(&method, path), "{path}");
-    }
-    assert!(!config.allows_route(&http::Method::GET, "/register/client/nested"));
     let settings = config.application("p".repeat(32)).unwrap();
     let capabilities = settings.modules.dynamic_client_registration_capabilities;
     assert!(

@@ -124,6 +124,58 @@ fn simultaneous_creation_preserves_both_unique_mappings_without_orphans() {
 }
 
 #[test]
+fn device_creation_and_completion_require_their_user_code_effects() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let state = pending();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_state WHEN NEW.kind='device_user' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .create("device", "user", &state, 600)
+                .await
+                .is_err()
+        );
+        assert!(
+            provider
+                .load_by_device_code("device")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        database.execute_sql("DROP TRIGGER suppress").unwrap();
+        provider
+            .create("device", "user", &state, 600)
+            .await
+            .unwrap();
+        let snapshot = provider
+            .load_by_device_code("device")
+            .await
+            .unwrap()
+            .unwrap();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE DELETE ON nazo_state WHEN OLD.kind='device_user' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .complete_decision(&hash("device"), "user", snapshot.version(), &state)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            provider.resolve_user_code("user").await.unwrap(),
+            Some(hash("device"))
+        );
+        assert_eq!(
+            provider
+                .load_by_device_code("device")
+                .await
+                .unwrap()
+                .unwrap()
+                .version(),
+            snapshot.version()
+        );
+    });
+}
+
+#[test]
 fn formatted_user_codes_share_lookup_claim_completion_and_delete_identity() {
     block_on(async {
         let (_, provider) = fixture().await;

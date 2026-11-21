@@ -23,7 +23,8 @@ fn metadata_exposes_only_capabilities_accepting_new_work() {
         &[ModuleId::Ciba],
     );
 
-    let capabilities = MetadataCapabilities::from_snapshot(&snapshot);
+    let capabilities =
+        MetadataCapabilities::from_snapshot(&snapshot, nazo_auth::DeploymentProfile::Full);
 
     assert!(capabilities.device_authorization);
     assert!(capabilities.authorization_details);
@@ -45,7 +46,9 @@ fn metadata_exposes_only_capabilities_accepting_new_work() {
 fn disabled_but_draining_ciba_is_hidden_while_existing_polling_remains_admissible() {
     let snapshot = snapshot(&[], &[ModuleId::Ciba]);
 
-    assert!(!MetadataCapabilities::from_snapshot(&snapshot).ciba);
+    assert!(
+        !MetadataCapabilities::from_snapshot(&snapshot, nazo_auth::DeploymentProfile::Full).ciba
+    );
     assert!(!module_admissible(
         &snapshot,
         ModuleId::Ciba,

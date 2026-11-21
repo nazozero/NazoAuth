@@ -61,7 +61,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
 | `http-worker` | `nazo-http-worker` | Cloudflare Workers transport conversion, bounded streaming and authenticated ingress facts through the same facade. |
 | `authorization-server-d1` | `nazo-oauth-server-d1` | Primary D1 persistence and transient-state ports, atomic SQL changes, expiry and required audit. |
-| `server-worker` | `nazo-server-worker` | Workers bindings/secrets, deployment profile, prepared application lifecycle and scheduled maintenance; native offline provisioning is feature gated. |
+| `server-worker` | `nazo-server-worker` | Workers bindings/secrets, host profile selection, prepared application lifecycle and scheduled maintenance; native offline provisioning is feature gated. |
 | `authorization-server` | `nazo-oauth-server` | Host-independent application capabilities: authorization and token flows, domain operations, typed contracts, semantic ports, and worker operations. It does not load process configuration, register Actix routes, open connections, or schedule native background tasks. |
 | `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL provider: binds an existing pool and repositories to application persistence ports. Native startup, migration/operator execution, and pool construction belong to `nazo-server`. It has no Valkey dependency. |
 | `authorization-server-valkey` | `nazo-oauth-server-valkey` | Valkey provider: composes tenant-scoped transient-state ports and namespace bindings from a supplied client, with no persistent-database dependency. The native launcher owns configuration and connection startup. |
@@ -284,9 +284,12 @@ Within that boundary, endpoint dependencies stay focused: metadata handlers
 receive metadata configuration, keys, and the
 capability snapshot; session handlers receive session policy and session
 storage; repositories are injected only into flows that query them.
-OAuth server metadata is serialized by the shared core for both interactive and
-machine-only profiles. Hosts supply the supported capabilities; metadata shape
-and advertisement rules stay in the core.
+Hosts select `Configuration.protocol.deployment_profile` from the shared
+`DeploymentProfile::{Full, PasskeyOnly, MachineToMachine}`. The core owns its
+module and grant limits; the facade's canonical endpoint inventory applies its
+route policy. Token dispatch, Token Exchange subject policy, dynamic registration
+and metadata enforce the same profile. OAuth metadata serialization and
+advertisement rules stay in the core.
 
 ## Token Issuance and Security State
 
@@ -749,17 +752,13 @@ sender bindings, canonical audit and commit ACK.
 The RP logout-hint verifier uses prepared verification material from the current
 KeyManager generation, checks its algorithm and retirement, and returns typed
 subject/audience/SID plus the original expiry. The logout application and core
-still apply issuer, client audience and current/recent session policy. No JWT
-backend parsing semantics or public metadata cache has changed. JWKS construction
+still apply issuer, client audience and current/recent session policy. JWKS construction
 moves its already prepared public Value array into the document; signing-key
 private-member stripping and the separate encryption-key projection remain.
 
-These R05/R10 changes and their new source fixtures require exact-candidate CNB
-format, compile and regression validation before acceptance.
-
 ### Registration and request representation ownership
 
-Prepared registration now separates its undisclosed secret into a Drop owner.
+Prepared registration separates its undisclosed secret into a Drop owner.
 Administrative create and DCR consume the validated registration into their
 actual write input. DCR replacement and tenant-resource preparation move the
 registration too. Readiness rejection, persistence failure and cancellation keep

@@ -176,3 +176,63 @@ fn ownership_conflict_rolls_back_retention_family_changes_and_required_audit() {
         );
     });
 }
+
+#[test]
+fn ignored_audit_or_revocation_never_acknowledges_a_partial_revocation() {
+    block_on(async {
+        for table in ["nazo_audit", "nazo_revocations"] {
+            let (provider, observer) = fixture();
+            observer
+                .execute_batch(&format!(
+                    "CREATE TRIGGER refuse BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END"
+                ))
+                .unwrap();
+            assert!(
+                provider
+                    .revoke_token_with_audit(
+                        TokenRevocation {
+                            tenant_id: TENANT,
+                            client_id: OWNER,
+                            raw_token: "verified-token",
+                            access_token: Some(AccessTokenRevocation {
+                                jti: JTI.into(),
+                                expires_at: Timestamp::now() + SignedDuration::from_secs(600),
+                            }),
+                        },
+                        "owner",
+                        "source-hash",
+                    )
+                    .await
+                    .is_err(),
+                "ignored {table} write was acknowledged"
+            );
+            assert_eq!(audited_revocations(&observer), 0);
+            let retained: i64 = observer
+                .query_row("SELECT count(*) FROM nazo_revocations", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(retained, 0);
+        }
+    });
+}
+
+#[test]
+fn ignored_compensation_revocation_is_reported_as_unavailable() {
+    block_on(async {
+        let (provider, observer) = fixture();
+        observer.execute_batch("CREATE TRIGGER refuse BEFORE INSERT ON nazo_revocations BEGIN SELECT RAISE(IGNORE); END").unwrap();
+        assert!(
+            provider
+                .revoke_issued_tokens(
+                    TENANT,
+                    OWNER,
+                    JTI,
+                    Some(Timestamp::now() + SignedDuration::from_secs(600)),
+                    None,
+                )
+                .await
+                .is_err()
+        );
+    });
+}

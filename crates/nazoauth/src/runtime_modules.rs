@@ -263,6 +263,11 @@ pub fn module_catalog(settings: &Configuration) -> anyhow::Result<ModuleCatalog>
         ),
         scim_security_events: Duration::from_secs(settings.storage.scim_event_retention_seconds),
     });
+    catalog = catalog.with_constructed_availability(
+        ModuleId::ALL
+            .into_iter()
+            .map(|id| (id, protocol.deployment_profile.allows_module(id))),
+    );
     catalog = catalog.with_constructed_availability([
         (
             ModuleId::Openid4vciIssuer,

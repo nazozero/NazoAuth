@@ -71,7 +71,6 @@ Each supported profile must meet these requirements:
 | FAPI 2.0 Message Signing | FAPI message-signing options for signed authorization requests, signed authorization responses, and signed or nested encrypted introspection responses. | Signed request object at PAR, JARM where selected, and RFC 9701 signed/nested encrypted introspection where the introspection profile is selected; no fallback to unsigned response after signing failure. | Advertise each message-signing option independently. Introspection JWT response metadata appears only under the signed-introspection runtime profile. |
 | Compatibility boundary | Baseline interoperability methods that remain standards-valid but lower assurance. | `client_secret_post` and baseline UserInfo form-body bearer are isolated from FAPI resources and high-assurance profiles. Missing PKCE is likewise limited to the explicit baseline confidential-OIDC client policy; plain PKCE is never accepted. | There is no global PKCE downgrade, unsigned-JAR, external-`request_uri`, legacy-audience, or global-SCIM-token compatibility switch. |
 | OpenID4VC Final credential roles | OpenID4VCI 1.0 Final Credential Issuer and OpenID4VP 1.0 Final Verifier, with HAIP-compatible `dc+sd-jwt` and `mso_mdoc` profiles. | Independent default-closed runtime modules, credential-specific keys/trust anchors, one-time state, bounded encrypted persistence, and no Wallet role. | Advertise only when the corresponding runtime module and complete credential/trust configuration are enabled. Product regression records live in `docs/conformance`; the [certification table](../../README.md#openid-certified) lists the official OID4VCI and OID4VP HAIP registrations and their implementation version. |
-| M8 emerging-protocol watchlist | Governance boundary for candidates that have not completed a separate entry gate, including Transaction Tokens and Grant Management. | No generic M8 runtime profile. Separately admitted capabilities use their own default-closed modules and truthful metadata. | Never advertise a remaining watchlist item. RFC 9865/9967, bounded HTTP Signatures, and OpenID4VC Issuer/Verifier status are documented by their own implementation records. |
 
 ## Control Status
 
@@ -319,18 +318,17 @@ discovery metadata claims are updated:
 10. For browser-facing changes, verify CORS, cookies, CSRF, HSTS/TLS, redirect
    handling, and token storage assumptions before advertising support.
 
-## Current Bottom Line
+## Protocol targets
 
-The safe target is not "implement every OAuth-adjacent specification." The safe
-target is:
+Protocol changes follow these requirements:
 
 - maintain OAuth 2.1-style secure defaults;
 - use RFC 9700 as the baseline security rulebook;
 - use FAPI 2.0 Security Profile as the high-value API target;
 - implement FAPI 2.0 Message Signing only for the individual options the code
   actually enforces and tests;
-- treat JWT/JWKS/TLS/browser-client requirements as first-class protocol
-  controls, not deployment footnotes;
+- enforce JWT/JWKS/TLS/browser-client requirements in the protocol and its
+  deployment configuration;
 - keep deferred standards out of metadata until their full security model,
   state model, policy model, and negative tests exist.
 
@@ -339,7 +337,7 @@ in [validation boundaries](openid4vc-validation.md). Credential authorizations
 retain registered, anonymous pre-authorized or legacy-unspecified proof origin;
 legacy callers omit `iss` or restart issuance. Stable deferred authorization across
 refresh remains open. New and retained presentation requests reject explicit
-holder-binding waivers. These source changes still require exact-SHA verification.
+holder-binding waivers.
 
 ### CIBA state-store deadline contract
 

@@ -13,6 +13,17 @@ pub enum GrantType {
 pub struct UnsupportedGrantType;
 
 impl GrantType {
+    pub(crate) const fn required_module(self) -> Option<nazo_runtime_modules::ModuleId> {
+        use nazo_runtime_modules::ModuleId;
+        match self {
+            Self::AuthorizationCode | Self::RefreshToken | Self::ClientCredentials => None,
+            Self::DeviceCode => Some(ModuleId::DeviceAuthorization),
+            Self::TokenExchange => Some(ModuleId::TokenExchange),
+            Self::JwtBearer => Some(ModuleId::JwtBearerGrant),
+            Self::Ciba => Some(ModuleId::Ciba),
+        }
+    }
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

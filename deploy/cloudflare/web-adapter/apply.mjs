@@ -13,7 +13,7 @@ function replaceOnce(source, before, after, contract) {
 // independently versioned; an unexpected source change fails the build.
 export function applyWorkerOverlay(work) {
   for (const name of ['WorkerPasskey.tsx', 'WorkerMfaChallenge.tsx', 'WorkerSecurity.tsx', 'WorkerSecurity.css',
-    'WorkerAuthentication.test.tsx', 'WorkerPendingSession.test.tsx', 'WorkerSecurity.test.tsx',
+    'WorkerAuthentication.test.tsx', 'WorkerPendingSession.test.tsx', 'WorkerSecurity.test.tsx', 'WorkerReauthentication.test.tsx',
     'WorkerGrantHistory.test.tsx']) {
     cpSync(resolve(adapters, name), resolve(work, 'src/components', name));
   }
@@ -21,6 +21,7 @@ export function applyWorkerOverlay(work) {
   let auth = readFileSync(authPath, 'utf8');
   const authPatch = (before, after, name) => { auth = replaceOnce(auth, before, after, name); };
   authPatch('useEffect, useMemo, useState, type FormEvent', 'useEffect, useMemo, useRef, useState, type FormEvent', 'auth hooks');
+  authPatch("import { resolveSafeNextFromSearch } from '../auth/next';", "import { requiresReauthentication, resolveSafeNextFromSearch } from '../auth/next';", 'fresh authentication return');
   authPatch("import './Auth.css';", "import WorkerPasskey, { type WorkerLoginResult } from '../components/WorkerPasskey';\nimport WorkerMfaChallenge from '../components/WorkerMfaChallenge';\nimport '../components/WorkerSecurity.css';\nimport './Auth.css';", 'auth components');
   authPatch('const { refreshSession } = useAuth();', 'const { refreshSession, setUser, logout } = useAuth();', 'auth context');
   authPatch("const [authState, setAuthState] = useState<AuthState>('login');", `const [authState, setAuthState] = useState<AuthState>('login');
@@ -48,6 +49,7 @@ export function applyWorkerOverlay(work) {
     }
     const account = await refreshSession();
     if (!account) throw new Error(t('auth.error.login'));
+    if (requiresReauthentication(nextAfterLogin)) window.location.replace(nextAfterLogin);
   };
 
   const performAction = async (action: AuthAction) => {
@@ -71,17 +73,33 @@ export function applyWorkerOverlay(work) {
   authPatch('<div className="auth-footer">', '<div className="auth-footer" hidden={mfaPending} style={mfaPending ? { display: \'none\' } : undefined}>', 'auth MFA footer');
   writeFileSync(authPath, auth);
 
-  // The guest guard owns navigation for both new and existing sessions. Web
-  // routes go through the router basename; /authorize is a Worker endpoint.
+  const nextPath = resolve(work, 'src/auth/next.ts');
+  let next = readFileSync(nextPath, 'utf8');
+  next = replaceOnce(next, 'export function resolveSafeNextFromSearch(', `export function requiresReauthentication(next: string | null): next is string {
+  if (!next) return false;
+  const url = new URL(next, 'https://issuer.example');
+  return url.pathname === '/authorize' && Boolean(url.searchParams.get('_nazo_reauth_nonce'));
+}
+
+export function resolveSafeNextFromSearch(`, 'server reauthentication return marker');
+  writeFileSync(nextPath, next);
+
+  // Web routes use the router basename; /authorize is a server endpoint.
+  // A reauthentication return stays on the form until a new login completes.
   const guestPath = resolve(work, 'src/components/RequireGuest.tsx');
   let guest = readFileSync(guestPath, 'utf8');
+  guest = replaceOnce(guest, "import { resolveSafeNextFromSearch } from '../auth/next';", "import { requiresReauthentication, resolveSafeNextFromSearch } from '../auth/next';", 'guest reauthentication return');
   guest = replaceOnce(guest, '  const location = useLocation();', `  const location = useLocation();
   const next = resolveSafeNextFromSearch(location.search);
   const nextPath = next?.split(/[?#]/, 1)[0];
   const authorizationNext = nextPath === '/authorize' ? next : null;
+  const reauthentication = requiresReauthentication(authorizationNext);
   useEffect(() => {
-    if (user && !loading && authorizationNext) window.location.replace(authorizationNext);
-  }, [user, loading, authorizationNext]);`, 'authorization endpoint return');
+    if (user && !loading && authorizationNext && !reauthentication) window.location.replace(authorizationNext);
+  }, [user, loading, authorizationNext, reauthentication]);`, 'authorization endpoint return');
+  guest = replaceOnce(guest, '  if (!user && sessionError) {', `  if (reauthentication) return <>{children}</>;
+
+  if (!user && sessionError) {`, 'fresh login keeps the form available');
   guest = replaceOnce(guest, `    const next = resolveSafeNextFromSearch(location.search);
     return <Navigate to={next ?? '/profile'} replace />;`, `    if (authorizationNext) return null;
     const base = import.meta.env.BASE_URL.replace(/\\/$/, '');
@@ -102,6 +120,14 @@ export function applyWorkerOverlay(work) {
           return null;
         }
         setUserState(me);`, 'pending MFA cannot become an authenticated user');
+  context = replaceOnce(context, `    } finally {
+      setUser(null);
+    }
+  }, [cancelRefresh, setUser]);`, `    } finally {
+      setLoading(false);
+    }
+    setUser(null);
+  }, [cancelRefresh, setUser]);`, 'logout clears the session after server confirmation');
   writeFileSync(contextPath, context);
 
   const typesPath = resolve(work, 'src/types/auth.ts');

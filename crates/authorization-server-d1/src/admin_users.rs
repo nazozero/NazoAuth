@@ -185,7 +185,23 @@ impl D1Provider {
                     statements.push(Statement::new(format!("UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND user_id=?2 AND revoked_at IS NULL AND {admitted}"),vec![json!(target_tenant),json!(target_id),json!(event)]));
                     statements.push(Statement::new(format!("DELETE FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2 AND {admitted}"),vec![json!(target_tenant),json!(target_id),json!(event)]));
                 }
+                let expected_principal = if noop {
+                    target.ok_or(DbError::CorruptData)?.principal.clone()
+                } else {
+                    encode(&next)?
+                };
+                statements.push(Statement::new(format!(
+                    "SELECT CASE WHEN NOT ({admitted}) OR (
+                        EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND principal=?4 AND active=?5 AND epoch=?6)
+                        AND (?7=0 OR (NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND user_id=?2 AND revoked_at IS NULL)
+                            AND NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2))))
+                        THEN 1 ELSE json('administrator account effects were not accepted') END"),
+                    vec![json!(target_tenant),json!(target_id),json!(event),json!(expected_principal),json!(next.active),json!(next.authorization_epoch),json!(deactivate)]));
             }
+            statements.push(Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_id=?2)
+                OR EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type=?3 AND category='administration' AND payload=?4)
+                THEN 1 ELSE json('administrator account audit was not accepted') END",
+                vec![json!(target_tenant),json!(event),json!(event_type),json!(encode(&payload)?)]));
             statements.push(Statement::new(format!("SELECT principal,claims,epoch,active,mfa_enabled,avatar_revision,created_at,updated_at FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND {admitted}"),vec![json!(target_tenant),json!(target_id),json!(event)]));
             let mut result = self.database.batch(statements).await?;
             if result.first().ok_or(DbError::CorruptData)?.rows.is_empty() {

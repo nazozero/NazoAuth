@@ -313,6 +313,34 @@ fn suppressed_federation_creation_and_unlink_effects_roll_back() {
 }
 
 #[test]
+fn federation_state_storage_rejects_ignored_inserts_and_replacements() {
+    block_on(async {
+        for operation in ["INSERT", "UPDATE"] {
+            let (db, provider) = fixture().await;
+            if operation == "UPDATE" {
+                provider.store_oidc("state", &oidc(), 60).await.unwrap();
+            }
+            db.execute_sql(&format!(
+                "CREATE TRIGGER ignore_state BEFORE {operation} ON nazo_state
+                 WHEN NEW.kind='federation_oidc' BEGIN SELECT RAISE(IGNORE); END;"
+            ))
+            .unwrap();
+            let mut next = oidc();
+            next.nonce = "replacement".into();
+            assert!(provider.store_oidc("state", &next, 60).await.is_err());
+            let stored = provider
+                .take_oidc("state", "browser-binding")
+                .await
+                .unwrap();
+            assert_eq!(
+                stored.map(|value| value.nonce),
+                (operation == "UPDATE").then(|| "nonce".into())
+            );
+        }
+    });
+}
+
+#[test]
 fn federation_state_preserves_unbound_values_and_consumes_exact_browser_once() {
     block_on(async {
         let (db, provider) = fixture().await;

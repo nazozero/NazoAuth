@@ -2,6 +2,35 @@ use super::*;
 use nazo_runtime_modules::ModuleState;
 
 #[test]
+fn deployment_profile_caps_modules_without_enabling_unconstructed_services() {
+    let mut settings = Configuration::new(
+        nazo_identity::TenantContext::default_system(),
+        "http://127.0.0.1:18000",
+        uuid::Uuid::now_v7().simple().to_string(),
+    )
+    .unwrap();
+    for profile in [
+        nazo_auth::DeploymentProfile::Full,
+        nazo_auth::DeploymentProfile::PasskeyOnly,
+        nazo_auth::DeploymentProfile::MachineToMachine,
+    ] {
+        settings.protocol.deployment_profile = profile;
+        let catalog = module_catalog(&settings).unwrap();
+        for module in ModuleId::ALL {
+            let constructed = !matches!(
+                module,
+                ModuleId::Openid4vciIssuer | ModuleId::Openid4vpVerifier
+            );
+            assert_eq!(
+                catalog.effective_enabled(module, true),
+                constructed && profile.allows_module(module),
+                "{profile:?} {module:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn catalog_keeps_static_module_dependencies() {
     let settings = Configuration::new(
         nazo_identity::TenantContext::default_system(),

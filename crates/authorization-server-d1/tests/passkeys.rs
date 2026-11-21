@@ -37,6 +37,41 @@ fn credential() -> WebauthnCredential {
     }
 }
 
+#[test]
+fn passkey_registration_and_deletion_reject_ignored_effects() {
+    block_on(async {
+        let tenant = TenantId::new(TENANT).unwrap();
+        let user = UserId::new(USER).unwrap();
+        let (database, provider) = fixture().await;
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_registered' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .insert(tenant, user, credential(), "Laptop".into())
+                .await
+                .is_err()
+        );
+        assert!(provider.list(tenant, user).await.unwrap().is_empty());
+        for trigger in [
+            "CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='passkey_deleted' BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE DELETE ON nazo_passkeys BEGIN SELECT RAISE(IGNORE); END;",
+        ] {
+            let (database, provider) = fixture().await;
+            let inserted = provider
+                .insert(tenant, user, credential(), "Laptop".into())
+                .await
+                .unwrap();
+            database.execute_sql(trigger).unwrap();
+            assert!(
+                PasskeyRepositoryPort::delete(&provider, tenant, user, inserted.id)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(provider.list(tenant, user).await.unwrap().len(), 1);
+            database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='passkey_deleted') THEN 1 ELSE 0 END;").unwrap();
+        }
+    });
+}
+
 fn update() -> PasskeyAuthenticationUpdate {
     PasskeyAuthenticationUpdate {
         credential: CredentialUpdate {

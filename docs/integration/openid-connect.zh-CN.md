@@ -64,8 +64,8 @@ OAuth 2.1 draft-17 授权码客户端由管理员设置
 
 ## 规划中的规范与草案
 
-本节用于说明已经进入路线图、但当前不会在 discovery 或 registration
-metadata 中宣告的能力。它不是当前部署能力清单。状态为“支持”的项目表示
+本节记录已实现的草案 profile、规划中的规范工作，以及在 discovery 和
+registration metadata 中宣告这些能力的条件。状态为“支持”的项目表示
 当前实现已按该行链接的规范或草案提供对应行为；状态为“不支持（待审计）”
 表示相关稳定规范或相邻流程可能已经存在，但尚未按该行链接的草案逐条审计；
 状态为“不支持（待实现）”的项目还缺少可执行实现或完整 profile 边界。
@@ -86,7 +86,7 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | Identity Assertion / Identity Chaining / Transaction Tokens | 不支持（待实现） | 这些草案覆盖跨域身份断言、链式授权和工作负载调用链；当前缺少 issuer/trust anchor、subject mapping、Transaction Token Service 和资源服务器验证模型。 | 完成信任域、replay、审计、撤销、资源服务器验证和最小权限传播设计。 |
 | Token Status List | 有边界的 verifier 支持 | 已实现 [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) JWT/CWT 凭证状态校验；尚未实现状态发布。 | [信任、传输与隐私边界](../protocol/openid4vc-validation.md#sd-jwt-processed-claims-and-credential-status)；不是通用 OAuth token status endpoint。 |
 
-以下方向目前只是观察项，不属于“待实现”：
+以下规范持续跟踪，用于评估后续集成需求：
 
 | 草案或协议族 | 状态 | 观察原因 |
 | --- | --- | --- |
@@ -117,7 +117,7 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | Dynamic registration | `/register` | 仅在 DCR 模块处于活动状态且具有非空 initial access token 时宣告。 |
 | Device authorization | `/device_authorization` | 运行时模块活跃时宣告；客户端使用仍需 grant 与跨设备策略授权。 |
 
-Discovery 元数据是权威信息。字段缺失时，该部署没有声明对应能力。
+集成时根据部署当前的 discovery 元数据选择可用端点和协议能力。
 
 ## 最小推荐集成
 

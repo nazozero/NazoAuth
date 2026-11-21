@@ -107,8 +107,8 @@ The worker records its observation; the receiver commits the externally accepted
 A durable batch acknowledgement also refreshes the worker observation. After
 locking the chain head and validating the full batch, it samples the database's
 real clock once before mutation. Retained decision export time, checkpoint
-acceptance time and worker observation share this ACK operation timestamp; it
-does not represent the exact transaction commit time. An ACK delayed behind an
+acceptance time and worker observation share this pre-mutation ACK timestamp.
+An ACK delayed behind an
 observation therefore samples its time after that observation's lock is released.
 Every successful background observation updates its timestamp from the database's
 real clock, including idle polls after a recent acknowledgement. Required mode

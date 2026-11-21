@@ -9,6 +9,7 @@ use nazo_runtime_modules::{ActiveModuleSnapshot, SnapshotStore};
 
 #[derive(Clone)]
 pub struct MetadataConfig {
+    pub deployment_profile: nazo_auth::DeploymentProfile,
     pub issuer: String,
     pub mtls_endpoint_base_url: String,
     pub mtls_enabled: bool,
@@ -27,6 +28,7 @@ pub struct MetadataConfig {
 impl MetadataConfig {
     pub fn endpoint_config(self) -> MetadataEndpointConfig {
         MetadataEndpointConfig {
+            deployment_profile: self.deployment_profile,
             issuer: self.issuer,
             mtls_endpoint_base_url: self.mtls_endpoint_base_url,
             mtls_enabled: self.mtls_enabled,

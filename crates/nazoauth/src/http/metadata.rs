@@ -30,6 +30,7 @@ impl MetadataHandles {
     ) -> impl Serialize + 'a {
         authorization_server_metadata(
             AuthorizationServerMetadataInput {
+                deployment_profile: self.config.deployment_profile,
                 issuer: &self.config.issuer,
                 mtls_endpoint_base_url: &self.config.mtls_endpoint_base_url,
                 mtls_enabled: self.config.mtls_enabled,

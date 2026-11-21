@@ -19,12 +19,14 @@ prerequisite-gated protocol surface.
 - The admin client API remains the default explicit onboarding path.
 - `/register` and DCRM routes are registered statically. Admission and
   `registration_endpoint` follow the active DCR module; a non-empty
-  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN` is its provisioning prerequisite. RFC 7591
-  deliberately leaves issuance of this token to the deployment.
+  initial access token is its provisioning prerequisite. Native hosts use
+  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; Workers uses the
+  `NAZO_DCR_INITIAL_ACCESS_TOKEN` secret. The deployment issues this token.
 - `software_statement` is not supported because no statement issuer or trust
-  policy is configured. Remote `jwks_uri` is supported only through the shared
-  HTTPS remote-document resolver with DNS rebinding, address-class,
-  redirect, media-type, size, timeout, and cache controls.
+  policy is configured. Remote `jwks_uri` uses the host's HTTPS adapter with
+  redirect, media-type, size and timeout checks. The native adapter filters and
+  pins DNS answers and caches JWKS; Workers admits exact HTTPS origins from
+  `services.outbound_origins` and fetches within the current request.
 - RFC 7592 Client Configuration Management is available only for clients
   created through DCR while the DCR runtime module is active.
 - Successful DCR registration and RFC 7592 read/update/delete operations emit
@@ -76,10 +78,13 @@ algorithms must satisfy that profile and be available for signing.
 - DCR is absent from discovery and its statically registered endpoints reject requests when the module is disabled.
 - Invalid redirect URIs are rejected.
 - Weak or unsupported client authentication metadata is rejected.
-- `jwks_uri` cannot fetch loopback, link-local, private, metadata-service, or
-  non-HTTPS targets unless a deployment explicitly allowlists the exact private
+- Native `jwks_uri` resolution rejects loopback, link-local, private or
+  metadata-service targets unless a deployment explicitly allowlists the exact private
   HTTPS origin. Redirects and DNS rebinding cannot escape the resolved policy.
-- Duplicate `kid`, private JWK material, and stale JWKS cache behavior are covered.
+- Workers `jwks_uri` resolution requires a configured exact HTTPS origin and
+  rejects IP literals, redirects, oversized responses and unexpected media types.
+- Duplicate `kid` and private JWK material are rejected on both hosts; native
+  resolver tests also cover stale JWKS cache behavior.
 - Missing or incorrect deployment initial access tokens fail closed. The deployment controls initial access-token issuance, expiry and replay policy under RFC 7591.
 - Registered clients cannot escalate from public to confidential or from baseline to FAPI profile capabilities without policy approval.
 - Dynamic client registration, read, update, and delete audit event names remain

@@ -81,6 +81,7 @@ impl D1Provider {
              SELECT ?1,?2,?3,?4,json_set(?5,'$.updated_at',unixepoch()),?6,0,1,0,0,{NOW},{NOW} WHERE {predicate}
              ON CONFLICT DO NOTHING RETURNING principal,claims,epoch,active,mfa_enabled,avatar_revision,created_at,updated_at"),parameters)];
         if let Some((actor, source)) = audit {
+            let event = Uuid::new_v4();
             let payload = json!({
                 "schema_version":nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
                 "event_category":"administration","tenant_id":self.tenant_id,
@@ -88,15 +89,18 @@ impl D1Provider {
                 "admin_user_id":actor,"user_id":user_id,"role":"user","admin_level":0,
                 "is_active":true,"outcome":"success","source_ip_hash":source,
             });
+            let payload = encode(&payload)?;
             statements.push(Statement::new(
                 format!(
                 "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
                  SELECT ?1,?2,'admin_user_created','administration',{NOW},?3 WHERE changes()=1"),
-                vec![
-                    json!(self.tenant_id),
-                    json!(Uuid::new_v4()),
-                    json!(encode(&payload)?),
-                ],
+                vec![json!(self.tenant_id), json!(event), json!(payload)],
+            ));
+            statements.push(Statement::new(
+                "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2)
+                    OR EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3 AND event_type='admin_user_created' AND category='administration' AND payload=?4)
+                    THEN 1 ELSE json('account required audit was not accepted') END",
+                vec![json!(self.tenant_id), json!(user_id), json!(event), json!(payload)],
             ));
         }
         let mut results = self.database.batch(statements).await?;

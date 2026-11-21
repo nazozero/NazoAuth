@@ -170,6 +170,65 @@ fn administrative_create_requires_current_exact_context_and_atomic_required_audi
 }
 
 #[test]
+fn administrative_create_rolls_back_when_required_audit_is_ignored() {
+    block_on(async {
+        let (database, provider) = support::fixture().await;
+        let actor = admin(&database, &provider, "administrator", 3).await;
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='admin_user_created' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .create_user_with_required_audit(input("ignored"), actor, "source".into())
+                .await
+                .is_err()
+        );
+        assert!(
+            !provider
+                .email_exists(tenant().tenant_id, "ignored@example.com")
+                .await
+                .unwrap()
+        );
+        assert_sql(
+            &database,
+            "NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='admin_user_created')",
+        );
+    });
+}
+
+#[test]
+fn administrator_deactivation_requires_refresh_and_grant_retirement() {
+    block_on(async {
+        for (table, operation) in [
+            ("nazo_refresh_families", "UPDATE"),
+            ("nazo_grants", "DELETE"),
+        ] {
+            let (database, provider) = support::fixture().await;
+            let actor = admin(&database, &provider, "administrator", 3).await;
+            family(&database, id(USER)).await;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE {operation} ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                provider
+                    .update_authorized_with_required_audit(
+                        tenant(),
+                        actor,
+                        id(USER),
+                        update(None, None, Some(false)),
+                        "source".into()
+                    )
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert_sql(
+                &database,
+                &format!(
+                    "EXISTS(SELECT 1 FROM nazo_users WHERE id='{USER}' AND active=1 AND epoch=0) AND EXISTS(SELECT 1 FROM nazo_refresh_families WHERE revoked_at IS NULL) AND EXISTS(SELECT 1 FROM nazo_grants) AND NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='admin_user_updated')"
+                ),
+            );
+        }
+    });
+}
+
+#[test]
 fn shared_hierarchy_policy_is_enforced_and_denials_are_durable() {
     block_on(async {
         let (database, provider) = support::fixture().await;

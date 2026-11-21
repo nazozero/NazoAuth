@@ -113,6 +113,12 @@ impl D1Provider {
                 "DELETE FROM nazo_state WHERE tenant_id=?1 AND kind='device_user' AND key=?4 AND value=?2 AND EXISTS(SELECT 1 FROM nazo_state AS device WHERE device.tenant_id=?1 AND device.kind='device' AND device.key=?2 AND device.version=?5)",
                 params.clone(),
             ));
+            statements.push(Statement::new(
+                "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND version=?5)
+                    OR NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_user' AND key=?4 AND value=?2)
+                    THEN 1 ELSE json('device completion did not retire its user code') END",
+                params.clone(),
+            ));
         }
         statements.push(Statement::new(
             "SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND version=?5) THEN 'applied' WHEN EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND version=?3 AND expires_at<=unixepoch()) THEN 'expired' ELSE 'conflict' END AS outcome",
@@ -165,6 +171,10 @@ impl DeviceStateStorePort for D1Provider {
             let results = self.database.batch(vec![
                 Statement::new("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) SELECT ?1,'device',?2,?5,?4,unixepoch()+?6 WHERE NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device_user' AND key=?3 AND expires_at>unixepoch()) ON CONFLICT(tenant_id,kind,key) DO UPDATE SET value=excluded.value,version=excluded.version,expires_at=excluded.expires_at WHERE nazo_state.expires_at<=unixepoch() RETURNING version", create_params),
                 Statement::new("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) SELECT ?1,'device_user',?3,?2,?4,expires_at FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND version=?4 ON CONFLICT(tenant_id,kind,key) DO UPDATE SET value=excluded.value,version=excluded.version,expires_at=excluded.expires_at WHERE nazo_state.expires_at<=unixepoch() RETURNING version", params.clone()),
+                Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND version=?4)
+                    OR EXISTS(SELECT 1 FROM nazo_state d JOIN nazo_state m ON m.tenant_id=d.tenant_id AND m.kind='device_user' AND m.key=?3 AND m.value=d.key AND m.version=d.version AND m.expires_at=d.expires_at
+                        WHERE d.tenant_id=?1 AND d.kind='device' AND d.key=?2 AND d.version=?4)
+                    THEN 1 ELSE json('device creation did not persist its user code') END",params.clone()),
                 Statement::new("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND version=?4) THEN 'applied' WHEN EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='device' AND key=?2 AND expires_at>unixepoch()) THEN 'device_collision' ELSE 'user_collision' END AS outcome", params),
             ]).await.map_err(state_error)?;
             match outcome(&results).map_err(state_error)? {

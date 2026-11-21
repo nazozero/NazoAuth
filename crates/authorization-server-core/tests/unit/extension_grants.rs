@@ -21,6 +21,7 @@ fn exchange_policy<'a>(
     tenant_id: Uuid,
 ) -> TokenExchangePolicy<'a> {
     TokenExchangePolicy {
+        deployment_profile: crate::DeploymentProfile::Full,
         enabled: true,
         client_id: "client",
         client_is_confidential: true,
@@ -55,6 +56,63 @@ fn access_claims(tenant_id: Uuid) -> Claims {
         cnf: None,
         act: None,
         userinfo_claim_requests: (Vec::new()).into(),
+    }
+}
+
+#[test]
+fn machine_exchange_rejects_user_subjects_and_actors() {
+    let tenant = Uuid::nil();
+    let scopes = vec!["read".to_owned()];
+    let audiences = vec!["https://api.example".to_owned()];
+    let mut policy = exchange_policy(&scopes, &audiences, tenant);
+    policy.deployment_profile = crate::DeploymentProfile::MachineToMachine;
+    let mut claims = access_claims(tenant);
+    assert_eq!(
+        validate_token_exchange_subject(&claims, None, policy),
+        Err(TokenExchangeError::InvalidGrant)
+    );
+    assert_eq!(
+        token_exchange_actor_claim(claims.clone(), policy),
+        Err(TokenExchangeError::InvalidGrant)
+    );
+    claims.user_id = None;
+    assert_eq!(
+        validate_token_exchange_subject(&claims, None, policy),
+        Err(TokenExchangeError::InvalidGrant)
+    );
+    claims.subject_type = "client".to_owned();
+    claims.sub = "client".to_owned();
+    assert_eq!(
+        validate_token_exchange_subject(&claims, None, policy)
+            .unwrap()
+            .identity,
+        TokenExchangeSubjectIdentity::Client
+    );
+    assert!(token_exchange_actor_claim(claims.clone(), policy).is_ok());
+    claims.user_id = Some(Uuid::nil().to_string());
+    assert_eq!(
+        validate_token_exchange_subject(&claims, None, policy),
+        Err(TokenExchangeError::InvalidGrant)
+    );
+}
+
+#[test]
+fn jwt_bearer_grants_cannot_mint_user_subjects() {
+    let policy = jwt_policy(&[], &[]);
+    for (subject, accepted) in [("client", true), ("user-subject", false)] {
+        let result = validate_jwt_bearer_assertion_claims(
+            JwtBearerAssertionClaims {
+                iss: "client".to_owned(),
+                sub: subject.to_owned(),
+                aud: json!("https://issuer.example"),
+                exp: policy.now + 120,
+                nbf: Some(policy.now),
+                iat: Some(policy.now),
+                jti: "assertion".to_owned(),
+            },
+            policy,
+        );
+        assert_eq!(result.is_ok(), accepted);
     }
 }
 

@@ -1,6 +1,6 @@
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
-use crate::GrantType;
+use crate::DeploymentProfile;
 
 mod document;
 
@@ -40,27 +40,14 @@ pub struct MetadataCapabilities {
 
 impl MetadataCapabilities {
     #[must_use]
-    pub fn from_snapshot(snapshot: &ActiveModuleSnapshot) -> Self {
-        let visible = |module| module_admissible(snapshot, module, CapabilityAdmission::NewRequest);
+    pub fn from_snapshot(snapshot: &ActiveModuleSnapshot, profile: DeploymentProfile) -> Self {
+        let visible = |module| {
+            profile.allows_module(module)
+                && module_admissible(snapshot, module, CapabilityAdmission::NewRequest)
+        };
         let device_authorization = visible(ModuleId::DeviceAuthorization);
         let ciba = visible(ModuleId::Ciba);
-        let mut grant_types = vec![
-            GrantType::AuthorizationCode.as_str(),
-            GrantType::RefreshToken.as_str(),
-            GrantType::ClientCredentials.as_str(),
-        ];
-        if visible(ModuleId::JwtBearerGrant) {
-            grant_types.push(GrantType::JwtBearer.as_str());
-        }
-        if visible(ModuleId::TokenExchange) {
-            grant_types.push(GrantType::TokenExchange.as_str());
-        }
-        if device_authorization {
-            grant_types.push(GrantType::DeviceCode.as_str());
-        }
-        if ciba {
-            grant_types.push(GrantType::Ciba.as_str());
-        }
+        let mut grant_types = profile.grant_types(visible);
         let openid4vci_issuer = visible(ModuleId::Openid4vciIssuer);
         if openid4vci_issuer {
             grant_types.push("urn:ietf:params:oauth:grant-type:pre-authorized_code");

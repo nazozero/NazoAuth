@@ -29,6 +29,7 @@ fn metadata_config_maps_only_the_focused_settings_boundary() {
     assert_eq!(
         metadata_config(&settings).endpoint_config(),
         MetadataEndpointConfig {
+            deployment_profile: nazo_auth::DeploymentProfile::Full,
             backchannel_logout_supported: true,
             issuer: "https://issuer.example".to_owned(),
             mtls_endpoint_base_url: "https://mtls.issuer.example".to_owned(),
@@ -70,10 +71,10 @@ fn metadata_config_uses_composable_discovery_for_every_legacy_profile() {
 #[test]
 fn metadata_config_selects_machine_profile_for_hosts_without_user_authorization() {
     let mut settings = settings();
-    settings.protocol.user_authorization_supported = false;
+    settings.protocol.deployment_profile = nazo_auth::DeploymentProfile::MachineToMachine;
     assert_eq!(
-        metadata_config(&settings).authorization_server_profile,
-        MetadataAuthorizationServerProfile::MachineToMachine
+        metadata_config(&settings).deployment_profile,
+        nazo_auth::DeploymentProfile::MachineToMachine
     );
 }
 

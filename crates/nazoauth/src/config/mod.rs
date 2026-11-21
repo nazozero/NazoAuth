@@ -2,6 +2,7 @@
 
 pub use crate::endpoints::mtls::MtlsCertificateSourceMode;
 pub use crate::http::{ClientIpHeaderMode, ClientIpParseError, IpCidr, parse_trusted_proxy_cidrs};
+pub use nazo_auth::DeploymentProfile;
 use nazo_auth::DpopNoncePolicy;
 pub use nazo_oauth_server::policy::{
     AuthorizationServerProfile, CibaSecurityProfile, Openid4vcRevocationPolicy,
@@ -37,8 +38,7 @@ pub struct TenantSettings {
 
 #[derive(Clone)]
 pub struct ProtocolSettings {
-    /// Whether the host exposes end-user authorization and identity endpoints.
-    pub user_authorization_supported: bool,
+    pub deployment_profile: DeploymentProfile,
     /// Whether the host supplies durable backchannel logout delivery.
     pub backchannel_logout_supported: bool,
     pub default_audience: String,
@@ -191,7 +191,7 @@ impl Configuration {
                 issuer: issuer.clone(),
             },
             protocol: ProtocolSettings {
-                user_authorization_supported: true,
+                deployment_profile: DeploymentProfile::Full,
                 backchannel_logout_supported: true,
                 default_audience: "resource://default".into(),
                 protected_resource_identifier: format!(

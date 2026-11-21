@@ -163,6 +163,7 @@ fn form() -> TokenForm {
 
 fn policy(client: &ClientRow) -> TokenExchangePolicy<'_> {
     TokenExchangePolicy {
+        deployment_profile: nazo_auth::DeploymentProfile::Full,
         enabled: true,
         client_id: &client.client_id,
         client_is_confidential: client.client_type == "confidential",

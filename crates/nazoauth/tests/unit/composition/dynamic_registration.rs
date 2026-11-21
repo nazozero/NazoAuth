@@ -1,6 +1,60 @@
 use crate::config::{Configuration, IpCidr};
 
 #[test]
+fn registration_grants_follow_the_same_deployment_ceiling_as_metadata() {
+    use nazo_auth::{DeploymentProfile, MetadataCapabilities};
+    let mut settings = Configuration::new(
+        nazo_identity::TenantContext::default_system(),
+        "https://issuer.example",
+        uuid::Uuid::now_v7().simple().to_string(),
+    )
+    .unwrap();
+    let keys = nazo_key_management::KeyManager::for_test(nazo_crypto::jwt::Algorithm::EdDSA);
+    let active = nazo_runtime_modules::ActiveModuleSnapshot {
+        revision: nazo_runtime_modules::ModuleRevision::new(1),
+        accepting: nazo_runtime_modules::ModuleId::ALL.into_iter().collect(),
+        draining: Default::default(),
+    };
+    for profile in [
+        DeploymentProfile::PasskeyOnly,
+        DeploymentProfile::MachineToMachine,
+    ] {
+        settings.protocol.deployment_profile = profile;
+        let registration = super::dynamic_registration_config(&settings, &keys).capabilities;
+        assert_eq!(
+            registration.grant_types.unwrap(),
+            MetadataCapabilities::from_snapshot(&active, profile).grant_types
+        );
+    }
+    settings
+        .modules
+        .dynamic_client_registration_capabilities
+        .grant_types = Some(vec![
+        "authorization_code".into(),
+        "client_credentials".into(),
+        "urn:openid:params:grant-type:ciba".into(),
+    ]);
+    assert_eq!(
+        super::dynamic_registration_config(&settings, &keys)
+            .capabilities
+            .grant_types
+            .unwrap(),
+        vec!["client_credentials"]
+    );
+    settings.protocol.deployment_profile = DeploymentProfile::Full;
+    settings
+        .modules
+        .dynamic_client_registration_capabilities
+        .grant_types = None;
+    assert!(
+        super::dynamic_registration_config(&settings, &keys)
+            .capabilities
+            .grant_types
+            .is_none()
+    );
+}
+
+#[test]
 fn dynamic_registration_config_copies_security_and_rate_limit_settings() {
     let mut settings = Configuration::new(
         nazo_identity::TenantContext::default_system(),

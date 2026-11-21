@@ -209,13 +209,15 @@ Required negative tests:
 ## CIBA Profiles
 
 The CIBA runtime module enables the OpenID Connect CIBA poll/ping endpoint and
-grant and is active by default on new databases. A client must still have CIBA
-grant/metadata and `security_policy.allow_cross_device_flows=true`. CIBA uses
-`CIBA_SECURITY_PROFILE` for CIBA-specific assurance.
+grant. New native databases enable it by default; Workers requires `ciba` in
+`NAZO_CONFIG.modules` and the full deployment profile. A client must still have
+CIBA grant/metadata and `security_policy.allow_cross_device_flows=true`.
+Native hosts select assurance through `CIBA_SECURITY_PROFILE`; Workers uses
+`fapi-ciba-id1`.
 
 | Profile | Policy |
 | --- | --- |
-| `fapi-ciba-id1` | Implements FAPI-CIBA ID1 behavior across `private_key_jwt / mTLS` × `poll / ping`: signed backchannel authentication requests, endpoint-audience policy where explicitly registered, mTLS holder-of-key tokens, and authenticated ping carrying only `auth_req_id`. Other profile names are rejected. |
+| `fapi-ciba-id1` | Implements FAPI-CIBA ID1 behavior across `private_key_jwt / mTLS` × `poll / ping`: signed backchannel authentication requests, endpoint-audience policy where explicitly registered, mTLS holder-of-key tokens, and authenticated ping carrying only `auth_req_id`. |
 | `fapi2-ciba` | Requires confidential clients, `private_key_jwt` or mTLS client authentication, issuer-only private_key_jwt audience policy, signed backchannel authentication requests, strong CIBA JWT algorithms, and DPoP or mTLS sender-constrained access tokens. |
 
 The internal `fapi2-ciba` profile applies only CIBA-applicable FAPI2 Security
@@ -297,52 +299,30 @@ Required negative tests:
 - stale or revoked token reported active
 - top-level token subject/expiry confusion in the signed response
 
-## M8 emerging-protocol watchlist boundary
+## Optional protocol capabilities
 
-M8 is not an authorization-server runtime profile. Completing its governance
-tasks does not add a profile name, endpoint, grant, authentication method,
-token type, SCIM capability, credential role, or discovery field.
+RFC 9865 cursor pagination applies to SCIM `/Users` listing and
+`/ServiceProviderConfig`. Its configuration and metadata belong to SCIM.
 
-Separately admitted implementations may add their own default-closed module or
-baseline capability after their entry gate is complete; this paragraph does
-not override the implemented RFC 9865, RFC 9967, bounded HTTP Signatures, or
-separately admitted OpenID4VC Issuer/Verifier surfaces described below.
+The default-closed `scim_security_events` module implements RFC 9967. It emits
+notice-only provisioning SETs through a transactional outbox and RFC 8936
+polling. Asynchronous SCIM requests are advertised as `none`.
 
-The dated M8 governance review defines the admission and isolation requirements
-for FAPI HTTP Signatures,
-RFC 9865/9967, browser-based application guidance, client attestation,
-Transaction Tokens, Grant Management, and the historical OpenID4VC entry gate.
-OpenID4VCI Issuer and OpenID4VP Verifier subsequently completed that separate
-gate; their current boundary is documented in
-the external controller evidence. Until a remaining candidate's
-separate implementation and negative tests complete, all existing baseline,
-FAPI2, Message Signing, CIBA, SCIM, and external-provider profile behavior must
-be byte-for-byte unaffected by selecting any existing runtime profile.
+OpenID4VCI Issuer and OpenID4VP Verifier use independent runtime modules and
+credential/trust configuration. Their protocol and trust requirements are
+documented in [OpenID4VC validation](openid4vc-validation.md).
 
-RFC 9865 is the first admitted M8 candidate. Its completed implementation is
-limited to SCIM `/Users` listing and `/ServiceProviderConfig`; it is not an
-OAuth authorization-server profile and cannot change any profile selection or
-OAuth/OIDC/FAPI metadata.
-
-Browser-based security guidance is implementation evidence, not a runtime
-profile. NazoAuthWeb is the first-party same-origin authorization-server
+NazoAuthWeb is the first-party same-origin authorization-server
 frontend with a server-managed session and receives no OAuth tokens. A
 third-party browser-only application remains a public `oauth2-oidc-baseline`
 client using authorization code + S256 PKCE, exact redirects, and
 non-credentialed endpoint-specific CORS. The server-side controls are reviewed against RFC 10017; third-party browser
 applications apply its client and deployment requirements.
 
-FAPI HTTP Signatures is the second bounded M8 implementation candidate. It is
-available only while the persisted `http_message_signatures` module is enabled on `/fapi/resource`;
-it is not an authorization-server profile, emits no metadata, and leaves every
-existing profile unchanged while disabled. The implementation is pinned to the
+FAPI HTTP Signatures is available at `/fapi/resource` while the persisted
+`http_message_signatures` module is enabled. Its module selection is independent
+of the authorization-server profile. The implementation is pinned to the
 working draft built 2026-06-26 and the RFC 9421/RFC 9530 primitives listed in
 the [resource contract](fapi-http-signatures.md). Local Rust vectors and
 real-HTTP positive/negative tests cover the implemented profile. Review normative
 differences before adopting a newer draft or Final Specification.
-
-RFC 9967 is the third admitted M8 candidate. It is a separate default-closed
-SCIM runtime module, not an OAuth profile. It emits notice-only provisioning
-SETs through a transactional outbox and RFC 8936 polling; it cannot alter OAuth,
-OIDC, FAPI, CIBA, or browser metadata. Asynchronous SCIM requests remain out of
-scope and are advertised as `none`.

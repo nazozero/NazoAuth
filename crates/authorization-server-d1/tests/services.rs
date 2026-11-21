@@ -276,6 +276,41 @@ fn avatar_missing_candidate_inactive_account_and_foreign_tenant_never_publish() 
     });
 }
 
+#[test]
+fn avatar_preparation_rejects_missing_catalog_or_chunks_before_publication() {
+    block_on(async {
+        for table in ["nazo_avatar_objects", "nazo_avatar_chunks"] {
+            let (db, p) = fixture().await;
+            let image = avatar(vec![73; 150_000]);
+            db.execute_sql(&format!(
+                "CREATE TRIGGER refuse BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END"
+            ))
+            .unwrap();
+            assert!(p.begin_replace(user(), None, image.clone()).await.is_err());
+            assert!(
+                p.compare_and_set_avatar(
+                    tenant(),
+                    user(),
+                    None,
+                    0,
+                    Some(format!("/auth/me/avatar?v={}", image.version))
+                )
+                .await
+                .unwrap()
+                .is_none()
+            );
+            db.execute_sql("SELECT CASE WHEN (SELECT count(*) FROM nazo_avatar_objects)=0 AND (SELECT count(*) FROM nazo_avatar_chunks)=0 THEN 1 ELSE json('partial avatar storage') END").unwrap();
+        }
+        let (db, p) = fixture().await;
+        db.execute_sql("CREATE TRIGGER refuse BEFORE INSERT ON nazo_avatar_objects BEGIN SELECT RAISE(IGNORE); END").unwrap();
+        assert!(
+            p.prepare_r2_avatar(user(), &avatar(vec![73; 10]))
+                .await
+                .is_err()
+        );
+    });
+}
+
 fn notification() -> IdempotentBackchannelLogoutDelivery {
     IdempotentBackchannelLogoutDelivery {
         operation_key: Uuid::new_v4().to_string(),
@@ -286,6 +321,24 @@ fn notification() -> IdempotentBackchannelLogoutDelivery {
         logout_token: "signed-logout-token-fixture".into(),
         expires_at: Timestamp::now() + SignedDuration::from_secs(300),
     }
+}
+
+#[test]
+fn logout_enqueue_rolls_back_the_batch_when_one_delivery_is_ignored() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let accepted = notification();
+        let mut ignored = notification();
+        ignored.operation_key = "ignored".into();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_logout_outbox WHEN NEW.operation_key='ignored' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .enqueue_idempotent_batch(&[accepted, ignored])
+                .await
+                .is_err()
+        );
+        assert!(provider.claim_due(10, 60).await.unwrap().is_empty());
+    });
 }
 #[test]
 fn logout_outbox_deduplicates_and_fences_reclaimed_delivery() {

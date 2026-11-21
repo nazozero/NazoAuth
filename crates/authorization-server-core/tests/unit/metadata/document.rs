@@ -11,6 +11,7 @@ const RESPONSE_RS256: &[&str] = &["RS256"];
 
 fn input() -> AuthorizationServerMetadataInput<'static> {
     AuthorizationServerMetadataInput {
+        deployment_profile: DeploymentProfile::Full,
         backchannel_logout_supported: true,
         issuer: "https://issuer.example",
         mtls_endpoint_base_url: "https://mtls.issuer.example",
@@ -31,12 +32,49 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
 }
 
 #[test]
+fn passkey_metadata_excludes_modules_outside_the_deployment_surface() {
+    let active = snapshot(ModuleId::ALL);
+    let metadata = json_value(authorization_server_metadata(
+        AuthorizationServerMetadataInput {
+            deployment_profile: DeploymentProfile::PasskeyOnly,
+            ..input()
+        },
+        &active,
+    ));
+    assert_eq!(
+        metadata["grant_types_supported"],
+        json!([
+            "authorization_code",
+            "refresh_token",
+            "client_credentials",
+            "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "urn:ietf:params:oauth:grant-type:token-exchange",
+            "urn:ietf:params:oauth:grant-type:device_code",
+        ])
+    );
+    assert!(
+        metadata
+            .get("backchannel_authentication_endpoint")
+            .is_none()
+    );
+    assert!(
+        metadata
+            .get("pre-authorized_grant_anonymous_access_supported")
+            .is_none()
+    );
+    assert_eq!(
+        metadata["device_authorization_endpoint"],
+        "https://issuer.example/device_authorization"
+    );
+}
+
+#[test]
 fn machine_metadata_keeps_oauth_capabilities_without_user_authorization() {
     let scopes = ["orders:read".to_owned()];
     for mtls_enabled in [false, true] {
         let metadata = json_value(authorization_server_metadata(
             AuthorizationServerMetadataInput {
-                profile: MetadataAuthorizationServerProfile::MachineToMachine,
+                deployment_profile: DeploymentProfile::MachineToMachine,
                 mtls_enabled,
                 additional_scopes_supported: &scopes,
                 ..input()
@@ -123,7 +161,7 @@ fn machine_metadata_uses_current_module_admission() {
     active.draining.insert(ModuleId::DynamicClientRegistration);
     let metadata = json_value(authorization_server_metadata(
         AuthorizationServerMetadataInput {
-            profile: MetadataAuthorizationServerProfile::MachineToMachine,
+            deployment_profile: DeploymentProfile::MachineToMachine,
             ..input()
         },
         &active,

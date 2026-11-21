@@ -169,6 +169,42 @@ fn prior_decision_event_cannot_authorize_an_expired_request_or_replace_its_grant
 }
 
 #[test]
+fn ignored_audit_cannot_reuse_a_decision_after_its_receipt_expires() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        assert_eq!(
+            provider
+                .commit_decision(decision(Uuid::new_v4(), "approve"))
+                .await
+                .unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        let mut prompt_none = decision(Uuid::new_v4(), "prompt-none");
+        prompt_none.decision = AuthorizationDecisionKind::PromptNone;
+        prompt_none.valid_until = Timestamp::now() + SignedDuration::from_secs(1);
+        prompt_none.retain_until = prompt_none.valid_until;
+        assert_eq!(
+            provider.commit_decision(prompt_none.clone()).await.unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert_eq!(provider.prune_expired(100).await.unwrap(), 1);
+        database
+            .execute_sql(&format!(
+                "CREATE TRIGGER ignore_prior_decision BEFORE INSERT ON nazo_audit
+             WHEN NEW.event_id='{}' BEGIN SELECT RAISE(IGNORE); END;",
+                prompt_none.event_id
+            ))
+            .unwrap();
+        assert!(!matches!(
+            provider.commit_decision(prompt_none).await,
+            Ok(AuthorizationDecisionCommitResult::Committed)
+        ));
+        assert_eq!(provider.prune_expired(100).await.unwrap(), 0);
+    });
+}
+
+#[test]
 fn unrelated_audit_type_or_tenant_cannot_authorize_an_expired_decision() {
     block_on(async {
         for (tenant, event_type) in [
@@ -202,5 +238,40 @@ fn a_decision_fence_cannot_expire_before_the_request_it_protects() {
             Err(AuthorizationPortError::CorruptData)
         ));
         assert!(provider.grant(USER, CLIENT).await.unwrap().is_none());
+    });
+}
+
+#[test]
+fn authorization_completion_requires_the_receipt_grant_and_history() {
+    block_on(async {
+        for table in ["nazo_decisions", "nazo_grants", "nazo_grant_activity"] {
+            let (database, provider) = fixture().await;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                provider
+                    .commit_decision(decision(Uuid::new_v4(), "ignored"))
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert!(provider.grant(USER, CLIENT).await.unwrap().is_none());
+            database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit) AND NOT EXISTS(SELECT 1 FROM nazo_decisions) AND NOT EXISTS(SELECT 1 FROM nazo_grant_activity) THEN 1 ELSE 0 END;").unwrap();
+        }
+        let (database, provider) = fixture().await;
+        assert_eq!(
+            provider
+                .commit_decision(decision(Uuid::new_v4(), "first"))
+                .await
+                .unwrap(),
+            AuthorizationDecisionCommitResult::Committed
+        );
+        database.execute_sql("CREATE TRIGGER suppress BEFORE UPDATE ON nazo_grant_activity BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .commit_decision(decision(Uuid::new_v4(), "second"))
+                .await
+                .is_err()
+        );
+        database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN (SELECT count(*) FROM nazo_decisions)=1 AND (SELECT count(*) FROM nazo_audit)=1 AND (SELECT authorization_count FROM nazo_grant_activity)=1 THEN 1 ELSE 0 END;").unwrap();
     });
 }
