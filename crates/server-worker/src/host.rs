@@ -164,13 +164,22 @@ fn configuration(env: &Env) -> anyhow::Result<WorkerConfiguration> {
 }
 
 fn avatar_bucket(env: &Env) -> anyhow::Result<Option<worker::Bucket>> {
-    let name = crate::avatars::AVATAR_BUCKET;
-    let binding =
-        worker::js_sys::Reflect::get(env, &JsValue::from(name)).map_err(worker::Error::from)?;
-    if binding.is_undefined() {
-        return Ok(None);
+    use crate::avatars::AVATAR_BUCKET;
+
+    match env.bucket(AVATAR_BUCKET) {
+        Ok(bucket) => Ok(Some(bucket)),
+        // The SDK reports a missing binding as a RustError. Other binding
+        // errors, including a configured binding of the wrong type, must fail.
+        Err(worker::Error::RustError(message))
+            if message
+                .strip_prefix("Binding `")
+                .and_then(|s| s.strip_suffix("` is undefined."))
+                == Some(AVATAR_BUCKET) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
     }
-    Ok(Some(env.bucket(name)?))
 }
 
 async fn application(
