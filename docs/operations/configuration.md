@@ -483,13 +483,18 @@ and that adapter's configuration. Providers default to disabled unless
 `enabled` is true. Incomplete configuration fails startup; disabled providers
 do not appear in `/auth/federation/providers`.
 
-OIDC entries require issuer, authorization/token endpoints, `jwks_url`, client
-credentials and redirect URI. `scopes` defaults to `openid email profile` and
-must include `openid`. The optional `userinfo_endpoint` supplies JSON profile
-claims after ID Token validation; its subject must match the ID Token exactly.
-Endpoint URLs use HTTPS or loopback HTTP and reject URL credentials and
-fragments. See [external federation](../features/federation.md#userinfo-and-profile-claims)
-for profile and account-linking behavior.
+OIDC entries require an issuer, client credentials and a redirect URI. For
+static configuration, supply authorization/token endpoints and `jwks_url` with
+an optional `userinfo_endpoint`. Set `discovery: true` to resolve endpoints from
+the configured HTTPS issuer and omit the static endpoints. Explicitly
+configured endpoints may use HTTPS or loopback HTTP. Endpoint URLs reject
+credentials and fragments. `scopes` defaults to `openid email profile` and must
+include `openid`.
+
+Set `backchannel_logout: true` and register the provider's logout callback at
+the OP to accept signed upstream logout requests. Both flags default to false.
+See [external federation](../features/federation.md#external-oidc-login) for
+outbound network requirements, account linking and logout scope.
 
 Security-state lifetimes and cooldowns must be positive. Startup rejects zero
 or negative values for session, authorization-code, access-token, ID-token,

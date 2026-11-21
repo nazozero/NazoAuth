@@ -439,3 +439,92 @@ fn userinfo_requires_a_nonempty_bearer_access_token() {
         );
     }
 }
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn discovery_binds_the_exact_issuer_and_only_usable_https_endpoints() {
+    use nazo_identity::federation::oidc::{OidcProviderMetadata, discovery_url};
+    let issuer = "https://issuer.example/acme/";
+    assert_eq!(
+        discovery_url(issuer).as_deref(),
+        Some("https://issuer.example/acme/.well-known/openid-configuration")
+    );
+    assert!(discovery_url("http://issuer.example").is_none());
+    assert!(discovery_url("https://@issuer.example").is_none());
+    assert!(discovery_url("https://issuer.example/acme?query").is_none());
+    let document = json!({
+        "issuer": issuer,
+        "authorization_endpoint": "https://login.example/authorize",
+        "token_endpoint": "https://api.example/token",
+        "jwks_uri": "https://keys.example/jwks",
+        "response_types_supported": ["code"]
+    });
+    let metadata: OidcProviderMetadata = serde_json::from_value(document).unwrap();
+    assert!(metadata.validate(issuer));
+    assert!(!metadata.validate(issuer.trim_end_matches('/')));
+    let mut wrong = metadata.clone();
+    wrong.token_endpoint = "http://api.example/token".to_owned();
+    assert!(!wrong.validate(issuer));
+    let mut incompatible = metadata;
+    incompatible.token_endpoint_auth_methods_supported = Some(vec!["private_key_jwt".into()]);
+    assert!(!incompatible.validate(issuer));
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn logout_requires_a_current_signed_token_for_this_client_and_a_logout_target() {
+    use nazo_identity::federation::oidc::verify_logout_token;
+    let fixture = Fixture::new(Algorithm::ES256);
+    let now = Timestamp::now();
+    let signed = |overrides, remove: &[&str]| {
+        let mut claims = json!({
+            "sid": "upstream-session",
+            "jti": "logout-event",
+            "events": {"http://schemas.openid.net/event/backchannel-logout": {}}
+        });
+        for (key, value) in
+            serde_json::from_value::<serde_json::Map<String, Value>>(overrides).unwrap()
+        {
+            claims[key] = value;
+        }
+        fixture.token(claims, remove, Some("oidc-kid"))
+    };
+    let verify =
+        |token: &str| verify_logout_token("provider", ISSUER, CLIENT, &fixture.jwks, token, now);
+    assert!(verify(&signed(json!({}), &["nonce"])).is_ok());
+    assert!(verify(&signed(json!({}), &["nonce", "sid"])).is_ok());
+    assert!(verify(&signed(json!({}), &[])).is_err());
+    assert!(verify(&signed(json!({"nonce": null}), &[])).is_err());
+    assert!(verify(&signed(json!({}), &["nonce", "sub", "sid"])).is_err());
+    assert!(verify(&signed(json!({}), &["nonce", "exp"])).is_err());
+    assert!(verify(&signed(json!({"aud": "other-client"}), &["nonce"])).is_err());
+    assert!(
+        verify(&signed(
+            json!({"aud": [CLIENT, "other-client"]}),
+            &["nonce"]
+        ))
+        .is_err()
+    );
+    assert!(
+        verify(&signed(
+            json!({"aud": [CLIENT, "other-client"], "azp": CLIENT}),
+            &["nonce"]
+        ))
+        .is_ok()
+    );
+    assert!(verify(&signed(json!({"iss": "https://other.example"}), &["nonce"])).is_err());
+    assert!(verify(&signed(json!({"iat": now.as_second() - 301}), &["nonce"])).is_err());
+    assert!(
+        verify(&signed(
+            json!({"events": {"http://schemas.openid.net/event/backchannel-logout": null}}),
+            &["nonce"]
+        ))
+        .is_err()
+    );
+}

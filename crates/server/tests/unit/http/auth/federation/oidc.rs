@@ -7,6 +7,8 @@ use tokio::net::TcpListener;
 
 fn provider() -> OidcFederationSettings {
     OidcFederationSettings {
+        discovery: false,
+        backchannel_logout: false,
         provider_id: "test-oidc".to_owned(),
         issuer: "https://issuer.example".to_owned(),
         authorization_endpoint: "https://issuer.example/authorize".to_owned(),
@@ -186,7 +188,7 @@ async fn userinfo_uses_bearer_authorization_and_requires_a_subject() {
     ] {
         let (endpoint, request) = one_shot_json_server("200 OK", body).await;
         assert_eq!(
-            fetch_oidc_userinfo(&client, &endpoint, &token)
+            fetch_oidc_userinfo(&client, &endpoint, &token, false)
                 .await
                 .is_ok(),
             expected_success

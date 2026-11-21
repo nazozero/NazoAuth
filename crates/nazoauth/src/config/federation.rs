@@ -14,6 +14,8 @@ pub struct FederationSettings {
 pub struct OidcFederationSettings {
     pub provider_id: String,
     pub issuer: String,
+    pub discovery: bool,
+    pub backchannel_logout: bool,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     pub jwks_url: String,

@@ -1,4 +1,6 @@
-use nazo_identity::federation::oidc::{OidcTokenResponse, OidcUserInfo};
+use nazo_identity::federation::oidc::{
+    OidcProviderMetadata, OidcTokenResponse, OidcUserInfo, discovery_url,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -9,6 +11,49 @@ pub struct OidcCallbackQuery {
     pub code: Option<String>,
     pub state: Option<String>,
     pub error: Option<String>,
+}
+
+pub async fn discover_oidc(
+    client: &dyn super::FederationHttpClient,
+    issuer: &str,
+) -> anyhow::Result<OidcProviderMetadata> {
+    let url = discovery_url(issuer).ok_or_else(|| anyhow::anyhow!("invalid discovery issuer"))?;
+    let response = client
+        .send_discovered(
+            http::Request::get(url).body(bytes::Bytes::new())?,
+            super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES,
+        )
+        .await?;
+    let metadata = super::federation_json_response::<OidcProviderMetadata>(response)?;
+    anyhow::ensure!(metadata.validate(issuer), "invalid OIDC discovery metadata");
+    Ok(metadata)
+}
+
+pub fn resolved_provider(
+    provider: &OidcFederationSettings,
+    metadata: OidcProviderMetadata,
+) -> OidcFederationSettings {
+    OidcFederationSettings {
+        authorization_endpoint: metadata.authorization_endpoint,
+        token_endpoint: metadata.token_endpoint,
+        jwks_url: metadata.jwks_url,
+        userinfo_endpoint: metadata.userinfo_endpoint,
+        ..provider.clone()
+    }
+}
+
+async fn send(
+    client: &dyn super::FederationHttpClient,
+    request: http::Request<bytes::Bytes>,
+    discovered: bool,
+) -> anyhow::Result<http::Response<bytes::Bytes>> {
+    if discovered {
+        client
+            .send_discovered(request, super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES)
+            .await
+    } else {
+        super::send(client, request).await
+    }
 }
 
 pub async fn exchange_oidc_code(
@@ -39,16 +84,17 @@ pub async fn exchange_oidc_code(
             "application/x-www-form-urlencoded",
         )
         .body(bytes::Bytes::from(body))?;
-    super::federation_json_response(super::send(client, request).await?)
+    super::federation_json_response(send(client, request, provider.discovery).await?)
 }
 
 pub async fn fetch_oidc_jwks(
     client: &dyn super::FederationHttpClient,
     provider: &OidcFederationSettings,
 ) -> anyhow::Result<Value> {
-    let response = super::send(
+    let response = send(
         client,
         http::Request::get(&provider.jwks_url).body(bytes::Bytes::new())?,
+        provider.discovery,
     )
     .await?;
     let value = super::federation_json_response::<Value>(response)?;
@@ -62,6 +108,7 @@ pub async fn fetch_oidc_userinfo(
     client: &dyn super::FederationHttpClient,
     endpoint: &str,
     token: &OidcTokenResponse,
+    discovered: bool,
 ) -> anyhow::Result<OidcUserInfo> {
     let request = http::Request::get(endpoint)
         .header(
@@ -70,5 +117,5 @@ pub async fn fetch_oidc_userinfo(
         )
         .header(http::header::ACCEPT, "application/json")
         .body(bytes::Bytes::new())?;
-    super::federation_json_response(super::send(client, request).await?)
+    super::federation_json_response(send(client, request, discovered).await?)
 }

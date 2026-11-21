@@ -11,6 +11,8 @@ async fn oidf_rp_http_bridge() {
         .expect("migrate isolated conformance database");
     let issuer = "https://localhost:8443/test/a/nazo-issue202/";
     let provider = OidcFederationSettings {
+        discovery: false,
+        backchannel_logout: false,
         provider_id: "oidf-rp-test".into(),
         issuer: issuer.into(),
         authorization_endpoint: format!("{issuer}authorize"),

@@ -583,6 +583,23 @@ proof expansion and before nonce claiming. A configuration without proof types
 and holder-binding methods issues its unbound credential without a proof nonce;
 stray proofs remain invalid. The same rules apply to deferred preparation.
 
+### Federation upstream configuration and logout
+
+The facade resolves configured OIDC issuer metadata through the federation
+HTTP port and binds the validated endpoints to the browser's login state.
+Identity owns issuer, token and upstream session semantics. Native and Worker
+enforce their outbound policies on discovered destinations at the transport
+boundary. An embedding host can opt into discovery by implementing the
+discovered-request capability on the existing federation HTTP port.
+
+Opted-in sessions carry digests for the upstream subject and optional session
+ID. The session backend maintains a monotonic logout timestamp for each
+tenant-scoped digest and checks it when loading linked sessions. This preserves
+logout across local session rotation and prevents an older callback or logout
+retry from reviving a session. An embedding session backend that enables this
+feature implements the upstream logout operation and enforces its cutoff when
+reading sessions.
+
 ### Federation browser ownership
 
 OIDC/social HTTP owns canonical browser-seed cookies and their secure/dev

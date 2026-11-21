@@ -44,6 +44,8 @@ use uuid::Uuid;
 
 #[path = "federation/oidf.rs"]
 mod oidf;
+#[path = "federation/upstream_lifecycle.rs"]
+mod upstream_lifecycle;
 
 #[test]
 fn federation_transport_has_no_identity_or_storage_orchestration() {
@@ -220,6 +222,8 @@ const TEST_OIDC_PROVIDER_ID: &str = "test-oidc";
 
 fn oidc_provider() -> OidcFederationSettings {
     OidcFederationSettings {
+        discovery: false,
+        backchannel_logout: false,
         provider_id: TEST_OIDC_PROVIDER_ID.to_owned(),
         issuer: "https://issuer.example".to_owned(),
         authorization_endpoint: "https://issuer.example/authorize".to_owned(),
@@ -243,9 +247,11 @@ fn oidc_provider_registry_config(provider: &OidcFederationSettings) -> ConfigSou
             "display_name": "OIDC",
             "adapter_type": "oidc",
             "issuer": provider.issuer.as_str(),
-            "authorization_endpoint": provider.authorization_endpoint.as_str(),
-            "token_endpoint": provider.token_endpoint.as_str(),
-            "jwks_url": provider.jwks_url.as_str(),
+            "discovery": provider.discovery,
+            "backchannel_logout": provider.backchannel_logout,
+            "authorization_endpoint": (!provider.discovery).then_some(provider.authorization_endpoint.as_str()),
+            "token_endpoint": (!provider.discovery).then_some(provider.token_endpoint.as_str()),
+            "jwks_url": (!provider.discovery).then_some(provider.jwks_url.as_str()),
             "userinfo_endpoint": provider.userinfo_endpoint.as_deref(),
             "client_id": provider.client_id.as_str(),
             "client_secret": provider.client_secret.as_str(),

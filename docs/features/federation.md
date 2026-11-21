@@ -8,7 +8,7 @@ from OAuth/OIDC authorization-server conformance.
 Supported federation modes:
 
 - configuration-driven external provider registry
-- multiple modular external OIDC provider instances
+- multiple external OIDC providers with static endpoints or issuer configuration
 - OAuth2 social provider adapters for QQ, WeChat, and custom JSON userinfo providers
 - one trusted SAML gateway integration
 - tenant-scoped external identity links in the resolved request runtime
@@ -58,7 +58,7 @@ provider state through:
 - `GET /admin/federation/providers`
 
 The admin view reports callback URLs and endpoint/credential configuration
-status, including `userinfo_endpoint_configured` for OIDC providers. Client
+status, including which OIDC providers enable discovery or Back-Channel Logout. Client
 secrets, provider access tokens, JWKS contents and raw assertions are excluded.
 
 ## External OIDC Login
@@ -88,10 +88,47 @@ the JWKS, and that key must be usable for the declared algorithm. An ID Token
 without `kid` is accepted only when the JWKS contains exactly one usable public
 signing key for its declared algorithm.
 
+### Issuer Configuration
+
+Set `discovery: true` with a preconfigured HTTPS `issuer`, the existing client
+credentials and the registered callback. Omit the static authorization, token,
+JWKS and UserInfo endpoints. NazoAuth fetches the issuer's
+`/.well-known/openid-configuration` document at login start, checks the exact
+issuer and support for authorization code with `client_secret_basic`, and
+binds the resulting endpoints to that browser's callback state. Discovery is
+limited to the configured issuer. See
+[OpenID Connect Discovery §4](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig).
+
+Discovered endpoints must use HTTPS. Native pins each server-side request to
+validated DNS addresses and denies private and special-use networks. Worker
+requires each server-side origin, including any distinct JWKS or UserInfo origin,
+in the existing outbound allowlist. TLS validation and the response size limit
+apply to all discovery exchanges, and redirects are rejected. Use static
+configuration for trusted private upstreams on Native.
+
+### Back-Channel Logout
+
+Enable `backchannel_logout: true` on an OIDC entry and register
+`POST /auth/federation/{provider_id}/backchannel-logout` as the client's
+back-channel logout URI at the upstream OP. Register an absolute URL for the
+same tenant host used for sign-in. For new logins, the RP records the verified
+upstream session ID if present and the upstream subject, scoped to the tenant,
+provider, issuer and client. Reauthenticate sessions established before the
+setting was enabled to attach them to the upstream session.
+
+The OP posts a signed `logout_token` as form data. NazoAuth verifies it against
+the configured issuer and client, invalidates sessions by `sid` when provided,
+or by `sub` otherwise, and returns HTTP 200 even if those sessions have already
+expired. A newer login survives retries of the same logout. This invalidates
+the matching local login sessions, including pending MFA. Downstream client
+logout delivery and downstream token revocation are outside this flow. See
+[OpenID Connect Back-Channel Logout](https://openid.net/specs/openid-connect-backchannel-1_0.html).
+
 ### UserInfo and Profile Claims
 
 An OIDC provider can configure an optional `userinfo_endpoint` in its registry
-entry. Every callback for that provider fetches JSON UserInfo after ID Token
+entry or obtain it through discovery. When available, the callback fetches JSON
+UserInfo after ID Token
 verification, using the token response's Bearer access token. UserInfo `sub`
 must exactly match the subject in the verified ID Token before any profile
 claim is used. A failed request, invalid response or subject mismatch stops

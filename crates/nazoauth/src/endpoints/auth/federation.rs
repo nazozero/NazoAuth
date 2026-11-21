@@ -73,6 +73,16 @@ impl FederationHttpConfig {
 /// proxies, and applies the existing ten-second exchange timeout.
 pub trait FederationHttpClient: Send + Sync {
     fn send(&self, request: HttpRequest, max_response_bytes: usize) -> FederationHttpFuture<'_>;
+
+    /// Executes an HTTPS request whose destination was selected by issuer metadata.
+    /// Hosts must enforce their network admission policy for the resolved destination.
+    fn send_discovered(
+        &self,
+        _request: HttpRequest,
+        _max_response_bytes: usize,
+    ) -> FederationHttpFuture<'_> {
+        Box::pin(async { anyhow::bail!("OIDC discovery transport is not configured") })
+    }
 }
 
 pub type FederationHttpFuture<'a> =
@@ -148,9 +158,24 @@ pub async fn federation_provider_start(
         read_federation_binding_seed(req, config).unwrap_or_else(rand::random::<[u8; 32]>);
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
+            let metadata = if provider.discovery {
+                match discover_oidc(config.client.as_ref(), &provider.issuer).await {
+                    Ok(metadata) => Some(metadata),
+                    Err(_) => return oidc_unavailable(),
+                }
+            } else {
+                None
+            };
+            let authorization_endpoint = metadata
+                .as_ref()
+                .map_or(provider.authorization_endpoint.as_str(), |document| {
+                    document.authorization_endpoint.as_str()
+                })
+                .to_owned();
             match service
-                .start_oidc(
+                .start_oidc_with_metadata(
                     provider.provider_id.clone(),
+                    metadata,
                     &browser_binding_seed,
                     Timestamp::now(),
                 )
@@ -159,7 +184,7 @@ pub async fn federation_provider_start(
                 Ok(start) => federation_start_response(
                     config,
                     rp::authorization_url(
-                        &provider.authorization_endpoint,
+                        &authorization_endpoint,
                         &provider.client_id,
                         &provider.redirect_uri,
                         &provider.scopes,
@@ -184,6 +209,14 @@ pub async fn federation_provider_start(
             }
         }
     }
+}
+
+fn oidc_unavailable() -> HttpResponse {
+    oauth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "OIDC federation unavailable.",
+    )
 }
 
 pub fn federation_binding_cookie_name(config: &FederationHttpConfig) -> &'static str {
@@ -292,6 +325,15 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
+    let resolved;
+    let provider = match (provider.discovery, stored.discovery) {
+        (false, None) => provider,
+        (true, Some(metadata)) if metadata.validate(&provider.issuer) => {
+            resolved = resolved_provider(provider, metadata);
+            &resolved
+        }
+        _ => return federation_state_error(FederationError::InvalidState),
+    };
     let token = match exchange_oidc_code(
         config.client.as_ref(),
         provider,
@@ -339,7 +381,9 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         }
     };
     let userinfo = if let Some(endpoint) = provider.userinfo_endpoint.as_deref() {
-        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token).await {
+        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider.discovery)
+            .await
+        {
             Ok(userinfo) => Some(userinfo),
             Err(error) => {
                 tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC UserInfo request failed");
@@ -349,6 +393,18 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
                     "OIDC federation unavailable.",
                 );
             }
+        }
+    } else {
+        None
+    };
+    let upstream = if provider.backchannel_logout {
+        match claims.upstream_login(
+            &provider.provider_id,
+            &provider.client_id,
+            stored.created_at,
+        ) {
+            Ok(upstream) => Some(upstream),
+            Err(_) => return oidc_access_denied(),
         }
     } else {
         None
@@ -364,15 +420,112 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    complete_federation(
-        service,
-        config,
-        identity,
-        "oidc",
-        client_ip_with_config(req, client_ip),
-        false,
+    match service
+        .complete_oidc(identity, upstream, client_ip_with_config(req, client_ip))
+        .await
+    {
+        Ok(login) => federation_session_response(config, login),
+        Err(error) => federation_completion_error(error),
+    }
+}
+
+fn oidc_access_denied() -> HttpResponse {
+    oauth_error(
+        StatusCode::UNAUTHORIZED,
+        "access_denied",
+        "OIDC federation failed.",
     )
-    .await
+}
+
+pub async fn federation_provider_backchannel_logout(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    provider_id: String,
+) -> HttpResponse {
+    if let Err(response) =
+        crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
+    {
+        return response;
+    }
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
+        return unknown_provider_response();
+    };
+    let ExternalLoginProviderAdapter::Oidc(provider) = &provider.adapter else {
+        return unknown_provider_response();
+    };
+    if !provider.backchannel_logout {
+        return unknown_provider_response();
+    }
+
+    let invalid_token = || {
+        oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Invalid OIDC Logout Token.",
+        )
+    };
+    if !req
+        .headers()
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(';').next().is_some_and(|media| {
+                media
+                    .trim()
+                    .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+            })
+        })
+    {
+        return invalid_token();
+    }
+    let mut tokens = url::form_urlencoded::parse(req.body())
+        .filter(|(name, _)| name == "logout_token")
+        .map(|(_, value)| value);
+    let Some(token) = tokens
+        .next()
+        .filter(|token| token.matches('.').count() == 2)
+    else {
+        return invalid_token();
+    };
+    if tokens.next().is_some() {
+        return invalid_token();
+    }
+
+    let resolved;
+    let provider = if provider.discovery {
+        match discover_oidc(config.client.as_ref(), &provider.issuer).await {
+            Ok(metadata) => {
+                resolved = resolved_provider(provider, metadata);
+                &resolved
+            }
+            Err(_) => return oidc_unavailable(),
+        }
+    } else {
+        provider
+    };
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), provider).await {
+        Ok(jwks) => jwks,
+        Err(_) => return oidc_unavailable(),
+    };
+    let now = Timestamp::now();
+    let logout = match rp::verify_logout_token(
+        &provider.provider_id,
+        &provider.issuer,
+        &provider.client_id,
+        &jwks,
+        &token,
+        now,
+    ) {
+        Ok(logout) => logout,
+        Err(_) => return invalid_token(),
+    };
+    if service.revoke_oidc(logout, now).await.is_err() {
+        return oidc_unavailable();
+    }
+    crate::http::empty_response_no_store(StatusCode::OK)
 }
 
 pub async fn social_callback_after_rate_limit(

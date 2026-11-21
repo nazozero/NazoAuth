@@ -914,6 +914,8 @@ struct SessionWire<'a> {
     pending_mfa: bool,
     oidc_sid: Option<Cow<'a, str>>,
     logged_in_client_ids: Cow<'a, [String]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    upstream: Option<nazo_identity::session::UpstreamSession>,
 }
 
 impl<'a> From<&'a SessionRecord> for SessionWire<'a> {
@@ -927,6 +929,7 @@ impl<'a> From<&'a SessionRecord> for SessionWire<'a> {
             pending_mfa: value.pending_mfa(),
             oidc_sid: value.oidc_sid().map(Cow::Borrowed),
             logged_in_client_ids: Cow::Borrowed(value.logged_in_client_ids()),
+            upstream: value.upstream().cloned(),
         }
     }
 }
@@ -947,6 +950,7 @@ impl TryFrom<SessionWire<'_>> for SessionRecord {
         if !record.restore_auth_time_micros(wire.auth_time_micros) {
             return Err(DbError::CorruptData);
         }
+        record.set_upstream(wire.upstream);
         for client in wire.logged_in_client_ids.into_owned() {
             record.add_logged_in_client(client);
         }
@@ -1014,6 +1018,29 @@ impl D1Provider {
     }
 }
 
+const ADVANCE_UPSTREAM_SCOPE: &str = "
+    INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at)
+    VALUES (?1,'upstream_session',?2,?3,?4,?5)
+    ON CONFLICT(tenant_id,kind,key) DO UPDATE SET
+        value=CAST(MAX(CAST(nazo_state.value AS INTEGER),CAST(excluded.value AS INTEGER)) AS TEXT),
+        expires_at=MAX(nazo_state.expires_at,excluded.expires_at)
+";
+
+impl D1Provider {
+    fn advance_upstream_scope(&self, key: &str, issued_at: i64, retain_until: i64) -> Statement {
+        Statement::new(
+            ADVANCE_UPSTREAM_SCOPE,
+            vec![
+                json!(self.tenant_id),
+                json!(key),
+                json!(issued_at.to_string()),
+                json!(Uuid::new_v4()),
+                json!(retain_until),
+            ],
+        )
+    }
+}
+
 impl LoginSessionPort for D1Provider {
     fn create<'a>(
         &'a self,
@@ -1022,6 +1049,16 @@ impl LoginSessionPort for D1Provider {
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate> {
         Box::pin(async move {
+            if let Some(upstream) = record.upstream() {
+                let statements = upstream
+                    .keys()
+                    .map(|key| self.advance_upstream_scope(key, 0, upstream.expires_at))
+                    .collect();
+                self.database
+                    .batch(statements)
+                    .await
+                    .map_err(repository_error)?;
+            }
             self.state_put(
                 "session",
                 &key(&[session_id]),
@@ -1038,6 +1075,25 @@ impl LoginSessionPort for D1Provider {
                 }
             })
             .map_err(repository_error)
+        })
+    }
+
+    fn revoke_upstream<'a>(
+        &'a self,
+        key: &'a str,
+        issued_at: i64,
+        retain_until: i64,
+    ) -> RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            self.database
+                .batch(vec![self.advance_upstream_scope(
+                    key,
+                    issued_at,
+                    retain_until,
+                )])
+                .await
+                .map_err(repository_error)?;
+            Ok(())
         })
     }
 
@@ -1086,17 +1142,34 @@ impl SessionStorePort for D1Provider {
         session_id: &'a SessionId,
     ) -> RepositoryFuture<'a, Option<SessionSnapshot>> {
         Box::pin(async move {
-            self.state_load("session", &key(&[session_id.as_str()]))
+            let Some(row) = self
+                .state_load("session", &key(&[session_id.as_str()]))
                 .await
                 .map_err(repository_error)?
-                .map(|row| {
-                    let wire: SessionWire<'_> = decode(&row.value).map_err(repository_error)?;
-                    Ok(SessionSnapshot::new(
-                        wire.try_into().map_err(repository_error)?,
-                        SessionVersion::from_storage(row.version.into_bytes()),
-                    ))
-                })
-                .transpose()
+            else {
+                return Ok(None);
+            };
+            let wire: SessionWire<'_> = decode(&row.value).map_err(repository_error)?;
+            if let Some(upstream) = &wire.upstream {
+                if upstream.expires_at <= jiff::Timestamp::now().as_second() {
+                    return Ok(None);
+                }
+                for key in upstream.keys() {
+                    let active = self
+                        .state_load("upstream_session", key)
+                        .await
+                        .map_err(repository_error)?
+                        .and_then(|row| row.value.parse::<i64>().ok())
+                        .is_some_and(|cutoff| cutoff < upstream.issued_at);
+                    if !active {
+                        return Ok(None);
+                    }
+                }
+            }
+            Ok(Some(SessionSnapshot::new(
+                wire.try_into().map_err(repository_error)?,
+                SessionVersion::from_storage(row.version.into_bytes()),
+            )))
         })
     }
 

@@ -10,6 +10,8 @@ fn admin_provider_view_exposes_onboarding_metadata_without_secret_material() {
         icon: Some("google".to_owned()),
         display_order: 10,
         adapter: ExternalLoginProviderAdapter::Oidc(OidcFederationSettings {
+            discovery: false,
+            backchannel_logout: false,
             provider_id: "google".to_owned(),
             issuer: "https://accounts.google.com".to_owned(),
             authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth".to_owned(),

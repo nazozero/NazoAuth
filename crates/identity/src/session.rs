@@ -57,6 +57,21 @@ pub fn add_amr(amr: &mut Vec<String>, value: &str) {
         amr.push(value.to_owned());
     }
 }
+/// The upstream login's revocation scopes and absolute local lifetime.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UpstreamSession {
+    pub subject_key: String,
+    pub sid_key: Option<String>,
+    pub issued_at: i64,
+    pub expires_at: i64,
+}
+
+impl UpstreamSession {
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.subject_key.as_str()).chain(self.sid_key.as_deref())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SessionRecord {
     user_id: UserId,
@@ -67,6 +82,7 @@ pub struct SessionRecord {
     pending_mfa: bool,
     oidc_sid: Option<String>,
     logged_in_client_ids: Vec<String>,
+    upstream: Option<UpstreamSession>,
 }
 
 /// Opaque identifier for a browser login session.
@@ -524,7 +540,16 @@ impl SessionRecord {
             pending_mfa,
             oidc_sid,
             logged_in_client_ids: Vec::new(),
+            upstream: None,
         }
+    }
+
+    pub fn set_upstream(&mut self, upstream: Option<UpstreamSession>) {
+        self.upstream = upstream;
+    }
+
+    pub fn upstream(&self) -> Option<&UpstreamSession> {
+        self.upstream.as_ref()
     }
 
     #[must_use]

@@ -80,6 +80,10 @@ struct ProviderConfig {
     redirect_uri: Option<String>,
     scopes: Option<String>,
     issuer: Option<String>,
+    #[serde(default)]
+    discovery: bool,
+    #[serde(default)]
+    backchannel_logout: bool,
     authorization_endpoint: Option<String>,
     token_endpoint: Option<String>,
     jwks_url: Option<String>,
@@ -171,6 +175,14 @@ impl ExternalLoginProvider {
     }
 }
 
+fn oidc_endpoint(discovery: bool, value: Option<String>, field: &str) -> anyhow::Result<String> {
+    if discovery {
+        Ok(String::new())
+    } else {
+        required_text(value, field)
+    }
+}
+
 impl ProviderConfig {
     // 将松散配置转换成强类型 provider。配置不完整时直接启动失败，
     // 而不是在用户点击登录时再进入半配置状态。
@@ -191,18 +203,32 @@ impl ProviderConfig {
         })
     }
 
-    // OIDC provider 必须提供 issuer、端点、JWKS、client 凭据和 openid scope。
-    // 这些字段共同决定 ID Token 校验边界，不能在运行时补默认值。
+    // A provider always fixes the issuer and client credentials at configuration time.
     fn take_oidc(&mut self) -> anyhow::Result<OidcFederationSettings> {
+        if self.discovery
+            && (self.authorization_endpoint.is_some()
+                || self.token_endpoint.is_some()
+                || self.jwks_url.is_some()
+                || self.userinfo_endpoint.is_some())
+        {
+            bail!("discovery and manually configured OIDC endpoints are mutually exclusive");
+        }
         let settings = OidcFederationSettings {
             provider_id: self.provider_id.clone(),
             issuer: required_text(self.issuer.take(), "issuer")?,
-            authorization_endpoint: required_text(
+            discovery: self.discovery,
+            backchannel_logout: self.backchannel_logout,
+            authorization_endpoint: oidc_endpoint(
+                self.discovery,
                 self.authorization_endpoint.take(),
                 "authorization_endpoint",
             )?,
-            token_endpoint: required_text(self.token_endpoint.take(), "token_endpoint")?,
-            jwks_url: required_text(self.jwks_url.take(), "jwks_url")?,
+            token_endpoint: oidc_endpoint(
+                self.discovery,
+                self.token_endpoint.take(),
+                "token_endpoint",
+            )?,
+            jwks_url: oidc_endpoint(self.discovery, self.jwks_url.take(), "jwks_url")?,
             userinfo_endpoint: self.userinfo_endpoint.take().and_then(trimmed_optional),
             client_id: required_credential(self.client_id.take(), "client_id")?,
             client_secret: required_credential(self.client_secret.take(), "client_secret")?,
@@ -303,11 +329,22 @@ pub fn validate_oidc_settings(
     if issuer.query().is_some() {
         bail!("OIDC issuer cannot contain a query");
     }
-    validate_http_endpoint_url(&settings.authorization_endpoint)?;
-    validate_http_endpoint_url(&settings.token_endpoint)?;
-    validate_http_endpoint_url(&settings.jwks_url)?;
-    if let Some(endpoint) = &settings.userinfo_endpoint {
-        validate_http_endpoint_url(endpoint)?;
+    if settings.discovery {
+        if nazo_identity::federation::oidc::discovery_url(&settings.issuer).is_none()
+            || !settings.authorization_endpoint.is_empty()
+            || !settings.token_endpoint.is_empty()
+            || !settings.jwks_url.is_empty()
+            || settings.userinfo_endpoint.is_some()
+        {
+            bail!("OIDC discovery requires an HTTPS issuer and no static endpoints");
+        }
+    } else {
+        validate_http_endpoint_url(&settings.authorization_endpoint)?;
+        validate_http_endpoint_url(&settings.token_endpoint)?;
+        validate_http_endpoint_url(&settings.jwks_url)?;
+        if let Some(endpoint) = &settings.userinfo_endpoint {
+            validate_http_endpoint_url(endpoint)?;
+        }
     }
     validate_http_endpoint_url(&settings.redirect_uri)?;
     if !settings
