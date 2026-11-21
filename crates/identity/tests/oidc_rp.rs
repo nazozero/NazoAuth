@@ -646,7 +646,6 @@ fn logout_typ_accepts_equivalent_media_type_names() {
         assert_eq!(
             verify_logout_token(
                 tenant_id(),
-                
                 "provider",
                 ISSUER,
                 CLIENT,
@@ -702,7 +701,6 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
         assert_eq!(
             verify_logout_token(
                 tenant_id(),
-                
                 "provider",
                 ISSUER,
                 CLIENT,
@@ -720,7 +718,6 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
         assert!(
             verify_logout_token(
                 tenant_id(),
-                
                 "provider",
                 ISSUER,
                 CLIENT,
@@ -733,8 +730,7 @@ fn upstream_session_and_token_identifiers_follow_their_own_syntax() {
     }
     assert!(
         verify_logout_token(
-                tenant_id(),
-                
+            tenant_id(),
             "provider",
             ISSUER,
             CLIENT,
