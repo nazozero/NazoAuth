@@ -212,8 +212,8 @@ is the authority for accepted values. Secret-file forms follow the normal
 The server receives the preflight settings and deployment identity, never the
 worker database URL or sink token. Required mode rejects stale/future worker
 observations, a mismatched deployment, invalid checkpoints, or excessive oldest
-pending age. It gates callers of management preflight; it is not a promise that
-every HTTP response waits for its own external checkpoint.
+pending age. Management preflight checks the latest external checkpoint; the
+export worker delivers each pending event asynchronously.
 
 After database restore, reconcile the local chain and pending events with the receiver's
 already accepted deployment sequence before resuming export. Do not erase the

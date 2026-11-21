@@ -97,6 +97,35 @@ class CiInputTests(unittest.TestCase):
                 clock.fromisoformat.side_effect = datetime.fromisoformat
                 self.assertEqual(gate.decide("rust")[1], expected)
 
+    @patch.dict(gate.os.environ, GITHUB_EVENT_NAME="pull_request", GITHUB_REPOSITORY="owner/repo", GITHUB_RUN_ID="2")
+    def test_codeql_analyzes_each_commit_independently_of_prior_upload_success(self):
+        source = tree(("crates/a/src/lib.rs", "a"))
+        docs_only = source + b"\0" + tree(("docs/guide.md", "new-docs"))
+        identity = "ci-inputs-codeql-" + gate.fingerprint("codeql", source)
+        self.assertEqual(identity, "ci-inputs-codeql-" + gate.fingerprint("codeql", docs_only))
+        current = self.record(id=2, status="in_progress", conclusion=None, head_sha="docs-only")
+        prior = self.record(head_sha="prior")
+        artifact = dict(name=identity, expired=False, workflow_run={"id": 1})
+        for status, conclusion, annotations in (
+            ("completed", "failure", 2), ("in_progress", None, 0), ("completed", "success", 0),
+        ):
+            with self.subTest(scan_status=status, scan_conclusion=conclusion):
+                responses = {
+                    "repos/owner/repo/actions/runs/2": current,
+                    f"repos/owner/repo/actions/artifacts?name={identity}&per_page=100": {"artifacts": [artifact]},
+                    "repos/owner/repo/actions/runs/1": prior,
+                    "repos/owner/repo/commits/prior/check-runs?per_page=100": {
+                        "check_runs": [{"name": "CodeQL", "head_sha": "prior", "status": status,
+                                        "conclusion": conclusion, "output": {"annotations_count": annotations}}],
+                    },
+                }
+                with patch.object(gate.subprocess, "check_output", return_value=docs_only), patch.object(gate, "api", side_effect=responses.__getitem__), patch.object(gate, "datetime") as clock:
+                    clock.now.return_value = NOW
+                    clock.fromisoformat.side_effect = datetime.fromisoformat
+                    name, execute, _ = gate.decide("codeql")
+                self.assertTrue(execute)
+                self.assertEqual(name, "")
+
     @patch.object(gate.subprocess, "check_output", return_value=b"")
     @patch.object(gate, "api", side_effect=AssertionError("manual checks must not consult prior runs"))
     def test_manual_and_scheduled_checks_always_execute(self, _api, _tree):

@@ -113,6 +113,8 @@ def merged_pr_inputs_match(run: dict, current: dict, scope: str, expected: str) 
 
 
 def decide(scope: str) -> tuple[str, bool, str]:
+    if scope == "codeql":
+        return "", True, "CodeQL: analyze the current commit."
     tree = subprocess.check_output(["git", "ls-tree", "-r", "-z", "HEAD"])
     digest = fingerprint(scope, tree)
     name = f"ci-inputs-{scope}-{digest}"

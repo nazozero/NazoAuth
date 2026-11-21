@@ -104,7 +104,7 @@ subsequently adopted versions is recorded in the November table above.
 | [JWT BCP bis, 07 to 10](https://www.ietf.org/archive/id/draft-ietf-oauth-rfc8725bis-10.txt) | Clarifies nested-JWT handling, decompression limits, and deprecated algorithms. Algorithm, key, token-confusion and resource-limit changes need review before adopting the bis draft. |
 | [SD-JWT VC, 17 to 19](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/19/) | Adds optional type aliases and revises HTTP retrieval, integrity, rendering-resource and SSRF rules; clarifies non-disclosable subclaims and removes transitional legacy media-type guidance. Existing credential-profile evidence remains scoped to the prior baseline pending a delta audit. |
 | [Delegated Authorization, 02 to 03](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/03/) | Expands local delegation-chain restrictions and validation rules. Watch only; this delegated-authorization profile is not supported. |
-| [RAR metadata WG adoption](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/) | Track the WG draft 00 in place of the replaced individual draft. This is a source transition, not a new runtime commitment. |
+| [RAR metadata WG adoption](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/) | Track the WG draft 00 in place of the replaced individual draft. |
 | [HTTP-signature PoP, 02 to 03](https://www.ietf.org/archive/id/draft-richer-oauth-httpsig-03.txt) | Changes runtime key presentation, asymmetric-key requirements and algorithm selection. Remains watch only and separate from the experimental FAPI HTTP Signatures implementation. |
 
 The four reviewed expired watch entries remain in the inventory. Their exact

@@ -199,7 +199,7 @@ and tested.
 | Standard or draft | Source status on 2026-11-11 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
 | `draft-ietf-oauth-v2-1-17` | OAuth WG active draft | Explicit authorization-code profile | `security_policy.authorization_code_profile=oauth21` implements the draft-17 token redirect contract with mandatory S256 PKCE. OAuth 2.0/OIDC and FAPI clients retain their registered redirect contracts. |
-| `RFC 10017` | Published BCP (August 2026) | Server-side guidance reviewed | The final text preserves relevant draft-27 requirements; a public refresh expiry gap was fixed. Third-party application requirements cannot be guaranteed by the authorization server. |
+| `RFC 10017` | Published BCP (August 2026) | Server-side guidance reviewed | The final text preserves relevant draft-27 requirements; a public refresh expiry gap was fixed. Browser applications handle the client and deployment requirements. |
 | `RFC 10027` | Published BCP (August 2026) | Deployment-specific assessment required | Device and CIBA provide authorization and lifecycle controls. Assess phishing risks, user-facing transaction context and proximity checks for each cross-device deployment. |
 | `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 is implemented. Review this draft’s changes before adoption. |
 | `draft-ietf-oauth-rfc8725bis-10` | RFC Editor queue BCP | Not supported (audit pending) | RFC 8725 is implemented. Adoption requires reviewing changes to algorithms, key binding and cross-JWT confusion protections. |

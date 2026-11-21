@@ -48,8 +48,7 @@ revocation for each presentation. The actual selected root must
 carry its required issuer contact and CRL distribution point; a trusted key or
 a valid unrelated root does not replace those fields. This also applies when
 an existing database generation is loaded directly for signing. Credential
-status when present and holder authentication remain separate checks. A
-successful COSE signature alone does not complete these responsibilities.
+status when present and holder authentication remain separate checks.
 
 An imported rollover chain requires the corresponding old and new self-signed
 IACA certificates in the existing trust-anchor set. Retain intermediate root
@@ -183,10 +182,9 @@ that endpoint. Recovery retains a database revision at least as high as every
 publication already served; restoring an older snapshot does not reset the
 sequence.
 
-The root's CRL endpoint publishes the IACA-signed list for its owned DS. It does
-not independently establish trust in that IACA or make a compromised root key
-safe. Removing a compromised trust anchor and updating its trusted distribution
-remain explicit authority and deployment responsibilities. The applicable
+The root's CRL endpoint publishes the IACA-signed list for its owned DS. Configure
+trust in the IACA separately. After a root-key compromise, remove the affected
+trust anchor and distribute the updated trust configuration. Certificate and
+CRL profiles are described in
 [ISO/IEC 18013-5:2021 Annex B](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
-and [RFC 5280 CRL-number rules](https://www.rfc-editor.org/rfc/rfc5280.html#section-5.2.3)
-do not replace those operational controls.
+and [RFC 5280 CRL-number rules](https://www.rfc-editor.org/rfc/rfc5280.html#section-5.2.3).
