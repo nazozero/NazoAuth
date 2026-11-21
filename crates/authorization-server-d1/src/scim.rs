@@ -86,7 +86,11 @@ impl ScimRepository {
         statements.push(Statement::new(format!(
             "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
              SELECT ?1,?3,?4,'identity_lifecycle',{at},json_object('schema_version',1,'category','identity_lifecycle','tenant_id',?1,'user_id',?2,'transaction_id',?5)
-             WHERE {admitted}"),audit_params));
+             WHERE {admitted}"),audit_params.clone()));
+        statements.push(Statement::new(format!(
+            "SELECT CASE WHEN NOT ({admitted}) OR EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3 AND event_type=?4 AND category='identity_lifecycle' AND occurred_at={at}
+                AND payload=json_object('schema_version',1,'category','identity_lifecycle','tenant_id',?1,'user_id',?2,'transaction_id',?5))
+                THEN 1 ELSE json('SCIM required audit was not accepted') END"),audit_params));
         if operation == "create" {
             statements.push(Statement::new(format!(
                 "INSERT INTO nazo_users(tenant_id,id,email,principal,claims,password_hash,epoch,active,mfa_enabled,avatar_revision,created_at,updated_at)
@@ -94,6 +98,8 @@ impl ScimRepository {
                     json_set(json_extract(?4,'$.claims'),'$.updated_at',CAST({at}/1000000 AS INTEGER)),
                     json_extract(?4,'$.password_hash'),0,json_extract(?4,'$.active'),0,0,{at},{at}
                  WHERE {admitted}"),planned.clone()));
+            statements.push(Statement::new(format!("SELECT CASE WHEN ({admitted} AND changes()=1) OR (NOT ({admitted}) AND changes()=0)
+                THEN 1 ELSE json('SCIM account creation was not accepted') END"),identity.clone()));
         } else {
             statements.push(Statement::new(format!(
                 "UPDATE nazo_users SET
@@ -109,9 +115,13 @@ impl ScimRepository {
                         '$.family_name',CASE WHEN json_extract(?4,'$.kind')='replace' OR json_extract(?4,'$.family_name') IS NOT NULL THEN json_extract(?4,'$.family_name') ELSE json_extract(claims,'$.family_name') END,
                         '$.updated_at',CAST({at}/1000000 AS INTEGER)),updated_at={at}
                  WHERE tenant_id=?1 AND id=?2 AND {admitted}"),planned));
+            statements.push(Statement::new(format!("SELECT CASE WHEN ({admitted} AND changes()=1) OR (NOT ({admitted}) AND changes()=0)
+                THEN 1 ELSE json('SCIM account update was not accepted') END"),identity.clone()));
             if operation == "delete" {
                 statements.push(Statement::new(format!(
                     "INSERT INTO nazo_deleted_users(tenant_id,user_id,deleted_at) SELECT ?1,?2,{at} WHERE {admitted}"),identity.clone()));
+                statements.push(Statement::new(format!("SELECT CASE WHEN NOT ({admitted}) OR EXISTS(SELECT 1 FROM nazo_deleted_users WHERE tenant_id=?1 AND user_id=?2 AND deleted_at={at})
+                    THEN 1 ELSE json('SCIM account tombstone was not accepted') END"),identity.clone()));
             }
             let deactivated = format!(
                 "{admitted} AND EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND active=0)"
@@ -124,8 +134,15 @@ impl ScimRepository {
             statements.push(Statement::new(format!(
                 "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
                  SELECT ?1,lower(hex(randomblob(16))),'refresh_family_security_revoked','token_lifecycle',{at},
-                    json_object('schema_version',1,'category','token_lifecycle','tenant_id',?1,'user_id',?2,'client_id',client_id,'token_family_id',id,'reason','{reason}')
+                    json_object('schema_version',1,'category','token_lifecycle','tenant_id',?1,'user_id',?2,'client_id',client_id,'token_family_id',id,'reason','{reason}','mutation_id',?3)
                  FROM nazo_refresh_families WHERE tenant_id=?1 AND user_id=?2 AND revoked_at IS NULL AND {deactivated}"),identity.clone()));
+            statements.push(Statement::new(format!(
+                "SELECT CASE WHEN NOT ({deactivated}) OR NOT EXISTS(
+                    SELECT 1 FROM nazo_refresh_families f WHERE f.tenant_id=?1 AND f.user_id=?2 AND f.revoked_at IS NULL
+                    AND NOT EXISTS(SELECT 1 FROM nazo_audit a WHERE a.tenant_id=f.tenant_id AND a.event_type='refresh_family_security_revoked' AND a.category='token_lifecycle'
+                        AND json_extract(a.payload,'$.mutation_id')=?3 AND json_extract(a.payload,'$.token_family_id')=f.id
+                        AND json_extract(a.payload,'$.user_id')=?2 AND json_extract(a.payload,'$.client_id')=f.client_id AND json_extract(a.payload,'$.reason')='{reason}'))
+                    THEN 1 ELSE json('SCIM family revocation audit was not accepted') END"),identity.clone()));
             statements.push(Statement::new(format!(
                 "UPDATE nazo_refresh_families SET revoked_at={at} WHERE tenant_id=?1 AND user_id=?2 AND revoked_at IS NULL AND {deactivated}"),identity.clone()));
             statements.push(Statement::new(
@@ -134,6 +151,10 @@ impl ScimRepository {
                 ),
                 identity.clone(),
             ));
+            statements.push(Statement::new(format!(
+                "SELECT CASE WHEN NOT ({deactivated}) OR (NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND user_id=?2 AND revoked_at IS NULL)
+                    AND NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2))
+                    THEN 1 ELSE json('SCIM authority revocation was not accepted') END"),identity.clone()));
         }
         if let Some((event, activate, deactivate)) = event {
             let retention = i64::try_from(self.retention_seconds)
@@ -158,7 +179,15 @@ impl ScimRepository {
                     CASE WHEN json_extract(receipt.value,'$.old_active')!=account.active THEN CASE WHEN account.active=1 THEN ?8 ELSE ?9 END ELSE ?7 END,
                     json_extract(receipt.value,'$.at'),json_extract(receipt.value,'$.at')+?10
                  FROM nazo_state AS receipt JOIN nazo_users AS account ON account.tenant_id=receipt.tenant_id AND account.id=?2
-                 WHERE receipt.tenant_id=?1 AND receipt.kind='scim_mutation' AND receipt.key=?3 AND {admitted}"),parameters));
+                 WHERE receipt.tenant_id=?1 AND receipt.kind='scim_mutation' AND receipt.key=?3 AND {admitted}"),parameters.clone()));
+            statements.push(Statement::new(format!(
+                "SELECT CASE WHEN NOT ({admitted}) OR EXISTS(
+                    SELECT 1 FROM nazo_scim_events event JOIN nazo_state receipt ON receipt.tenant_id=event.tenant_id AND receipt.kind='scim_mutation' AND receipt.key=?3
+                    JOIN nazo_users account ON account.tenant_id=event.tenant_id AND account.id=?2
+                    WHERE event.tenant_id=?1 AND event.id=?4 AND event.transaction_id=?5 AND event.subject_uri=?6
+                        AND event.events=CASE WHEN json_extract(receipt.value,'$.old_active')!=account.active THEN CASE WHEN account.active=1 THEN ?8 ELSE ?9 END ELSE ?7 END
+                        AND event.occurred_at=json_extract(receipt.value,'$.at') AND event.expires_at=event.occurred_at+?10)
+                    THEN 1 ELSE json('SCIM event publication was not accepted') END"),parameters));
         }
         statements.push(Statement::new(format!(
             "SELECT principal,claims,epoch,active,mfa_enabled,avatar_revision,created_at,updated_at FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND {admitted}"),identity.clone()));
@@ -167,7 +196,10 @@ impl ScimRepository {
             "DELETE FROM nazo_state WHERE tenant_id=?1 AND kind='scim_mutation' AND key=?2",
             vec![json!(tenant_id), json!(command)],
         ));
+        statements.push(Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='scim_mutation' AND key=?2)
+            THEN 1 ELSE json('SCIM mutation receipt was not retired') END",vec![json!(tenant_id),json!(command)]));
         let mut results = self.provider.database.batch(statements).await?;
+        results.pop();
         results.pop();
         let outcome = results
             .pop()
@@ -429,9 +461,12 @@ impl D1Provider {
                 )),
             "invalid SCIM credential scopes"
         );
-        self.database.batch(vec![Statement::new(format!(
-            "INSERT INTO nazo_scim_tokens(tenant_id,id,token_hash,scopes,event_audience,created_at,expires_at) VALUES(?1,?2,?3,?4,?5,{NOW},?6)"),
-            vec![json!(self.tenant_id),json!(credential.id),json!(token_hash),json!(encode(&credential.scopes)?),json!(credential.event_audience),json!(expires_at.map(|at|at.as_microsecond()))])]).await?;
+        let rows = self.database.query::<Value>(&format!(
+            "INSERT INTO nazo_scim_tokens(tenant_id,id,token_hash,scopes,event_audience,created_at,expires_at) VALUES(?1,?2,?3,?4,?5,{NOW},?6) RETURNING 1"),
+            vec![json!(self.tenant_id),json!(credential.id),json!(token_hash),json!(encode(&credential.scopes)?),json!(credential.event_audience),json!(expires_at.map(|at|at.as_microsecond()))]).await?;
+        if rows.len() != 1 {
+            return Err(DbError::Unavailable.into());
+        }
         Ok(())
     }
 }

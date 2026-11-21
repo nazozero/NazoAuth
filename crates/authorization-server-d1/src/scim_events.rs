@@ -56,6 +56,12 @@ impl EventStorePort for D1Provider {
             }
             let mut statements = Vec::with_capacity(2);
             if !dispositions.is_empty() {
+                let params: std::sync::Arc<[_]> = vec![
+                    json!(self.tenant_id),
+                    json!(receiver.token_id),
+                    json!(encode(&dispositions).map_err(|_| EventStoreError::Unavailable)?),
+                ]
+                .into();
                 statements.push(Statement::new(format!(
                     "INSERT INTO nazo_scim_event_receipts(tenant_id,event_id,token_id,disposition,error_code,error_description,updated_at)
                      SELECT event.tenant_id,event.id,token.id,json_extract(item.value,'$.disposition'),
@@ -65,7 +71,14 @@ impl EventStorePort for D1Provider {
                      WHERE event.occurred_at>=token.created_at AND event.expires_at>{NOW}
                          AND token.revoked_at IS NULL AND (token.expires_at IS NULL OR token.expires_at>{NOW})
                      ON CONFLICT(tenant_id,event_id,token_id) DO NOTHING"),
-                    vec![json!(self.tenant_id),json!(receiver.token_id),json!(encode(&dispositions).map_err(|_|EventStoreError::Unavailable)?)]));
+                    params.clone()));
+                statements.push(Statement::new(format!(
+                    "SELECT CASE WHEN NOT EXISTS(
+                        SELECT 1 FROM json_each(?3) item JOIN nazo_scim_events event ON event.tenant_id=?1 AND event.id=json_extract(item.value,'$.id')
+                        JOIN nazo_scim_tokens token ON token.tenant_id=event.tenant_id AND token.id=?2
+                        WHERE event.occurred_at>=token.created_at AND event.expires_at>{NOW} AND token.revoked_at IS NULL AND (token.expires_at IS NULL OR token.expires_at>{NOW})
+                        AND NOT EXISTS(SELECT 1 FROM nazo_scim_event_receipts WHERE tenant_id=?1 AND event_id=event.id AND token_id=?2))
+                        THEN 1 ELSE json('SCIM event dispositions were not accepted') END"),params));
             }
             statements.push(Statement::new(format!(
                 "SELECT event.id,event.tenant_id,event.transaction_id,event.subject_uri,event.events,event.occurred_at

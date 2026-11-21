@@ -410,9 +410,11 @@ impl TokenRepositoryPort for D1Provider {
                 // A different owner must violate NOT NULL and abort the whole
                 // batch, rather than silently extending another client's JTI.
                 statements.push(Statement::new("INSERT INTO nazo_revocations(tenant_id,jti_hash,client_id,expires_at) VALUES(?1,?2,?3,?4) ON CONFLICT(tenant_id,jti_hash) DO UPDATE SET expires_at=MAX(expires_at,excluded.expires_at),client_id=CASE WHEN nazo_revocations.client_id=excluded.client_id THEN nazo_revocations.client_id ELSE NULL END",vec![json!(self.tenant_id),json!(digest(access_token_jti)),json!(client_id),json!(expiry.as_microsecond()+nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS*1_000_000)]));
+                statements.push(Statement::new("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_revocations WHERE tenant_id=?1 AND jti_hash=?2 AND client_id=?3 AND expires_at>=?4) THEN 1 ELSE json('access revocation was not committed') END",vec![json!(self.tenant_id),json!(digest(access_token_jti)),json!(client_id),json!(expiry.as_microsecond()+nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS*1_000_000)]));
             }
             if let Some(family) = refresh_token_family_id {
                 statements.push(Statement::new(format!("UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND client_id=?2 AND id=?3"),vec![json!(self.tenant_id),json!(client_id),json!(family)]));
+                statements.push(Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=?2 AND id=?3 AND revoked_at IS NULL) THEN 1 ELSE json('refresh revocation was not committed') END",vec![json!(self.tenant_id),json!(client_id),json!(family)]));
             }
             if !statements.is_empty() {
                 self.database.batch(statements).await?;
@@ -474,14 +476,17 @@ impl TokenRepositoryPort for D1Provider {
             if let Some(access) = input.access_token {
                 // The same owner guard also rolls back the required audit.
                 statements.push(Statement::new("INSERT INTO nazo_revocations(tenant_id,jti_hash,client_id,expires_at) VALUES(?1,?2,?3,?4) ON CONFLICT(tenant_id,jti_hash) DO UPDATE SET expires_at=MAX(expires_at,excluded.expires_at),client_id=CASE WHEN nazo_revocations.client_id=excluded.client_id THEN nazo_revocations.client_id ELSE NULL END RETURNING jti_hash",vec![json!(self.tenant_id),json!(digest(&access.jti)),json!(input.client_id),json!(access.expires_at.as_microsecond()+nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS*1_000_000)]));
+                statements.push(Statement::new("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_revocations WHERE tenant_id=?1 AND jti_hash=?2 AND client_id=?3 AND expires_at>=?4) THEN 1 ELSE json('access revocation was not committed') END",vec![json!(self.tenant_id),json!(digest(&access.jti)),json!(input.client_id),json!(access.expires_at.as_microsecond()+nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS*1_000_000)]));
             } else {
                 statements.push(Statement::new(format!("UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND client_id=?2 AND (token_hash=?3 OR id=(SELECT family_id FROM nazo_refresh_spent WHERE tenant_id=?1 AND token_hash=?3)) RETURNING id"),vec![json!(self.tenant_id),json!(input.client_id),json!(digest(input.raw_token))]));
+                statements.push(Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=?2 AND (token_hash=?3 OR id=(SELECT family_id FROM nazo_refresh_spent WHERE tenant_id=?1 AND token_hash=?3)) AND revoked_at IS NULL) THEN 1 ELSE json('refresh revocation was not committed') END",vec![json!(self.tenant_id),json!(input.client_id),json!(digest(input.raw_token))]));
             }
+            statements.push(Statement::new("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='token_revoked' AND category='token_lifecycle' AND payload=?3) THEN 1 ELSE json('revocation audit was not committed') END",vec![json!(self.tenant_id),json!(event),json!(encode(&payload)?)]));
             Ok(self
                 .database
                 .batch(statements)
                 .await?
-                .last()
+                .get(1)
                 .map_or(0, |result| result.rows.len()))
         })
     }
@@ -784,39 +789,74 @@ impl D1Provider {
             "(json_extract(?3,'$.native_family') IS NULL OR (json_extract(?3,'$.native_expiry')>{NOW} AND EXISTS(SELECT 1 FROM nazo_refresh_families f JOIN nazo_clients c ON c.tenant_id=f.tenant_id AND c.id=f.client_id WHERE f.tenant_id=?1 AND f.id=json_extract(?3,'$.native_family') AND f.user_id=json_extract(?3,'$.user') AND c.client_id=json_extract(?3,'$.native_client') AND f.revoked_at IS NULL AND f.expires_at>{NOW})))"
         );
         let gate = "EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='token_issued')";
+        let reuse_gate = "EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='refresh_reuse_detected')";
+        let admission = format!(
+            "{client_ok} AND {user_ok} AND {grant_ok} AND {refresh_ok} AND {native_sso_ok}"
+        );
+        let reuse_admission = format!(
+            "EXISTS(SELECT 1 FROM nazo_refresh_families f WHERE f.tenant_id=?1 AND f.id=json_extract(?3,'$.family') AND f.revoked_at IS NULL AND f.expires_at>{NOW} AND f.client_id=json_extract(?3,'$.client') AND f.user_id IS json_extract(?3,'$.user') AND {client_ok} AND {user_ok} AND NOT ({source_ok}))"
+        );
+        let mut effects = vec!["EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='token_issued' AND category='token_lifecycle' AND payload=json_extract(?3,'$.audit'))".to_owned()];
         let mut batch = Vec::new();
         if plan["rotate"] == true {
-            batch.push(Statement::new(format!("UPDATE nazo_refresh_families AS f SET revoked_at={NOW} WHERE f.tenant_id=?1 AND f.id=json_extract(?3,'$.family') AND f.revoked_at IS NULL AND f.expires_at>{NOW} AND f.client_id=json_extract(?3,'$.client') AND f.user_id IS json_extract(?3,'$.user') AND {client_ok} AND {user_ok} AND NOT ({source_ok})"),params.clone()));
-            batch.push(Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,'refresh_reuse_detected','token_replay',{NOW},json_extract(?3,'$.audit') WHERE changes()>0"),params.clone()));
+            batch.push(Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,'refresh_reuse_detected','token_replay',{NOW},json_extract(?3,'$.audit') WHERE ({reuse_admission}) OR {reuse_gate}"),params.clone()));
+            batch.push(Statement::new(format!("SELECT CASE WHEN NOT ({reuse_gate}) OR changes()=1 THEN 1 ELSE json('refresh reuse audit was not inserted') END"),vec![json!(self.tenant_id),json!(input.issuance_id)]));
+            batch.push(Statement::new(format!("UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND id=json_extract(?3,'$.family') AND {reuse_gate}"),params.clone()));
         }
         // An old event can never authorize this batch: force its UNIQUE
         // constraint to abort even when this attempt's admission is false.
-        batch.push(Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,'token_issued','token_lifecycle',{NOW},json_extract(?3,'$.audit') WHERE ({client_ok} AND {user_ok} AND {grant_ok} AND {refresh_ok} AND {native_sso_ok}) OR {gate}"),params.clone()));
+        batch.push(Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?2,'token_issued','token_lifecycle',{NOW},json_extract(?3,'$.audit') WHERE ({admission}) OR {gate}"),params.clone()));
+        batch.push(Statement::new(format!("SELECT CASE WHEN NOT ({gate}) OR changes()=1 THEN 1 ELSE json('token issuance audit was not inserted') END"),vec![json!(self.tenant_id),json!(input.issuance_id)]));
         if grant_hash.is_some() {
             batch.push(Statement::new(format!("INSERT INTO nazo_redemptions(tenant_id,client_id,grant_hash,issuance_id,holder,jti,expires_at,family_id,retain_until) SELECT ?1,json_extract(?3,'$.client'),json_extract(?3,'$.grant'),?2,json_extract(?3,'$.holder'),json_extract(?3,'$.jti'),json_extract(?3,'$.access_expiry'),json_extract(?3,'$.family'),json_extract(?3,'$.retain_until') WHERE {gate}"),params.clone()));
+            effects.push("EXISTS(SELECT 1 FROM nazo_redemptions WHERE tenant_id=?1 AND client_id=json_extract(?3,'$.client') AND grant_hash=json_extract(?3,'$.grant') AND issuance_id=?2 AND holder IS json_extract(?3,'$.holder') AND jti=json_extract(?3,'$.jti') AND expires_at=json_extract(?3,'$.access_expiry') AND family_id IS json_extract(?3,'$.family') AND retain_until=json_extract(?3,'$.retain_until'))".into());
         }
         if input
             .user_id
             .is_some_and(|id| input.subject != id.to_string())
         {
             batch.push(Statement::new(format!("INSERT INTO nazo_subjects(tenant_id,subject,user_id) SELECT ?1,json_extract(?3,'$.subject'),json_extract(?3,'$.user') WHERE {gate} ON CONFLICT(tenant_id,subject) DO NOTHING"),params.clone()));
+            effects.push("EXISTS(SELECT 1 FROM nazo_subjects WHERE tenant_id=?1 AND subject=json_extract(?3,'$.subject') AND user_id=json_extract(?3,'$.user'))".into());
         }
         match input.refresh_token.as_ref() {
             Some(RefreshTokenCommit::IssueNew { .. }) => {
                 batch.push(Statement::new(format!("INSERT INTO nazo_refresh_families(tenant_id,id,client_id,user_id,contract,contract_hash,member,member_id,token_hash,created_at,expires_at) SELECT ?1,json_extract(?3,'$.family'),json_extract(?3,'$.client'),json_extract(?3,'$.user'),json_extract(?3,'$.contract'),json_extract(?3,'$.contract_hash'),json_extract(?3,'$.new_member'),json_extract(?3,'$.new_id'),json_extract(?3,'$.new_hash'),json_extract(?3,'$.issued_at'),json_extract(?3,'$.new_expiry') WHERE {gate}"),params.clone()));
                 batch.push(Statement::new(format!("UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND id IN(SELECT id FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=json_extract(?3,'$.client') AND user_id IS json_extract(?3,'$.user') AND revoked_at IS NULL AND expires_at>{NOW} ORDER BY created_at DESC,id DESC LIMIT -1 OFFSET {}) AND {gate}",nazo_auth::MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE),params.clone()));
+                effects.push(format!("(SELECT count(*) FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=json_extract(?3,'$.client') AND user_id IS json_extract(?3,'$.user') AND revoked_at IS NULL AND expires_at>{NOW})<={}",nazo_auth::MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE));
             }
             Some(RefreshTokenCommit::UseExisting {
                 rotation: Some(_), ..
             }) => {
                 batch.push(Statement::new(format!("INSERT INTO nazo_refresh_spent(tenant_id,token_hash,family_id,member_id,successor_id,spent_at,expires_at) SELECT tenant_id,token_hash,id,member_id,json_extract(?3,'$.new_id'),{NOW},expires_at FROM nazo_refresh_families WHERE tenant_id=?1 AND id=json_extract(?3,'$.family') AND {gate}"),params.clone()));
+                // Verify the new edge before applying the shared bounded-history policy.
+                batch.push(Statement::new(format!("SELECT CASE WHEN NOT ({gate}) OR (changes()=1 AND EXISTS(SELECT 1 FROM nazo_refresh_spent WHERE tenant_id=?1 AND token_hash=json_extract(?3,'$.source_hash') AND family_id=json_extract(?3,'$.family') AND member_id=json_extract(?3,'$.source_id') AND successor_id=json_extract(?3,'$.new_id') AND expires_at=json_extract(json_extract(?3,'$.source_member'),'$.expires_at'))) THEN 1 ELSE json('refresh spent proof was not inserted') END"),params.clone()));
                 batch.push(Statement::new(format!("UPDATE nazo_refresh_families SET member=json_extract(?3,'$.new_member'),member_id=json_extract(?3,'$.new_id'),token_hash=json_extract(?3,'$.new_hash'),expires_at=json_extract(?3,'$.new_expiry') WHERE tenant_id=?1 AND id=json_extract(?3,'$.family') AND {gate}"),params.clone()));
                 if let Some(limit) = prune_limit {
                     batch.push(Statement::new(format!("DELETE FROM nazo_refresh_spent WHERE tenant_id=?1 AND token_hash IN(SELECT token_hash FROM nazo_refresh_spent WHERE tenant_id=?1 AND family_id=json_extract(?3,'$.family') ORDER BY spent_at DESC,member_id DESC LIMIT -1 OFFSET {limit}) AND {gate}"),params.clone()));
+                    effects.push(format!("(SELECT count(*) FROM nazo_refresh_spent WHERE tenant_id=?1 AND family_id=json_extract(?3,'$.family'))<={limit}"));
                 }
             }
             _ => {}
         }
+        if input
+            .refresh_token
+            .as_ref()
+            .and_then(RefreshTokenCommit::token)
+            .is_some()
+        {
+            effects.push("EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND id=json_extract(?3,'$.family') AND client_id=json_extract(?3,'$.client') AND user_id IS json_extract(?3,'$.user') AND contract=json_extract(?3,'$.contract') AND contract_hash=json_extract(?3,'$.contract_hash') AND member=json_extract(?3,'$.new_member') AND member_id=json_extract(?3,'$.new_id') AND token_hash=json_extract(?3,'$.new_hash') AND expires_at=json_extract(?3,'$.new_expiry'))".into());
+        }
+        let unchanged = if plan["rotate"] == true {
+            format!("NOT ({admission}) AND NOT ({reuse_admission})")
+        } else {
+            format!("NOT ({admission})")
+        };
+        // A committed audit admits the writes; the final predicate proves their
+        // effects before D1 commits, including replay evidence and family caps.
+        batch.push(Statement::new(format!("SELECT CASE WHEN (CASE
+            WHEN {gate} THEN ({})
+            WHEN {reuse_gate} THEN EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND id=json_extract(?3,'$.family') AND client_id=json_extract(?3,'$.client') AND user_id IS json_extract(?3,'$.user') AND revoked_at IS NOT NULL)
+            ELSE ({unchanged}) END) THEN 1 ELSE json('token issuance atomicity failure') END AS checked", effects.join(" AND ")),params.clone()));
         batch.push(Statement::new(format!("SELECT CASE WHEN {gate} THEN 'committed' WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='refresh_reuse_detected') THEN 'reuse' WHEN NOT ({client_ok}) THEN 'client' WHEN NOT ({user_ok}) THEN 'user' WHEN json_extract(?3,'$.grant') IS NOT NULL AND json_extract(?3,'$.grant_expiry')<={NOW} THEN 'expired' WHEN json_extract(?3,'$.grant') IS NOT NULL AND EXISTS(SELECT 1 FROM nazo_redemptions WHERE tenant_id=?1 AND client_id=json_extract(?3,'$.client') AND grant_hash=json_extract(?3,'$.grant')) THEN 'used' ELSE 'refresh' END AS outcome"),params));
         let result = self.database.batch(batch).await?;
         match result

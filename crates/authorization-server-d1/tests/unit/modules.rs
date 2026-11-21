@@ -106,6 +106,32 @@ fn applied<T: std::fmt::Debug>(outcome: CasOutcome<T>) -> T {
 }
 
 #[test]
+fn deployment_initialization_rolls_back_an_incomplete_profile_or_desired_state() {
+    block_on(async {
+        for table in ["nazo_modules", "nazo_module_desired"] {
+            let database = Database::in_memory().unwrap();
+            database.execute_schema().unwrap();
+            let provider =
+                D1Provider::new(database.clone(), TenantId::new(Uuid::new_v4()).unwrap());
+            database
+                .execute_sql(&format!(
+                    "CREATE TRIGGER ignore_module BEFORE INSERT ON {table}
+                 WHEN NEW.module_id='scim' BEGIN SELECT RAISE(IGNORE); END;"
+                ))
+                .unwrap();
+            assert!(
+                provider
+                    .initialize_modules(&[ModuleId::Scim])
+                    .await
+                    .is_err()
+            );
+            assert!(rows(&database, "nazo_modules").await.is_empty());
+            assert!(rows(&database, "nazo_module_desired").await.is_empty());
+        }
+    });
+}
+
+#[test]
 fn deployment_profile_migrates_without_fabricated_events_and_is_never_reapplied() {
     block_on(async {
         let database = Database::in_memory().unwrap();
@@ -114,10 +140,19 @@ fn deployment_profile_migrates_without_fabricated_events_and_is_never_reapplied(
             .unwrap();
         let tenant = TenantId::new(Uuid::new_v4()).unwrap();
         let provider = D1Provider::new(database.clone(), tenant);
-        provider
-            .initialize_modules(&[ModuleId::DeviceAuthorization])
-            .await
-            .unwrap();
+        for module in ModuleId::ALL {
+            database
+                .query::<Value>(
+                    "INSERT INTO nazo_modules(tenant_id,module_id,enabled) VALUES(?1,?2,?3)",
+                    vec![
+                        json!(tenant),
+                        json!(module),
+                        json!(module == ModuleId::DeviceAuthorization),
+                    ],
+                )
+                .await
+                .unwrap();
+        }
         database.execute_schema().unwrap();
         let initial = provider.read_all_desired().await.unwrap();
         assert_eq!(initial.len(), ModuleId::ALL.len());

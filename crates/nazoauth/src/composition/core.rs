@@ -285,15 +285,12 @@ fn metadata_config(settings: &Settings) -> MetadataConfig {
     let endpoint = &settings.endpoint;
     let protocol = &settings.protocol;
     MetadataConfig {
+        deployment_profile: protocol.deployment_profile,
         backchannel_logout_supported: settings.protocol.backchannel_logout_supported,
         issuer: endpoint.issuer.clone(),
         mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
         mtls_enabled: endpoint.mtls_certificate_source != MtlsCertificateSourceMode::Disabled,
-        authorization_server_profile: if protocol.user_authorization_supported {
-            MetadataAuthorizationServerProfile::Composable
-        } else {
-            MetadataAuthorizationServerProfile::MachineToMachine
-        },
+        authorization_server_profile: MetadataAuthorizationServerProfile::Composable,
         ciba_security_profile: match protocol.ciba_security_profile {
             CibaSecurityProfile::FapiCibaId1 => CibaMetadataProfile::FapiCiba,
             CibaSecurityProfile::Fapi2Ciba => CibaMetadataProfile::Fapi2Ciba,
@@ -316,11 +313,19 @@ fn dynamic_registration_config(
     keyset: &nazo_key_management::KeyManager,
 ) -> DynamicRegistrationConfig {
     let keys = keyset.snapshot();
+    let profile = settings.protocol.deployment_profile;
+    let mut capabilities = settings
+        .modules
+        .dynamic_client_registration_capabilities
+        .clone();
+    let grants = profile.grant_types(|_| true);
+    if let Some(allowed) = capabilities.grant_types.as_mut() {
+        allowed.retain(|grant| grants.contains(&grant.as_str()));
+    } else if profile != nazo_auth::DeploymentProfile::Full {
+        capabilities.grant_types = Some(grants.into_iter().map(str::to_owned).collect());
+    }
     DynamicRegistrationConfig {
-        capabilities: settings
-            .modules
-            .dynamic_client_registration_capabilities
-            .clone(),
+        capabilities,
         require_fapi2: settings
             .protocol
             .authorization_server_profile

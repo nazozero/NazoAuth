@@ -7,6 +7,7 @@ use serde_json::Value;
 /// Owned, transport-facing configuration used to render standard metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MetadataEndpointConfig {
+    pub deployment_profile: nazo_auth::DeploymentProfile,
     pub issuer: String,
     pub mtls_endpoint_base_url: String,
     pub mtls_enabled: bool,

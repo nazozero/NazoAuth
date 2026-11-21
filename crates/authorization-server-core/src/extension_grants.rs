@@ -200,6 +200,7 @@ impl std::fmt::Debug for TokenExchangeRequestInput<'_> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct TokenExchangePolicy<'a> {
+    pub deployment_profile: crate::DeploymentProfile,
     pub enabled: bool,
     pub client_id: &'a str,
     pub client_is_confidential: bool,
@@ -342,6 +343,8 @@ pub fn validate_token_exchange_access_token(
     if claims.tenant_id.parse::<Uuid>().ok() != Some(policy.client_tenant_id)
         || claims.token_use != "access"
         || claims.exp <= policy.now
+        || (!policy.deployment_profile.user_authorization()
+            && (claims.subject_type != "client" || claims.user_id.is_some()))
     {
         return Err(TokenExchangeError::InvalidGrant);
     }

@@ -98,6 +98,129 @@ fn registration_token_is_client_and_tenant_bound_and_static_clients_are_unmanage
 }
 
 #[test]
+fn registration_creation_rejects_ignored_credentials_or_required_audit() {
+    block_on(async {
+        for table in ["nazo_client_registrations", "nazo_audit"] {
+            let (database, provider) = fixture().await;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                DynamicRegistrationClientStore::insert(
+                    &provider,
+                    prepared("ignored", true),
+                    &hash("source")
+                )
+                .await
+                .is_err(),
+                "{table}"
+            );
+            assert!(
+                provider
+                    .by_client_id(TENANT, "ignored")
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_client_registrations) AND NOT EXISTS(SELECT 1 FROM nazo_audit) THEN 1 ELSE 0 END;").unwrap();
+        }
+    });
+}
+
+#[test]
+fn management_rotation_and_deletion_reject_ignored_effects() {
+    block_on(async {
+        for table in ["nazo_clients", "nazo_client_registrations"] {
+            let (database, provider) = fixture().await;
+            let original = insert(&provider, "rotation", true).await;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE UPDATE ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                provider
+                    .rotate_credentials(
+                        TENANT,
+                        original.id,
+                        Some("client-secret-v1:new:digest"),
+                        &hash("initial"),
+                        &hash("next")
+                    )
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert_eq!(
+                provider
+                    .by_registration_access_token(TENANT, "rotation", &hash("initial"))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .client,
+                original
+            );
+        }
+        for (table, operation) in [
+            ("nazo_clients", "UPDATE"),
+            ("nazo_client_registrations", "DELETE"),
+            ("nazo_refresh_families", "UPDATE"),
+            ("nazo_grants", "DELETE"),
+        ] {
+            let (database, provider) = fixture().await;
+            let original = insert(&provider, "deletion", true).await;
+            family(&database, &original);
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE {operation} ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                provider
+                    .deactivate(TENANT, original.id, &hash("initial"), &hash("source"))
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert_eq!(
+                provider
+                    .by_registration_access_token(TENANT, "deletion", &hash("initial"))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .client,
+                original
+            );
+            database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_refresh_families WHERE revoked_at IS NULL) AND EXISTS(SELECT 1 FROM nazo_grants) AND NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='dynamic_client_deleted') THEN 1 ELSE 0 END;").unwrap();
+        }
+    });
+}
+
+#[test]
+fn registration_downgrade_requires_each_family_revocation_audit() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let original = insert(&provider, "downgrade-audit", true).await;
+        family(&database, &original);
+        let mut replacement = original.clone();
+        replacement.registration.client_type = "public".into();
+        replacement.registration.token_endpoint_auth_method = "none".into();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='refresh_family_security_revoked' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .replace_registration(
+                    &replacement,
+                    None,
+                    &hash("initial"),
+                    Some(&hash("next")),
+                    &hash("source")
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            provider
+                .by_registration_access_token(TENANT, "downgrade-audit", &hash("initial"))
+                .await
+                .unwrap()
+                .unwrap()
+                .client,
+            original
+        );
+    });
+}
+
+#[test]
 fn credential_rotation_has_one_concurrent_winner_and_preserves_public_identity() {
     let (_, provider) = block_on(fixture());
     let client = block_on(insert(&provider, "race", true));

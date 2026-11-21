@@ -69,8 +69,8 @@ Registered HTTPS callbacks retain the existing session and consent checks.
 
 ## Planned specifications and drafts
 
-This section records standards work that is relevant to integration planning but
-is not necessarily a current discovery or registration metadata claim.
+This section records implemented draft profiles, planned standards work and
+their conditions for advertisement in discovery and registration metadata.
 `Supported` means the current implementation provides the behavior described by
 that row's linked specification or draft. `Not supported (audit pending)` means
 related stable specifications or adjacent flows may exist, but the linked draft
@@ -93,7 +93,7 @@ no executable implementation or complete profile boundary is available yet.
 | Identity Assertion / Identity Chaining / Transaction Tokens | Not supported (planned) | These drafts cover cross-domain identity assertions, chained authorization, and workload call chains; there is no issuer/trust-anchor, subject-mapping, Transaction Token Service, or resource-server verification model yet. | Complete trust-domain, replay, audit, revocation, resource-server verification, and least-privilege propagation design. |
 | Token Status List | Bounded verifier profile | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) JWT/CWT credential-status verification is implemented; publication remains unimplemented. | See [trust, transport and privacy boundaries](../protocol/openid4vc-validation.md#sd-jwt-processed-claims-and-credential-status). This is not a generic OAuth token-status endpoint. |
 
-The following are watchlist items, not planned implementation commitments:
+The following specifications are monitored for future integration needs:
 
 | Draft or protocol family | Status | Why it is watched |
 | --- | --- | --- |
@@ -125,8 +125,8 @@ expose the following endpoints when the matching modules are enabled:
 | Dynamic registration | `/register` | Advertised only while the DCR module is active with a non-empty initial access token. |
 | Device authorization | `/device_authorization` | Advertised when its runtime module is active; client use still requires grant and cross-device policy. |
 
-Discovery metadata must be treated as authoritative. If a field is absent, the
-deployment is not claiming that capability.
+Use the deployment's current discovery metadata to select available endpoints
+and protocol capabilities.
 
 ## Minimum supported integration
 

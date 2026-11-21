@@ -197,6 +197,71 @@ pub enum Endpoint {
     Userinfo,
 }
 
+impl Endpoint {
+    pub const fn available_in(self, profile: nazo_auth::DeploymentProfile) -> bool {
+        use nazo_auth::DeploymentProfile;
+
+        if matches!(profile, DeploymentProfile::Full) {
+            return true;
+        }
+        if matches!(
+            self,
+            Self::OauthAuthorizationServerMetadata
+                | Self::OauthProtectedResourceMetadata
+                | Self::Jwks
+                | Self::Ready
+                | Self::Live
+                | Self::Startup
+                | Self::FapiResource
+                | Self::Token
+                | Self::Revoke
+                | Self::Introspect
+                | Self::DynamicClientRegistration
+                | Self::ClientConfigurationGet
+                | Self::ClientConfigurationPut
+                | Self::ClientConfigurationDelete
+        ) {
+            return true;
+        }
+        matches!(profile, DeploymentProfile::PasskeyOnly)
+            && matches!(
+                self,
+                Self::Discovery
+                    | Self::CheckSessionIframe
+                    | Self::CheckSessionStatus
+                    | Self::DeviceAuthorization
+                    | Self::DeviceDecision
+                    | Self::DeviceVerification
+                    | Self::DeviceVerificationPage
+                    | Self::AuthorizeGet
+                    | Self::AuthorizePost
+                    | Self::AuthorizeConsent
+                    | Self::AuthorizeDecision
+                    | Self::AuthorizeClientPresentation
+                    | Self::Userinfo
+                    | Self::ProfileMe
+                    | Self::ProfileUpdate
+                    | Self::ProfileLogout
+                    | Self::Csrf
+                    | Self::PasskeyDelete
+                    | Self::PasskeyList
+                    | Self::PasskeyLoginBegin
+                    | Self::PasskeyLoginFinish
+                    | Self::PasskeyRegistrationBegin
+                    | Self::PasskeyRegistrationFinish
+                    | Self::MfaVerify
+                    | Self::MfaOptions
+                    | Self::MfaTotpBegin
+                    | Self::MfaTotpConfirm
+                    | Self::MfaStepUp
+                    | Self::MfaBackupCodesRegenerate
+                    | Self::MfaDisable
+                    | Self::OidcLogout
+                    | Self::Par
+            )
+    }
+}
+
 #[derive(Debug)]
 pub struct RouteMethod {
     pub method: Method,
@@ -217,6 +282,14 @@ pub struct Route {
 }
 
 impl Route {
+    pub fn available_in(&self, profile: nazo_auth::DeploymentProfile, method: &Method) -> bool {
+        profile == nazo_auth::DeploymentProfile::Full
+            || self.methods.iter().any(|entry| {
+                (method == Method::OPTIONS || entry.method == *method)
+                    && entry.endpoint.available_in(profile)
+            })
+    }
+
     const fn new(
         path: &'static str,
         methods: &'static [RouteMethod],

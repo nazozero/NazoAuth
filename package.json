@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "npm ci --prefix deploy/cloudflare && sh deploy/cloudflare/prepare-build.sh",
-    "deploy": "sh deploy/cloudflare/publish.sh",
+    "deploy": "node deploy/cloudflare/publish.mjs",
     "bootstrap": "node deploy/cloudflare/bootstrap.mjs",
     "test:deploy": "node --test deploy/cloudflare/test/deployment.mjs"
   },

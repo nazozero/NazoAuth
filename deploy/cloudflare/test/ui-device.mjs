@@ -11,6 +11,12 @@ import { Miniflare } from 'miniflare';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 
+function assertSecurityHeaders(response) {
+  assert.equal(response.headers.get('strict-transport-security'), 'max-age=31536000');
+  assert.equal(response.headers.get('x-frame-options'), 'DENY');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+}
+
 test('NazoAuthWeb routes preserve protocol URLs, query strings, authority, and the Device gate', { timeout: 900_000 }, async () => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'nazo-web-ui-'));
   let worker;
@@ -96,6 +102,7 @@ test('NazoAuthWeb routes preserve protocol URLs, query strings, authority, and t
       assert.equal(response.status, 307, route);
       assert.equal(response.headers.get('location'), target);
       assert.equal(response.headers.get('cache-control'), 'no-store');
+      assertSecurityHeaders(response);
     }
     for (const route of ['/ui/', '/ui/auth', '/ui/profile', '/ui/device?user_code=test', '/ui/admin']) {
       const response = await request(route);
@@ -103,6 +110,7 @@ test('NazoAuthWeb routes preserve protocol URLs, query strings, authority, and t
       assert.equal(response.headers.get('x-asset-path'), '/ui/index.html');
       assert.equal(response.headers.get('cache-control'), 'no-cache');
       assert.equal(response.headers.get('content-security-policy'), "default-src 'self'");
+      assertSecurityHeaders(response);
       assert.match(await response.text(), /id="root"/);
     }
     assert.equal(await (await request('/ui/auth', { method: 'HEAD' })).text(), '');
@@ -192,6 +200,7 @@ test('full-profile setup keeps its dedicated page and rejects claims without sam
     assert.match(page.headers.get('content-type'), /^text\/html/);
     assert.match(page.headers.get('content-security-policy'), /form-action 'none'/);
     assert.equal(page.headers.get('cache-control'), 'no-store');
+    assertSecurityHeaders(page);
     assert.match(await page.text(), /\/auth\/setup\.js/);
     const script = await request('/auth/setup.js');
     assert.equal(script.status, 200);
@@ -202,6 +211,7 @@ test('full-profile setup keeps its dedicated page and rejects claims without sam
       assert.equal(rejected.status, 403);
       assert.equal(rejected.headers.get('set-cookie'), null);
       assert.equal(rejected.headers.get('cache-control'), 'no-store');
+      assertSecurityHeaders(rejected);
     }
   } finally {
     await worker?.dispose();

@@ -329,6 +329,12 @@ impl PasskeyRepositoryPort for D1Provider {
                     ],
                 ),
                 self.conditional_audit(&event, id)?,
+                Statement::new(
+                    "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_passkeys WHERE tenant_id=?1 AND id=?2)
+                        OR EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3 AND event_type='passkey_registered' AND category='authentication' AND occurred_at=?4 AND payload=?5)
+                        THEN 1 ELSE json('passkey registration audit was not accepted') END",
+                    vec![json!(self.tenant_id),json!(id),json!(event.event_id),json!(event.occurred_at.as_microsecond()),json!(serde_json::to_string(&event.payload).map_err(|_| DbError::CorruptData)?)],
+                ),
             ];
             let results = self.database.batch(statements).await?;
             if results[0].rows.is_empty() {
@@ -406,6 +412,13 @@ impl PasskeyRepositoryPort for D1Provider {
                 Statement::new(
                     "DELETE FROM nazo_passkeys WHERE tenant_id=?1 AND id=?2 AND user_id=?3 RETURNING 1 AS applied",
                     vec![json!(self.tenant_id), json!(id), json!(user_id)],
+                ),
+                Statement::new(
+                    "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_passkeys WHERE tenant_id=?1 AND id=?2 AND user_id=?3) AND (
+                        (changes()=1 AND EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?4 AND event_type='passkey_deleted' AND category='authentication' AND occurred_at=?5 AND payload=?6))
+                        OR (changes()=0 AND NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_id=?4)))
+                        THEN 1 ELSE json('passkey deletion effects were not accepted') END",
+                    vec![json!(self.tenant_id),json!(id),json!(user_id),json!(event.event_id),json!(event.occurred_at.as_microsecond()),json!(serde_json::to_string(&event.payload).map_err(|_| DbError::CorruptData)?)],
                 ),
             ]).await?;
             Ok(!results[1].rows.is_empty())

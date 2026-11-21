@@ -355,6 +355,197 @@ fn rotation_preserves_contract_and_reuse_revokes_family() {
         );
     })
 }
+
+#[test]
+fn token_issuance_rolls_back_when_any_required_write_is_ignored() {
+    block_on(async {
+        for table in [
+            "nazo_audit",
+            "nazo_redemptions",
+            "nazo_subjects",
+            "nazo_refresh_families",
+        ] {
+            let (database, provider) = fixture().await;
+            database
+                .execute_sql(&format!(
+                    "CREATE TRIGGER refuse BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END"
+                ))
+                .unwrap();
+            let mut original_contract = contract();
+            original_contract.subject = "pairwise-subject".into();
+            let mut input = token(
+                code("ignored-write"),
+                Some(RefreshTokenCommit::IssueNew {
+                    token: refresh("uncommitted-refresh", Uuid::new_v4()),
+                    contract: original_contract,
+                }),
+            );
+            input.subject = "pairwise-subject".into();
+            assert!(
+                !matches!(
+                    provider.commit_token_issuance(input).await,
+                    Ok(CommitTokenIssuanceResult::Committed)
+                ),
+                "ignored {table} write was acknowledged"
+            );
+            database
+                .execute_sql(
+                    "SELECT CASE WHEN (SELECT count(*) FROM nazo_audit)=0
+                    AND (SELECT count(*) FROM nazo_redemptions)=0
+                    AND (SELECT count(*) FROM nazo_subjects)=0
+                    AND (SELECT count(*) FROM nazo_refresh_families)=0
+                 THEN 1 ELSE json('partial token issuance') END",
+                )
+                .unwrap();
+        }
+    });
+}
+
+#[test]
+fn ignored_audit_cannot_reuse_a_prior_issuance_as_new_authority() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let mut input = token(TokenIssuanceMode::Fresh, None);
+        assert_eq!(
+            provider.commit_token_issuance(input.clone()).await.unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        database
+            .execute_sql(
+                "CREATE TRIGGER refuse BEFORE INSERT ON nazo_audit BEGIN SELECT RAISE(IGNORE); END",
+            )
+            .unwrap();
+        input.mode = code("new-grant");
+        assert!(provider.commit_token_issuance(input).await.is_err());
+        database.execute_sql("SELECT CASE WHEN (SELECT count(*) FROM nazo_audit)=1 AND (SELECT count(*) FROM nazo_redemptions)=0 THEN 1 ELSE json('old issuance authorized a new effect') END").unwrap();
+    });
+}
+
+#[test]
+fn refresh_rotation_rolls_back_when_its_proof_or_successor_is_ignored() {
+    block_on(async {
+        for (operation, table) in [
+            ("INSERT", "nazo_refresh_spent"),
+            ("UPDATE", "nazo_refresh_families"),
+        ] {
+            let (database, provider) = fixture().await;
+            let family = Uuid::new_v4();
+            provider
+                .commit_token_issuance(token(
+                    code("initial"),
+                    Some(RefreshTokenCommit::IssueNew {
+                        token: refresh("original", family),
+                        contract: contract(),
+                    }),
+                ))
+                .await
+                .unwrap();
+            let source = provider
+                .refresh_token(TENANT, "original")
+                .await
+                .unwrap()
+                .unwrap();
+            database.execute_sql(&format!(
+                "CREATE TRIGGER refuse BEFORE {operation} ON {table} BEGIN SELECT RAISE(IGNORE); END"
+            )).unwrap();
+            let mut successor = refresh("successor", family);
+            successor.rotated_from_id = Some(source.id);
+            assert!(
+                provider
+                    .commit_token_issuance(token(
+                        TokenIssuanceMode::Fresh,
+                        Some(RefreshTokenCommit::UseExisting {
+                            authority: source.authority(),
+                            rotation: Some(successor),
+                        })
+                    ))
+                    .await
+                    .is_err(),
+                "ignored {table} write was acknowledged"
+            );
+            assert!(
+                provider
+                    .refresh_token(TENANT, "successor")
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                provider
+                    .refresh_token(TENANT, "original")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .revoked_at
+                    .is_none()
+            );
+            database
+                .execute_sql(
+                    "SELECT CASE WHEN (SELECT count(*) FROM nazo_audit)=1
+                    AND (SELECT count(*) FROM nazo_refresh_spent)=0
+                 THEN 1 ELSE json('partial refresh rotation') END",
+                )
+                .unwrap();
+        }
+    });
+}
+#[test]
+fn bounded_spent_history_accepts_rotation_after_clock_moves_back() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let family = Uuid::new_v4();
+        let mut original = refresh("original", family);
+        original.dpop_jkt = Some("holder".into());
+        provider
+            .commit_token_issuance(token(
+                code("bounded-history"),
+                Some(RefreshTokenCommit::IssueNew {
+                    token: original,
+                    contract: contract(),
+                }),
+            ))
+            .await
+            .unwrap();
+        let previous_clock = Timestamp::now() + SignedDuration::from_secs(60);
+        let expires_at = previous_clock + SignedDuration::from_secs(3600);
+        for index in 0..nazo_auth::MAX_SPENT_PROOFS_PER_REFRESH_FAMILY {
+            database.execute_sql(&format!(
+                "INSERT INTO nazo_refresh_spent(tenant_id,token_hash,family_id,member_id,successor_id,spent_at,expires_at) VALUES('{TENANT}','{}','{family}','{}','{}',{},{});",
+                blake3::hash(format!("previous-{index}").as_bytes()).to_hex(), Uuid::new_v4(), Uuid::new_v4(), previous_clock.as_microsecond(), expires_at.as_microsecond(),
+            )).unwrap();
+        }
+        let source = provider
+            .refresh_token(TENANT, "original")
+            .await
+            .unwrap()
+            .unwrap();
+        let mut successor = refresh("successor", family);
+        successor.rotated_from_id = Some(source.id);
+        successor.dpop_jkt = source.dpop_jkt.clone();
+        assert_eq!(
+            provider
+                .commit_token_issuance(token(
+                    TokenIssuanceMode::Fresh,
+                    Some(RefreshTokenCommit::UseExisting {
+                        authority: source.authority(),
+                        rotation: Some(successor),
+                    })
+                ))
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        assert!(
+            provider
+                .refresh_token(TENANT, "successor")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        database.execute_sql(&format!("SELECT CASE WHEN (SELECT count(*) FROM nazo_refresh_spent)={} THEN 1 ELSE json('unbounded spent history') END", nazo_auth::MAX_SPENT_PROOFS_PER_REFRESH_FAMILY)).unwrap();
+    });
+}
+
 #[test]
 fn sender_bound_lost_response_retry_checks_direct_edge() {
     block_on(async {
@@ -611,59 +802,66 @@ fn mismatched_family_owner_cannot_revoke_another_clients_family() {
 #[test]
 fn audit_failure_rolls_back_refresh_compromise() {
     block_on(async {
-        let (database, provider) = fixture().await;
-        let family = Uuid::new_v4();
-        provider
-            .commit_token_issuance(token(
-                code("revoke-failure"),
-                Some(RefreshTokenCommit::IssueNew {
-                    token: refresh("first", family),
-                    contract: contract(),
-                }),
-            ))
-            .await
-            .unwrap();
-        let source = provider
-            .refresh_token(TENANT, "first")
-            .await
-            .unwrap()
-            .unwrap();
-        let mut second = refresh("second", family);
-        second.rotated_from_id = Some(source.id);
-        provider
-            .commit_token_issuance(token(
-                TokenIssuanceMode::Fresh,
-                Some(RefreshTokenCommit::UseExisting {
-                    authority: source.authority(),
-                    rotation: Some(second),
-                }),
-            ))
-            .await
-            .unwrap();
-        database.execute_sql("CREATE TRIGGER reject_reuse_audit BEFORE INSERT ON nazo_audit WHEN NEW.event_type='refresh_reuse_detected' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END").unwrap();
-        let mut late = refresh("late", family);
-        late.rotated_from_id = Some(source.id);
-        assert!(
+        for refusal in [
+            "CREATE TRIGGER refuse BEFORE INSERT ON nazo_audit WHEN NEW.event_type='refresh_reuse_detected' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END",
+            "CREATE TRIGGER refuse BEFORE INSERT ON nazo_audit WHEN NEW.event_type='refresh_reuse_detected' BEGIN SELECT RAISE(IGNORE); END",
+            "CREATE TRIGGER refuse BEFORE UPDATE ON nazo_refresh_families BEGIN SELECT RAISE(IGNORE); END",
+        ] {
+            let (database, provider) = fixture().await;
+            let family = Uuid::new_v4();
+            provider
+                .commit_token_issuance(token(
+                    code("revoke-failure"),
+                    Some(RefreshTokenCommit::IssueNew {
+                        token: refresh("first", family),
+                        contract: contract(),
+                    }),
+                ))
+                .await
+                .unwrap();
+            let source = provider
+                .refresh_token(TENANT, "first")
+                .await
+                .unwrap()
+                .unwrap();
+            let mut second = refresh("second", family);
+            second.rotated_from_id = Some(source.id);
             provider
                 .commit_token_issuance(token(
                     TokenIssuanceMode::Fresh,
                     Some(RefreshTokenCommit::UseExisting {
                         authority: source.authority(),
-                        rotation: Some(late)
-                    })
+                        rotation: Some(second),
+                    }),
                 ))
                 .await
-                .is_err()
-        );
-        assert!(
-            provider
-                .refresh_token(TENANT, "second")
-                .await
-                .unwrap()
-                .unwrap()
-                .revoked_at
-                .is_none()
-        );
+                .unwrap();
+            database.execute_sql(refusal).unwrap();
+            let mut late = refresh("late", family);
+            late.rotated_from_id = Some(source.id);
+            assert!(
+                provider
+                    .commit_token_issuance(token(
+                        TokenIssuanceMode::Fresh,
+                        Some(RefreshTokenCommit::UseExisting {
+                            authority: source.authority(),
+                            rotation: Some(late)
+                        })
+                    ))
+                    .await
+                    .is_err()
+            );
+            assert!(
+                provider
+                    .refresh_token(TENANT, "second")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .revoked_at
+                    .is_none()
+            );
+            database.execute_sql("SELECT CASE WHEN (SELECT count(*) FROM nazo_audit WHERE event_type='refresh_reuse_detected')=0 THEN 1 ELSE json('partial reuse revocation') END").unwrap();
+        }
     })
 }
 #[test]

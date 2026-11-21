@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Fingerprint, ShieldCheck, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { buildAuthRedirectWithNext, buildCurrentPath } from '../auth/next';
 import { useAuth } from '../auth/useAuth';
 import { useI18n } from '../i18n';
 import { ApiError, apiFetch } from '../lib/api';
@@ -11,9 +12,10 @@ type Enrollment = { secret_base32: string; otpauth_uri: string; period: number; 
 type MfaResult = { mfa_enabled?: boolean; backup_codes?: string[]; success?: boolean };
 
 export default function WorkerSecurity() {
-  const { user, refreshSession } = useAuth();
+  const { user, refreshSession, logout } = useAuth();
   const { locale } = useI18n();
   const navigate = useNavigate();
+  const location = useLocation();
   const zh = locale === 'zh-CN';
   const [passkeys, setPasskeys] = useState<Passkey[] | null>(null);
   const [label, setLabel] = useState('');
@@ -117,13 +119,17 @@ export default function WorkerSecurity() {
       await refreshSession();
     });
   };
-  const reauthenticate = () => navigate(`/auth?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  const reauthenticate = () => void run(async signal => {
+    const destination = buildAuthRedirectWithNext(buildCurrentPath(location));
+    await logout();
+    if (!signal.aborted) navigate(destination, { replace: true });
+  });
 
   return (
     <div className="worker-security" aria-label={zh ? '账户安全' : 'Account security'}>
       {error && <p className="profile-alert error" role="alert">{error}</p>}
       {message && <p className="profile-alert success" role="status">{message}</p>}
-      {reauthentication && <button type="button" className="btn-secondary" onClick={reauthenticate}>{zh ? '重新登录' : 'Sign in again'}</button>}
+      {reauthentication && <button type="button" className="btn-secondary" disabled={busy} onClick={reauthenticate}>{zh ? '重新登录' : 'Sign in again'}</button>}
       <section className="worker-security-section" aria-labelledby="worker-passkeys-title">
         <h3 id="worker-passkeys-title"><Fingerprint size={20} /> Passkeys</h3>
         <p className="profile-form-hint">{zh ? '使用设备上的指纹、面容或安全密钥登录。添加和删除需要近期身份验证。' : 'Sign in with a fingerprint, face, or security key. Adding or removing a passkey requires recent authentication.'}</p>

@@ -100,6 +100,19 @@ impl TokenEndpointHandles {
         let device_service = self.core.device_service.as_ref();
         let runtime_modules = self.runtime_modules.as_ref();
         let form = prepared.parsed.form;
+        let profile = issuance_config.deployment_profile;
+        if nazo_auth::GrantType::try_from(form.grant_type.as_str())
+            .is_ok_and(|grant| !profile.allows_grant(grant))
+            || (form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT
+                && !profile.allows_module(nazo_runtime_modules::ModuleId::Openid4vciIssuer))
+        {
+            return Err(OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                "unsupported_grant_type",
+                "This grant type is unavailable in this deployment.",
+                false,
+            ));
+        }
         let pre_authorized = prepared.parsed.pre_authorized;
         let auth_facts = prepared.auth;
         let client_auth_context = prepared.client_auth_context;

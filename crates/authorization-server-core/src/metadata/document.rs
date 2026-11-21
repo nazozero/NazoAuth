@@ -2,8 +2,9 @@ use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{CapabilityAdmission, MetadataCapabilities, module_admissible};
 use crate::{
-    GrantType, SUPPORTED_AUTHORIZATION_DETAILS_TYPES, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+    DeploymentProfile, SUPPORTED_AUTHORIZATION_DETAILS_TYPES,
+    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+    SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
 };
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
@@ -63,7 +64,6 @@ const BASELINE_ACR_VALUE: &str = "1";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MetadataAuthorizationServerProfile {
     Composable,
-    MachineToMachine,
     Oauth2Baseline,
     Fapi2Security,
     Fapi2MessageSigningAuthorizationRequest,
@@ -73,10 +73,7 @@ pub enum MetadataAuthorizationServerProfile {
 
 impl MetadataAuthorizationServerProfile {
     const fn requires_fapi2_security(self) -> bool {
-        !matches!(
-            self,
-            Self::Composable | Self::MachineToMachine | Self::Oauth2Baseline
-        )
+        !matches!(self, Self::Composable | Self::Oauth2Baseline)
     }
 
     const fn requires_signed_authorization_request(self) -> bool {
@@ -109,6 +106,7 @@ pub struct MetadataSigningAlgorithms<'a> {
 /// Framework- and infrastructure-free input for OAuth AS and OIDC discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AuthorizationServerMetadataInput<'a> {
+    pub deployment_profile: DeploymentProfile,
     pub issuer: &'a str,
     pub mtls_endpoint_base_url: &'a str,
     pub mtls_enabled: bool,
@@ -148,19 +146,9 @@ struct AuthorizationServerMetadata<'a> {
 impl Serialize for AuthorizationServerMetadata<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let input = self.input;
-        let user_authorization =
-            input.profile != MetadataAuthorizationServerProfile::MachineToMachine;
-        let mut capabilities = MetadataCapabilities::from_snapshot(self.snapshot);
-        if !user_authorization {
-            capabilities.grant_types.retain(|grant| {
-                [
-                    GrantType::ClientCredentials.as_str(),
-                    GrantType::JwtBearer.as_str(),
-                    GrantType::TokenExchange.as_str(),
-                ]
-                .contains(grant)
-            });
-        }
+        let user_authorization = input.deployment_profile.user_authorization();
+        let capabilities =
+            MetadataCapabilities::from_snapshot(self.snapshot, input.deployment_profile);
         let issuer = input.issuer;
         let response_signing_algs: Vec<_> = input
             .signing_algorithms

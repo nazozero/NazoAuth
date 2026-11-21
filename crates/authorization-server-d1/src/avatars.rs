@@ -53,11 +53,16 @@ impl D1Provider {
         avatar: &AvatarObject,
     ) -> Result<(), AvatarStorageError> {
         validate_candidate(avatar)?;
-        self.database.query::<Value>(
+        let rows = self.database.query::<Value>(
             &format!("INSERT INTO nazo_avatar_objects(tenant_id,user_id,version,content_type,byte_length,created_at,storage)
-                VALUES(?1,?2,?3,?4,?5,{NOW},'r2_pending')"),
+                VALUES(?1,?2,?3,?4,?5,{NOW},'r2_pending') RETURNING 1"),
             vec![json!(self.tenant_id),json!(user.as_uuid()),json!(avatar.version),json!(avatar.content_type.as_str()),json!(avatar.bytes.len())],
         ).await.map_err(storage_error)?;
+        if rows.len() != 1 {
+            return Err(AvatarStorageError::Unavailable(
+                "R2 avatar reservation failed".into(),
+            ));
+        }
         Ok(())
     }
 
@@ -223,6 +228,12 @@ impl AvatarStoragePort for D1Provider {
                 statements.push(Statement::new("INSERT INTO nazo_avatar_chunks(tenant_id,user_id,version,ordinal,value) VALUES(?1,?2,?3,?4,?5)",
                     vec![json!(self.tenant_id),json!(user.as_uuid()),json!(avatar.version),json!(ordinal),json!(STANDARD.encode(bytes))]));
             }
+            statements.push(Statement::new(
+                "SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_avatar_objects WHERE tenant_id=?1 AND user_id=?2 AND version=?3 AND content_type=?4 AND byte_length=?5 AND storage='d1')
+                    AND (SELECT count(*) FROM nazo_avatar_chunks WHERE tenant_id=?1 AND user_id=?2 AND version=?3 AND ordinal>=0 AND ordinal<?6)=?6
+                    THEN 1 ELSE json('avatar chunks were not committed') END",
+                vec![json!(self.tenant_id),json!(user.as_uuid()),json!(avatar.version),json!(avatar.content_type.as_str()),json!(avatar.bytes.len()),json!(avatar.bytes.len().div_ceil(64*1024))],
+            ));
             self.database
                 .batch(statements)
                 .await

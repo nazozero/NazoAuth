@@ -143,15 +143,19 @@ impl D1Provider {
             .database
             .query(if replace { PUT } else { INSERT }, params)
             .await?;
+        if replace && rows.is_empty() {
+            return Err(DbError::Unavailable);
+        }
         Ok(!rows.is_empty())
     }
 
     async fn state_delete(&self, kind: &str, key: &str) -> Result<bool, DbError> {
-        let rows: Vec<VersionRow> = self
-            .database
-            .query(DELETE, self.state_params(kind, key))
-            .await?;
-        Ok(!rows.is_empty())
+        let params: std::sync::Arc<[Value]> = self.state_params(kind, key).into();
+        let results = self.database.batch(vec![
+            Statement::new(DELETE, params.clone()),
+            Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind=?2 AND key=?3) THEN 1 ELSE json('state deletion was not accepted') END", params),
+        ]).await?;
+        Ok(!results[0].rows.is_empty())
     }
 
     async fn state_compare_delete(
@@ -717,7 +721,10 @@ impl DpopNonceStorage for D1Provider {
         Box::pin(async move {
             let mut params = self.state_params("dpop_nonce", &key(&[nonce]));
             params.push(json!(expires_at));
-            let _: Vec<VersionRow> = self.database.query("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) VALUES(?1,?2,?3,'null','',?4) ON CONFLICT(tenant_id,kind,key) DO UPDATE SET expires_at=MAX(nazo_state.expires_at,excluded.expires_at) RETURNING version", params).await.map_err(|_| ProtectedResourceDependencyError::DpopNonceStoreUnavailable)?;
+            let rows: Vec<VersionRow> = self.database.query("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) VALUES(?1,?2,?3,'null','',?4) ON CONFLICT(tenant_id,kind,key) DO UPDATE SET expires_at=MAX(nazo_state.expires_at,excluded.expires_at) RETURNING version", params).await.map_err(|_| ProtectedResourceDependencyError::DpopNonceStoreUnavailable)?;
+            if rows.is_empty() {
+                return Err(ProtectedResourceDependencyError::DpopNonceStoreUnavailable);
+            }
             Ok(())
         })
     }
@@ -1055,6 +1062,9 @@ impl LoginSessionPort for D1Provider {
                 // The unique write revision proves insertion in this batch. A
                 // collision never invalidates the previously active session.
                 statements.push(Statement::new("DELETE FROM nazo_state WHERE tenant_id=?1 AND kind='session' AND key=?2 AND EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='session' AND key=?3 AND version=?4)", vec![json!(self.tenant_id), json!(key(&[previous])), json!(new_key), json!(version)]));
+                statements.push(Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='session' AND key=?3 AND version=?4)
+                    OR NOT EXISTS(SELECT 1 FROM nazo_state WHERE tenant_id=?1 AND kind='session' AND key=?2)
+                    THEN 1 ELSE json('session replacement did not retire the previous session') END", vec![json!(self.tenant_id), json!(key(&[previous])), json!(new_key), json!(version)]));
             }
             let results = self
                 .database

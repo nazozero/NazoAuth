@@ -21,6 +21,7 @@ mod client_attestation;
 mod client_authentication;
 mod client_jwe_policy;
 mod client_registration;
+mod deployment_profile;
 mod device;
 mod dpop;
 mod dynamic_client_registration;
@@ -137,6 +138,7 @@ pub use client_registration::{
     ApprovedClient, AuthorizationCodeProfile, ClientAssuranceLevel, ClientPresentation,
     ClientPresentationMetadata, ClientSecurityPolicy, OAuthClient, ValidatedClientRegistration,
 };
+pub use deployment_profile::DeploymentProfile;
 pub use device::{
     ApprovedDeviceAuthorization, DeviceAtomicResult, DeviceAuthorizationApproval,
     DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy,

@@ -172,7 +172,10 @@ impl D1Provider {
             "invalid client authority"
         );
         validate_client_capabilities(client)?;
-        self.database.batch(vec![Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)", vec![json!(self.tenant_id),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(encode(&client.registration)?),json!(secret_digest),json!(epoch),json!(client.is_active),json!(client.require_mtls_bound_tokens)])]).await?;
+        let rows = self.database.query::<Value>("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) RETURNING 1", vec![json!(self.tenant_id),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(encode(&client.registration)?),json!(secret_digest),json!(epoch),json!(client.is_active),json!(client.require_mtls_bound_tokens)]).await?;
+        if rows.len() != 1 {
+            return Err(DbError::Unavailable.into());
+        }
         Ok(())
     }
 
@@ -193,7 +196,10 @@ impl D1Provider {
                 && account.account.username == claims.preferred_username,
             "account and claims differ"
         );
-        self.database.batch(vec![Statement::new("INSERT INTO nazo_users(tenant_id,id,email,principal,claims,password_hash,epoch,active,mfa_enabled,avatar_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,0,?9,?10,?11)", vec![json!(self.tenant_id),json!(account.id()),json!(account.account.email),json!(encode(&account.principal)?),json!(encode(claims)?),json!(password_hash.into_persistence_value()),json!(account.principal.authorization_epoch),json!(account.principal.active),json!(account.profile.avatar_revision),json!(account.created_at.as_microsecond()),json!(account.updated_at.as_microsecond())])]).await?;
+        let rows = self.database.query::<Value>("INSERT INTO nazo_users(tenant_id,id,email,principal,claims,password_hash,epoch,active,mfa_enabled,avatar_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,0,?9,?10,?11) RETURNING 1", vec![json!(self.tenant_id),json!(account.id()),json!(account.account.email),json!(encode(&account.principal)?),json!(encode(claims)?),json!(password_hash.into_persistence_value()),json!(account.principal.authorization_epoch),json!(account.principal.active),json!(account.profile.avatar_revision),json!(account.created_at.as_microsecond()),json!(account.updated_at.as_microsecond())]).await?;
+        if rows.len() != 1 {
+            return Err(DbError::Unavailable.into());
+        }
         Ok(())
     }
 
@@ -225,7 +231,7 @@ impl D1Provider {
             )),
             "unsupported Workers module"
         );
-        let statements = ModuleId::ALL
+        let mut statements = ModuleId::ALL
             .into_iter()
             .map(|module| {
                 Ok(Statement::new(
@@ -238,6 +244,16 @@ impl D1Provider {
                 ))
             })
             .collect::<Result<Vec<_>, serde_json::Error>>()?;
+        statements.push(Statement::new(
+            "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM json_each(?2) m WHERE NOT EXISTS(
+                SELECT 1 FROM nazo_modules p JOIN nazo_module_desired d USING(tenant_id,module_id)
+                WHERE p.tenant_id=?1 AND p.module_id=m.value
+                    AND p.enabled=EXISTS(SELECT 1 FROM json_each(?3) e WHERE e.value=m.value)
+                    AND d.mode=CASE p.enabled WHEN 1 THEN 'enabled' ELSE 'disabled' END
+                    AND d.revision=1 AND d.actor_id IS NULL AND d.reason='deployment profile' AND d.updated_at=0))
+                THEN 1 ELSE json('module deployment profile was not committed') END",
+            vec![json!(self.tenant_id), json!(encode(&ModuleId::ALL)?), json!(encode(&enabled)?)],
+        ));
         self.database.batch(statements).await?;
         Ok(())
     }
@@ -606,6 +622,8 @@ impl D1Provider {
                 }
             }
         }
+        let audit_payload = encode(&input.audit_fields)?;
+        let approve = input.decision == AuthorizationDecisionKind::Approve;
         let params = vec![
             json!(self.tenant_id),
             json!(input.user_id),
@@ -615,8 +633,9 @@ impl D1Provider {
             json!(request_hash),
             json!(par_hash),
             json!(event),
-            json!(encode(&input.audit_fields)?),
+            json!(audit_payload),
             json!(input.occurred_at.as_microsecond()),
+            json!(approve),
         ];
         let admission = format!(
             "EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?3 AND active=1) AND EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND active=1) AND ?4>{NOW} AND (?5 IS NULL OR EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3 AND revision=?5)) AND NOT EXISTS(SELECT 1 FROM nazo_decisions WHERE tenant_id=?1 AND (request_hash=?6 OR (?7 IS NOT NULL AND par_hash=?7)))"
@@ -625,14 +644,33 @@ impl D1Provider {
         // admission fails; only this batch's insert may authorize the writes.
         let mut batch = vec![Statement::new(
             format!(
-                "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?8,'authorization_decision','authorization',?10,?9 WHERE ({admission}) OR EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?8 AND event_type='authorization_decision')"
+                "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) SELECT ?1,?8,'authorization_decision','authorization',?10,
+                    CASE WHEN ?11 THEN json_set(?9,'$.authorization_count',COALESCE((SELECT authorization_count FROM nazo_grant_activity WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3),0)+1) ELSE ?9 END
+                    WHERE ({admission}) OR EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?8 AND event_type='authorization_decision')"
             ),
             params,
         )];
+        batch.push(Statement::new(
+            "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?2 AND event_type='authorization_decision') OR changes()=1
+                THEN 1 ELSE json('authorization decision audit was not inserted') END",
+            vec![json!(self.tenant_id), json!(event)],
+        ));
         batch.push(Statement::new("INSERT INTO nazo_decisions(tenant_id,request_hash,par_hash,event_id,retain_until) SELECT ?1,?2,?3,?4,?5 WHERE EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?4 AND event_type='authorization_decision')",vec![json!(self.tenant_id),json!(request_hash),json!(par_hash),json!(event),json!(input.retain_until.as_microsecond())]));
-        if input.decision == AuthorizationDecisionKind::Approve {
+        if approve {
             batch.push(Statement::new("INSERT INTO nazo_grants(tenant_id,user_id,client_id,scopes,resources,details,revision) SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?7 AND event_type='authorization_decision') ON CONFLICT(tenant_id,user_id,client_id) DO UPDATE SET scopes=excluded.scopes,resources=excluded.resources,details=excluded.details,revision=excluded.revision",vec![json!(self.tenant_id),json!(input.user_id),json!(client.id),json!(encode(&input.scopes)?),json!(encode(&input.resource_indicators)?),json!(encode(&input.authorization_details)?),json!(event)]));
         }
+        batch.push(Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?4) OR (
+            EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?4 AND event_type='authorization_decision' AND category='authorization' AND occurred_at=?10
+                AND ((?11=0 AND payload=?9) OR (?11=1 AND json_type(payload,'$.authorization_count')='integer' AND payload=json_set(?9,'$.authorization_count',json_extract(payload,'$.authorization_count')))))
+            AND EXISTS(SELECT 1 FROM nazo_decisions WHERE tenant_id=?1 AND request_hash=?5 AND par_hash IS ?6 AND event_id=?4 AND retain_until=?7)
+            AND (?8 IS NULL OR EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3 AND revision=?8))
+            AND (?11=0 OR (EXISTS(SELECT 1 FROM nazo_grants g JOIN nazo_grant_activity h ON h.tenant_id=g.tenant_id AND h.user_id=g.user_id AND h.client_id=g.client_id
+                JOIN nazo_audit a ON a.tenant_id=g.tenant_id AND a.event_id=g.revision
+                WHERE g.tenant_id=?1 AND g.user_id=?2 AND g.client_id=?3 AND g.revision=?4 AND g.scopes=?12 AND g.resources=?13 AND g.details=?14
+                    AND h.last_authorized_at=a.occurred_at AND h.authorization_count=json_extract(a.payload,'$.authorization_count'))
+                AND NOT EXISTS(SELECT 1 FROM nazo_grant_history_unknown WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3 AND last_authorization_unknown<>0))))
+            THEN 1 ELSE json('authorization decision effects were not accepted') END",
+            vec![json!(self.tenant_id),json!(input.user_id),json!(client.id),json!(event),json!(request_hash),json!(par_hash),json!(input.retain_until.as_microsecond()),json!(grant_revision),json!(audit_payload),json!(input.occurred_at.as_microsecond()),json!(approve),json!(encode(&input.scopes)?),json!(encode(&input.resource_indicators)?),json!(encode(&input.authorization_details)?)]));
         batch.push(Statement::new(format!("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?3 AND event_id=?1 AND event_type='authorization_decision') THEN 'committed' WHEN ?2<={NOW} THEN 'expired' WHEN NOT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?3 AND id=?4 AND active=1) OR NOT EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?3 AND id=?5 AND active=1) THEN 'client' WHEN ?6 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?3 AND user_id=?5 AND client_id=?4 AND revision=?6) THEN 'grant' ELSE 'conflict' END AS outcome"),vec![json!(event),json!(input.valid_until.as_microsecond()),json!(self.tenant_id),json!(client.id),json!(input.user_id),json!(grant_revision)]));
         let result = self.database.batch(batch).await?;
         match result

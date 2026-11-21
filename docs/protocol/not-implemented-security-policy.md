@@ -27,11 +27,10 @@ that the standard permits.
 
 | Capability | Constraint and evidence |
 | --- | --- |
-| Client-supplied external `request_uri` | Available only on the baseline profile for an exact HTTPS URI registered through authenticated dynamic registration. The fetcher rejects redirects, userinfo, non-HTTPS schemes, oversized bodies, unexpected content types, and public DNS answers containing private/loopback/link-local/unspecified/multicast addresses; private origins require an explicit exact-origin allowlist. Request Objects remain asymmetrically signed under RFC 9101. FAPI profiles continue to use server-issued, one-time PAR handles under [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126.html). |
+| Client-supplied external `request_uri` | Available only on the baseline profile for an exact HTTPS URI registered through authenticated dynamic registration. Both hosts reject redirects, userinfo, non-HTTPS schemes, oversized bodies and unexpected content types. The native fetcher filters and pins DNS answers; private origins require `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS`. Workers admits only the exact HTTPS origins configured in `services.outbound_origins`, using the platform Fetch API; see the [Workers guide](../operations/cloudflare-workers.md). Request Objects remain asymmetrically signed under RFC 9101. FAPI profiles continue to use server-issued, one-time PAR handles under [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126.html). |
 | `client_secret_post` | Retained only for baseline interoperability. RFC 9700 Section 2.5 recommends asymmetric client authentication; FAPI profiles therefore exclude shared-secret POST authentication. New high-assurance clients should use `private_key_jwt`, mTLS, or another sender-constrained profile. |
 | Cleartext SMTP transport | Accepted only without SMTP credentials when the public issuer is loopback HTTP, including isolated container E2E topology. Production mail submission must use STARTTLS or implicit TLS. See [RFC 8314](https://www.rfc-editor.org/rfc/rfc8314.html). |
 | Returning an email verification code in an HTTP response | Accepted only in debug builds with a loopback HTTP issuer. It is rejected at startup in deployable/non-loopback configurations. |
 
-Historical conformance records may describe behavior that existed at the time
-of a recorded run. They are evidence snapshots, not current policy. This file,
-runtime metadata, and current executable tests take precedence.
+Use this policy, current runtime metadata and executable tests when selecting
+protocol capabilities.

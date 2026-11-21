@@ -241,8 +241,11 @@ impl D1Provider {
             .ok()
             .filter(|t| *t > 0)
             .ok_or(DbError::CorruptData)?;
-        self.database.query::<Value>("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) VALUES(?1,?2,?3,?4,?5,unixepoch()+?6)
-            ON CONFLICT(tenant_id,kind,key) DO UPDATE SET value=excluded.value,version=excluded.version,expires_at=excluded.expires_at",vec![json!(self.tenant_id),json!(kind),json!(digest(state)),json!(encode(value)?),json!(Uuid::new_v4()),json!(ttl)]).await?;
+        let rows = self.database.query::<Value>("INSERT INTO nazo_state(tenant_id,kind,key,value,version,expires_at) VALUES(?1,?2,?3,?4,?5,unixepoch()+?6)
+            ON CONFLICT(tenant_id,kind,key) DO UPDATE SET value=excluded.value,version=excluded.version,expires_at=excluded.expires_at RETURNING 1",vec![json!(self.tenant_id),json!(kind),json!(digest(state)),json!(encode(value)?),json!(Uuid::new_v4()),json!(ttl)]).await?;
+        if rows.len() != 1 {
+            return Err(DbError::Unavailable.into());
+        }
         Ok(())
     }
     async fn take_federation<T: DeserializeOwned>(

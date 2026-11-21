@@ -124,9 +124,8 @@ HTTP presenters consume those results without acquiring another connection for
 a display reread. Requester email is selected by the write statement under the
 same tenant scope. A subsequent mutation does not replace the returned snapshot.
 Existing current-state delivery verification and staged-attempt recovery remain
-separate authority checks. The earlier response-view change left the Required
-HTTP outcome audit step separate. Current candidate access-request and
-administrative mTLS commands append their canonical Required outcome inside the
+separate authority checks. Access-request and administrative mTLS commands
+append their canonical Required outcome inside the
 business owner and present only its accepted commit result. Administrative
 controller identity and proactive recovery-root commands follow that same ACK
 boundary through purpose ports; signed break-glass and offline controller

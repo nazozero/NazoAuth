@@ -28,6 +28,17 @@ async fn fetch(
     env: Env,
     _: worker::Context,
 ) -> worker::Result<Response<Full<Bytes>>> {
+    let path = request.path();
+    let mut response = dispatch(request, env).await?;
+    for (name, value) in nazoauth::integration::security_headers(&path) {
+        if !response.headers().contains_key(name) {
+            response.headers_mut().insert(name.clone(), value.clone());
+        }
+    }
+    Ok(response)
+}
+
+async fn dispatch(request: worker::Request, env: Env) -> worker::Result<Response<Full<Bytes>>> {
     let presented_certificate = crate::mtls::PresentedCertificate::capture(&request);
     let mut request: HttpRequest = request.try_into()?;
     let Ok(bindings) = binding_values(&env) else {
@@ -63,9 +74,6 @@ async fn fetch(
             .contains(&nazo_runtime_modules::ModuleId::DeviceAuthorization);
     if !module_ui && let Some(reply) = crate::ui::serve(&request, &env, configuration).await {
         return reply;
-    }
-    if !module_ui && !configuration.allows_route(request.method(), request.uri().path()) {
-        return Ok(response(StatusCode::NOT_FOUND, Bytes::new()));
     }
     if configuration.ingress == Ingress::DirectCloudflare {
         let Ok(mut facts) = nazo_http_worker::direct_ingress_facts(&request) else {

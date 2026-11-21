@@ -203,7 +203,7 @@ function main() {
     }), { mode: 0o600 });
     wrangler('deploy', '--secrets-file', secrets);
     console.log('D1 initialized; private recovery credentials saved to ' + outputPath);
-    console.log('The Worker is not public. Configure the zone WAF and HTTPS route first.');
+    console.log('Before accepting requests, configure the zone WAF and the issuer HTTPS route.');
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

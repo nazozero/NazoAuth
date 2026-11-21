@@ -90,6 +90,110 @@ fn creation_rechecks_the_persisted_actor_context_and_rolls_back_secret_on_audit_
 }
 
 #[test]
+fn creation_requires_both_the_client_and_registration_credential() {
+    block_on(async {
+        for table in ["nazo_clients", "nazo_client_registrations"] {
+            let (database, provider) = fixture().await;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            let created = client("ignored");
+            assert!(
+                provider
+                    .insert_with_required_audit(
+                        &created,
+                        Some("secret"),
+                        Some("registration-hash"),
+                        USER,
+                        "source"
+                    )
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert_sql(
+                &database,
+                "NOT EXISTS(SELECT 1 FROM nazo_clients WHERE client_id='ignored') AND NOT EXISTS(SELECT 1 FROM nazo_client_registrations) AND NOT EXISTS(SELECT 1 FROM nazo_audit)",
+            );
+        }
+    });
+}
+
+#[test]
+fn client_deactivation_rolls_back_when_a_required_effect_is_ignored() {
+    block_on(async {
+        for (table, operation) in [
+            ("nazo_clients", "UPDATE"),
+            ("nazo_refresh_families", "UPDATE"),
+            ("nazo_grants", "DELETE"),
+        ] {
+            let (database, provider) = fixture().await;
+            let expected = client("deactivation");
+            provider
+                .insert_with_required_audit(&expected, Some("secret"), None, USER, "source")
+                .await
+                .unwrap();
+            family(&database, &expected);
+            let mut changed = expected.clone();
+            changed.is_active = false;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE {operation} ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                provider
+                    .update_with_required_audit(&expected, &changed, USER, "source")
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert_eq!(
+                provider
+                    .by_client_id(TENANT, "deactivation")
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                expected
+            );
+            assert_sql(
+                &database,
+                "NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='client_updated') AND EXISTS(SELECT 1 FROM nazo_refresh_families WHERE revoked_at IS NULL) AND EXISTS(SELECT 1 FROM nazo_grants)",
+            );
+        }
+    });
+}
+
+#[test]
+fn authentication_downgrade_requires_each_family_revocation_audit() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let expected = client("downgrade-ignored");
+        provider
+            .insert_with_required_audit(&expected, Some("secret"), None, USER, "source")
+            .await
+            .unwrap();
+        family(&database, &expected);
+        let mut changed = expected.clone();
+        changed.registration.client_type = "public".into();
+        changed.registration.token_endpoint_auth_method = "none".into();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='refresh_family_security_revoked' BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .update_with_required_audit(&expected, &changed, USER, "source")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            provider
+                .by_client_id(TENANT, "downgrade-ignored")
+                .await
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        assert_sql(
+            &database,
+            "NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='client_updated') AND EXISTS(SELECT 1 FROM nazo_refresh_families WHERE revoked_at IS NULL)",
+        );
+    });
+}
+
+#[test]
 fn metadata_cas_has_one_winner_and_never_mutates_the_authority_identity() {
     let (database, provider) = block_on(fixture());
     let expected = client("race");

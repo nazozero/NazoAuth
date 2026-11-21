@@ -342,21 +342,61 @@ fn replacing_session_preserves_old_on_collision_and_invalidates_on_success() {
 
 #[test]
 fn replacement_failure_rolls_back_new_session_and_keeps_old() {
-    let (database, provider) = fixture();
-    let record = session();
-    block_on(provider.create("old", &record, 60)).unwrap();
-    database.execute_sql("CREATE TRIGGER fail_delete BEFORE DELETE ON nazo_state BEGIN SELECT RAISE(ABORT,'injected storage failure'); END").unwrap();
-    assert!(block_on(provider.create_replacing(Some("old"), "new", &record, 60)).is_err());
-    assert!(
-        block_on(provider.load(&SessionId::new("old")))
-            .unwrap()
-            .is_some()
-    );
-    assert!(
-        block_on(provider.load(&SessionId::new("new")))
-            .unwrap()
-            .is_none()
-    );
+    for failure in ["RAISE(ABORT,'injected storage failure')", "RAISE(IGNORE)"] {
+        let (database, provider) = fixture();
+        let record = session();
+        block_on(provider.create("old", &record, 60)).unwrap();
+        database
+            .execute_sql(&format!(
+                "CREATE TRIGGER fail_delete BEFORE DELETE ON nazo_state BEGIN SELECT {failure}; END"
+            ))
+            .unwrap();
+        assert!(block_on(provider.create_replacing(Some("old"), "new", &record, 60)).is_err());
+        assert!(
+            block_on(provider.load(&SessionId::new("old")))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            block_on(provider.load(&SessionId::new("new")))
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn state_writes_and_deletions_reject_ignored_required_effects() {
+    block_on(async {
+        let (database, provider) = fixture();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_state BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            DpopStateStorePort::issue_nonce(&provider, "nonce", 60)
+                .await
+                .is_err()
+        );
+        assert!(
+            nazo_resource_server::DpopNonceStorage::issue_nonce(
+                &provider,
+                "nonce",
+                Timestamp::now().as_second() + 60
+            )
+            .await
+            .is_err()
+        );
+        database.execute_sql("DROP TRIGGER suppress").unwrap();
+        provider.create("session", &session(), 60).await.unwrap();
+        database.execute_sql("CREATE TRIGGER suppress BEFORE DELETE ON nazo_state BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(provider.delete(&SessionId::new("session")).await.is_err());
+        assert!(
+            provider
+                .load(&SessionId::new("session"))
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(!provider.delete(&SessionId::new("missing")).await.unwrap());
+    });
 }
 
 #[test]

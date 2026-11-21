@@ -4,6 +4,7 @@ use nazo_oauth_server::token::issue::TokenIssuanceConfig;
 use std::collections::BTreeSet;
 pub fn token_issuance_config(settings: &Configuration) -> TokenIssuanceConfig {
     TokenIssuanceConfig {
+        deployment_profile: settings.protocol.deployment_profile,
         profile: settings.protocol.authorization_server_profile,
         issuer: settings.endpoint.issuer.as_str().into(),
         mtls_endpoint_base_url: settings.endpoint.mtls_endpoint_base_url.as_str().into(),

@@ -84,6 +84,34 @@ async fn receiver(provider: &D1Provider) -> EventReceiver {
         audience: "https://receiver.example".into(),
     }
 }
+
+#[test]
+fn provisioning_requires_the_scim_credential_to_be_written() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        database
+            .execute_sql(
+                "CREATE TRIGGER ignore_credential BEFORE INSERT ON nazo_scim_tokens
+             BEGIN SELECT RAISE(IGNORE); END;",
+            )
+            .unwrap();
+        let credential = ScimTokenCredential {
+            id: Uuid::new_v4(),
+            tenant_id: TENANT,
+            scopes: vec!["scim:read".into()],
+            event_audience: None,
+        };
+        let digest = blake3::hash(credential.id.as_bytes()).to_hex().to_string();
+        assert!(
+            provider
+                .provision_scim_credential(&credential, &digest, None)
+                .await
+                .is_err()
+        );
+        assert!(provider.active_credential(&digest).await.unwrap().is_none());
+    });
+}
+
 fn assert_sql(database: &Database, predicate: &str) {
     database.execute_sql(&format!("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN ({predicate}) THEN 1 ELSE 0 END; DROP TABLE assertion;")).unwrap();
 }
@@ -261,6 +289,106 @@ fn concurrent_identity_creation_has_one_winner_with_one_required_audit_and_event
         block_on(repository.create(duplicate)),
         Err(RepositoryError::Conflict)
     ));
+}
+
+#[test]
+fn scim_creation_requires_account_audit_and_event_effects() {
+    block_on(async {
+        for table in ["nazo_users", "nazo_audit", "nazo_scim_events"] {
+            let (database, provider) = fixture().await;
+            database.execute_sql(&format!("CREATE TRIGGER suppress BEFORE INSERT ON {table} BEGIN SELECT RAISE(IGNORE); END;")).unwrap();
+            assert!(
+                provider
+                    .scim_repository(600)
+                    .create(create("ignored", MutationContext::enabled()))
+                    .await
+                    .is_err(),
+                "{table}"
+            );
+            assert_sql(
+                &database,
+                "NOT EXISTS(SELECT 1 FROM nazo_users WHERE email='ignored@example.com') AND NOT EXISTS(SELECT 1 FROM nazo_audit) AND NOT EXISTS(SELECT 1 FROM nazo_scim_events) AND NOT EXISTS(SELECT 1 FROM nazo_state WHERE kind='scim_mutation')",
+            );
+        }
+    });
+}
+
+#[test]
+fn scim_deletion_rolls_back_each_ignored_effect() {
+    block_on(async {
+        for trigger in [
+            "CREATE TRIGGER suppress BEFORE UPDATE ON nazo_users BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='scim_user_deleted' BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE INSERT ON nazo_audit WHEN NEW.event_type='refresh_family_security_revoked' BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE INSERT ON nazo_deleted_users BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE UPDATE ON nazo_refresh_families BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE DELETE ON nazo_grants BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE INSERT ON nazo_scim_events BEGIN SELECT RAISE(IGNORE); END;",
+            "CREATE TRIGGER suppress BEFORE DELETE ON nazo_state WHEN OLD.kind='scim_mutation' BEGIN SELECT RAISE(IGNORE); END;",
+        ] {
+            let (database, provider) = fixture().await;
+            family(&database);
+            database.execute_sql(trigger).unwrap();
+            assert!(
+                provider
+                    .scim_repository(600)
+                    .delete(
+                        tenant(),
+                        UserId::new(USER).unwrap(),
+                        MutationContext::enabled()
+                    )
+                    .await
+                    .is_err(),
+                "{trigger}"
+            );
+            assert_sql(
+                &database,
+                &format!(
+                    "EXISTS(SELECT 1 FROM nazo_users WHERE id='{USER}' AND active=1 AND epoch=0) AND NOT EXISTS(SELECT 1 FROM nazo_deleted_users) AND EXISTS(SELECT 1 FROM nazo_refresh_families WHERE revoked_at IS NULL) AND EXISTS(SELECT 1 FROM nazo_grants) AND NOT EXISTS(SELECT 1 FROM nazo_audit) AND NOT EXISTS(SELECT 1 FROM nazo_scim_events) AND NOT EXISTS(SELECT 1 FROM nazo_state WHERE kind='scim_mutation')"
+                ),
+            );
+        }
+    });
+}
+
+#[test]
+fn polling_rejects_ignored_eligible_receipts() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let receiver = receiver(&provider).await;
+        provider
+            .scim_repository(600)
+            .create(create("event", MutationContext::enabled()))
+            .await
+            .unwrap();
+        let page = provider
+            .apply_dispositions_and_poll(&receiver, &poll(20))
+            .await
+            .unwrap();
+        let event = page.events[0].id;
+        let mut acknowledge = poll(20);
+        acknowledge.ack.push(event);
+        database.execute_sql("CREATE TRIGGER suppress BEFORE INSERT ON nazo_scim_event_receipts BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        assert!(
+            provider
+                .apply_dispositions_and_poll(&receiver, &acknowledge)
+                .await
+                .is_err()
+        );
+        assert_sql(
+            &database,
+            "NOT EXISTS(SELECT 1 FROM nazo_scim_event_receipts)",
+        );
+        assert_eq!(
+            provider
+                .apply_dispositions_and_poll(&receiver, &poll(20))
+                .await
+                .unwrap()
+                .events[0]
+                .id,
+            event
+        );
+    });
 }
 
 #[test]

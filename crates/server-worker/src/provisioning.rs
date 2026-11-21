@@ -67,7 +67,7 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
         users,
         scim_credentials,
     } = input;
-    configuration.application(client_secret_pepper.clone())?;
+    let settings = configuration.application(client_secret_pepper.clone())?;
     if configuration.machine_only {
         ensure!(
             users.is_empty(),
@@ -78,12 +78,9 @@ pub async fn provision(path: &Path, input: ProvisioningInput) -> anyhow::Result<
                 client.client_type == "confidential"
                     && client.redirect_uris.is_empty()
                     && client.grant_types.iter().all(|grant| {
-                        matches!(
-                            grant.as_str(),
-                            "client_credentials"
-                                | "urn:ietf:params:oauth:grant-type:token-exchange"
-                                | "urn:ietf:params:oauth:grant-type:jwt-bearer"
-                        )
+                        nazo_auth::GrantType::try_from(grant.as_str()).is_ok_and(|grant| {
+                            settings.protocol.deployment_profile.allows_grant(grant)
+                        })
                     })
                     && matches!(
                         client.token_endpoint_auth_method.as_str(),

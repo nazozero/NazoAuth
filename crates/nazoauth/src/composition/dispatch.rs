@@ -65,6 +65,14 @@ impl NazoAuth {
         let uri = request.uri().clone();
         let routing_path = crate::integration::routing_path(uri.path());
         let matched = crate::integration::match_path(&routing_path);
+        let profile = self.settings.protocol.deployment_profile;
+        if profile != nazo_auth::DeploymentProfile::Full
+            && !matched
+                .as_ref()
+                .is_some_and(|(route, _)| route.available_in(profile, request.method()))
+        {
+            return http::empty_response(StatusCode::NOT_FOUND);
+        }
         let (cors, guard) = matched.as_ref().map_or_else(
             || crate::integration::unmatched_policy(&routing_path),
             |(route, _)| (route.cors, route.guard),

@@ -108,6 +108,7 @@ pub fn token_exchange_policy<'a>(
     now: i64,
 ) -> TokenExchangePolicy<'a> {
     TokenExchangePolicy {
+        deployment_profile: issuance.config.deployment_profile,
         enabled: issuance.accepts(nazo_runtime_modules::ModuleId::TokenExchange),
         client_id: &client.client_id,
         client_is_confidential: client.client_type == "confidential",
@@ -397,16 +398,6 @@ pub async fn token_exchange(
     if let Err(error) = validate_token_exchange_grant_prerequisites(&request, policy) {
         return Err(token_exchange_error_response(error));
     }
-    if let Err(error) = consume_token_client_assertion_with_authorization_service(
-        authorization_service,
-        client,
-        client_assertion,
-        issuance.security_audit,
-    )
-    .await
-    {
-        return Err(crate::token::token_client_assertion_error(error));
-    }
     let subject_token = form
         .subject_token
         .as_deref()
@@ -468,6 +459,16 @@ pub async fn token_exchange(
     };
     validate_token_exchange_target(&request, policy)
         .map_err(|error| token_exchange_admission_error_response(error, form))?;
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
+        authorization_service,
+        client,
+        client_assertion,
+        issuance.security_audit,
+    )
+    .await
+    {
+        return Err(crate::token::token_client_assertion_error(error));
+    }
     let nazo_auth::ValidatedTokenExchangeSubject {
         identity, scopes, ..
     } = validated_subject;

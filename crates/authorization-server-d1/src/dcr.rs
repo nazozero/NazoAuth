@@ -68,10 +68,19 @@ impl DynamicRegistrationClientStore for D1Provider {
                 "grant_types": client.grant_types, "token_endpoint_auth_method": client.token_endpoint_auth_method,
                 "source_ip_hash": source_ip_hash,
             });
+            let event = Uuid::new_v4();
+            let payload = encode(&payload)?;
+            let registration = encode(&client.registration)?;
             self.database.batch(vec![
-                Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,0,1,?8)", vec![json!(self.tenant_id), json!(client.id), json!(client.client_id), json!(client.realm_id), json!(client.organization_id), json!(encode(&client.registration)?), json!(write.client_secret_hash),json!(client.require_mtls_bound_tokens)]),
+                Statement::new("INSERT INTO nazo_clients(tenant_id,id,client_id,realm_id,organization_id,registration,secret_digest,epoch,active,require_mtls_bound_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,0,1,?8)", vec![json!(self.tenant_id), json!(client.id), json!(client.client_id), json!(client.realm_id), json!(client.organization_id), json!(registration), json!(write.client_secret_hash),json!(client.require_mtls_bound_tokens)]),
                 Statement::new("INSERT INTO nazo_client_registrations(tenant_id,client_id,token_hash) VALUES(?1,?2,?3)", vec![json!(self.tenant_id), json!(client.id), json!(token)]),
-                Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) VALUES(?1,?2,'dynamic_client_registered','client_lifecycle',{NOW},?3)"), vec![json!(self.tenant_id), json!(Uuid::new_v4()), json!(encode(&payload)?)]),
+                Statement::new(format!("INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload) VALUES(?1,?2,'dynamic_client_registered','client_lifecycle',{NOW},?3)"), vec![json!(self.tenant_id), json!(event), json!(payload)]),
+                Statement::new("SELECT CASE WHEN
+                    EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND client_id=?3 AND realm_id=?4 AND organization_id=?5 AND registration=?6 AND secret_digest IS ?7 AND epoch=0 AND active=1 AND require_mtls_bound_tokens=?8)
+                    AND EXISTS(SELECT 1 FROM nazo_client_registrations WHERE tenant_id=?1 AND client_id=?2 AND token_hash=?9)
+                    AND EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?10 AND event_type='dynamic_client_registered' AND category='client_lifecycle' AND payload=?11)
+                    THEN 1 ELSE json('dynamic registration effects were not accepted') END",
+                    vec![json!(self.tenant_id),json!(client.id),json!(client.client_id),json!(client.realm_id),json!(client.organization_id),json!(registration),json!(write.client_secret_hash),json!(client.require_mtls_bound_tokens),json!(token),json!(event),json!(payload)]),
             ]).await?;
             Ok(client)
         })
@@ -264,6 +273,7 @@ impl D1Provider {
                      'grant_types',json_extract(COALESCE(json_extract(?5,'$.registration'),c.registration),'$.grant_types'),
                      'token_endpoint_auth_method',json_extract(COALESCE(json_extract(?5,'$.registration'),c.registration),'$.token_endpoint_auth_method'),
                      'previous_client_type',json_extract(c.registration,'$.client_type'),
+                     'previous_epoch',c.epoch,
                      'refresh_invalidation_reason',CASE WHEN json_extract(?5,'$.deactivate')=1 THEN 'client_deleted'
                        WHEN json_extract(?5,'$.registration.client_type')='public' AND json_extract(c.registration,'$.client_type')='confidential'
                        THEN 'client_authentication_class_downgrade' ELSE NULL END,
@@ -278,10 +288,19 @@ impl D1Provider {
                 "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
                  SELECT tenant_id,lower(hex(randomblob(16))),'refresh_family_security_revoked','token_lifecycle',{NOW},
                    json_object('schema_version','nazo.audit.v1','tenant_id',tenant_id,'token_family_id',id,
-                     'client_id',client_id,'event_category','token_lifecycle','reason','client_authentication_class_downgrade')
+                     'client_id',client_id,'event_category','token_lifecycle','reason','client_authentication_class_downgrade','mutation_id',?3)
                  FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=?2 AND revoked_at IS NULL AND {admitted}
                    AND json_extract(?4,'$.registration.client_type')='public'
                    AND EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND json_extract(registration,'$.client_type')='confidential')"), effect_params()),
+            Statement::new(format!(
+                "SELECT CASE WHEN NOT ({admitted}) OR NOT EXISTS(
+                    SELECT 1 FROM nazo_refresh_families f WHERE f.tenant_id=?1 AND f.client_id=?2 AND f.revoked_at IS NULL
+                    AND json_extract(?4,'$.registration.client_type')='public'
+                    AND EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND json_extract(registration,'$.client_type')='confidential')
+                    AND NOT EXISTS(SELECT 1 FROM nazo_audit a WHERE a.tenant_id=f.tenant_id AND a.event_type='refresh_family_security_revoked' AND a.category='token_lifecycle'
+                        AND json_extract(a.payload,'$.mutation_id')=?3 AND json_extract(a.payload,'$.token_family_id')=f.id
+                        AND json_extract(a.payload,'$.client_id')=f.client_id AND json_extract(a.payload,'$.reason')='client_authentication_class_downgrade'))
+                    THEN 1 ELSE json('dynamic registration revocation audit was not accepted') END"),effect_params()),
             Statement::new(format!(
                 "UPDATE nazo_refresh_families SET revoked_at={NOW} WHERE tenant_id=?1 AND client_id=?2 AND revoked_at IS NULL AND {admitted}
                  AND (json_extract(?4,'$.deactivate')=1 OR (json_extract(?4,'$.registration.client_type')='public'
@@ -301,6 +320,19 @@ impl D1Provider {
                 "DELETE FROM nazo_client_registrations WHERE tenant_id=?1 AND client_id=?2 AND {admitted} AND json_extract(?4,'$.token') IS NULL"), effect_params()),
             Statement::new(format!(
                 "DELETE FROM nazo_grants WHERE tenant_id=?1 AND client_id=?2 AND {admitted} AND json_extract(?4,'$.deactivate')=1"), effect_params()),
+            Statement::new("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3) OR (
+                EXISTS(SELECT 1 FROM nazo_clients c JOIN nazo_audit a ON a.tenant_id=c.tenant_id AND a.event_id=?3
+                    WHERE c.tenant_id=?1 AND c.id=?2 AND a.event_type=json_extract(?4,'$.event') AND a.category='client_lifecycle'
+                    AND json_extract(a.payload,'$.tenant_id')=?1 AND json_extract(a.payload,'$.client_id')=c.client_id
+                    AND c.active=1-json_extract(?4,'$.deactivate') AND c.epoch=json_extract(a.payload,'$.previous_epoch')+json_extract(?4,'$.deactivate')
+                    AND c.secret_digest IS json_extract(?4,'$.secret')
+                    AND (json_extract(?4,'$.require_mtls_bound_tokens') IS NULL OR c.require_mtls_bound_tokens=json_extract(?4,'$.require_mtls_bound_tokens'))
+                    AND (json_extract(?4,'$.registration') IS NULL OR c.registration=json_set(json_extract(?4,'$.registration'),'$.client_id',c.client_id,'$.allowed_audiences',json_extract(c.registration,'$.allowed_audiences'),'$.security_policy',json_extract(c.registration,'$.security_policy')))
+                    AND (json_extract(a.payload,'$.refresh_invalidation_reason') IS NULL OR NOT EXISTS(SELECT 1 FROM nazo_refresh_families WHERE tenant_id=?1 AND client_id=?2 AND revoked_at IS NULL)))
+                AND ((json_extract(?4,'$.token') IS NOT NULL AND EXISTS(SELECT 1 FROM nazo_client_registrations WHERE tenant_id=?1 AND client_id=?2 AND token_hash=json_extract(?4,'$.token')))
+                    OR (json_extract(?4,'$.token') IS NULL AND NOT EXISTS(SELECT 1 FROM nazo_client_registrations WHERE tenant_id=?1 AND client_id=?2)))
+                AND (json_extract(?4,'$.deactivate')=0 OR NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND client_id=?2)))
+                THEN 1 ELSE json('dynamic registration mutation effects were not accepted') END",effect_params()),
             Statement::new(format!(
                 "SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?4) THEN 'committed'
                  WHEN EXISTS(SELECT 1 FROM nazo_clients c WHERE {authority}) THEN 'policy' ELSE 'stale' END AS outcome"),

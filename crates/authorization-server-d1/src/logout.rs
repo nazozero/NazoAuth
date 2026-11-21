@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     D1Provider,
     db::Statement,
-    persistence::{NOW, timestamp},
+    persistence::{NOW, encode, timestamp},
 };
 
 impl BackchannelLogoutOutboxPort for D1Provider {
@@ -31,6 +31,16 @@ impl BackchannelLogoutOutboxPort for D1Provider {
                     vec![json!(self.tenant_id),json!(Uuid::new_v4()),json!(delivery.operation_key),json!(delivery.client_id),json!(delivery.client_public_id),json!(delivery.logout_uri),json!(delivery.logout_token),json!(delivery.expires_at.as_microsecond())]));
             }
             if !statements.is_empty() {
+                let identities: Vec<_> = deliveries
+                    .iter()
+                    .map(|delivery| json!([delivery.operation_key, delivery.client_id]))
+                    .collect();
+                statements.push(Statement::new(
+                    "SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM json_each(?2) expected WHERE NOT EXISTS(
+                        SELECT 1 FROM nazo_logout_outbox WHERE tenant_id=?1 AND operation_key=json_extract(expected.value,'$[0]') AND client_id=json_extract(expected.value,'$[1]')))
+                        THEN 1 ELSE json('logout outbox enqueue was not accepted') END",
+                    vec![json!(self.tenant_id), json!(encode(&identities)?)],
+                ));
                 self.database.batch(statements).await?;
             }
             Ok(())

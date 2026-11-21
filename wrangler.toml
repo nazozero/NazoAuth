@@ -2,15 +2,17 @@ name = "nazoauth"
 main = "deploy/cloudflare/shim.mjs"
 compatibility_date = "2026-11-19"
 workers_dev = false
+preview_urls = false
+
+# Set your public zone route/custom domain after configuring the ingress rule.
+# routes = [{ pattern = "auth.example.com", custom_domain = true }]
+
 [assets]
 directory = "deploy/cloudflare/web-dist"
 binding = "ASSETS"
 html_handling = "none"
 not_found_handling = "none"
 run_worker_first = ["/*", "!/ui/assets/*", "!/ui/icons/*"]
-
-# Set your public zone route/custom domain after configuring the ingress rule.
-# routes = [{ pattern = "auth.example.com", custom_domain = true }]
 
 [version_metadata]
 binding = "NAZO_VERSION"

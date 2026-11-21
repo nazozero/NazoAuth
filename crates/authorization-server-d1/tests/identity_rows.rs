@@ -91,3 +91,51 @@ fn client_reads_reject_registration_identity_that_disagrees_with_its_index() {
         );
     });
 }
+
+#[test]
+fn provisioning_requires_the_client_and_account_rows_to_be_written() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        let tenant = TenantId::new(TENANT).unwrap();
+        let user = UserId::new(USER).unwrap();
+        let account = provider
+            .public_account_by_id(tenant, user)
+            .await
+            .unwrap()
+            .unwrap();
+        let subject = provider
+            .active_subject_claims(TENANT, USER, &USER.to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        database.execute_sql(
+            "DELETE FROM nazo_clients; DELETE FROM nazo_users;
+             CREATE TRIGGER ignore_client BEFORE INSERT ON nazo_clients BEGIN SELECT RAISE(IGNORE); END;
+             CREATE TRIGGER ignore_user BEFORE INSERT ON nazo_users BEGIN SELECT RAISE(IGNORE); END;"
+        ).unwrap();
+        assert!(
+            provider
+                .provision_client(&support::client(), None, 0)
+                .await
+                .is_err()
+        );
+        assert!(
+            provider
+                .provision_user(
+                    &account,
+                    &subject.claims,
+                    nazo_identity::ports::PasswordHashInput::new("$argon2id$fixture").unwrap(),
+                )
+                .await
+                .is_err()
+        );
+        assert!(provider.client_by_id("client").await.unwrap().is_none());
+        assert!(
+            provider
+                .public_account_by_id(tenant, user)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    });
+}

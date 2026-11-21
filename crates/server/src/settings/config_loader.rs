@@ -493,7 +493,7 @@ impl Settings {
                 }
             },
             protocol: ProtocolSettings {
-                user_authorization_supported: true,
+                deployment_profile: nazo_auth::DeploymentProfile::Full,
                 backchannel_logout_supported: true,
                 default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
                 protected_resource_identifier,

@@ -165,41 +165,17 @@ impl WorkerConfiguration {
             !(self.machine_only && self.passkey_only),
             "Worker cannot select both machine-only and passkey-only profiles"
         );
-        ensure!(
-            !self.machine_only
-                || self.modules.iter().all(|module| {
-                    matches!(
-                        module,
-                        ModuleId::TokenExchange
-                            | ModuleId::JwtBearerGrant
-                            | ModuleId::HttpMessageSignatures
-                            | ModuleId::DynamicClientRegistration
-                    )
-                }),
-            "machine-only profile cannot enable interactive modules"
-        );
+        let profile = if self.machine_only {
+            nazo_auth::DeploymentProfile::MachineToMachine
+        } else if self.passkey_only {
+            nazo_auth::DeploymentProfile::PasskeyOnly
+        } else {
+            nazo_auth::DeploymentProfile::Full
+        };
         for module in &self.modules {
             ensure!(
-                matches!(
-                    module,
-                    ModuleId::RequestObjects
-                        | ModuleId::DeviceAuthorization
-                        | ModuleId::DynamicClientRegistration
-                        | ModuleId::Jarm
-                        | ModuleId::SessionManagement
-                        | ModuleId::TokenExchange
-                        | ModuleId::JwtBearerGrant
-                        | ModuleId::NativeSso
-                        | ModuleId::AuthorizationDetails
-                        | ModuleId::FrontchannelLogout
-                        | ModuleId::HttpMessageSignatures
-                        | ModuleId::Ciba
-                        | ModuleId::Scim
-                        | ModuleId::ScimSecurityEvents
-                        | ModuleId::Openid4vciIssuer
-                        | ModuleId::Openid4vpVerifier
-                ),
-                "module {module:?} is unavailable in the Workers deployment profile"
+                profile.allows_module(*module),
+                "module {module:?} is unavailable in the selected deployment profile"
             );
         }
         ensure!(
@@ -225,7 +201,7 @@ impl WorkerConfiguration {
         );
         let mut settings =
             nazoauth::config::Configuration::new(self.tenant, &self.issuer, client_secret_pepper)?;
-        settings.protocol.user_authorization_supported = !self.machine_only;
+        settings.protocol.deployment_profile = profile;
         settings.protocol.backchannel_logout_supported = !self.services.outbound_origins.is_empty();
         ensure!(
             !self.services.mtls || self.ingress == Ingress::DirectCloudflare,
@@ -235,30 +211,11 @@ impl WorkerConfiguration {
             settings.endpoint.mtls_certificate_source =
                 nazoauth::config::MtlsCertificateSourceMode::DirectTls;
         }
-        let mut registration_grants = vec!["client_credentials".to_owned()];
-        if !self.machine_only {
-            registration_grants
-                .extend(["authorization_code".to_owned(), "refresh_token".to_owned()]);
-        }
-        for (module, grant) in [
-            (
-                ModuleId::TokenExchange,
-                "urn:ietf:params:oauth:grant-type:token-exchange",
-            ),
-            (
-                ModuleId::JwtBearerGrant,
-                "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            ),
-            (
-                ModuleId::DeviceAuthorization,
-                "urn:ietf:params:oauth:grant-type:device_code",
-            ),
-            (ModuleId::Ciba, "urn:openid:params:grant-type:ciba"),
-        ] {
-            if self.modules.contains(&module) {
-                registration_grants.push(grant.to_owned());
-            }
-        }
+        let registration_grants = profile
+            .grant_types(|module| self.modules.contains(&module))
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         settings.modules.dynamic_client_registration_capabilities =
             nazo_auth::DynamicRegistrationCapabilities {
                 remote_documents: !self.services.outbound_origins.is_empty(),
@@ -278,130 +235,6 @@ impl WorkerConfiguration {
         }
         settings.validate()?;
         Ok(settings)
-    }
-
-    /// Admit routes for the deployment's selected login and service profile.
-    pub fn allows_route(&self, method: &http::Method, path: &str) -> bool {
-        if matches!(
-            path,
-            "/device" | "/device_authorization" | "/device/verification" | "/device/decision"
-        ) && !self.modules.contains(&ModuleId::DeviceAuthorization)
-        {
-            return false;
-        }
-        if path == "/register" || path.starts_with("/register/") {
-            return self.modules.contains(&ModuleId::DynamicClientRegistration)
-                && if path == "/register" {
-                    matches!(*method, http::Method::POST | http::Method::OPTIONS)
-                } else {
-                    path.strip_prefix("/register/")
-                        .is_some_and(|id| !id.is_empty() && !id.contains('/'))
-                        && matches!(
-                            *method,
-                            http::Method::GET
-                                | http::Method::PUT
-                                | http::Method::DELETE
-                                | http::Method::OPTIONS
-                        )
-                };
-        }
-        if !self.machine_only && !self.passkey_only {
-            return true;
-        }
-        // Keep the shared facade responsible for endpoint-specific CORS policy.
-        // A preflight can reach only a path admitted for an actual operation.
-        if method == http::Method::OPTIONS {
-            return [
-                http::Method::GET,
-                http::Method::POST,
-                http::Method::PATCH,
-                http::Method::DELETE,
-            ]
-            .iter()
-            .any(|method| self.allows_route(method, path));
-        }
-        if self.passkey_only {
-            return match *method {
-                http::Method::GET => matches!(
-                    path,
-                    "/.well-known/openid-configuration"
-                        | "/.well-known/oauth-authorization-server"
-                        | "/.well-known/oauth-protected-resource"
-                        | "/health"
-                        | "/live"
-                        | "/startup"
-                        | "/check_session"
-                        | "/check_session/status"
-                        | "/fapi/resource"
-                        | "/device"
-                        | "/device/verification"
-                        | "/jwks.json"
-                        | "/authorize"
-                        | "/authorize/consent"
-                        | "/authorize/client-presentation"
-                        | "/userinfo"
-                        | "/auth/me"
-                        | "/auth/me/passkeys"
-                        | "/auth/csrf"
-                        | "/auth"
-                        | "/consent"
-                        | "/auth/setup"
-                        | "/auth/passkey"
-                        | "/auth/setup.js"
-                        | "/logout"
-                ),
-                http::Method::POST => matches!(
-                    path,
-                    "/token"
-                        | "/revoke"
-                        | "/introspect"
-                        | "/par"
-                        | "/authorize"
-                        | "/authorize/decision"
-                        | "/userinfo"
-                        | "/auth/passkey/begin"
-                        | "/auth/passkey/finish"
-                        | "/auth/mfa/verify"
-                        | "/auth/me/mfa/totp/begin"
-                        | "/auth/me/mfa/totp/confirm"
-                        | "/auth/me/mfa/step-up"
-                        | "/auth/me/mfa/backup-codes/regenerate"
-                        | "/auth/me/mfa/disable"
-                        | "/auth/me/passkeys/registration/begin"
-                        | "/auth/me/passkeys/registration/finish"
-                        | "/auth/logout"
-                        | "/auth/setup/claim"
-                        | "/logout"
-                        | "/fapi/resource"
-                        | "/device_authorization"
-                        | "/device/decision"
-                ),
-                http::Method::PATCH => path == "/auth/me",
-                http::Method::DELETE => path
-                    .strip_prefix("/auth/me/passkeys/")
-                    .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok()),
-                _ => false,
-            };
-        }
-        if method == http::Method::GET {
-            matches!(
-                path,
-                "/health"
-                    | "/live"
-                    | "/startup"
-                    | "/jwks.json"
-                    | "/.well-known/oauth-authorization-server"
-                    | "/.well-known/oauth-protected-resource"
-                    | "/fapi/resource"
-            )
-        } else if method == http::Method::POST {
-            matches!(
-                path,
-                "/token" | "/revoke" | "/introspect" | "/fapi/resource"
-            )
-        } else {
-            false
-        }
     }
 
     /// Admit the configured issuer authority before selecting its tenant graph.
