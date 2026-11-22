@@ -151,9 +151,12 @@ fn external_link_and_required_audit_roll_back_together_when_audit_is_suppressed(
         email: String::new(),
         claims: json!({"sub":"validated-subject"}),
     };
-    assert!(block_on(
-        FederationLoginRepositoryPort::link_authenticated(&provider, link)
-    ).is_err());
+    assert!(
+        block_on(FederationLoginRepositoryPort::link_authenticated(
+            &provider, link
+        ))
+        .is_err()
+    );
     assert_sql(
         &db,
         "NOT EXISTS(SELECT 1 FROM nazo_federation_links WHERE provider_id='link-audit-required')
