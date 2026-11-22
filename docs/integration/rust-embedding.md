@@ -8,8 +8,11 @@ library contract.
 
 ## Dependencies in an external workspace
 
-An external workspace can depend on `nazoauth` from this Git repository at its
-chosen release tag. The [workspace manifest](../../Cargo.toml) selects the
+For a published crates.io release, run `cargo add nazoauth` in the consuming
+project. Use `cargo add nazoauth --no-default-features` for a host that does
+not expose deployment control. If you use this repository's Actix or Worker
+adapter from Git, select the same Git tag or commit for the adapter and facade
+so that they share the same Rust types. The [workspace manifest](../../Cargo.toml) selects the
 crates.io releases of `nazo-mdoc`, `nazo-passkey` and Actix. Cargo records
 their versions and checksums in the consuming workspace's lockfile.
 The native host also uses official rustls releases. Its connection callback

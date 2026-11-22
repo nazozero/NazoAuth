@@ -30,18 +30,37 @@ alerts are not restricted to the normal weekly update window.
 
 ## Tagged Release Gates
 
-To prepare a patch release, set the version once with `cargo-edit` and refresh
-the standalone fuzz workspace's lockfile for its local dependencies.
+Set `[workspace.package].version` in the root `Cargo.toml`, then refresh the
+two lockfiles that track local packages.
 
 ```sh
-cargo set-version --workspace --bump patch
+cargo update --workspace
 cargo update --workspace --manifest-path fuzz/Cargo.toml
 ```
 
-The first command updates the shared package version, the `nazo-crypto` dependency
-version required by the packaged `nazo-operator-protocol`, and the root lockfile.
-Other internal dependencies use local paths. Use `minor` or `major` for the
-corresponding release. Include both lockfiles in the release change.
+Internal dependencies use local paths. Include both lockfiles in the release change.
+
+### Rust library distribution
+
+From the intended release commit, prepare a new directory and rehearse the
+crates.io upload. Cargo builds the packaged sources and resolves their registry
+dependencies together.
+
+```sh
+python3 scripts/prepare_registry_workspace.py target/registry-workspace
+cd target/registry-workspace
+cargo publish --workspace --locked --registry crates-io --allow-dirty --dry-run
+```
+
+The script checks out the current commit, copies the project license into each
+distribution package, and adds matching registry versions to local dependencies
+in the checkout's root manifest. These generated files account for
+`--allow-dirty`. Members with `publish.workspace = true` ship with the
+`nazoauth` library. Hosts and adapters with `publish = false` stay local.
+For an authorized upload, run the same command in this checkout without
+`--dry-run` using credentials for the selected crate names.
+
+### GitHub release
 
 The `release-security` workflow runs for `v*` tags and manual dispatch:
 

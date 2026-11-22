@@ -2,7 +2,7 @@
 
 Embed OAuth 2.0 and OpenID Connect in a Rust host using the framework-neutral
 `NazoAuth` service and `NazoAuthBuilder`. The host supplies storage, keys and
-transport. The library owns protocol processing.
+transport. The library owns protocol processing and requires Rust 1.100 or later.
 
 ```sh
 cargo add nazoauth

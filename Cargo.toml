@@ -6,6 +6,7 @@ exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.4.1"
+# The registry checkout enables publication for members that inherit this field.
 publish = false
 edition = "2024"
 rust-version = "1.100.0"
