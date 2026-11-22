@@ -20,7 +20,11 @@ async fn discovery_transport_rejects_loopback_before_connecting() {
 }
 
 impl rp_http::FederationHttpClient for Issuer {
-    fn send_discovered(&self, _: http::Request<Bytes>, _: usize) -> rp_http::FederationHttpFuture<'_> {
+    fn send_discovered(
+        &self,
+        _: http::Request<Bytes>,
+        _: usize,
+    ) -> rp_http::FederationHttpFuture<'_> {
         panic!("the configured issuer's own origin already has operator authorization");
     }
 

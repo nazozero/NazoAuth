@@ -42,10 +42,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
-#[path = "federation/oidf.rs"]
-mod oidf;
 #[path = "federation/linking.rs"]
 mod linking;
+#[path = "federation/oidf.rs"]
+mod oidf;
 #[path = "federation/upstream_lifecycle.rs"]
 mod upstream_lifecycle;
 

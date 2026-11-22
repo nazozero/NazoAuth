@@ -280,7 +280,9 @@ async fn federation_provider_start_inner(
                     .start_social_link(provider_id, &browser_binding_seed, user_id, session_id, now)
                     .await
             } else {
-                service.start_social(provider_id, &browser_binding_seed, now).await
+                service
+                    .start_social(provider_id, &browser_binding_seed, now)
+                    .await
             };
             match started {
                 Ok(start) => federation_start_response(
@@ -487,9 +489,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         None => provider.userinfo_endpoint.as_deref(),
     };
     let userinfo = if let Some(endpoint) = userinfo_endpoint {
-        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider)
-            .await
-        {
+        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider).await {
             Ok(userinfo) => Some(userinfo),
             Err(error) => {
                 tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC UserInfo request failed");
@@ -546,7 +546,15 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         }
     };
     if let Some(intent) = stored.link_intent.as_ref() {
-        return complete_link(service, sessions, req, identity, intent, &provider.provider_id).await;
+        return complete_link(
+            service,
+            sessions,
+            req,
+            identity,
+            intent,
+            &provider.provider_id,
+        )
+        .await;
     }
     match service
         .complete_oidc(identity, upstream, client_ip_with_config(req, client_ip))
@@ -1063,6 +1071,9 @@ pub fn federation_state_error(error: FederationError) -> HttpResponse {
 
 pub fn federation_completion_error(error: FederationError) -> HttpResponse {
     match error {
+        error @ (FederationError::InvalidState
+        | FederationError::StateExpired
+        | FederationError::ProviderMismatch) => federation_state_error(error),
         FederationError::LinkConflict => oauth_error(
             StatusCode::CONFLICT,
             "invalid_request",

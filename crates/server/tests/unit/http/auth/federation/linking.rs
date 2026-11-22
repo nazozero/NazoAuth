@@ -238,7 +238,8 @@ async fn oidc_and_social_link_without_email_keep_the_session_and_support_login_t
             .create_user(&format!("linked-{}@example.com", Uuid::now_v7()), true)
             .await;
         let sid = fixture.session(&user, 0).await;
-        let session_store = nazo_valkey::SessionStore::new(&fixture.inner.state.valkey_connection());
+        let session_store =
+            nazo_valkey::SessionStore::new(&fixture.inner.state.valkey_connection());
         let original_session = session_store
             .load(&sid)
             .await
@@ -319,7 +320,10 @@ async fn oidc_and_social_link_without_email_keep_the_session_and_support_login_t
         let login = authorization_query(fixture.start(provider, &anonymous, false).await);
         fixture.proof(provider, &login, &subject, true);
         assert_eq!(
-            fixture.callback(provider, &anonymous, &login).await.status(),
+            fixture
+                .callback(provider, &anonymous, &login)
+                .await
+                .status(),
             http::StatusCode::UNAUTHORIZED
         );
     }
@@ -428,7 +432,10 @@ async fn link_callback_rejects_session_switch_revocation_and_invalid_proof() {
                     .is_none()
             );
             assert_eq!(
-                fixture.callback(provider, &owner_browser, &query).await.status(),
+                fixture
+                    .callback(provider, &owner_browser, &query)
+                    .await
+                    .status(),
                 http::StatusCode::BAD_REQUEST
             );
         }

@@ -21,15 +21,25 @@ Release dates use UTC+8.
   direct response-buffer transfer through the HTTP adapter.
 - Preserve original ceremony timing through MFA/session rotation; reject late
   callback completion and verify subject/sid revocation against actual sessions.
+- Add authenticated OIDC and OAuth2 Social account binding through the normal
+  public API. Bind the intent to the initiating account, session and browser;
+  preserve the local session on success and require recent password or Passkey
+  authentication for unlinking. Providers without email can use explicit binding.
+- Commit links and required audit facts atomically in PostgreSQL and Worker D1;
+  preserve unique upstream ownership and make repeated binding idempotent.
+- Use the operator-configured issuer's transport for its own origin, including
+  private enterprise issuers. Discovered endpoints on other origins retain the
+  existing network restrictions.
 
 ### Validation and delivery
 
-- Run official OIDF RP Basic, Configuration and Back-Channel Logout plans on the
-  production Native RP handlers, with original Suite results and explicit
-  unsigned-ID-Token skips. See [PR #299](https://github.com/nazozero/NazoAuth/pull/299).
-- Keep NazoAuthCtl's OP plan Matrix distinct from the new RP tests; its
-  [controller PR #100](https://github.com/nazozero/NazoAuthCtl/pull/100)
-  corrects the OIDC selector to include Core, Logout and Session Management.
+- Move official OIDF RP Basic, Configuration and Back-Channel Logout acceptance
+  to [NazoAuthCtl #102](https://github.com/nazozero/NazoAuthCtl/pull/102), which
+  drives an independent production binary through public login, binding, session
+  and unlink APIs. Preserve original Suite results and explicit unsigned-ID-Token
+  skips; keep the controller's existing 44 OP/AS plans unchanged.
+- Upgrade D1's test SQLite adapter to rusqlite 0.43 and verify the same production
+  SQL against its updated interface.
 - Release packaging and signed artifact publication remain gated on the exact
   versioned main commit, full CI and release-security checks.
 

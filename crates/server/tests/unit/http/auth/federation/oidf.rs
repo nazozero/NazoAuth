@@ -151,7 +151,9 @@ async fn oidf_rp_http_bridge() {
     });
     let bridge = Data::new(Bridge {
         config,
-        profiles: crate::test_support::profile_sessions(&state).get_ref().clone(),
+        profiles: crate::test_support::profile_sessions(&state)
+            .get_ref()
+            .clone(),
         sessions: SessionService::new(
             Arc::new(nazo_valkey::SessionStore::new(&state.valkey_connection())),
             Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),

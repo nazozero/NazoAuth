@@ -164,7 +164,11 @@ fn authenticated_external_link_is_idempotent_and_never_moves_another_users_subje
             .unwrap()
             .is_some()
     );
-    assert!(block_on(provider.resolve_existing(&login)).unwrap().is_none());
+    assert!(
+        block_on(provider.resolve_existing(&login))
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -199,7 +203,10 @@ fn concurrent_authenticated_subject_links_keep_one_owner_and_one_audit() {
             .map(|task| task.join().unwrap())
             .collect::<Vec<_>>();
         let owner = results.iter().find(|(_, result)| result.is_ok()).unwrap().0;
-        assert_eq!(results.iter().filter(|(_, result)| result.is_ok()).count(), 4);
+        assert_eq!(
+            results.iter().filter(|(_, result)| result.is_ok()).count(),
+            4
+        );
         assert!(results.iter().all(|(candidate, result)| {
             if *candidate == owner {
                 result.is_ok()
@@ -213,9 +220,12 @@ fn concurrent_authenticated_subject_links_keep_one_owner_and_one_audit() {
                 .len(),
             1
         );
-        assert_sql(&db, "(SELECT count(*) FROM nazo_federation_links)=1 AND
+        assert_sql(
+            &db,
+            "(SELECT count(*) FROM nazo_federation_links)=1 AND
             (SELECT count(*) FROM nazo_audit WHERE event_type='external_identity_linked')=1 AND
-            NOT EXISTS(SELECT 1 FROM nazo_audit WHERE instr(payload,'upstream-private-claims')>0)");
+            NOT EXISTS(SELECT 1 FROM nazo_audit WHERE instr(payload,'upstream-private-claims')>0)",
+        );
     }
 }
 

@@ -63,8 +63,11 @@ pub async fn unlink_my_federation_link(
         &current.amr,
         current.user.account.mfa_enabled,
         jiff::Timestamp::now().as_second(),
-    ) || !current.amr.iter().any(|method| matches!(method.as_str(), "pwd" | "passkey")) {
-
+    ) || !current
+        .amr
+        .iter()
+        .any(|method| matches!(method.as_str(), "pwd" | "passkey"))
+    {
         return oauth_error(
             StatusCode::PRECONDITION_REQUIRED,
             "reauthentication_required",

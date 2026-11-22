@@ -293,24 +293,16 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
         let mut provider = provider();
         provider.jwks_url = endpoint;
         assert_eq!(
-            fetch_oidc_jwks(
-                config.client.as_ref(),
-                &provider.jwks_url,
-                &provider
-            )
-            .await
-            .unwrap(),
+            fetch_oidc_jwks(config.client.as_ref(), &provider.jwks_url, &provider)
+                .await
+                .unwrap(),
             json!({"keys": []})
         );
         let shared_config = config.clone();
         assert_eq!(
-            fetch_oidc_jwks(
-                shared_config.client.as_ref(),
-                &provider.jwks_url,
-                &provider
-            )
-            .await
-            .unwrap(),
+            fetch_oidc_jwks(shared_config.client.as_ref(), &provider.jwks_url, &provider)
+                .await
+                .unwrap(),
             json!({"keys": []})
         );
         server.await.unwrap();
@@ -345,9 +337,7 @@ async fn discovery_trusts_only_the_configured_issuer_origin() {
             } else {
                 json!({ "keys": [] })
             };
-            Box::pin(async move {
-                Ok(http::Response::new(bytes::Bytes::from(body.to_string())))
-            })
+            Box::pin(async move { Ok(http::Response::new(bytes::Bytes::from(body.to_string()))) })
         }
     }
     let mut provider = provider();
@@ -356,11 +346,24 @@ async fn discovery_trusts_only_the_configured_issuer_origin() {
     let metadata = discover_oidc(&ConfiguredIssuer, &provider).await.unwrap();
     assert_eq!(metadata.issuer, provider.issuer);
     for endpoint in ["https://127.0.0.1/keys", "https://127.0.0.1:443/keys"] {
-        assert_eq!(fetch_oidc_jwks(&ConfiguredIssuer, endpoint, &provider).await.unwrap(), json!({"keys": []}));
+        assert_eq!(
+            fetch_oidc_jwks(&ConfiguredIssuer, endpoint, &provider)
+                .await
+                .unwrap(),
+            json!({"keys": []})
+        );
     }
     // Metadata is not authority to extend operator trust to another host,
     // port or scheme. This fixture deliberately has no discovered transport.
-    for endpoint in ["https://127.0.0.1:8443/keys", "https://localhost/keys", "http://127.0.0.1/keys"] {
-        assert!(fetch_oidc_jwks(&ConfiguredIssuer, endpoint, &provider).await.is_err());
+    for endpoint in [
+        "https://127.0.0.1:8443/keys",
+        "https://localhost/keys",
+        "http://127.0.0.1/keys",
+    ] {
+        assert!(
+            fetch_oidc_jwks(&ConfiguredIssuer, endpoint, &provider)
+                .await
+                .is_err()
+        );
     }
 }
