@@ -63,6 +63,7 @@ pub(crate) fn federation_start_response(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn federation_provider_callback(
     limiter: Data<AuthRequestLimiter>,
     client_ip: Data<ClientIpConfig>,
@@ -102,6 +103,7 @@ pub(crate) async fn oidc_callback_after_rate_limit_for_provider(
     nazo_http_actix::forward_response(nazoauth::test_support::endpoints::auth::federation::oidc_callback_after_rate_limit_for_provider(service.get_ref(), config, client_ip.get_ref(), sessions.get_ref(), &request, query, provider).await)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn social_callback_after_rate_limit(
     service: Data<LocalFederationService>,
     config: &FederationHttpConfig,
