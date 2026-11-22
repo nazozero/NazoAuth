@@ -3,10 +3,6 @@ use crate::{D1Provider, unavailable::Unavailable};
 use std::sync::Arc;
 
 impl nazo_oauth_server::ports::persistence::ServerPersistenceProvider for D1Provider {
-    fn tenant_directory(&self) -> std::sync::Arc<dyn nazo_persistence::TenantDirectoryStore> {
-        Arc::new(Unavailable)
-    }
-
     fn security_audit_ledger(&self) -> std::sync::Arc<dyn nazo_persistence::SecurityAuditLedger> {
         Arc::new(self.clone())
     }

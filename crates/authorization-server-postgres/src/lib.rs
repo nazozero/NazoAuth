@@ -8,8 +8,8 @@ use nazo_postgres::{
     DbPool, FederationRepository, GrantRepository, MfaRepository, MtlsTrustAnchorRepository,
     OAuthClientRepository, Openid4vciDatasetRepository, Openid4vciRepository, Openid4vpRepository,
     PasskeyRepository, PostgresHealthCheck, RuntimeModuleRepository, ScimEventRepository,
-    ScimRepository, SecurityStateMaintenanceRepository, TenantDirectoryRepository,
-    TenantResourceRepository, TokenIssuanceRepository, TokenRepository, UserRepository,
+    ScimRepository, SecurityStateMaintenanceRepository, TenantResourceRepository,
+    TokenIssuanceRepository, TokenRepository, UserRepository,
 };
 
 #[derive(Clone)]
@@ -33,10 +33,6 @@ impl ServerPersistenceProvider for PostgresProvider {
             self.pool.clone(),
             tenant_id,
         ))
-    }
-
-    fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore> {
-        Arc::new(TenantDirectoryRepository::new(self.pool.clone()))
     }
 
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger> {

@@ -34,9 +34,6 @@ struct FixturePersistence {
 }
 
 impl ServerPersistenceProvider for FixturePersistence {
-    fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore> {
-        self.base.tenant_directory()
-    }
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger> {
         self.base.security_audit_ledger()
     }

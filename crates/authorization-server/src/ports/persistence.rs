@@ -20,7 +20,6 @@ use nazo_identity::ports::{
 /// Application persistence supplied by the selected database adapter.
 /// Each method returns the port for one business capability.
 pub trait ServerPersistenceProvider: Send + Sync {
-    fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore>;
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger>;
     fn database_health(&self) -> Arc<dyn nazo_persistence::DatabaseHealthPort>;
     fn security_state_maintenance(&self)

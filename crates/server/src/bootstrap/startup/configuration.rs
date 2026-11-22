@@ -35,6 +35,7 @@ pub(super) async fn load(
 ) -> anyhow::Result<StartupRuntime> {
     let ServerPersistence {
         application: persistence,
+        tenant_directory,
         controller_registry,
         recovery_root,
     } = persistence;
@@ -54,8 +55,7 @@ pub(super) async fn load(
 
     // Always read the authoritative snapshot first. The shared cache is never
     // trusted for a cold start, so a stale cache cannot resurrect a tenant.
-    let directory = persistence.provider().tenant_directory();
-    let database_snapshot = directory
+    let database_snapshot = tenant_directory
         .load_active()
         .await
         .map_err(|error| anyhow::anyhow!("tenant directory initial read failed: {error}"))?;
@@ -149,7 +149,7 @@ pub(super) async fn load(
 
     let refresher = Arc::new(TenantRuntimeRefresher::new(
         registry.clone(),
-        directory,
+        tenant_directory,
         directory_cache.clone(),
         TenantRuntimeBuilder::production(process.clone()),
     ));

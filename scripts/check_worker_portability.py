@@ -67,6 +67,9 @@ def main() -> None:
     target = "wasm32-unknown-unknown"
     tree = production_tree("nazo-server-worker", target, no_default_features=True)
     errors = native_violations(native_tree) + violations(tree)
+    actix_tree = production_tree("nazo-http-actix", host)
+    if any(name == "nazoauth" and "deployment-control" in active for name, active in packages(actix_tree)):
+        errors.append("Actix adapter enables deployment-control")
     if errors:
         raise SystemExit("\n".join(errors))
     subprocess.run([
