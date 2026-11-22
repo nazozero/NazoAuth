@@ -71,12 +71,7 @@ pub async fn discover_oidc(
 ) -> anyhow::Result<OidcProviderMetadata> {
     let url = discovery_url(&provider.issuer)
         .ok_or_else(|| anyhow::anyhow!("invalid discovery issuer"))?;
-    let response = client
-        .send_discovered(
-            http::Request::get(url).body(bytes::Bytes::new())?,
-            super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES,
-        )
-        .await?;
+    let response = super::send(client, http::Request::get(url).body(bytes::Bytes::new())?).await?;
     let metadata = super::federation_json_response::<OidcProviderMetadata>(response)?;
     anyhow::ensure!(
         metadata.validate(&provider.issuer)
@@ -89,9 +84,15 @@ pub async fn discover_oidc(
 async fn send(
     client: &dyn super::FederationHttpClient,
     request: http::Request<bytes::Bytes>,
-    discovered: bool,
+    provider: &OidcFederationSettings,
 ) -> anyhow::Result<http::Response<bytes::Bytes>> {
-    if discovered {
+    // The operator configured this issuer's origin. Metadata cannot extend that
+    // trust to another origin; those destinations retain public-network admission.
+    let issuer: http::Uri = provider.issuer.parse()?;
+    let same_origin = request.uri().scheme_str() == issuer.scheme_str()
+        && request.uri().host() == issuer.host()
+        && request.uri().port_u16().unwrap_or(443) == issuer.port_u16().unwrap_or(443);
+    if provider.discovery && !same_origin {
         client
             .send_discovered(request, super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES)
             .await
@@ -129,18 +130,18 @@ pub async fn exchange_oidc_code(
             "application/x-www-form-urlencoded",
         )
         .body(bytes::Bytes::from(body))?;
-    super::federation_json_response(send(client, request, provider.discovery).await?)
+    super::federation_json_response(send(client, request, provider).await?)
 }
 
 pub async fn fetch_oidc_jwks(
     client: &dyn super::FederationHttpClient,
     endpoint: &str,
-    discovered: bool,
+    provider: &OidcFederationSettings,
 ) -> anyhow::Result<Value> {
     let response = send(
         client,
         http::Request::get(endpoint).body(bytes::Bytes::new())?,
-        discovered,
+        provider,
     )
     .await?;
     let value = super::federation_json_response::<Value>(response)?;
@@ -154,7 +155,7 @@ pub async fn fetch_oidc_userinfo(
     client: &dyn super::FederationHttpClient,
     endpoint: &str,
     token: &OidcTokenResponse,
-    discovered: bool,
+    provider: &OidcFederationSettings,
 ) -> anyhow::Result<OidcUserInfo> {
     let request = http::Request::get(endpoint)
         .header(
@@ -163,5 +164,5 @@ pub async fn fetch_oidc_userinfo(
         )
         .header(http::header::ACCEPT, "application/json")
         .body(bytes::Bytes::new())?;
-    super::federation_json_response(send(client, request, discovered).await?)
+    super::federation_json_response(send(client, request, provider).await?)
 }

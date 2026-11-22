@@ -1862,7 +1862,7 @@ async fn passkey_authentication_commits_observed_protocol_state_with_compare_and
 }
 
 #[tokio::test]
-async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
+async fn authenticated_subject_link_is_concurrently_owned_and_idempotent() {
     let Some((pool, tenant, original)) = database_fixture().await else {
         return;
     };
@@ -1881,18 +1881,39 @@ async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
         email: String::new(),
         claims: json!({"sub":"external-subject"}),
     };
+    let (left, right) = tokio::join!(
+        repository.link_authenticated(make_link(original)),
+        repository.link_authenticated(make_link(other)),
+    );
+    let (owner, loser) = match (left, right) {
+        (Ok(()), Err(RepositoryError::Conflict)) => (original, other),
+        (Err(RepositoryError::Conflict), Ok(())) => (other, original),
+        results => panic!("one account must own the subject: {results:?}"),
+    };
     repository
-        .link_authenticated(make_link(original))
-        .await
-        .unwrap();
-    repository
-        .link_authenticated(make_link(original))
+        .link_authenticated(make_link(owner))
         .await
         .unwrap();
     assert!(matches!(
-        repository.link_authenticated(make_link(other)).await,
+        repository.link_authenticated(make_link(loser)).await,
         Err(RepositoryError::Conflict)
     ));
+    let links = repository
+        .list_summaries(tenant.tenant_id, owner)
+        .await
+        .unwrap();
+    assert_eq!(links.len(), 1);
+    assert!(links[0].last_login_at.is_none());
+    assert!(
+        repository
+            .list_summaries(tenant.tenant_id, loser)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let mut wrong_tenant = make_link(owner);
+    wrong_tenant.tenant_id = TenantId::new(Uuid::now_v7()).unwrap();
+    assert!(repository.link_authenticated(wrong_tenant).await.is_err());
     let mut connection = get_conn(&pool).await.unwrap();
     let counts = diesel::sql_query(
         "SELECT
@@ -4122,7 +4143,7 @@ async fn administrative_disable_terminates_grants_across_reenable() {
 }
 
 #[tokio::test]
-async fn credential_deletion_rolls_back_when_required_audit_fails() {
+async fn credential_link_changes_roll_back_when_required_audit_fails() {
     use diesel_async::SimpleAsyncConnection;
     let Some((pool, tenant, user)) = database_fixture_with_pool_size(1).await else {
         return;
@@ -4152,12 +4173,22 @@ async fn credential_deletion_rolls_back_when_required_audit_fails() {
         .unwrap();
     let name = format!("credential_delete_audit_fail_{}", Uuid::now_v7().simple());
     let mut connection = get_conn(&pool).await.unwrap();
-    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type IN ('passkey_deleted','external_identity_unlinked') AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type IN ('passkey_deleted','external_identity_unlinked','external_identity_linked') AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
     drop(connection);
     let key_failed = passkeys.delete(tenant.tenant_id, user, key.id).await;
     let size_after_key_failure = pool.status().size;
     let link_failed = federation.delete(tenant.tenant_id, user, link.id).await;
     let size_after_link_failure = pool.status().size;
+    let new_link = NewFederationLink {
+        tenant_id: tenant.tenant_id,
+        user_id: user,
+        provider_type: "oauth2_social".into(),
+        provider_id: "fixture".into(),
+        subject: user.as_uuid().to_string(),
+        email: String::new(),
+        claims: json!({}),
+    };
+    let insert_failed = federation.link_authenticated(new_link.clone()).await;
     let mut connection = get_conn(&pool).await.unwrap();
     connection
         .batch_execute(&format!(
@@ -4168,6 +4199,7 @@ async fn credential_deletion_rolls_back_when_required_audit_fails() {
     drop(connection);
     assert!(key_failed.is_err());
     assert!(link_failed.is_err());
+    assert!(insert_failed.is_err());
     assert_eq!(
         size_after_key_failure, 1,
         "Passkey rollback retains the connection"
@@ -4192,6 +4224,7 @@ async fn credential_deletion_rolls_back_when_required_audit_fails() {
             .len(),
         1
     );
+    federation.link_authenticated(new_link).await.unwrap();
     assert!(
         passkeys
             .delete(tenant.tenant_id, user, key.id)
@@ -4224,7 +4257,11 @@ async fn credential_deletion_rolls_back_when_required_audit_fails() {
         count: i64,
     }
     let mut connection = get_conn(&pool).await.unwrap();
-    for event in ["passkey_deleted", "external_identity_unlinked"] {
+    for event in [
+        "passkey_deleted",
+        "external_identity_unlinked",
+        "external_identity_linked",
+    ] {
         let count = sql_query("SELECT count(*) AS count FROM security_audit_events WHERE event_type=$1 AND payload->>'user_id'=$2")
             .bind::<Text,_>(event).bind::<Text,_>(user.as_uuid().to_string()).get_result::<Count>(&mut connection).await.unwrap();
         assert_eq!(count.count, 1);

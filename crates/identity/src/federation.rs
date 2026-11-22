@@ -42,16 +42,16 @@ pub struct OidcFederationState {
     pub discovery: Option<oidc::OidcProviderMetadata>,
     /// Only account-link ceremonies retain this session-bound target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link_intent: Option<OidcLinkIntent>,
+    pub link_intent: Option<FederationLinkIntent>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct OidcLinkIntent {
+pub struct FederationLinkIntent {
     user_id: Uuid,
     session_binding: [u8; 32],
 }
 
-impl OidcLinkIntent {
+impl FederationLinkIntent {
     fn new(tenant: crate::TenantId, user_id: crate::UserId, session_id: &str) -> Self {
         Self {
             user_id: user_id.as_uuid(),
@@ -79,6 +79,8 @@ pub struct SocialFederationState {
     pub provider_id: String,
     pub pkce_verifier: String,
     pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_intent: Option<FederationLinkIntent>,
 }
 
 impl std::fmt::Debug for SocialFederationState {
@@ -250,7 +252,7 @@ where
             discovery,
             browser_binding_seed,
             now,
-            Some(OidcLinkIntent::new(
+            Some(FederationLinkIntent::new(
                 self.config.tenant.tenant_id,
                 user_id,
                 session_id,
@@ -276,7 +278,7 @@ where
         discovery: Option<oidc::OidcProviderMetadata>,
         browser_binding_seed: &[u8; 32],
         now: Timestamp,
-        link_intent: Option<OidcLinkIntent>,
+        link_intent: Option<FederationLinkIntent>,
     ) -> Result<OidcFederationStart, FederationError> {
         let state = random_urlsafe_token();
         let stored = OidcFederationState {
@@ -342,6 +344,38 @@ where
         browser_binding_seed: &[u8; 32],
         now: Timestamp,
     ) -> Result<SocialFederationStart, FederationError> {
+        self.start_social_state(provider_id, browser_binding_seed, now, None)
+            .await
+    }
+
+    pub async fn start_social_link(
+        &self,
+        provider_id: String,
+        browser_binding_seed: &[u8; 32],
+        user_id: crate::UserId,
+        session_id: &str,
+        now: Timestamp,
+    ) -> Result<SocialFederationStart, FederationError> {
+        self.start_social_state(
+            provider_id,
+            browser_binding_seed,
+            now,
+            Some(FederationLinkIntent::new(
+                self.config.tenant.tenant_id,
+                user_id,
+                session_id,
+            )),
+        )
+        .await
+    }
+
+    async fn start_social_state(
+        &self,
+        provider_id: String,
+        browser_binding_seed: &[u8; 32],
+        now: Timestamp,
+        link_intent: Option<FederationLinkIntent>,
+    ) -> Result<SocialFederationStart, FederationError> {
         let state = random_urlsafe_token();
         let stored = SocialFederationState {
             browser_binding_hash: Some(browser_binding_hash(
@@ -351,6 +385,7 @@ where
             provider_id,
             pkce_verifier: random_urlsafe_token(),
             created_at: now.as_second(),
+            link_intent,
         };
         self.states
             .store_social(&state, &stored, self.config.state_ttl_seconds)
@@ -438,17 +473,17 @@ where
             .await
     }
 
-    pub async fn link_oidc(
+    pub async fn link_verified(
         &self,
         identity: VerifiedExternalIdentity,
-        intent: &OidcLinkIntent,
+        intent: &FederationLinkIntent,
         user_id: crate::UserId,
         session_id: &str,
     ) -> Result<(), FederationError> {
         if !intent.matches(self.config.tenant.tenant_id, user_id, session_id) {
             return Err(FederationError::InvalidState);
         }
-        if identity.provider_type != "oidc" {
+        if !matches!(identity.provider_type.as_str(), "oidc" | "oauth2_social") {
             return Err(FederationError::LoginFailed);
         }
         self.accounts

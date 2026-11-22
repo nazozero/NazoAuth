@@ -392,7 +392,6 @@ impl Database {
                 .map_err(|_| DbError::Unavailable)?;
             let names = query
                 .column_names()
-                .into_iter()
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
             let params = statement

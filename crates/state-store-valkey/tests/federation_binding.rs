@@ -159,6 +159,7 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
 
     let social_state = format!("social-{}", uuid::Uuid::now_v7());
     let social = SocialFederationState {
+            link_intent: None,
         browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: "social-provider".to_owned(),
         pkce_verifier: "social-\"-\\-雪".to_owned(),

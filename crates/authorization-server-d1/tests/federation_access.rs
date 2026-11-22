@@ -96,7 +96,7 @@ fn oidc() -> OidcFederationState {
 }
 
 #[test]
-fn authenticated_oidc_link_is_idempotent_and_never_moves_another_users_subject() {
+fn authenticated_external_link_is_idempotent_and_never_moves_another_users_subject() {
     let (db, provider) = block_on(fixture());
     let other = block_on(applicant(&provider));
     let make_link = |owner| NewFederationLink {
@@ -129,8 +129,94 @@ fn authenticated_oidc_link_is_idempotent_and_never_moves_another_users_subject()
         &db,
         "(SELECT count(*) FROM nazo_federation_links WHERE provider_id='external-link')=1 AND
          (SELECT count(*) FROM nazo_audit WHERE event_type='external_identity_linked'
-          AND json_extract(payload,'$.provider_id')='external-link')=1",
+          AND json_extract(payload,'$.provider_id')='external-link')=1 AND
+         (SELECT last_login_at IS NULL FROM nazo_federation_links WHERE provider_id='external-link')",
     );
+    let mut foreign = make_link(user());
+    foreign.tenant_id = TenantId::new(Uuid::new_v4()).unwrap();
+    assert!(block_on(provider.link_authenticated(foreign)).is_err());
+
+    let login = FederationLogin {
+        tenant: context(),
+        provider_type: "oidc".into(),
+        provider_id: "external-link".into(),
+        subject: "shared-subject".into(),
+        email: None,
+        claims: json!({"sub":"shared-subject"}),
+    };
+    assert_eq!(
+        block_on(provider.resolve_existing(&login))
+            .unwrap()
+            .unwrap()
+            .user_id(),
+        user(),
+    );
+    let links = block_on(provider.list_summaries(tenant(), user())).unwrap();
+    assert_eq!(links.len(), 1);
+    assert!(links[0].last_login_at.is_some());
+    assert!(
+        block_on(provider.delete(tenant(), other, links[0].id))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        block_on(provider.delete(tenant(), user(), links[0].id))
+            .unwrap()
+            .is_some()
+    );
+    assert!(block_on(provider.resolve_existing(&login)).unwrap().is_none());
+}
+
+#[test]
+fn concurrent_authenticated_subject_links_keep_one_owner_and_one_audit() {
+    for provider_type in ["oidc", "oauth2_social"] {
+        let (db, provider) = block_on(fixture());
+        let other = block_on(applicant(&provider));
+        let provider = Arc::new(provider);
+        let gate = Arc::new(Barrier::new(8));
+        let tasks = (0..8)
+            .map(|index| {
+                let provider = provider.clone();
+                let gate = gate.clone();
+                std::thread::spawn(move || {
+                    let owner = if index % 2 == 0 { user() } else { other };
+                    gate.wait();
+                    let result = provider.link_authenticated(NewFederationLink {
+                        tenant_id: tenant(),
+                        user_id: owner,
+                        provider_type: provider_type.into(),
+                        provider_id: "concurrent-link".into(),
+                        subject: "shared-subject".into(),
+                        email: String::new(),
+                        claims: json!({"private":"upstream-private-claims"}),
+                    });
+                    (owner, block_on(result))
+                })
+            })
+            .collect::<Vec<_>>();
+        let results = tasks
+            .into_iter()
+            .map(|task| task.join().unwrap())
+            .collect::<Vec<_>>();
+        let owner = results.iter().find(|(_, result)| result.is_ok()).unwrap().0;
+        assert_eq!(results.iter().filter(|(_, result)| result.is_ok()).count(), 4);
+        assert!(results.iter().all(|(candidate, result)| {
+            if *candidate == owner {
+                result.is_ok()
+            } else {
+                matches!(result, Err(RepositoryError::Conflict))
+            }
+        }));
+        assert_eq!(
+            block_on(provider.list_summaries(tenant(), owner))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_sql(&db, "(SELECT count(*) FROM nazo_federation_links)=1 AND
+            (SELECT count(*) FROM nazo_audit WHERE event_type='external_identity_linked')=1 AND
+            NOT EXISTS(SELECT 1 FROM nazo_audit WHERE instr(payload,'upstream-private-claims')>0)");
+    }
 }
 
 #[test]
@@ -485,6 +571,7 @@ fn federation_state_preserves_unbound_values_and_consumes_exact_browser_once() {
             provider_id: "social".into(),
             pkce_verifier: "social-verifier".into(),
             created_at: 0,
+            link_intent: None,
         };
         provider
             .store_social("same-key", &social, 60)

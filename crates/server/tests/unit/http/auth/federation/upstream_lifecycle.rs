@@ -20,11 +20,11 @@ async fn discovery_transport_rejects_loopback_before_connecting() {
 }
 
 impl rp_http::FederationHttpClient for Issuer {
-    fn send(&self, _: http::Request<Bytes>, _: usize) -> rp_http::FederationHttpFuture<'_> {
-        panic!("OIDC discovery must use the restricted transport");
+    fn send_discovered(&self, _: http::Request<Bytes>, _: usize) -> rp_http::FederationHttpFuture<'_> {
+        panic!("the configured issuer's own origin already has operator authorization");
     }
 
-    fn send_discovered(
+    fn send(
         &self,
         request: http::Request<Bytes>,
         limit: usize,
@@ -147,6 +147,7 @@ async fn discovered_login_and_logout(by_sid: bool) {
         &client_ip,
         &service,
         &config,
+        &crate::test_support::profile_sessions(state),
         &browser,
         TEST_OIDC_PROVIDER_ID.into(),
         OidcCallbackQuery {

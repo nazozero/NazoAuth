@@ -68,6 +68,7 @@ pub(crate) async fn federation_provider_callback(
     client_ip: Data<ClientIpConfig>,
     service: Data<LocalFederationService>,
     config: Data<FederationHttpConfig>,
+    sessions: Data<crate::http::sessions::SessionProfileHandles>,
     req: HttpRequest,
     path: Path<String>,
     Query(query): Query<OidcCallbackQuery>,
@@ -79,6 +80,7 @@ pub(crate) async fn federation_provider_callback(
             client_ip.get_ref(),
             service.get_ref(),
             config.get_ref(),
+            sessions.get_ref(),
             &request,
             path.into_inner(),
             query,
@@ -91,18 +93,20 @@ pub(crate) async fn oidc_callback_after_rate_limit_for_provider(
     service: Data<LocalFederationService>,
     config: &FederationHttpConfig,
     client_ip: Data<ClientIpConfig>,
+    sessions: Data<crate::http::sessions::SessionProfileHandles>,
     req: HttpRequest,
     query: OidcCallbackQuery,
     provider: &OidcFederationSettings,
 ) -> HttpResponse {
     let request = crate::test_support::transport::request_with_client_ip(&req, &client_ip);
-    nazo_http_actix::forward_response(nazoauth::test_support::endpoints::auth::federation::oidc_callback_after_rate_limit_for_provider(service.get_ref(), config, client_ip.get_ref(), &request, query, provider).await)
+    nazo_http_actix::forward_response(nazoauth::test_support::endpoints::auth::federation::oidc_callback_after_rate_limit_for_provider(service.get_ref(), config, client_ip.get_ref(), sessions.get_ref(), &request, query, provider).await)
 }
 
 pub(crate) async fn social_callback_after_rate_limit(
     service: Data<LocalFederationService>,
     config: &FederationHttpConfig,
     client_ip: Data<ClientIpConfig>,
+    sessions: Data<crate::http::sessions::SessionProfileHandles>,
     req: HttpRequest,
     query: OidcCallbackQuery,
     provider_id: String,
@@ -114,6 +118,7 @@ pub(crate) async fn social_callback_after_rate_limit(
             service.get_ref(),
             config,
             client_ip.get_ref(),
+            sessions.get_ref(),
             &request,
             query,
             provider_id,

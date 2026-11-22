@@ -37,9 +37,9 @@ pub use avatar::{
     DeleteAvatarError, DirectAvatarUploadError, ReadAvatarError, UploadAvatarError,
 };
 pub use federation::{
-    FederationAuditEvent, FederationError, FederationService, FederationServiceConfig,
-    OidcFederationStart, OidcFederationState, SocialFederationStart, SocialFederationState,
-    VerifiedExternalIdentity,
+    FederationAuditEvent, FederationError, FederationLinkIntent, FederationService,
+    FederationServiceConfig, OidcFederationStart, OidcFederationState, SocialFederationStart,
+    SocialFederationState, VerifiedExternalIdentity,
 };
 pub use mfa_service::{
     MfaService, MfaServiceError, MfaServiceErrorKind, MfaVerificationProof,

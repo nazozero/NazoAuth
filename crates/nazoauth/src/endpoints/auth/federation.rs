@@ -161,16 +161,16 @@ pub async fn federation_provider_link_start(
     req: &HttpRequest,
     provider_id: String,
 ) -> HttpResponse {
-    let current = match sessions.current_session(req).await {
-        Ok(Some(session)) => session,
-        Ok(None) => return sessions.login_required_response(),
-        Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
-    };
     let csrf = url::form_urlencoded::parse(req.body())
         .find_map(|(name, value)| (name == "csrf_token").then_some(value));
     if !sessions.has_valid_csrf_token(req, csrf.as_deref()) {
         return crate::http::csrf_error();
     }
+    let current = match sessions.current_session(req).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return sessions.login_required_response(),
+        Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
+    };
     if !nazo_identity::session::recent_credential_management_authentication(
         current.auth_time,
         &current.amr,
@@ -188,15 +188,6 @@ pub async fn federation_provider_link_start(
     else {
         return sessions.login_required_response();
     };
-    if !matches!(
-        config
-            .providers
-            .enabled_provider(&provider_id)
-            .map(|provider| &provider.adapter),
-        Some(ExternalLoginProviderAdapter::Oidc(_))
-    ) {
-        return unknown_provider_response();
-    }
     federation_provider_start_inner(
         limiter,
         client_ip,
@@ -283,13 +274,15 @@ async fn federation_provider_start_inner(
             }
         }
         ExternalLoginProviderAdapter::Social(provider) => {
-            if link.is_some() {
-                return unknown_provider_response();
-            }
-            match service
-                .start_social(provider_id, &browser_binding_seed, Timestamp::now())
-                .await
-            {
+            let now = Timestamp::now();
+            let started = if let Some((user_id, session_id)) = link {
+                service
+                    .start_social_link(provider_id, &browser_binding_seed, user_id, session_id, now)
+                    .await
+            } else {
+                service.start_social(provider_id, &browser_binding_seed, now).await
+            };
+            match started {
                 Ok(start) => federation_start_response(
                     config,
                     social_authorization_url(provider, &start.state, &start.pkce_verifier),
@@ -348,31 +341,13 @@ pub fn federation_start_response(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn federation_provider_callback(
     limiter: &AuthRequestLimiter,
     client_ip: &ClientIpConfig,
     service: &LocalFederationService,
     config: &FederationHttpConfig,
-    req: &HttpRequest,
-    path: String,
-    query: OidcCallbackQuery,
-) -> HttpResponse {
-    federation_provider_callback_with_sessions(
-        limiter, client_ip, service, config, None, req, path, query,
-    )
-    .await
-}
-
-// This transport boundary combines the existing callback inputs with the
-// optional already-authorized local account-linking session. A single-use
-// context object would add indirection but no new invariant.
-#[allow(clippy::too_many_arguments)]
-pub async fn federation_provider_callback_with_sessions(
-    limiter: &AuthRequestLimiter,
-    client_ip: &ClientIpConfig,
-    service: &LocalFederationService,
-    config: &FederationHttpConfig,
-    sessions: Option<&SessionProfileHandles>,
+    sessions: &SessionProfileHandles,
     req: &HttpRequest,
     path: String,
     query: OidcCallbackQuery,
@@ -388,7 +363,7 @@ pub async fn federation_provider_callback_with_sessions(
     };
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
-            oidc_callback_with_link_session(
+            oidc_callback_after_rate_limit_for_provider(
                 service, config, client_ip, sessions, req, query, provider,
             )
             .await
@@ -398,6 +373,7 @@ pub async fn federation_provider_callback_with_sessions(
                 service,
                 config,
                 client_ip,
+                sessions,
                 req,
                 query,
                 provider_id,
@@ -412,18 +388,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
     service: &LocalFederationService,
     config: &FederationHttpConfig,
     client_ip: &ClientIpConfig,
-    req: &HttpRequest,
-    query: OidcCallbackQuery,
-    provider: &OidcFederationSettings,
-) -> HttpResponse {
-    oidc_callback_with_link_session(service, config, client_ip, None, req, query, provider).await
-}
-
-async fn oidc_callback_with_link_session(
-    service: &LocalFederationService,
-    config: &FederationHttpConfig,
-    client_ip: &ClientIpConfig,
-    sessions: Option<&SessionProfileHandles>,
+    sessions: &SessionProfileHandles,
     req: &HttpRequest,
     query: OidcCallbackQuery,
     provider: &OidcFederationSettings,
@@ -479,7 +444,7 @@ async fn oidc_callback_with_link_session(
             );
         }
     };
-    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider.discovery).await {
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider).await {
         Ok(jwks) => jwks,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC JWKS fetch failed");
@@ -522,7 +487,7 @@ async fn oidc_callback_with_link_session(
         None => provider.userinfo_endpoint.as_deref(),
     };
     let userinfo = if let Some(endpoint) = userinfo_endpoint {
-        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider.discovery)
+        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider)
             .await
         {
             Ok(userinfo) => Some(userinfo),
@@ -581,47 +546,55 @@ async fn oidc_callback_with_link_session(
         }
     };
     if let Some(intent) = stored.link_intent.as_ref() {
-        let Some(sessions) = sessions else {
-            return federation_state_error(FederationError::InvalidState);
-        };
-        let current = match sessions.current_session(req).await {
-            Ok(Some(session)) => session,
-            Ok(None) => return sessions.login_required_response(),
-            Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
-        };
-        if !nazo_identity::session::recent_credential_management_authentication(
-            current.auth_time,
-            &current.amr,
-            current.user.account.mfa_enabled,
-            Timestamp::now().as_second(),
-        ) {
-            return oauth_error(
-                StatusCode::PRECONDITION_REQUIRED,
-                "reauthentication_required",
-                "Linking an external identity requires recent account authentication.",
-            );
-        }
-        let Some(session_id) =
-            crate::http::cookie_value(req, sessions.http_config().session_cookie_name())
-        else {
-            return sessions.login_required_response();
-        };
-        return match service
-            .link_oidc(identity, intent, current.user.user_id(), &session_id)
-            .await
-        {
-            Ok(()) => json_response_no_store(json!({
-                "linked": true,
-                "provider_id": &provider.provider_id,
-            })),
-            Err(error) => federation_completion_error(error),
-        };
+        return complete_link(service, sessions, req, identity, intent, &provider.provider_id).await;
     }
     match service
         .complete_oidc(identity, upstream, client_ip_with_config(req, client_ip))
         .await
     {
         Ok(login) => federation_session_response(config, login),
+        Err(error) => federation_completion_error(error),
+    }
+}
+
+async fn complete_link(
+    service: &LocalFederationService,
+    sessions: &SessionProfileHandles,
+    req: &HttpRequest,
+    identity: VerifiedExternalIdentity,
+    intent: &nazo_identity::federation::FederationLinkIntent,
+    provider_id: &str,
+) -> HttpResponse {
+    let current = match sessions.current_session(req).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return sessions.login_required_response(),
+        Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
+    };
+    if !nazo_identity::session::recent_credential_management_authentication(
+        current.auth_time,
+        &current.amr,
+        current.user.account.mfa_enabled,
+        Timestamp::now().as_second(),
+    ) {
+        return oauth_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "reauthentication_required",
+            "Linking an external identity requires recent account authentication.",
+        );
+    }
+    let Some(session_id) =
+        crate::http::cookie_value(req, sessions.http_config().session_cookie_name())
+    else {
+        return sessions.login_required_response();
+    };
+    match service
+        .link_verified(identity, intent, current.user.user_id(), &session_id)
+        .await
+    {
+        Ok(()) => json_response_no_store(json!({
+            "linked": true,
+            "provider_id": provider_id,
+        })),
         Err(error) => federation_completion_error(error),
     }
 }
@@ -776,7 +749,7 @@ pub async fn federation_provider_backchannel_logout(
         .map_or(provider.jwks_url.as_str(), |document| {
             document.jwks_url.as_str()
         });
-    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider.discovery).await {
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider).await {
         Ok(jwks) => jwks,
         Err(_) => return logout_failed(),
     };
@@ -800,10 +773,12 @@ pub async fn federation_provider_backchannel_logout(
     crate::http::empty_response_no_store(StatusCode::OK)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn social_callback_after_rate_limit(
     service: &LocalFederationService,
     config: &FederationHttpConfig,
     client_ip: &ClientIpConfig,
+    sessions: &SessionProfileHandles,
     req: &HttpRequest,
     query: OidcCallbackQuery,
     provider_id: String,
@@ -847,17 +822,21 @@ pub async fn social_callback_after_rate_limit(
         }
     };
     let existing_only = identity.email.is_none();
+    let identity = VerifiedExternalIdentity {
+        provider_type: "oauth2_social".to_owned(),
+        provider_id: provider_id.clone(),
+        subject: identity.subject,
+        email: identity.email,
+        display_name: identity.display_name,
+        claims: identity.claims,
+    };
+    if let Some(intent) = stored.link_intent.as_ref() {
+        return complete_link(service, sessions, req, identity, intent, &provider_id).await;
+    }
     complete_federation(
         service,
         config,
-        VerifiedExternalIdentity {
-            provider_type: "oauth2_social".to_owned(),
-            provider_id,
-            subject: identity.subject,
-            email: identity.email,
-            display_name: identity.display_name,
-            claims: identity.claims,
-        },
+        identity,
         "oauth2_social",
         client_ip_with_config(req, client_ip),
         existing_only,

@@ -44,6 +44,8 @@ use uuid::Uuid;
 
 #[path = "federation/oidf.rs"]
 mod oidf;
+#[path = "federation/linking.rs"]
+mod linking;
 #[path = "federation/upstream_lifecycle.rs"]
 mod upstream_lifecycle;
 
@@ -150,6 +152,7 @@ async fn federation_provider_callback(
         crate::test_support::client_ip_config(&state),
         crate::test_support::federation_service(&state),
         crate::test_support::federation_http_config(&state),
+        crate::test_support::profile_sessions(&state),
         req,
         path,
         query,
@@ -167,6 +170,7 @@ async fn oidc_callback_after_rate_limit_for_provider(
         crate::test_support::federation_service(&state),
         &crate::test_support::federation_http_config(&state),
         crate::test_support::client_ip_config(&state),
+        crate::test_support::profile_sessions(&state),
         req,
         query,
         &provider,

@@ -43,6 +43,7 @@ impl rp::FederationHttpClient for SuiteTransport {
 struct Bridge {
     config: rp::FederationHttpConfig,
     sessions: SessionService,
+    profiles: nazoauth::test_support::endpoints::sessions::SessionProfileHandles,
     service: Data<nazo_oauth_server::services::LocalFederationService>,
     limiter: Data<nazo_oauth_server::rate_limit::AuthRequestLimiter>,
     client_ip: Data<ClientIpConfig>,
@@ -150,6 +151,7 @@ async fn oidf_rp_http_bridge() {
     });
     let bridge = Data::new(Bridge {
         config,
+        profiles: crate::test_support::profile_sessions(&state).get_ref().clone(),
         sessions: SessionService::new(
             Arc::new(nazo_valkey::SessionStore::new(&state.valkey_connection())),
             Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),
@@ -222,6 +224,7 @@ async fn callback(
             &bridge.client_ip,
             &bridge.service,
             &bridge.config,
+            &bridge.profiles,
             &request,
             provider.into_inner(),
             query.into_inner(),
