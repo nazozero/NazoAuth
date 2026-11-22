@@ -1,0 +1,114 @@
+name: OIDC RP research
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oidc-rp-research.yml'
+      - 'tests/fixtures/oidf-rp/**'
+      - 'crates/identity/**'
+      - 'crates/nazoauth/src/endpoints/auth/federation*'
+      - 'crates/nazoauth/src/endpoints/auth/federation/**'
+      - 'crates/nazoauth/src/config/federation/**'
+      - 'crates/server/tests/unit/http/auth/federation/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rp-basic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
+        env:
+          POSTGRES_DB: oauth
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oauth"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      valkey:
+        image: docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/oauth
+      VALKEY_URL: redis://127.0.0.1:6379/0
+      VALKEY_STATE_EPOCH: '019c8ca2-30a6-7000-8000-00000000e202'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_TERM_COLOR: never
+      RUSTFLAGS: '-C link-arg=-Wl,--threads=1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@d5e4d57b030548f435d0befec15ff413a2c60eff # 1.100.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: oidc-rp-research
+      - name: Prepare isolated runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libpq-dev python3-requests
+          python3 scripts/ci_build_jobs.py >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/oidf-rp"
+      - name: Start original OIDF suite
+        run: bash tests/fixtures/oidf-rp/bootstrap-suite.sh "$RUNNER_TEMP/oidf-rp"
+      - name: Build production RP HTTP fixture
+        run: |
+          cargo test --locked -p nazo-server --lib --no-run --message-format=json > "$RUNNER_TEMP/rp-build.json"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+          for line in open(os.environ['RUNNER_TEMP'] + '/rp-build.json'):
+              row = json.loads(line)
+              if row.get('executable') and row.get('target', {}).get('name') == 'nazo_server':
+                  print('RP_TEST_BINARY=' + row['executable'])
+          PY
+      - name: Start production RP flow with a prebound test identity
+        run: |
+          test -n "$RP_TEST_BINARY"
+          timeout 12m "$RP_TEST_BINARY" oidf_rp_http_bridge --ignored --nocapture > "$OIDF_WORK_DIR/evidence/rp.log" 2>&1 &
+          echo "RP_BRIDGE_PID=$!" >> "$GITHUB_ENV"
+          ready=false
+          for attempt in $(seq 1 90); do
+            if curl --silent --fail --cacert "$OIDF_SUITE_CA" https://localhost:8443/rp/health; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+      - name: Run official Basic, Config and Back-Channel Logout RP plans
+        run: |
+          status=0
+          for profile in basic config backchannel; do
+            /usr/bin/python3 tests/fixtures/oidf-rp/run-rp.py --profile "$profile" \
+              --output "$OIDF_WORK_DIR/evidence/results/$profile" \
+              --tested-commit "$(git rev-parse HEAD)" || status=1
+          done
+          exit "$status"
+      - name: Collect original outcomes
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/oidf-rp/evidence/bootstrap"
+          git rev-parse HEAD > "$RUNNER_TEMP/oidf-rp/evidence/nazoauth-commit.txt"
+          docker logs nazo-issue202-server > "$RUNNER_TEMP/oidf-rp/server-private.log" 2>&1 || true
+          docker logs nazo-issue202-nginx > "$RUNNER_TEMP/oidf-rp/evidence/bootstrap/nginx.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: oidc-rp-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/oidf-rp/evidence
+          if-no-files-found: error
+      - name: Stop owned fixtures
+        if: always()
+        run: |
+          if [ -n "${RP_BRIDGE_PID:-}" ]; then kill "$RP_BRIDGE_PID" || true; fi
+          docker rm -f nazo-issue202-nginx nazo-issue202-server nazo-issue202-mongo || true

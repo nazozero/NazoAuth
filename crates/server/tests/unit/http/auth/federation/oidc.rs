@@ -1,8 +1,4 @@
 use super::*;
-use crate::test_support::ClientSigningFixture;
-use crate::test_support::client_signing_fixture;
-use jsonwebtoken::{Algorithm, Header};
-use nazo_oauth_server::crypto::random_urlsafe_token;
 use nazoauth::config::OidcFederationSettings;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -11,11 +7,16 @@ use tokio::net::TcpListener;
 
 fn provider() -> OidcFederationSettings {
     OidcFederationSettings {
+        discovery: false,
+        backchannel_logout: false,
+        id_token_signed_response_alg: None,
+        post_logout_redirect_uri: None,
         provider_id: "test-oidc".to_owned(),
         issuer: "https://issuer.example".to_owned(),
         authorization_endpoint: "https://issuer.example/authorize".to_owned(),
         token_endpoint: "https://issuer.example/token".to_owned(),
         jwks_url: "https://issuer.example/jwks".to_owned(),
+        userinfo_endpoint: None,
         client_id: "client-1".to_owned(),
         client_secret: "secret".to_owned(),
         redirect_uri: "https://auth.example/federation/test-oidc/callback".to_owned(),
@@ -23,72 +24,14 @@ fn provider() -> OidcFederationSettings {
     }
 }
 
-#[test]
-fn oidc_authorization_url_includes_all_required_params() {
-    let provider = provider();
-    let nonce = random_urlsafe_token();
-    let location = oidc_authorization_url(&provider, "state-1", &nonce, "verifier-1");
-    let url = url::Url::parse(&location).unwrap();
-    let params = url
-        .query_pairs()
-        .collect::<std::collections::HashMap<_, _>>();
-
-    assert_eq!(
-        url.as_str().split('?').next(),
-        Some("https://issuer.example/authorize")
-    );
-    assert_eq!(
-        params.get("response_type").map(|v| v.as_ref()),
-        Some("code")
-    );
-    assert_eq!(
-        params.get("client_id").map(|v| v.as_ref()),
-        Some("client-1")
-    );
-    assert_eq!(
-        params.get("redirect_uri").map(|v| v.as_ref()),
-        Some("https://auth.example/federation/test-oidc/callback")
-    );
-    assert_eq!(
-        params.get("scope").map(|v| v.as_ref()),
-        Some("openid email")
-    );
-    assert_eq!(params.get("state").map(|v| v.as_ref()), Some("state-1"));
-    assert_eq!(
-        params.get("nonce").map(|v| v.as_ref()),
-        Some(nonce.as_str())
-    );
-    assert_eq!(
-        params.get("code_challenge_method").map(|v| v.as_ref()),
-        Some("S256")
-    );
-    assert_eq!(
-        params.get("code_challenge").map(|v| v.as_ref()),
-        Some(pkce_s256("verifier-1").as_str())
-    );
-}
-
-#[test]
-fn authorization_url_preserves_configured_endpoint_query() {
-    let mut provider = provider();
-    provider.authorization_endpoint = "https://issuer.example/authorize/?tenant=example".into();
-    let nonce = random_urlsafe_token();
-    let location = oidc_authorization_url(&provider, "state", &nonce, "verifier");
-    let url = url::Url::parse(&location).unwrap();
-    assert!(
-        url.query_pairs()
-            .any(|(name, value)| name == "tenant" && value == "example")
-    );
-    assert!(
-        url.query_pairs()
-            .any(|(name, value)| name == "response_type" && value == "code")
-    );
-}
-
 #[actix_web::test]
 async fn upstream_basic_auth_form_encodes_each_credential_without_trimming() {
     use base64::Engine as _;
-    let (endpoint, request) = one_shot_json_server("200 OK", json!({"id_token":"token"})).await;
+    let (endpoint, request) = one_shot_json_server(
+        "200 OK",
+        json!({"id_token": "token", "access_token": "access", "token_type": "Bearer"}),
+    )
+    .await;
     let mut provider = provider();
     provider.token_endpoint = endpoint;
     provider.client_id = "client:+%".into();
@@ -96,6 +39,7 @@ async fn upstream_basic_auth_form_encodes_each_credential_without_trimming() {
     exchange_oidc_code(
         &super::super::federation_http_client().unwrap(),
         &provider,
+        &provider.token_endpoint,
         "code",
         "verifier",
     )
@@ -157,15 +101,19 @@ fn form_body_value(request: &str, key: &str) -> Option<String> {
 
 #[actix_web::test]
 async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request() {
-    let (endpoint, request) =
-        one_shot_json_server("200 OK", json!({"id_token": "signed-id-token"})).await;
+    let (endpoint, request) = one_shot_json_server(
+        "200 OK",
+        json!({"id_token": "signed-id-token", "access_token": "access", "token_type": "Bearer"}),
+    )
+    .await;
     let mut provider = provider();
     provider.token_endpoint = endpoint;
 
     let token = exchange_oidc_code(
         &super::super::federation_http_client().unwrap(),
         &provider,
-        "code-1",
+        &provider.token_endpoint,
+        " code-1 +% ",
         "verifier-1",
     )
     .await
@@ -186,7 +134,10 @@ async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request
         form_body_value(&request, "grant_type").as_deref(),
         Some("authorization_code")
     );
-    assert_eq!(form_body_value(&request, "code").as_deref(), Some("code-1"));
+    assert_eq!(
+        form_body_value(&request, "code").as_deref(),
+        Some(" code-1 +% ")
+    );
     assert_eq!(
         form_body_value(&request, "redirect_uri").as_deref(),
         Some("https://auth.example/federation/test-oidc/callback")
@@ -198,15 +149,45 @@ async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request
 }
 
 #[actix_web::test]
+async fn authorization_code_requires_bearer_access_token_even_without_userinfo() {
+    for response in [
+        json!({"id_token": "token"}),
+        json!({"id_token": "token", "access_token": "access"}),
+        json!({"id_token": "token", "access_token": "", "token_type": "Bearer"}),
+        json!({"id_token": "token", "access_token": "access", "token_type": "MAC"}),
+    ] {
+        let (endpoint, request) = one_shot_json_server("200 OK", response).await;
+        let mut provider = provider();
+        provider.token_endpoint = endpoint;
+        assert!(
+            exchange_oidc_code(
+                &super::super::federation_http_client().unwrap(),
+                &provider,
+                &provider.token_endpoint,
+                "code",
+                "verifier",
+            )
+            .await
+            .is_err()
+        );
+        request.await.unwrap();
+    }
+}
+
+#[actix_web::test]
 async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
     let (valid_endpoint, valid_request) = one_shot_json_server("200 OK", json!({"keys": []})).await;
     let mut provider = provider();
     provider.jwks_url = valid_endpoint;
 
     assert_eq!(
-        fetch_oidc_jwks(&super::super::federation_http_client().unwrap(), &provider)
-            .await
-            .expect("keys array should be accepted"),
+        fetch_oidc_jwks(
+            &super::super::federation_http_client().unwrap(),
+            &provider.jwks_url,
+            provider.discovery
+        )
+        .await
+        .expect("keys array should be accepted"),
         json!({"keys": []})
     );
     let valid_request = valid_request.await.expect("test server should finish");
@@ -217,9 +198,13 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
     provider.jwks_url = invalid_endpoint;
 
     assert!(
-        fetch_oidc_jwks(&super::super::federation_http_client().unwrap(), &provider)
-            .await
-            .is_err(),
+        fetch_oidc_jwks(
+            &super::super::federation_http_client().unwrap(),
+            &provider.jwks_url,
+            provider.discovery
+        )
+        .await
+        .is_err(),
         "JWKS responses without a keys array must fail closed"
     );
     invalid_request
@@ -227,191 +212,49 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
         .expect("invalid JWKS request should finish");
 }
 
-fn signed_id_token(
-    provider: &OidcFederationSettings,
-    kid: &str,
-    fixture: &ClientSigningFixture,
-    nonce: &str,
-    overrides: Value,
-) -> String {
-    let now = jiff::Timestamp::now().as_second();
-    let mut claims = json!({
-        "iss": provider.issuer,
-        "sub": "subject-1",
-        "aud": provider.client_id,
-        "exp": now + 300,
-        "iat": now,
-        "nonce": nonce,
-        "email": "user@example.com",
-        "email_verified": true,
-        "name": "User One"
-    });
-    let claims_object = claims
-        .as_object_mut()
-        .expect("test claims should be a JSON object");
-    for (key, value) in overrides.as_object().into_iter().flatten() {
-        claims_object.insert(key.clone(), value.clone());
-    }
-    let mut header = Header::new(Algorithm::RS256);
-    header.kid = Some(kid.to_owned());
-    fixture.encode_jwt(&header, &claims)
-}
-
-#[test]
-fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismatches() {
-    let provider = provider();
-    let key = client_signing_fixture(Algorithm::RS256);
-    let jwk = key.public_jwk("oidc-kid");
-    let jwks = json!({"keys": [jwk]});
-    let nonce = random_urlsafe_token();
-    let token = signed_id_token(&provider, "oidc-kid", &key, &nonce, json!({}));
-
-    let claims = verify_oidc_id_token(&provider, &jwks, &token, &nonce)
-        .expect("matching issuer, audience, nonce, kid, and signature should pass");
-    assert_eq!(claims.sub, "subject-1");
-    assert_eq!(claims.email.as_deref(), Some("user@example.com"));
-    assert_eq!(claims.email_verified, Some(true));
-    assert_eq!(claims.name.as_deref(), Some("User One"));
-
-    let mismatched_nonce = random_urlsafe_token();
-    assert!(verify_oidc_id_token(&provider, &jwks, &token, &mismatched_nonce).is_err());
-
-    let wrong_audience = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key,
-        &nonce,
-        json!({"aud": "other-client"}),
-    );
-    assert!(verify_oidc_id_token(&provider, &jwks, &wrong_audience, &nonce).is_err());
-
-    let multiple_audiences_without_azp = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key,
-        &nonce,
-        json!({"aud": [provider.client_id, "other-client"]}),
-    );
-    assert!(
-        verify_oidc_id_token(&provider, &jwks, &multiple_audiences_without_azp, &nonce).is_err()
-    );
-    let multiple_audiences_with_azp = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key,
-        &nonce,
-        json!({
-            "aud": [provider.client_id, "other-client"],
-            "azp": provider.client_id
-        }),
-    );
-    assert!(verify_oidc_id_token(&provider, &jwks, &multiple_audiences_with_azp, &nonce).is_ok());
-
-    let future_iat = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key,
-        &nonce,
-        json!({"iat": jiff::Timestamp::now().as_second() + 120}),
-    );
-    assert!(verify_oidc_id_token(&provider, &jwks, &future_iat, &nonce).is_err());
-}
-
-#[test]
-fn verify_oidc_id_token_rejects_malformed_or_empty_audiences() {
-    let provider = provider();
-    let key = client_signing_fixture(Algorithm::RS256);
-    let jwks = json!({"keys": [key.public_jwk("oidc-kid")]});
-    let nonce = random_urlsafe_token();
-    for audience in [
-        json!(null),
-        json!(42),
-        json!({"client": "client-1"}),
-        json!([]),
-        json!(["client-1", 42]),
+#[actix_web::test]
+async fn userinfo_uses_bearer_authorization_and_requires_a_subject() {
+    let token = serde_json::from_value(json!({
+        "id_token": "signed-id-token",
+        "access_token": "upstream-access-token",
+        "token_type": "Bearer",
+    }))
+    .unwrap();
+    let client = super::super::federation_http_client().unwrap();
+    for (body, expected_success) in [
+        (
+            json!({"sub": "subject-1", "email": "user@example.com", "email_verified": true}),
+            true,
+        ),
+        (
+            json!({"email": "user@example.com", "email_verified": true}),
+            false,
+        ),
     ] {
-        let token = signed_id_token(
-            &provider,
-            "oidc-kid",
-            &key,
-            &nonce,
-            json!({"aud": audience}),
+        let (endpoint, request) = one_shot_json_server("200 OK", body).await;
+        assert_eq!(
+            fetch_oidc_userinfo(&client, &endpoint, &token, false)
+                .await
+                .is_ok(),
+            expected_success
         );
-        assert!(verify_oidc_id_token(&provider, &jwks, &token, &nonce).is_err());
-    }
-}
-
-#[test]
-fn verify_oidc_id_token_rejects_expired_and_wrong_issuer_claims() {
-    let provider = provider();
-    let key = client_signing_fixture(Algorithm::RS256);
-    let jwks = json!({"keys": [key.public_jwk("oidc-kid")]});
-    let nonce = random_urlsafe_token();
-
-    let expired = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key,
-        &nonce,
-        json!({"exp": jiff::Timestamp::now().as_second() - 1}),
-    );
-    assert!(
-        verify_oidc_id_token(&provider, &jwks, &expired, &nonce).is_err(),
-        "an expired upstream ID Token must fail closed before federation login"
-    );
-
-    let wrong_issuer = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key,
-        &nonce,
-        json!({"iss": "https://attacker.example"}),
-    );
-    assert!(
-        verify_oidc_id_token(&provider, &jwks, &wrong_issuer, &nonce).is_err(),
-        "an ID Token from another issuer must not be accepted with a valid signature"
-    );
-}
-
-#[test]
-fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
-    let provider = provider();
-    let key = client_signing_fixture(Algorithm::RS256);
-    let jwk = key.public_jwk("oidc-kid");
-    let jwks = json!({"keys": [jwk]});
-    let nonce = random_urlsafe_token();
-    let unknown_kid = signed_id_token(&provider, "unknown-kid", &key, &nonce, json!({}));
-    assert!(verify_oidc_id_token(&provider, &jwks, &unknown_kid, &nonce).is_err());
-
-    let mut header = Header::new(Algorithm::RS256);
-    header.kid = None;
-    let token_without_kid = key.encode_jwt(
-        &header,
-        &json!({
-            "iss": provider.issuer,
-            "sub": "subject-1",
-            "aud": provider.client_id,
-            "exp": jiff::Timestamp::now().as_second() + 300,
-            "nonce": nonce
-        }),
-    );
-    assert!(verify_oidc_id_token(&provider, &jwks, &token_without_kid, &nonce).is_err());
-
-    let mut private_jwk = jwks.clone();
-    private_jwk["keys"][0]["d"] = json!("private-material");
-    let valid_token = signed_id_token(&provider, "oidc-kid", &key, &nonce, json!({}));
-    assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, &nonce).is_err());
-    let duplicate = json!({"keys": [&jwks["keys"][0], &jwks["keys"][0]]});
-    assert!(verify_oidc_id_token(&provider, &duplicate, &valid_token, &nonce).is_err());
-    for (member, value) in [
-        ("key_ops", json!(["sign"])),
-        ("p", json!("private")),
-        ("use", json!(false)),
-        ("alg", json!(1)),
-    ] {
-        let mut invalid = jwks.clone();
-        invalid["keys"][0][member] = value;
-        assert!(verify_oidc_id_token(&provider, &invalid, &valid_token, &nonce).is_err());
+        let request = request.await.unwrap();
+        assert!(request.starts_with("GET / HTTP/1.1"));
+        assert_eq!(
+            raw_header_value(&request, "authorization"),
+            Some("Bearer upstream-access-token")
+        );
+        assert_eq!(
+            raw_header_value(&request, "accept"),
+            Some("application/json")
+        );
+        assert!(
+            !request
+                .split("\r\n")
+                .next()
+                .unwrap()
+                .contains("upstream-access-token")
+        );
     }
 }
 
@@ -450,16 +293,24 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
         let mut provider = provider();
         provider.jwks_url = endpoint;
         assert_eq!(
-            fetch_oidc_jwks(config.client.as_ref(), &provider)
-                .await
-                .unwrap(),
+            fetch_oidc_jwks(
+                config.client.as_ref(),
+                &provider.jwks_url,
+                provider.discovery
+            )
+            .await
+            .unwrap(),
             json!({"keys": []})
         );
         let shared_config = config.clone();
         assert_eq!(
-            fetch_oidc_jwks(shared_config.client.as_ref(), &provider)
-                .await
-                .unwrap(),
+            fetch_oidc_jwks(
+                shared_config.client.as_ref(),
+                &provider.jwks_url,
+                provider.discovery
+            )
+            .await
+            .unwrap(),
             json!({"keys": []})
         );
         server.await.unwrap();

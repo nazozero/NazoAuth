@@ -16,6 +16,17 @@ pub trait LoginSessionPort: Send + Sync {
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate>;
 
+    /// Revoke ceremonies started at or before a local receipt cutoff, preserving its lifetime.
+    /// A cutoff of `i64::MAX` ends the identified OP session for its retained lifetime.
+    fn revoke_upstream<'a>(
+        &'a self,
+        _key: &'a str,
+        _cutoff: i64,
+        _retain_until: i64,
+    ) -> RepositoryFuture<'a, ()> {
+        Box::pin(async { Err(super::RepositoryError::Unavailable) })
+    }
+
     /// Creates a new login session and, when supplied, invalidates the
     /// previously presented session in the same storage transaction.
     ///
@@ -42,6 +53,15 @@ where
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate> {
         self.as_ref().create(session_id, record, ttl_seconds)
+    }
+
+    fn revoke_upstream<'a>(
+        &'a self,
+        key: &'a str,
+        cutoff: i64,
+        retain_until: i64,
+    ) -> RepositoryFuture<'a, ()> {
+        self.as_ref().revoke_upstream(key, cutoff, retain_until)
     }
 
     fn create_replacing<'a>(

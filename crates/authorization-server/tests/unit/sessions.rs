@@ -280,6 +280,7 @@ fn resolved_session_moves_authentication_buffers() {
         amr: vec!["password".to_owned()],
         oidc_sid: "sid-1".to_owned(),
         logged_in_client_ids: vec!["client-1".to_owned()],
+        upstream: None,
     };
     let amr = session.amr.as_ptr();
     let sid = session.oidc_sid.as_ptr();
@@ -313,6 +314,7 @@ fn administrator_policy_requires_a_positive_admin_level() {
             amr: vec!["password".to_owned()],
             oidc_sid: "sid-1".to_owned(),
             logged_in_client_ids: Vec::new(),
+            upstream: None,
         };
         assert_eq!(require_admin_session(Some(session)).is_ok(), allowed);
     }

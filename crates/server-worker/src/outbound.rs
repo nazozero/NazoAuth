@@ -298,6 +298,16 @@ impl nazoauth::capabilities::FederationHttpClient for Outbound {
             Ok(response)
         })
     }
+
+    fn send_discovered(
+        &self,
+        request: Request<Bytes>,
+        max_response_bytes: usize,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = anyhow::Result<Response<Bytes>>> + Send + '_>,
+    > {
+        nazoauth::capabilities::FederationHttpClient::send(self, request, max_response_bytes)
+    }
 }
 
 impl CibaPingSender for Outbound {

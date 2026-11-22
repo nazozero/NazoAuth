@@ -157,7 +157,7 @@ cargo test --target wasm32-unknown-unknown --locked \
   --features nazo-crypto/jose,nazo-crypto/ecdh,nazo-crypto/aead,nazo-crypto/password,nazo-crypto/ed25519,nazo-crypto/x509 \
   --test application_boundaries --test authorization_application \
   --test security_facts --test host_replacement_contract \
-  --test delivery_batches --test token_outcome --test federation_authentication \
+  --test delivery_batches --test token_outcome --test federation_authentication --test oidc_rp \
   --test service_contract --test revision_races --test portable_jose --test certificate_paths
 cargo test --target wasm32-unknown-unknown --locked -p nazo-identity \
   --lib oidc_profile_fields_validate_their_declared_syntax

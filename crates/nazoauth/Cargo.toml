@@ -54,7 +54,7 @@ urlencoding.workspace = true
 uuid.workspace = true
 web-time.workspace = true
 zeroize.workspace = true
-nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509"] }
+nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509", "aead"] }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

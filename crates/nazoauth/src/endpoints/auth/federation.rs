@@ -21,6 +21,7 @@ use crate::config::{
 };
 use crate::http::{ClientIpConfig, client_ip_with_config};
 use nazo_identity::email::normalize_email_address;
+use nazo_identity::federation::oidc as rp;
 use nazo_oauth_server::rate_limit::AuthRequestLimiter;
 use nazo_oauth_server::services::LocalFederationService;
 
@@ -72,6 +73,16 @@ impl FederationHttpConfig {
 /// proxies, and applies the existing ten-second exchange timeout.
 pub trait FederationHttpClient: Send + Sync {
     fn send(&self, request: HttpRequest, max_response_bytes: usize) -> FederationHttpFuture<'_>;
+
+    /// Executes an HTTPS request whose destination was selected by issuer metadata.
+    /// Hosts must enforce their network admission policy for the resolved destination.
+    fn send_discovered(
+        &self,
+        _request: HttpRequest,
+        _max_response_bytes: usize,
+    ) -> FederationHttpFuture<'_> {
+        Box::pin(async { anyhow::bail!("OIDC discovery transport is not configured") })
+    }
 }
 
 pub type FederationHttpFuture<'a> =
@@ -147,9 +158,24 @@ pub async fn federation_provider_start(
         read_federation_binding_seed(req, config).unwrap_or_else(rand::random::<[u8; 32]>);
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
+            let metadata = if provider.discovery {
+                match discover_oidc(config.client.as_ref(), provider).await {
+                    Ok(metadata) => Some(metadata),
+                    Err(_) => return oidc_unavailable(),
+                }
+            } else {
+                None
+            };
+            let authorization_endpoint = metadata
+                .as_ref()
+                .map_or(provider.authorization_endpoint.as_str(), |document| {
+                    document.authorization_endpoint.as_str()
+                })
+                .to_owned();
             match service
-                .start_oidc(
+                .start_oidc_with_metadata(
                     provider.provider_id.clone(),
+                    metadata,
                     &browser_binding_seed,
                     Timestamp::now(),
                 )
@@ -157,11 +183,12 @@ pub async fn federation_provider_start(
             {
                 Ok(start) => federation_start_response(
                     config,
-                    oidc_authorization_url(
-                        provider,
-                        &start.state,
-                        &start.nonce,
-                        &start.pkce_verifier,
+                    rp::authorization_url(
+                        &authorization_endpoint,
+                        &provider.client_id,
+                        &provider.redirect_uri,
+                        &provider.scopes,
+                        &start,
                     ),
                     &browser_binding_seed,
                 ),
@@ -182,6 +209,14 @@ pub async fn federation_provider_start(
             }
         }
     }
+}
+
+fn oidc_unavailable() -> HttpResponse {
+    oauth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "OIDC federation unavailable.",
+    )
 }
 
 pub fn federation_binding_cookie_name(config: &FederationHttpConfig) -> &'static str {
@@ -290,9 +325,23 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
+    // Discovery was validated before storing this browser-bound, single-use state.
+    // A configuration change must not reinterpret it as another issuer's login.
+    let metadata = match (provider.discovery, stored.discovery.as_ref()) {
+        (false, None) => None,
+        (true, Some(metadata)) if metadata.issuer == provider.issuer => Some(metadata),
+        _ => return federation_state_error(FederationError::InvalidState),
+    };
+    let token_endpoint = metadata.map_or(provider.token_endpoint.as_str(), |document| {
+        document.token_endpoint.as_str()
+    });
+    let jwks_url = metadata.map_or(provider.jwks_url.as_str(), |document| {
+        document.jwks_url.as_str()
+    });
     let token = match exchange_oidc_code(
         config.client.as_ref(),
         provider,
+        token_endpoint,
         input.code,
         &stored.pkce_verifier,
     )
@@ -308,7 +357,7 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let jwks = match fetch_oidc_jwks(config.client.as_ref(), provider).await {
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider.discovery).await {
         Ok(jwks) => jwks,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC JWKS fetch failed");
@@ -319,7 +368,14 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let claims = match verify_oidc_id_token(provider, &jwks, &token.id_token, &stored.nonce) {
+    let claims = match rp::verify_id_token_with_algorithm(
+        &provider.issuer,
+        &provider.client_id,
+        &jwks,
+        &token.id_token,
+        &stored.nonce,
+        Some(provider.signing_algorithm()),
+    ) {
         Ok(claims) => claims,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC ID Token verification failed");
@@ -330,50 +386,257 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let email = match claims
-        .email
-        .as_deref()
-        .and_then(|value| normalize_email_address(value).ok())
-    {
-        Some(email) => email,
-        None => {
+    let userinfo_endpoint = match metadata {
+        // An authentication-only request uses the verified ID Token's subject.
+        Some(document)
+            if provider
+                .scopes
+                .split_whitespace()
+                .any(|scope| scope != "openid") =>
+        {
+            document.userinfo_endpoint.as_deref()
+        }
+        Some(_) => None,
+        None => provider.userinfo_endpoint.as_deref(),
+    };
+    let userinfo = if let Some(endpoint) = userinfo_endpoint {
+        match fetch_oidc_userinfo(config.client.as_ref(), endpoint, &token, provider.discovery)
+            .await
+        {
+            Ok(userinfo) => Some(userinfo),
+            Err(error) => {
+                tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC UserInfo request failed");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "OIDC federation unavailable.",
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let upstream = if provider.backchannel_logout {
+        match claims.upstream_login(
+            service.tenant_id(),
+            &provider.provider_id,
+            &provider.client_id,
+            stored.created_at,
+        ) {
+            Ok(mut upstream) => {
+                if provider.post_logout_redirect_uri.is_some()
+                    && let Some(endpoint) = metadata
+                        .and_then(|document| document.end_session_endpoint.as_deref())
+                        .and_then(rp::https_endpoint)
+                {
+                    let logout = UpstreamLogoutRequest {
+                        endpoint: endpoint.into(),
+                        id_token_hint: token.id_token,
+                    };
+                    let Some(hint) = logout.seal(provider, upstream.subject_key()) else {
+                        return oidc_unavailable();
+                    };
+                    upstream.encrypted_logout = Some(hint);
+                }
+                Some(upstream)
+            }
+            Err(_) => return oidc_access_denied(),
+        }
+    } else {
+        None
+    };
+    let identity = match claims.into_identity(&provider.provider_id, userinfo) {
+        Ok(identity) => identity,
+        Err(error) => {
+            tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC upstream identity rejected");
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
                 "access_denied",
-                "OIDC email claim required.",
+                "OIDC federation failed.",
             );
         }
     };
-    if claims.email_verified != Some(true) {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "access_denied",
-            "OIDC email must be verified.",
-        );
+    match service
+        .complete_oidc(identity, upstream, client_ip_with_config(req, client_ip))
+        .await
+    {
+        Ok(login) => federation_session_response(config, login),
+        Err(error) => federation_completion_error(error),
     }
-    complete_federation(
-        service,
-        config,
-        VerifiedExternalIdentity {
-            provider_type: "oidc".to_owned(),
-            provider_id: provider.provider_id.clone(),
-            subject: claims.sub.clone(),
-            email: Some(email.clone()),
-            display_name: claims.name.clone(),
-            claims: json!({
-                "iss": claims.iss,
-                "sub": claims.sub,
-                "email": email,
-                "name": claims.name,
-                "given_name": claims.given_name,
-                "family_name": claims.family_name,
-            }),
-        },
-        "oidc",
-        client_ip_with_config(req, client_ip),
-        false,
+}
+
+fn oidc_access_denied() -> HttpResponse {
+    oauth_error(
+        StatusCode::UNAUTHORIZED,
+        "access_denied",
+        "OIDC federation failed.",
     )
-    .await
+}
+
+pub async fn federation_provider_logout(
+    sessions: &nazo_identity::SessionService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    provider_id: String,
+) -> HttpResponse {
+    use crate::http::{
+        SessionCookieConfig, form_post_authorization_response, login_required_response,
+    };
+    use nazo_identity::session::SessionResolution;
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
+        return unknown_provider_response();
+    };
+    let ExternalLoginProviderAdapter::Oidc(provider) = &provider.adapter else {
+        return unknown_provider_response();
+    };
+    let Some(return_uri) = provider.post_logout_redirect_uri.as_ref() else {
+        return unknown_provider_response();
+    };
+    let cookies = SessionCookieConfig::new(
+        &config.session_cookie_name,
+        &config.csrf_cookie_name,
+        config.cookie_secure,
+    );
+    let Some(session_id) = cookies.session_id(req) else {
+        return login_required_response(&cookies);
+    };
+    let csrf = url::form_urlencoded::parse(req.body())
+        .find_map(|(name, value)| (name == "csrf_token").then_some(value));
+    if !cookies.has_valid_csrf_token(req, csrf.as_deref()) {
+        return crate::http::csrf_error();
+    }
+    let current = match sessions
+        .current(&session_id, Timestamp::now().as_second())
+        .await
+    {
+        Ok(SessionResolution::Present(current)) => current,
+        Ok(_) => return login_required_response(&cookies),
+        Err(_) => return oidc_unavailable(),
+    };
+    let logout = current.upstream.as_ref().and_then(|upstream| {
+        UpstreamLogoutRequest::open(
+            upstream.encrypted_logout.as_deref()?,
+            provider,
+            &upstream.subject_key,
+        )
+    });
+    let Some(logout) = logout else {
+        return crate::http::authorization_error_response(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "This session has no upstream logout request.",
+        );
+    };
+    form_post_authorization_response(
+        &logout.endpoint,
+        &[
+            ("id_token_hint".into(), logout.id_token_hint),
+            ("post_logout_redirect_uri".into(), return_uri.clone()),
+        ],
+        None,
+        nazo_identity::SessionId::generate().as_str(),
+    )
+}
+
+pub async fn federation_provider_backchannel_logout(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    provider_id: String,
+) -> HttpResponse {
+    if let Err(response) =
+        crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
+    {
+        return response;
+    }
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
+        return unknown_provider_response();
+    };
+    let ExternalLoginProviderAdapter::Oidc(provider) = &provider.adapter else {
+        return unknown_provider_response();
+    };
+    if !provider.backchannel_logout {
+        return unknown_provider_response();
+    }
+
+    let invalid_token = || {
+        crate::http::authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Invalid OIDC Logout Token.",
+        )
+    };
+    let logout_failed = || {
+        crate::http::authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "server_error",
+            "OIDC logout could not be completed.",
+        )
+    };
+    if !req
+        .headers()
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(';').next().is_some_and(|media| {
+                media
+                    .trim()
+                    .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+            })
+        })
+    {
+        return invalid_token();
+    }
+    let mut tokens = url::form_urlencoded::parse(req.body())
+        .filter(|(name, _)| name == "logout_token")
+        .map(|(_, value)| value);
+    let Some(token) = tokens
+        .next()
+        .filter(|token| token.matches('.').count() == 2)
+    else {
+        return invalid_token();
+    };
+    if tokens.next().is_some() {
+        return invalid_token();
+    }
+
+    let metadata = if provider.discovery {
+        match discover_oidc(config.client.as_ref(), provider).await {
+            Ok(metadata) => Some(metadata),
+            Err(_) => return logout_failed(),
+        }
+    } else {
+        None
+    };
+    let jwks_url = metadata
+        .as_ref()
+        .map_or(provider.jwks_url.as_str(), |document| {
+            document.jwks_url.as_str()
+        });
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), jwks_url, provider.discovery).await {
+        Ok(jwks) => jwks,
+        Err(_) => return logout_failed(),
+    };
+    let now = Timestamp::now();
+    let logout = match rp::verify_logout_token_with_algorithm(
+        service.tenant_id(),
+        &provider.provider_id,
+        &provider.issuer,
+        &provider.client_id,
+        &jwks,
+        &token,
+        now,
+        Some(provider.signing_algorithm()),
+    ) {
+        Ok(logout) => logout,
+        Err(_) => return invalid_token(),
+    };
+    if service.revoke_oidc(logout, now).await.is_err() {
+        return logout_failed();
+    }
+    crate::http::empty_response_no_store(StatusCode::OK)
 }
 
 pub async fn social_callback_after_rate_limit(
@@ -604,7 +867,6 @@ pub fn validate_oidc_callback_input(
     let code = query
         .code
         .as_deref()
-        .map(str::trim)
         .filter(|value| !value.is_empty())
         .filter(|value| value.len() <= 4096)
         .ok_or_else(|| {

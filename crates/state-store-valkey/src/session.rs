@@ -6,6 +6,36 @@ use uuid::Uuid;
 
 use crate::{Error, ValkeyConnection, command, keys};
 
+const ADVANCE_UPSTREAM_SCOPE: &str = r#"
+local cutoff = tonumber(ARGV[1])
+local retain_until = tonumber(ARGV[2])
+for _, key in ipairs(KEYS) do
+    local previous = redis.call('GET', key)
+    if previous and not tonumber(previous) then
+        return redis.error_reply('invalid upstream session state')
+    end
+end
+for _, key in ipairs(KEYS) do
+    local previous = tonumber(redis.call('GET', key)) or 0
+    local expiry = redis.call('EXPIRETIME', key)
+    redis.call('SET', key, math.max(cutoff, previous), 'EXAT', math.max(retain_until, expiry))
+end
+return 'ok'
+"#;
+
+const CHECK_UPSTREAM_SCOPE: &str = r#"
+local started = tonumber(ARGV[1])
+for _, key in ipairs(KEYS) do
+    local cutoff = tonumber(redis.call('GET', key))
+    if not cutoff or cutoff >= started then return 'revoked' end
+end
+return 'active'
+"#;
+
+fn upstream_key(scope: &str) -> String {
+    format!("oauth:upstream-session:v1:{scope}")
+}
+
 const ROTATE_SESSION_SCRIPT: &str = r#"
 local current = redis.call('GET', KEYS[1])
 if current ~= ARGV[1] then
@@ -55,6 +85,8 @@ struct SessionWireRecord<'a> {
     oidc_sid: Option<Cow<'a, str>>,
     #[serde(default, skip_serializing_if = "<[String]>::is_empty")]
     logged_in_client_ids: Cow<'a, [String]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    upstream: Option<Cow<'a, nazo_identity::session::UpstreamSession>>,
 }
 
 impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
@@ -68,6 +100,7 @@ impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
             pending_mfa: value.pending_mfa(),
             oidc_sid: value.oidc_sid().map(Cow::Borrowed),
             logged_in_client_ids: Cow::Borrowed(value.logged_in_client_ids()),
+            upstream: value.upstream().map(Cow::Borrowed),
         }
     }
 }
@@ -92,6 +125,7 @@ impl TryFrom<SessionWireRecord<'_>> for SessionRecord {
                 "inconsistent stored authentication precision",
             ));
         }
+        record.set_upstream(value.upstream.map(Cow::into_owned));
         for client_id in value.logged_in_client_ids.into_owned() {
             record.add_logged_in_client(client_id);
         }
@@ -142,18 +176,47 @@ impl SessionStore {
     }
 
     pub async fn load(&self, session_id: &str) -> Result<Option<StoredSession>, Error> {
-        command::get(&self.connection, keys::session(session_id))
-            .await?
-            .map(|raw| {
-                let wire: SessionWireRecord = serde_json::from_str(&raw).map_err(|error| {
-                    Error::corrupt_data(format!("malformed stored session payload: {error}"))
-                })?;
-                Ok(StoredSession {
-                    value: wire.try_into()?,
-                    raw,
-                })
-            })
-            .transpose()
+        let Some(raw) = command::get(&self.connection, keys::session(session_id)).await? else {
+            return Ok(None);
+        };
+        let wire: SessionWireRecord = serde_json::from_str(&raw).map_err(|error| {
+            Error::corrupt_data(format!("malformed stored session payload: {error}"))
+        })?;
+        if let Some(upstream) = &wire.upstream {
+            if upstream.expires_at <= jiff::Timestamp::now().as_second() {
+                return Ok(None);
+            }
+            let reply = command::eval_string(
+                &self.connection,
+                CHECK_UPSTREAM_SCOPE,
+                upstream.keys().map(upstream_key).collect::<Vec<_>>(),
+                vec![upstream.started_at.to_string()],
+            )
+            .await?;
+            if reply != "active" {
+                return Ok(None);
+            }
+        }
+        Ok(Some(StoredSession {
+            value: wire.try_into()?,
+            raw,
+        }))
+    }
+
+    async fn advance_upstream(
+        &self,
+        keys: Vec<String>,
+        cutoff: i64,
+        retain_until: i64,
+    ) -> Result<(), Error> {
+        command::eval_string(
+            &self.connection,
+            ADVANCE_UPSTREAM_SCOPE,
+            keys,
+            vec![cutoff.to_string(), retain_until.to_string()],
+        )
+        .await?;
+        Ok(())
     }
 
     pub async fn delete(&self, session_id: &str) -> Result<i64, Error> {
@@ -174,6 +237,15 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
                     "failed to serialize session record: {error}"
                 ))
             })?;
+            if let Some(upstream) = record.upstream() {
+                self.advance_upstream(
+                    upstream.keys().map(upstream_key).collect(),
+                    0,
+                    upstream.expires_at,
+                )
+                .await
+                .map_err(crate::identity_repository_error)?;
+            }
             command::set_ex_nx(
                 &self.connection,
                 keys::session(session_id),
@@ -189,6 +261,19 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
                 }
             })
             .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn revoke_upstream<'a>(
+        &'a self,
+        key: &'a str,
+        cutoff: i64,
+        retain_until: i64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            self.advance_upstream(vec![upstream_key(key)], cutoff, retain_until)
+                .await
+                .map_err(crate::identity_repository_error)
         })
     }
 
