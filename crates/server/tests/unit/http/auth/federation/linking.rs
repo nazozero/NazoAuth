@@ -163,15 +163,15 @@ impl LinkFixture {
         } else {
             let key = client_signing_fixture(Algorithm::RS256);
             let nonce = if valid {
-                query["nonce"].as_str()
+                query["nonce"].clone()
             } else {
-                "wrong-nonce"
+                random_urlsafe_token()
             };
             let token = signed_oidc_token(
                 &oidc_provider(),
                 "link-kid",
                 &key,
-                nonce,
+                &nonce,
                 json!({"sub":subject,"email":null,"email_verified":null}),
             );
             replies.insert(
