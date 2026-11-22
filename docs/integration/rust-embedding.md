@@ -8,10 +8,10 @@ library contract.
 
 ## Dependencies in an external workspace
 
-The `nazo-mdoc` and `nazo-passkey` dependencies select immutable Git revisions
-directly in the [workspace manifest](../../Cargo.toml). Embedding workspaces
-inherit those dependencies and do not need `[patch.crates-io]` overrides.
-Actix uses official registry releases.
+An external workspace can depend on `nazoauth` from this Git repository at its
+chosen release tag. The [workspace manifest](../../Cargo.toml) selects the
+crates.io releases of `nazo-mdoc`, `nazo-passkey` and Actix. Cargo records
+their versions and checksums in the consuming workspace's lockfile.
 The native host also uses official rustls releases. Its connection callback
 owns the peer certificate chain once and shares immutable facts across requests;
 there is no per-request DER copy. rustls is not a dependency of the neutral facade.
@@ -37,17 +37,15 @@ cleartext connections; Cargo features govern the compiled HTTP/2 support.
 
 ### Dependency upgrades
 
-Changing a credential-library revision requires regenerating the lockfile,
+Changing a credential-library version requires updating the lockfile,
 checking advisories and running its registration, authentication, issuance or
-presentation contracts on native and WASM targets. Keep immutable revisions or
-stable registry versions recorded in `Cargo.lock`.
+presentation contracts on native and WASM targets.
 
 ### mdoc adapter contract
 
 `nazo-mdoc` is the protocol core in the `nazozero/nazo-mdoc`
 repository. Embedders migrate
-once to `nazo_mdoc`, preserve the exact production revision in the workspace
-manifest and lockfile, and use `issue` only where credentials are constructed.
+once to `nazo_mdoc` and use `issue` only where credentials are constructed.
 The WASM issuer enables its `wasm-js` randomness backend. Upgrades require mdoc
 issuance, presentation, status, transcript and WASM regressions.
 
@@ -116,7 +114,7 @@ signature against those exact bytes.
 
 ### Passkey adapter contract
 
-The integration uses the pinned `nazo-passkey` 0.2 API under `nazo_passkey`. Existing credential JSONB
+The integration uses `nazo-passkey` under `nazo_passkey`. Existing credential JSONB
 remains readable without a schema migration or re-registration. Optional UV and
 backup history missing from an older record must remain unknown; adapters must
 not replace missing history with trusted values. The relational credential ID
@@ -327,11 +325,12 @@ per request.
 
 ## Run the adapter conformance kit
 
-Enable the `conformance` feature on the adapter's development dependency:
+Declare `nazoauth` once in the embedding workspace's dependencies, then enable
+`conformance` on the adapter's development dependency.
 
 ```toml
 [dev-dependencies]
-nazoauth = { version = "0.3.9", features = ["conformance"] }
+nazoauth = { workspace = true, features = ["conformance"] }
 ```
 
 `nazoauth::integration::conformance` supplies the reusable checks below. Its

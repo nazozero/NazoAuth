@@ -7,12 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-web-time.workspace = true
 arc-swap.workspace = true
 futures-util.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 uuid = { workspace = true, features = ["v7"] }
+web-time.workspace = true
 
 [lints]
 workspace = true

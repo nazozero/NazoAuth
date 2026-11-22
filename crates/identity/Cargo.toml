@@ -7,27 +7,27 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-hex.workspace = true
 base64.workspace = true
 blake3.workspace = true
-jiff.workspace = true
+hex.workspace = true
 hmac.workspace = true
 image.workspace = true
+jiff.workspace = true
 jiff-tzdb = "1.0.0"
 language-tags = "0.3.2"
 lettre.workspace = true
 nazo-crypto = { workspace = true, features = ["password", "jose"] }
-nazo-scim-events.workspace = true
 nazo-passkey.workspace = true
+nazo-scim-events.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 tracing.workspace = true
+url.workspace = true
 urlencoding.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
-url.workspace = true
 
 [lints]
 workspace = true

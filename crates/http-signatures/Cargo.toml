@@ -17,8 +17,8 @@ thiserror.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-jsonwebtoken.workspace = true
 ed25519-dalek.workspace = true
+jsonwebtoken.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 proptest.workspace = true
 

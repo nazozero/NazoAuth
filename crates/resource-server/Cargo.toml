@@ -8,8 +8,8 @@ repository.workspace = true
 
 [dependencies]
 base64.workspace = true
-jiff.workspace = true
 http.workspace = true
+jiff.workspace = true
 nazo-crypto = { workspace = true, features = ["jose"] }
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -18,10 +18,10 @@ sha2.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-jsonwebtoken.workspace = true
 ed25519-dalek.workspace = true
-pkcs8.workspace = true
+jsonwebtoken.workspace = true
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
+pkcs8.workspace = true
 
 [lints]
 workspace = true

@@ -7,11 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-nazoauth.workspace = true
 actix-web.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
 http.workspace = true
+nazoauth.workspace = true
 
 [dev-dependencies]
 nazoauth = { workspace = true, features = ["conformance"] }

@@ -8,8 +8,8 @@ repository.workspace = true
 
 [dependencies]
 base64.workspace = true
-jiff.workspace = true
 flate2.workspace = true
+jiff.workspace = true
 nazo-crypto = { workspace = true, features = ["ecdh", "aead"] }
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -19,10 +19,8 @@ thiserror.workspace = true
 url.workspace = true
 x509-parser.workspace = true
 
-[lints]
-workspace = true
-
-[dev-dependencies]
-
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 rcgen.workspace = true
+
+[lints]
+workspace = true

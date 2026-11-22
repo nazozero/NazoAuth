@@ -30,6 +30,18 @@ alerts are not restricted to the normal weekly update window.
 
 ## Tagged Release Gates
 
+To prepare a patch release, set the version once with `cargo-edit` and refresh
+the standalone fuzz workspace's lockfile for its local dependencies.
+
+```sh
+cargo set-version --workspace --bump patch
+cargo update --workspace --manifest-path fuzz/Cargo.toml
+```
+
+The first command updates the shared package version, internal dependency
+requirements and root lockfile. Use `minor` or `major` for the corresponding
+release. Include both lockfiles in the release change.
+
 The `release-security` workflow runs for `v*` tags and manual dispatch:
 
 - a tag-triggered run accepts only an exact stable `vMAJOR.MINOR.PATCH` tag;

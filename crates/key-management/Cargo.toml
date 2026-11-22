@@ -10,11 +10,11 @@ repository.workspace = true
 test-support = []
 
 [dependencies]
-web-time.workspace = true
-hex.workspace = true
-arc-swap.workspace = true
 anyhow.workspace = true
+arc-swap.workspace = true
 base64.workspace = true
+hex.workspace = true
+hmac.workspace = true
 jiff.workspace = true
 nazo-auth.workspace = true
 nazo-crypto = { workspace = true, features = ["jose", "ecdh", "aead", "ed25519", "x509"] }
@@ -25,10 +25,10 @@ rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
-hmac.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
+web-time.workspace = true
 x509-cert.workspace = true
 x509-parser.workspace = true
 
@@ -37,11 +37,11 @@ workspace = true
 
 [dev-dependencies]
 der.workspace = true
+futures-executor.workspace = true
 jsonwebtoken.workspace = true
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
-tokio = { workspace = true, features = ["macros", "rt"] }
-futures-executor.workspace = true
 time.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 aws-lc-rs.workspace = true

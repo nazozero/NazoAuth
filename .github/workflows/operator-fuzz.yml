@@ -35,8 +35,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@d5e4d57b030548f435d0befec15ff413a2c60eff # 1.100.0
 
-      - name: Install pinned nightly and cargo-fuzz
+      - name: Check the fuzz lockfile and install the pinned tools
         run: |
+          cargo tree --manifest-path fuzz/Cargo.toml --locked --depth 0
           rustup toolchain install nightly-2026-10-04 --profile minimal
           cargo +nightly-2026-10-04 install cargo-fuzz --version 0.13.2 --locked
 

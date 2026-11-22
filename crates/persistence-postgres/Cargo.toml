@@ -7,31 +7,31 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-jiff-diesel.workspace = true
-nazo-passkey.workspace = true
 anyhow.workspace = true
 base64.workspace = true
-rand.workspace = true
-rustls.workspace = true
 blake3.workspace = true
 bytes.workspace = true
-jiff.workspace = true
 diesel = { workspace = true, features = ["postgres_backend", "uuid", "serde_json", "64-column-tables"] }
 diesel-async = { workspace = true, features = ["postgres", "deadpool", "migrations"] }
 diesel_migrations.workspace = true
 futures-util.workspace = true
+jiff.workspace = true
+jiff-diesel.workspace = true
+nazo-auth.workspace = true
 nazo-crypto = { workspace = true, features = ["aead", "password", "ed25519"] }
+nazo-digital-credentials.workspace = true
 nazo-identity.workspace = true
 nazo-key-management.workspace = true
-nazo-auth.workspace = true
-nazo-runtime-modules.workspace = true
-nazo-resource-server.workspace = true
-nazo-scim-events.workspace = true
 nazo-openid4vci.workspace = true
 nazo-openid4vp.workspace = true
 nazo-operator-protocol.workspace = true
+nazo-passkey.workspace = true
 nazo-persistence.workspace = true
-nazo-digital-credentials.workspace = true
+nazo-resource-server.workspace = true
+nazo-runtime-modules.workspace = true
+nazo-scim-events.workspace = true
+rand.workspace = true
+rustls.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
@@ -39,15 +39,15 @@ tokio = { workspace = true, features = ["rt", "sync"] }
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
 tracing.workspace = true
-zeroize.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
+zeroize.workspace = true
 
 [dev-dependencies]
 aes-gcm.workspace = true
 argon2.workspace = true
 ed25519-dalek.workspace = true
-p256 = { workspace = true, features = ["ecdsa"] }
 jsonwebtoken.workspace = true
+p256 = { workspace = true, features = ["ecdsa"] }
 rcgen.workspace = true
 syn = { version = "3.0.10", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }

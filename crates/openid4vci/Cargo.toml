@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+blake3.workspace = true
 bytes.workspace = true
 jiff.workspace = true
-blake3.workspace = true
 nazo-digital-credentials.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

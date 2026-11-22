@@ -26,6 +26,16 @@ GitHub Actions、容器/Compose 输入、锁定的 Python 输入、精确 Rust s
 
 ## Tag 发布门禁
 
+发布补丁版本时，用 `cargo-edit` 设置一次版本号，再刷新独立 fuzz 工作区的本地依赖锁定记录。
+
+```sh
+cargo set-version --workspace --bump patch
+cargo update --workspace --manifest-path fuzz/Cargo.toml
+```
+
+第一条命令同步更新工作区包版本、内部依赖约束及根锁文件。发布次版本或主版本时分别使用
+`minor` 或 `major`。两份锁文件一并纳入发布变更。
+
 `release-security` 工作流由 `v*` tag 或手动调度触发：
 
 - tag 触发只接受精确稳定版 `vMAJOR.MINOR.PATCH`；去掉 `v` 后的版本必须等于

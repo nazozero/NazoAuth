@@ -11,8 +11,8 @@ test-support = []
 
 [dependencies]
 blake3.workspace = true
-jiff.workspace = true
 fred = { workspace = true, features = ["i-scripts"] }
+jiff.workspace = true
 nazo-auth.workspace = true
 nazo-identity.workspace = true
 nazo-resource-server.workspace = true
@@ -22,8 +22,8 @@ thiserror.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-nazo-valkey = { path = ".", features = ["test-support"] }
 futures-util.workspace = true
+nazo-valkey = { path = ".", features = ["test-support"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true, features = ["v7", "serde"] }
 
