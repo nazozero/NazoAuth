@@ -20,12 +20,13 @@ are excluded from its build context.
 
 The facade's default `deployment-control` feature contains deployment identity,
 controller registry, independent recovery and cross-tenant administrator routes.
-The native host and Actix adapter select it explicitly. The Worker uses the same
+The native host selects it explicitly. The Worker uses the same
 facade without that feature, so those services and routes are absent from its
 compiled application. Tenant user/client administration and shared protocol
 capabilities remain available. The Worker host is built independently with
 `--no-default-features`; offline provisioning is a separate native feature.
-`ServerPersistenceProvider` supplies shared application persistence. A host
+`ServerPersistenceProvider` supplies shared application persistence. The native
+launcher supplies the tenant directory to the host for startup and refresh. A host
 enabling deployment control supplies the controller registry and recovery-root
 ports explicitly in `DeploymentCapabilities`, together with its deployment
 identity and tenant index.

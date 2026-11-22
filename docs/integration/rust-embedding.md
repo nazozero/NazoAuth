@@ -302,7 +302,10 @@ also need the same policy on listener rejections and static UI responses.
 `integration::security_headers(path)` supplies immutable default headers for
 that purpose; add only headers not already supplied by the response.
 
-An Actix embedding installs `web::Data::from(application)` and
+An Actix host selects deployment control through its own `nazoauth` dependency.
+For a build without control routes, disable the facade's default features and
+leave `deployment-control` disabled throughout the dependency graph.
+Install `web::Data::from(application)` and
 `.configure(nazo_http_actix::configure)`. The adapter installs one default
 forwarding service and looks up transport metadata with `route_for_path`.
 Framework-owned resources, including the native host's static UI, retain their

@@ -161,6 +161,7 @@ impl PersistenceLauncher for PostgresLauncher {
                     pool.clone(),
                     totp_keys,
                 ))),
+                tenant_directory: Arc::new(TenantDirectoryRepository::new(pool.clone())),
                 controller_registry: Arc::new(ControllerRegistryRepository::new(pool.clone())),
                 recovery_root: Arc::new(RecoveryRootRepository::new(pool)),
             })

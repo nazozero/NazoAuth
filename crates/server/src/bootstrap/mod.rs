@@ -37,6 +37,7 @@ use transport::{direct_tls_listeners, spawn_direct_tls_reloader};
 /// Application persistence and deployment authority supplied by the native launcher.
 pub struct ServerPersistence {
     pub application: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
+    pub tenant_directory: Arc<dyn nazo_persistence::TenantDirectoryStore>,
     pub controller_registry: Arc<dyn nazo_persistence::ControllerRegistryPort>,
     pub recovery_root: Arc<dyn nazo_persistence::RecoveryRootPort>,
 }

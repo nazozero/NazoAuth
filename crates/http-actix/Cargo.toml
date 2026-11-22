@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-nazoauth = { workspace = true, features = ["deployment-control"] }
+nazoauth.workspace = true
 actix-web.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
