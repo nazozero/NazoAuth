@@ -1861,6 +1861,52 @@ async fn passkey_authentication_commits_observed_protocol_state_with_compare_and
     cleanup(&pool, user_id).await;
 }
 
+
+#[tokio::test]
+async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
+    let Some((pool, tenant, original)) = database_fixture().await else {
+        return;
+    };
+    let Some((_, _, other)) = database_fixture().await else {
+        cleanup(&pool, original).await;
+        return;
+    };
+    let repository = FederationRepository::new(pool.clone());
+    let provider = format!("account-link-{}", Uuid::now_v7());
+    let make_link = |owner| NewFederationLink {
+        tenant_id: tenant.tenant_id,
+        user_id: owner,
+        provider_type: "oidc".into(),
+        provider_id: provider.clone(),
+        subject: "external-subject".into(),
+        email: String::new(),
+        claims: json!({"sub":"external-subject"}),
+    };
+    repository.link_authenticated(make_link(original)).await.unwrap();
+    repository.link_authenticated(make_link(original)).await.unwrap();
+    assert!(matches!(
+        repository.link_authenticated(make_link(other)).await,
+        Err(RepositoryError::Conflict)
+    ));
+    let mut connection = get_conn(&pool).await.unwrap();
+    let count: (i64,) = diesel::sql_query(
+        "SELECT count(*) AS count FROM external_identity_links WHERE provider_id=$1"
+    )
+    .bind::<Text, _>(&provider)
+    .get_result::<AuditCount>(&mut connection).await
+    .map(|record| (record.count,)).unwrap();
+    assert_eq!(count.0, 1);
+    drop(connection);
+    cleanup(&pool, original).await;
+    cleanup(&pool, other).await;
+}
+
+#[derive(diesel::QueryableByName)]
+struct AuditCount {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    count: i64,
+}
+
 #[tokio::test]
 async fn concurrent_federated_create_is_idempotent_with_one_connection_and_tenant_scoped() {
     let Some((pool, tenant, fixture_user_id)) = database_fixture_with_pool_size(1).await else {

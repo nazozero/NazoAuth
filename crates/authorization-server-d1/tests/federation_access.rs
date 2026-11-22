@@ -11,7 +11,7 @@ use nazo_identity::{
         AccessRequestRepositoryPort, DeliveryConsume, DeliveryPublish, DeliveryRecord,
         DeliveryStage, DeliveryStageResult, DeliveryStorePort, FederationLinkRepositoryPort,
         FederationLogin, FederationLoginRepositoryPort, FederationStatePort, NewFederatedIdentity,
-        NewUser, PasswordHashInput, RegistrationAccountRepositoryPort, RepositoryError,
+        NewFederationLink, NewUser, PasswordHashInput, RegistrationAccountRepositoryPort, RepositoryError,
     },
 };
 use nazo_oauth_server_d1::{D1Provider, Database};
@@ -92,6 +92,40 @@ fn oidc() -> OidcFederationState {
         pkce_verifier: "verifier".into(),
         created_at: Timestamp::now().as_second(),
     }
+}
+
+
+#[test]
+fn authenticated_oidc_link_is_idempotent_and_never_moves_another_users_subject() {
+    let (db, provider) = block_on(fixture());
+    let other = block_on(applicant(&provider));
+    let make_link = |owner| NewFederationLink {
+        tenant_id: tenant(),
+        user_id: owner,
+        provider_type: "oidc".into(),
+        provider_id: "external-link".into(),
+        subject: "shared-subject".into(),
+        email: String::new(),
+        claims: json!({"sub":"shared-subject"}),
+    };
+    block_on(FederationLoginRepositoryPort::link_authenticated(
+        &provider, make_link(user()),
+    )).unwrap();
+    block_on(FederationLoginRepositoryPort::link_authenticated(
+        &provider, make_link(user()),
+    )).unwrap();
+    assert!(matches!(
+        block_on(FederationLoginRepositoryPort::link_authenticated(
+            &provider, make_link(other),
+        )),
+        Err(RepositoryError::Conflict)
+    ));
+    assert_sql(
+        &db,
+        "(SELECT count(*) FROM nazo_federation_links WHERE provider_id='external-link')=1 AND
+         (SELECT count(*) FROM nazo_audit WHERE event_type='external_identity_linked'
+          AND json_extract(payload,'$.provider_id')='external-link')=1",
+    );
 }
 
 #[test]
