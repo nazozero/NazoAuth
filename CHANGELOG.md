@@ -5,7 +5,7 @@ rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 Release dates use UTC+8.
 
-## 0.4.0 - Pending publication
+## 0.4.0 - 2026-11-22
 
 ### OIDC Relying Party
 
