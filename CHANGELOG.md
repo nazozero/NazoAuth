@@ -5,6 +5,34 @@ rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 Release dates use UTC+8.
 
+## 0.4.0 - Pending publication
+
+### OIDC Relying Party
+
+- Move OIDC RP request construction, ID Token validation, UserInfo identity
+  projection and Logout Token semantics into the portable identity/crypto
+  crates. Keep networking, TLS, cookies and persistence in their existing hosts.
+- Add optional issuer Discovery, JSON UserInfo, RP-initiated logout and signed
+  Back-Channel Logout. Bind upstream session revocation to tenant, provider,
+  issuer, client and subject/session identifier without adding a general-purpose
+  replay cache or a new storage model.
+- Validate the required authorization-code Token Response once, at the protocol
+  decoding boundary. Preserve borrowed access-token use after validation and
+  direct response-buffer transfer through the HTTP adapter.
+- Preserve original ceremony timing through MFA/session rotation; reject late
+  callback completion and verify subject/sid revocation against actual sessions.
+
+### Validation and delivery
+
+- Run official OIDF RP Basic, Configuration and Back-Channel Logout plans on the
+  production Native RP handlers, with original Suite results and explicit
+  unsigned-ID-Token skips. See [PR #299](https://github.com/nazozero/NazoAuth/pull/299).
+- Keep NazoAuthCtl's OP plan Matrix distinct from the new RP tests; its
+  [controller PR #100](https://github.com/nazozero/NazoAuthCtl/pull/100)
+  corrects the OIDC selector to include Core, Logout and Session Management.
+- Release packaging and signed artifact publication remain gated on the exact
+  versioned main commit, full CI and release-security checks.
+
 ## 0.3.8 - 2026-11-15
 
 - Renew controller keys through signed local/SSH operator requests when seven
