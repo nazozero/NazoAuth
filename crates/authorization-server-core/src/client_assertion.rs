@@ -1,11 +1,11 @@
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_crypto::jwt::{
     Algorithm, Validation, VerificationKey as JwtVerificationKey, decode, decode_header,
 };
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{OAuthClient, rsa_public_key_components_are_safe};
+use crate::OAuthClient;
+pub use nazo_crypto::jwk::{jwt_decoding_key_from_jwk, jwt_decoding_key_from_jwks};
 
 pub const CLIENT_ASSERTION_TYPE_JWT_BEARER: &str =
     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
@@ -134,7 +134,7 @@ pub fn verify_private_key_jwt(
         input.require_fapi2 || input.client.security_policy.requires_fapi2_security();
     let header =
         decode_header(input.assertion).map_err(|_| ClientAssertionValidationError::DecodeHeader)?;
-    let Some((algorithm_name, _)) = supported_client_jwt_algorithm(header.alg) else {
+    let Some(algorithm_name) = supported_client_jwt_algorithm_name(header.alg) else {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     };
     if require_fapi2 && !FAPI2_JWT_SIGNING_ALGS.contains(&algorithm_name) {
@@ -266,119 +266,14 @@ pub fn client_jwt_decoding_key(
     jwt_decoding_key_from_jwks(client.jwks.as_deref()?, kid, algorithm)
 }
 
-pub fn jwt_decoding_key_from_jwks(
-    jwks: &Value,
-    kid: &str,
-    algorithm: Algorithm,
-) -> Option<JwtVerificationKey> {
-    let keys = jwks.get("keys")?.as_array()?;
-    let mut matching = keys
-        .iter()
-        .filter(|key| key.get("kid").and_then(Value::as_str) == Some(kid));
-    let selected = matching.next()?;
-    if matching.next().is_some() {
-        return None;
-    }
-    jwt_decoding_key_from_jwk(selected, algorithm)
-}
-
-pub fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVerificationKey> {
-    let (expected_algorithm, key_type) = supported_client_jwt_algorithm(algorithm)?;
-    if key
-        .get("alg")
-        .is_some_and(|registered| registered.as_str() != Some(expected_algorithm))
-        || ["d", "p", "q", "dp", "dq", "qi", "oth", "k"]
-            .iter()
-            .any(|parameter| key.get(*parameter).is_some())
-        || key
-            .get("use")
-            .is_some_and(|use_| use_.as_str() != Some("sig"))
-        || !valid_verification_key_ops(key.get("key_ops"))
-    {
-        return None;
-    }
-    match key_type {
-        SupportedClientJwtAlgorithm::EdDsa => {
-            if key.get("kty").and_then(Value::as_str) != Some("OKP")
-                || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
-            {
-                return None;
-            }
-            let x = key.get("x").and_then(Value::as_str)?;
-            let mut bytes = [0_u8; 32];
-            if URL_SAFE_NO_PAD.decode_slice(x, &mut bytes).ok()? != bytes.len() {
-                return None;
-            }
-            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
-        }
-        SupportedClientJwtAlgorithm::Rsa => {
-            if key.get("kty").and_then(Value::as_str) != Some("RSA") {
-                return None;
-            }
-            let modulus = key.get("n").and_then(Value::as_str)?;
-            let exponent = key.get("e").and_then(Value::as_str)?;
-            let modulus = URL_SAFE_NO_PAD.decode(modulus).ok()?;
-            let exponent_bytes = URL_SAFE_NO_PAD.decode(exponent).ok()?;
-            if !rsa_public_key_components_are_safe(&modulus, &exponent_bytes) {
-                return None;
-            }
-            Some(JwtVerificationKey::from_rsa_raw_components(
-                &modulus,
-                &exponent_bytes,
-            ))
-        }
-        SupportedClientJwtAlgorithm::Ec => {
-            if key.get("kty").and_then(Value::as_str) != Some("EC")
-                || key.get("crv").and_then(Value::as_str) != Some("P-256")
-            {
-                return None;
-            }
-            let x = key.get("x").and_then(Value::as_str)?;
-            let y = key.get("y").and_then(Value::as_str)?;
-            let mut x_bytes = [0_u8; 32];
-            let mut y_bytes = [0_u8; 32];
-            if URL_SAFE_NO_PAD.decode_slice(x, &mut x_bytes).ok()? != x_bytes.len()
-                || URL_SAFE_NO_PAD.decode_slice(y, &mut y_bytes).ok()? != y_bytes.len()
-            {
-                return None;
-            }
-            Some(JwtVerificationKey::from_p256_coordinates(
-                &x_bytes, &y_bytes,
-            ))
-        }
-    }
-}
-
-fn valid_verification_key_ops(key_ops: Option<&Value>) -> bool {
-    match key_ops {
-        None => true,
-        Some(Value::Array(operations)) => {
-            operations.len() == 1 && operations[0].as_str() == Some("verify")
-        }
-        Some(_) => false,
-    }
-}
-
-enum SupportedClientJwtAlgorithm {
-    EdDsa,
-    Rsa,
-    Ec,
-}
-
-fn supported_client_jwt_algorithm(
-    algorithm: Algorithm,
-) -> Option<(&'static str, SupportedClientJwtAlgorithm)> {
+pub(crate) fn supported_client_jwt_algorithm_name(algorithm: Algorithm) -> Option<&'static str> {
     match algorithm {
-        Algorithm::EdDSA => Some(("EdDSA", SupportedClientJwtAlgorithm::EdDsa)),
-        Algorithm::RS256 => Some(("RS256", SupportedClientJwtAlgorithm::Rsa)),
-        Algorithm::ES256 => Some(("ES256", SupportedClientJwtAlgorithm::Ec)),
-        Algorithm::PS256 => Some(("PS256", SupportedClientJwtAlgorithm::Rsa)),
+        Algorithm::EdDSA => Some("EdDSA"),
+        Algorithm::RS256 => Some("RS256"),
+        Algorithm::ES256 => Some("ES256"),
+        Algorithm::PS256 => Some("PS256"),
         _ => None,
     }
-}
-
-pub(crate) fn supported_client_jwt_algorithm_name(algorithm: Algorithm) -> Option<&'static str> {
-    supported_client_jwt_algorithm(algorithm).map(|(name, _)| name)
 }
 
 #[cfg(test)]

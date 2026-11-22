@@ -2,6 +2,8 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod oidc;
+
 use crate::{
     LoginSuccess, PublicAccount, TenantContext,
     ports::{
@@ -34,6 +36,8 @@ pub struct OidcFederationState {
     pub nonce: String,
     pub pkce_verifier: String,
     pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery: Option<oidc::OidcProviderMetadata>,
 }
 
 impl std::fmt::Debug for OidcFederationState {
@@ -153,6 +157,10 @@ where
     S: LoginSessionPort,
     A: FederationAuditPort,
 {
+    pub fn tenant_id(&self) -> crate::TenantId {
+        self.config.tenant.tenant_id
+    }
+
     pub fn new<R>(
         accounts: R,
         states: T,
@@ -198,6 +206,17 @@ where
         browser_binding_seed: &[u8; 32],
         now: Timestamp,
     ) -> Result<OidcFederationStart, FederationError> {
+        self.start_oidc_with_metadata(provider_id, None, browser_binding_seed, now)
+            .await
+    }
+
+    pub async fn start_oidc_with_metadata(
+        &self,
+        provider_id: String,
+        discovery: Option<oidc::OidcProviderMetadata>,
+        browser_binding_seed: &[u8; 32],
+        now: Timestamp,
+    ) -> Result<OidcFederationStart, FederationError> {
         let state = random_urlsafe_token();
         let stored = OidcFederationState {
             browser_binding_hash: Some(browser_binding_hash(
@@ -205,6 +224,7 @@ where
                 browser_binding_seed,
             )),
             provider_id: Some(provider_id),
+            discovery,
             nonce: random_urlsafe_token(),
             pkce_verifier: random_urlsafe_token(),
             created_at: now.as_second(),
@@ -342,7 +362,34 @@ where
         source_ip: String,
     ) -> Result<LoginSuccess, FederationError> {
         let account = self.resolve(identity, false).await?;
-        self.create_session(account, method, source_ip).await
+        self.create_session(account, method, source_ip, None).await
+    }
+
+    pub async fn complete_oidc(
+        &self,
+        identity: VerifiedExternalIdentity,
+        upstream: Option<oidc::OidcUpstreamLogin>,
+        source_ip: String,
+    ) -> Result<LoginSuccess, FederationError> {
+        let account = self.resolve(identity, false).await?;
+        self.create_session(account, "oidc".to_owned(), source_ip, upstream)
+            .await
+    }
+
+    pub async fn revoke_oidc(
+        &self,
+        logout: oidc::OidcLogout,
+        now: Timestamp,
+    ) -> Result<(), FederationError> {
+        // Keep a cutoff through any already started browser ceremony even when
+        // the OP's logout arrived before this RP had written a session.
+        let retain_until = now
+            .as_second()
+            .saturating_add(self.config.state_ttl_seconds as i64);
+        self.sessions
+            .revoke_upstream(&logout.key, logout.cutoff, retain_until)
+            .await
+            .map_err(FederationError::Session)
     }
 
     pub async fn complete_existing_only(
@@ -352,7 +399,7 @@ where
         source_ip: String,
     ) -> Result<LoginSuccess, FederationError> {
         let account = self.resolve(identity, true).await?;
-        self.create_session(account, method, source_ip).await
+        self.create_session(account, method, source_ip, None).await
     }
 
     async fn resolve(
@@ -444,6 +491,7 @@ where
         account: PublicAccount,
         method: String,
         source_ip: String,
+        upstream: Option<oidc::OidcUpstreamLogin>,
     ) -> Result<LoginSuccess, FederationError> {
         let now = Timestamp::now();
         let mut session = SessionRecord::new(
@@ -454,6 +502,23 @@ where
             account.account.mfa_enabled,
             Some(random_urlsafe_token()),
         );
+        if let Some(upstream) = upstream {
+            // MFA rotation can extend a pending session into the full session.
+            // Retain the upstream proof at most through that login's full lifetime.
+            let lifetime = self
+                .config
+                .session_ttl_seconds
+                .saturating_add(self.config.pending_mfa_session_ttl_seconds);
+            session.set_upstream(Some(crate::session::UpstreamSession {
+                subject_key: upstream.subject_key,
+                sid_key: upstream.sid_key,
+                started_at: upstream.started_at,
+                encrypted_logout: upstream.encrypted_logout,
+                expires_at: now
+                    .as_second()
+                    .saturating_add(i64::try_from(lifetime).unwrap_or(i64::MAX)),
+            }));
+        }
         session.record_authentication_at(now);
         let session_id = random_urlsafe_token();
         let csrf_token = random_urlsafe_token();
@@ -472,6 +537,9 @@ where
             LoginSessionCreate::Created => {}
             LoginSessionCreate::Collision => return Err(FederationError::SessionCollision),
         }
+        if let Some(upstream) = session.upstream() {
+            self.ensure_fresh(upstream.started_at, Timestamp::now())?;
+        }
         self.audit.record(FederationAuditEvent::LoginSuccess {
             user_id: account.user_id(),
             method,
@@ -485,7 +553,7 @@ where
     }
 
     fn ensure_fresh(&self, created_at: i64, now: Timestamp) -> Result<(), FederationError> {
-        if now.as_second().saturating_sub(created_at) > self.config.state_ttl_seconds as i64 {
+        if now.as_second().saturating_sub(created_at) >= self.config.state_ttl_seconds as i64 {
             Err(FederationError::StateExpired)
         } else {
             Ok(())

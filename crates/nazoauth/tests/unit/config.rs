@@ -344,11 +344,16 @@ fn typed_federation_registry_keeps_json_configuration_admission_rules() {
         icon: None,
         display_order: 0,
         adapter: ExternalLoginProviderAdapter::Oidc(OidcFederationSettings {
+            discovery: false,
+            backchannel_logout: false,
+            id_token_signed_response_alg: None,
+            post_logout_redirect_uri: None,
             provider_id: "oidc".into(),
             issuer: "https://identity.example".into(),
             authorization_endpoint: "https://identity.example/authorize".into(),
             token_endpoint: "https://identity.example/token".into(),
             jwks_url: "https://identity.example/jwks".into(),
+            userinfo_endpoint: None,
             client_id: "nazoauth".into(),
             client_secret: "provider-secret".into(),
             redirect_uri: "https://auth.example/auth/federation/oidc/callback".into(),
@@ -365,4 +370,106 @@ fn typed_federation_registry_keeps_json_configuration_admission_rules() {
         settings.client_secret.clear();
     }
     assert!(FederationProviderRegistry::new(vec![provider]).is_err());
+}
+
+#[test]
+fn oidc_provider_issuer_preserves_trailing_slash_and_rejects_url_credentials() {
+    let mut provider = serde_json::json!({
+        "provider_id": "oidf-rp-test",
+        "enabled": true,
+        "display_name": "OIDF RP test",
+        "adapter_type": "oidc",
+        "issuer": "https://localhost:8443/test/a/nazo-issue202/",
+        "authorization_endpoint": "https://localhost:8443/test/a/nazo-issue202/authorize",
+        "token_endpoint": "https://localhost:8443/test/a/nazo-issue202/token",
+        "jwks_url": "https://localhost:8443/test/a/nazo-issue202/jwks",
+        "client_id": "nazoauth-issue202",
+        "client_secret": "test-secret",
+        "redirect_uri": "https://localhost:8443/rp/auth/federation/oidf-rp-test/callback",
+        "scopes": "openid email profile"
+    });
+    let registry = crate::config::FederationProviderRegistry::from_json(
+        &serde_json::json!([provider]).to_string(),
+    )
+    .expect("an external OP issuer may end in a slash");
+    let crate::config::ExternalLoginProviderAdapter::Oidc(settings) =
+        &registry.enabled_provider("oidf-rp-test").unwrap().adapter
+    else {
+        panic!("OIDC provider expected");
+    };
+    assert_eq!(
+        settings.issuer,
+        "https://localhost:8443/test/a/nazo-issue202/"
+    );
+    for invalid in [
+        "https://localhost:8443/?query=1",
+        "https://localhost:8443/#fragment",
+        "https://user:secret@localhost:8443/",
+        "http://public.example/",
+    ] {
+        provider["issuer"] = serde_json::json!(invalid);
+        assert!(
+            crate::config::FederationProviderRegistry::from_json(
+                &serde_json::json!([provider]).to_string(),
+            )
+            .is_err(),
+            "invalid issuer accepted: {invalid}"
+        );
+    }
+}
+
+#[test]
+fn oidc_userinfo_endpoint_is_optional_and_uses_endpoint_admission() {
+    use crate::config::{ExternalLoginProviderAdapter, FederationProviderRegistry};
+
+    let mut provider = serde_json::json!({
+        "provider_id": "oidc",
+        "enabled": true,
+        "display_name": "Identity provider",
+        "adapter_type": "oidc",
+        "issuer": "https://identity.example",
+        "authorization_endpoint": "https://identity.example/authorize",
+        "token_endpoint": "https://identity.example/token",
+        "jwks_url": "https://identity.example/jwks",
+        "client_id": "nazoauth",
+        "client_secret": "provider-secret",
+        "redirect_uri": "https://auth.example/auth/federation/oidc/callback"
+    });
+    let registry =
+        FederationProviderRegistry::from_json(&serde_json::json!([provider]).to_string()).unwrap();
+    let ExternalLoginProviderAdapter::Oidc(settings) =
+        &registry.enabled_provider("oidc").unwrap().adapter
+    else {
+        panic!("OIDC provider expected");
+    };
+    assert!(settings.userinfo_endpoint.is_none());
+
+    for endpoint in [
+        "https://identity.example/userinfo/?tenant=example",
+        "http://127.0.0.1:8443/userinfo",
+    ] {
+        provider["userinfo_endpoint"] = serde_json::json!(endpoint);
+        let registry =
+            FederationProviderRegistry::from_json(&serde_json::json!([provider]).to_string())
+                .unwrap();
+        let ExternalLoginProviderAdapter::Oidc(settings) =
+            &registry.enabled_provider("oidc").unwrap().adapter
+        else {
+            panic!("OIDC provider expected");
+        };
+        assert_eq!(settings.userinfo_endpoint.as_deref(), Some(endpoint));
+    }
+
+    for endpoint in [
+        "http://identity.example/userinfo",
+        "https://user:secret@identity.example/userinfo",
+        "https://identity.example/userinfo#fragment",
+    ] {
+        provider["userinfo_endpoint"] = serde_json::json!(endpoint);
+        assert!(
+            FederationProviderRegistry::from_json(&serde_json::json!([provider]).to_string(),)
+                .is_err(),
+            "invalid UserInfo endpoint accepted: {endpoint}"
+        );
+    }
 }

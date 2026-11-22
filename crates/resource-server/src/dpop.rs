@@ -1,6 +1,7 @@
 use super::VerifiedSenderConstraintProof;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use jiff::Timestamp;
+use nazo_crypto::jwk::rsa_public_key_components_are_safe;
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde::Deserialize;
 use serde_json::Value;
@@ -423,20 +424,6 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVe
             ))
         }
     }
-}
-
-fn rsa_public_key_components_are_safe(modulus: &[u8], exponent: &[u8]) -> bool {
-    let Some((offset, first)) = modulus.iter().enumerate().find(|(_, byte)| **byte != 0) else {
-        return false;
-    };
-    let bits = (modulus.len() - offset - 1) * 8 + (u8::BITS - first.leading_zeros()) as usize;
-    let Some((offset, _)) = exponent.iter().enumerate().find(|(_, byte)| **byte != 0) else {
-        return false;
-    };
-    let exponent = &exponent[offset..];
-    (2_048..=8_192).contains(&bits)
-        && (exponent.len() > 1 || exponent[0] >= 3)
-        && exponent.last().is_some_and(|last| last & 1 == 1)
 }
 
 fn supported_dpop_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedDpopAlgorithm)> {

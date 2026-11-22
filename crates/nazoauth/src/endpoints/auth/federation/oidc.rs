@@ -1,7 +1,8 @@
-use jiff::Timestamp;
-use nazo_auth::jwt_decoding_key_from_jwks;
-use nazo_oauth_server::crypto::pkce_s256;
-use serde::Deserialize;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use nazo_identity::federation::oidc::{
+    OidcProviderMetadata, OidcTokenResponse, OidcUserInfo, discovery_url,
+};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::OidcFederationSettings;
@@ -13,49 +14,96 @@ pub struct OidcCallbackQuery {
     pub error: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub struct OidcTokenResponse {
-    pub id_token: String,
+#[derive(Deserialize, Serialize)]
+pub(super) struct UpstreamLogoutRequest {
+    pub endpoint: String,
+    pub id_token_hint: String,
 }
 
-#[derive(Deserialize)]
-pub struct OidcIdTokenClaims {
-    pub iss: String,
-    pub sub: String,
-    pub aud: Value,
-    pub azp: Option<String>,
-    pub iat: i64,
-    pub nonce: Option<String>,
-    pub email: Option<String>,
-    pub email_verified: Option<bool>,
-    pub name: Option<String>,
-    pub given_name: Option<String>,
-    pub family_name: Option<String>,
+impl UpstreamLogoutRequest {
+    pub fn seal(&self, provider: &OidcFederationSettings, subject_key: &str) -> Option<String> {
+        let key = logout_key(provider);
+        let nonce = rand::random::<[u8; 12]>();
+        let encoded = serde_json::to_vec(self).ok()?;
+        let sealed = nazo_crypto::aead::encrypt_prefixed(
+            &key,
+            &nonce,
+            subject_key.as_bytes(),
+            &encoded,
+            &nonce,
+        )
+        .ok()?;
+        Some(URL_SAFE_NO_PAD.encode(sealed))
+    }
+
+    pub fn open(
+        ciphertext: &str,
+        provider: &OidcFederationSettings,
+        subject_key: &str,
+    ) -> Option<Self> {
+        let key = logout_key(provider);
+        let mut sealed = URL_SAFE_NO_PAD.decode(ciphertext).ok()?;
+        let decoded =
+            nazo_crypto::aead::decrypt_nonce_prefixed(&key, subject_key.as_bytes(), &mut sealed)
+                .ok()?;
+        serde_json::from_slice(decoded).ok()
+    }
 }
 
-pub fn oidc_authorization_url(
+fn logout_key(provider: &OidcFederationSettings) -> [u8; 32] {
+    let mut hasher =
+        blake3::Hasher::new_derive_key("NazoAuth upstream OIDC logout hint encryption v1");
+    for field in [
+        &provider.provider_id,
+        &provider.issuer,
+        &provider.client_id,
+        &provider.client_secret,
+    ] {
+        hasher.update(&(field.len() as u64).to_be_bytes());
+        hasher.update(field.as_bytes());
+    }
+    *hasher.finalize().as_bytes()
+}
+
+pub async fn discover_oidc(
+    client: &dyn super::FederationHttpClient,
     provider: &OidcFederationSettings,
-    state: &str,
-    nonce: &str,
-    verifier: &str,
-) -> String {
-    let mut url =
-        url::Url::parse(&provider.authorization_endpoint).expect("validated federation endpoint");
-    url.query_pairs_mut()
-        .append_pair("response_type", "code")
-        .append_pair("client_id", &provider.client_id)
-        .append_pair("redirect_uri", &provider.redirect_uri)
-        .append_pair("scope", &provider.scopes)
-        .append_pair("state", state)
-        .append_pair("nonce", nonce)
-        .append_pair("code_challenge_method", "S256")
-        .append_pair("code_challenge", &pkce_s256(verifier));
-    url.into()
+) -> anyhow::Result<OidcProviderMetadata> {
+    let url = discovery_url(&provider.issuer)
+        .ok_or_else(|| anyhow::anyhow!("invalid discovery issuer"))?;
+    let response = client
+        .send_discovered(
+            http::Request::get(url).body(bytes::Bytes::new())?,
+            super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES,
+        )
+        .await?;
+    let metadata = super::federation_json_response::<OidcProviderMetadata>(response)?;
+    anyhow::ensure!(
+        metadata.validate(&provider.issuer)
+            && metadata.supports_signing_algorithm(provider.signing_algorithm()),
+        "invalid OIDC discovery metadata"
+    );
+    Ok(metadata)
+}
+
+async fn send(
+    client: &dyn super::FederationHttpClient,
+    request: http::Request<bytes::Bytes>,
+    discovered: bool,
+) -> anyhow::Result<http::Response<bytes::Bytes>> {
+    if discovered {
+        client
+            .send_discovered(request, super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES)
+            .await
+    } else {
+        super::send(client, request).await
+    }
 }
 
 pub async fn exchange_oidc_code(
     client: &dyn super::FederationHttpClient,
     provider: &OidcFederationSettings,
+    token_endpoint: &str,
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<OidcTokenResponse> {
@@ -71,7 +119,7 @@ pub async fn exchange_oidc_code(
         url::form_urlencoded::byte_serialize(provider.client_id.as_bytes()).collect::<String>(),
         url::form_urlencoded::byte_serialize(provider.client_secret.as_bytes()).collect::<String>()
     );
-    let request = http::Request::post(&provider.token_endpoint)
+    let request = http::Request::post(token_endpoint)
         .header(
             http::header::AUTHORIZATION,
             format!("Basic {}", STANDARD.encode(credentials)),
@@ -81,16 +129,18 @@ pub async fn exchange_oidc_code(
             "application/x-www-form-urlencoded",
         )
         .body(bytes::Bytes::from(body))?;
-    super::federation_json_response(super::send(client, request).await?)
+    super::federation_json_response(send(client, request, provider.discovery).await?)
 }
 
 pub async fn fetch_oidc_jwks(
     client: &dyn super::FederationHttpClient,
-    provider: &OidcFederationSettings,
+    endpoint: &str,
+    discovered: bool,
 ) -> anyhow::Result<Value> {
-    let response = super::send(
+    let response = send(
         client,
-        http::Request::get(&provider.jwks_url).body(bytes::Bytes::new())?,
+        http::Request::get(endpoint).body(bytes::Bytes::new())?,
+        discovered,
     )
     .await?;
     let value = super::federation_json_response::<Value>(response)?;
@@ -100,43 +150,18 @@ pub async fn fetch_oidc_jwks(
     Ok(value)
 }
 
-pub fn verify_oidc_id_token(
-    provider: &OidcFederationSettings,
-    jwks: &Value,
-    token: &str,
-    expected_nonce: &str,
-) -> anyhow::Result<OidcIdTokenClaims> {
-    let header = nazo_crypto::jwt::decode_header(token)?;
-    if !matches!(
-        header.alg,
-        nazo_crypto::jwt::Algorithm::RS256
-            | nazo_crypto::jwt::Algorithm::PS256
-            | nazo_crypto::jwt::Algorithm::ES256
-            | nazo_crypto::jwt::Algorithm::EdDSA
-    ) {
-        anyhow::bail!("OIDC ID Token algorithm is not allowed");
-    }
-    let kid = header
-        .kid
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("missing kid"))?;
-    let decoding_key = jwt_decoding_key_from_jwks(jwks, kid, header.alg)
-        .ok_or_else(|| anyhow::anyhow!("no unique usable OIDC verification key for kid"))?;
-    let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
-    validation.set_issuer(&[provider.issuer.as_str()]);
-    validation.set_audience(&[provider.client_id.as_str()]);
-    validation.set_required_spec_claims(&["exp", "aud"]);
-    validation.leeway = 0;
-    // Keep the existing strict expiry policy: exp must be later than now.
-    validation.reject_tokens_expiring_in_less_than = 1;
-    let token = nazo_crypto::jwt::decode::<OidcIdTokenClaims>(token, &decoding_key, &validation)?;
-    let claims = token.claims;
-    let audience_count = claims.aud.as_array().map_or(1, Vec::len);
-    if claims.nonce.as_deref() != Some(expected_nonce)
-        || (audience_count > 1 && claims.azp.as_deref() != Some(&provider.client_id))
-        || claims.iat > Timestamp::now().as_second() + 60
-    {
-        anyhow::bail!("OIDC ID Token claims failed policy");
-    }
-    Ok(claims)
+pub async fn fetch_oidc_userinfo(
+    client: &dyn super::FederationHttpClient,
+    endpoint: &str,
+    token: &OidcTokenResponse,
+    discovered: bool,
+) -> anyhow::Result<OidcUserInfo> {
+    let request = http::Request::get(endpoint)
+        .header(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", token.userinfo_access_token()),
+        )
+        .header(http::header::ACCEPT, "application/json")
+        .body(bytes::Bytes::new())?;
+    super::federation_json_response(send(client, request, discovered).await?)
 }

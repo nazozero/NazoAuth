@@ -133,6 +133,7 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
     };
     let oidc_state = format!("oidc-{}", uuid::Uuid::now_v7());
     let oidc = OidcFederationState {
+        discovery: None,
         browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: Some("oidc-provider".to_owned()),
         nonce: "nonce-\"-\\-雪".to_owned(),
