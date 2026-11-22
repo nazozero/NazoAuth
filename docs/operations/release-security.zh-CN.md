@@ -33,8 +33,9 @@ cargo set-version --workspace --bump patch
 cargo update --workspace --manifest-path fuzz/Cargo.toml
 ```
 
-第一条命令同步更新工作区包版本、内部依赖约束及根锁文件。发布次版本或主版本时分别使用
-`minor` 或 `major`。两份锁文件一并纳入发布变更。
+第一条命令同步更新工作区版本、`nazo-operator-protocol` 打包所需的 `nazo-crypto`
+依赖版本和根锁文件。其余内部依赖只声明本地路径。发布次版本或主版本时分别使用
+`minor` 或 `major`，两份锁文件一并提交。
 
 `release-security` 工作流由 `v*` tag 或手动调度触发：
 

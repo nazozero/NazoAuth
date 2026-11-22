@@ -1,31 +1,5 @@
 [workspace]
-members = [
-    "crates/authorization-server",
-    "crates/authorization-server-core",
-    "crates/authorization-server-d1",
-    "crates/authorization-server-object-store",
-    "crates/authorization-server-postgres",
-    "crates/authorization-server-valkey",
-    "crates/crypto",
-    "crates/digital-credentials",
-    "crates/http-actix",
-    "crates/http-signatures",
-    "crates/http-worker",
-    "crates/identity",
-    "crates/key-management",
-    "crates/nazoauth",
-    "crates/openid4vci",
-    "crates/openid4vp",
-    "crates/operator-protocol",
-    "crates/persistence",
-    "crates/persistence-postgres",
-    "crates/resource-server",
-    "crates/runtime-capabilities",
-    "crates/scim-events",
-    "crates/server",
-    "crates/server-worker",
-    "crates/state-store-valkey",
-]
+members = ["crates/*"]
 default-members = ["crates/server"]
 resolver = "3"
 exclude = ["fuzz"]
@@ -38,30 +12,30 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/nazozero/NazoAuth"
 
 [workspace.dependencies]
-# Keep versioned paths for packaging. cargo set-version updates them together.
-nazo-auth = { version = "0.4.0", path = "crates/authorization-server-core" }
+nazo-auth.path = "crates/authorization-server-core"
+# The packaged operator protocol needs a registry version for its crypto dependency.
 nazo-crypto = { version = "0.4.0", path = "crates/crypto", default-features = false }
-nazo-digital-credentials = { version = "0.4.0", path = "crates/digital-credentials" }
-nazo-http-actix = { version = "0.4.0", path = "crates/http-actix" }
-nazo-http-signatures = { version = "0.4.0", path = "crates/http-signatures" }
-nazo-http-worker = { version = "0.4.0", path = "crates/http-worker" }
-nazo-identity = { version = "0.4.0", path = "crates/identity" }
-nazo-key-management = { version = "0.4.0", path = "crates/key-management" }
-nazo-oauth-server = { version = "0.4.0", path = "crates/authorization-server" }
-nazo-oauth-server-d1 = { version = "0.4.0", path = "crates/authorization-server-d1" }
-nazo-oauth-server-object-store = { version = "0.4.0", path = "crates/authorization-server-object-store" }
-nazo-oauth-server-postgres = { version = "0.4.0", path = "crates/authorization-server-postgres" }
-nazo-oauth-server-valkey = { version = "0.4.0", path = "crates/authorization-server-valkey" }
-nazo-openid4vci = { version = "0.4.0", path = "crates/openid4vci" }
-nazo-openid4vp = { version = "0.4.0", path = "crates/openid4vp" }
-nazo-operator-protocol = { version = "0.4.0", path = "crates/operator-protocol" }
-nazo-persistence = { version = "0.4.0", path = "crates/persistence" }
-nazo-postgres = { version = "0.4.0", path = "crates/persistence-postgres" }
-nazo-resource-server = { version = "0.4.0", path = "crates/resource-server" }
-nazo-runtime-modules = { version = "0.4.0", path = "crates/runtime-capabilities" }
-nazo-scim-events = { version = "0.4.0", path = "crates/scim-events" }
-nazo-valkey = { version = "0.4.0", path = "crates/state-store-valkey" }
-nazoauth = { version = "0.4.0", path = "crates/nazoauth", default-features = false }
+nazo-digital-credentials.path = "crates/digital-credentials"
+nazo-http-actix.path = "crates/http-actix"
+nazo-http-signatures.path = "crates/http-signatures"
+nazo-http-worker.path = "crates/http-worker"
+nazo-identity.path = "crates/identity"
+nazo-key-management.path = "crates/key-management"
+nazo-oauth-server.path = "crates/authorization-server"
+nazo-oauth-server-d1.path = "crates/authorization-server-d1"
+nazo-oauth-server-object-store.path = "crates/authorization-server-object-store"
+nazo-oauth-server-postgres.path = "crates/authorization-server-postgres"
+nazo-oauth-server-valkey.path = "crates/authorization-server-valkey"
+nazo-openid4vci.path = "crates/openid4vci"
+nazo-openid4vp.path = "crates/openid4vp"
+nazo-operator-protocol.path = "crates/operator-protocol"
+nazo-persistence.path = "crates/persistence"
+nazo-postgres.path = "crates/persistence-postgres"
+nazo-resource-server.path = "crates/resource-server"
+nazo-runtime-modules.path = "crates/runtime-capabilities"
+nazo-scim-events.path = "crates/scim-events"
+nazo-valkey.path = "crates/state-store-valkey"
+nazoauth = { path = "crates/nazoauth", default-features = false }
 
 actix-files = "0.7.5"
 actix-tls = "3.6.1"

@@ -38,9 +38,10 @@ cargo set-version --workspace --bump patch
 cargo update --workspace --manifest-path fuzz/Cargo.toml
 ```
 
-The first command updates the shared package version, internal dependency
-requirements and root lockfile. Use `minor` or `major` for the corresponding
-release. Include both lockfiles in the release change.
+The first command updates the shared package version, the `nazo-crypto` dependency
+version required by the packaged `nazo-operator-protocol`, and the root lockfile.
+Other internal dependencies use local paths. Use `minor` or `major` for the
+corresponding release. Include both lockfiles in the release change.
 
 The `release-security` workflow runs for `v*` tags and manual dispatch:
 
