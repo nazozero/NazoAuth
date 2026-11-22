@@ -618,11 +618,12 @@ impl NazoAuth {
                 .await
             }),
             Endpoint::FederationProviderCallback => Box::pin(async move {
-                crate::endpoints::auth::federation::federation_provider_callback(
+                crate::endpoints::auth::federation::federation_provider_callback_with_sessions(
                     self.identity.auth_request_limiter.as_ref(),
                     self.identity.client_ip_config.as_ref(),
                     self.identity.federation.as_ref(),
                     self.identity.federation_http_config.as_ref(),
+                    Some(self.identity.session_profiles.as_ref()),
                     request,
                     extract!(http::parse_path(
                         params.get("provider_id").expect("manifest capture")
@@ -810,6 +811,20 @@ impl NazoAuth {
             Endpoint::ProfileApplications => Box::pin(async move {
                 http::profile_applications(self.identity.profile_account_endpoint.as_ref(), request)
                     .await
+            }),
+            Endpoint::BeginMyFederationLink => Box::pin(async move {
+                crate::endpoints::auth::federation::federation_provider_link_start(
+                    self.identity.auth_request_limiter.as_ref(),
+                    self.identity.client_ip_config.as_ref(),
+                    self.identity.federation.as_ref(),
+                    self.identity.session_profiles.as_ref(),
+                    self.identity.federation_http_config.as_ref(),
+                    request,
+                    extract!(http::parse_path(
+                        params.get("provider_id").expect("manifest capture")
+                    )),
+                )
+                .await
             }),
             Endpoint::MyFederationLinks => Box::pin(async move {
                 crate::endpoints::profile::federation_links::my_federation_links(

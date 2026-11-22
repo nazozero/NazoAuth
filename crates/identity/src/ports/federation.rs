@@ -116,6 +116,11 @@ pub trait FederationLoginRepositoryPort: Send + Sync {
         &self,
         identity: NewFederatedIdentity,
     ) -> RepositoryFuture<'_, PublicAccount>;
+
+    /// Link a proven external subject to an already authenticated local user.
+    /// A new link and its required audit commit atomically; an existing link
+    /// for the same user is idempotent, another user's subject conflicts.
+    fn link_authenticated(&self, link: NewFederationLink) -> RepositoryFuture<'_, ()>;
 }
 
 /// Callback state is taken only when the stored browser hash matches. A missing,

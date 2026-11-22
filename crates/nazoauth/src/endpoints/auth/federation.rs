@@ -10,6 +10,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http::StatusCode;
 use jiff::Timestamp;
 use nazo_identity::{FederationError, LoginSuccess, VerifiedExternalIdentity};
+use crate::endpoints::sessions::SessionProfileHandles;
 use serde::{Serialize, de::DeserializeOwned};
 
 use serde_json::json;
@@ -145,6 +146,68 @@ pub async fn federation_provider_start(
     req: &HttpRequest,
     path: String,
 ) -> HttpResponse {
+    federation_provider_start_inner(limiter, client_ip, service, config, req, path, None).await
+}
+
+/// An existing local account explicitly authorizes linking this provider. The
+/// session is resolved once at the authentication boundary; the callback must
+/// bind to the same still-live session before committing a link.
+pub async fn federation_provider_link_start(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    sessions: &SessionProfileHandles,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    provider_id: String,
+) -> HttpResponse {
+    let current = match sessions.current_session(req).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return sessions.login_required_response(),
+        Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
+    };
+    let csrf = url::form_urlencoded::parse(req.body())
+        .find_map(|(name, value)| (name == "csrf_token").then_some(value));
+    if !sessions.has_valid_csrf_token(req, csrf.as_deref()) {
+        return crate::http::csrf_error();
+    }
+    if !nazo_identity::session::recent_credential_management_authentication(
+        current.auth_time, &current.amr, current.user.account.mfa_enabled,
+        Timestamp::now().as_second(),
+    ) {
+        return oauth_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "reauthentication_required",
+            "Linking an external identity requires recent account authentication.",
+        );
+    }
+    let Some(session_id) = crate::http::cookie_value(
+        req,
+        sessions.http_config().session_cookie_name(),
+    ) else {
+        return sessions.login_required_response();
+    };
+    if !matches!(
+        config.providers.enabled_provider(&provider_id).map(|provider| &provider.adapter),
+        Some(ExternalLoginProviderAdapter::Oidc(_))
+    ) {
+        return unknown_provider_response();
+    }
+    federation_provider_start_inner(
+        limiter, client_ip, service, config, req, provider_id,
+        Some((current.user.user_id(), session_id.as_str())),
+    ).await
+}
+
+async fn federation_provider_start_inner(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    path: String,
+    link: Option<(nazo_identity::UserId, &str)>,
+) -> HttpResponse {
     if let Err(response) =
         crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
     {
@@ -172,15 +235,29 @@ pub async fn federation_provider_start(
                     document.authorization_endpoint.as_str()
                 })
                 .to_owned();
-            match service
-                .start_oidc_with_metadata(
-                    provider.provider_id.clone(),
-                    metadata,
-                    &browser_binding_seed,
-                    Timestamp::now(),
-                )
-                .await
-            {
+            let now = Timestamp::now();
+            let started = if let Some((user_id, session_id)) = link {
+                service
+                    .start_oidc_link_with_metadata(
+                        provider.provider_id.clone(),
+                        metadata,
+                        &browser_binding_seed,
+                        user_id,
+                        session_id,
+                        now,
+                    )
+                    .await
+            } else {
+                service
+                    .start_oidc_with_metadata(
+                        provider.provider_id.clone(),
+                        metadata,
+                        &browser_binding_seed,
+                        now,
+                    )
+                    .await
+            };
+            match started {
                 Ok(start) => federation_start_response(
                     config,
                     rp::authorization_url(
@@ -196,6 +273,9 @@ pub async fn federation_provider_start(
             }
         }
         ExternalLoginProviderAdapter::Social(provider) => {
+            if link.is_some() {
+                return unknown_provider_response();
+            }
             match service
                 .start_social(provider_id, &browser_binding_seed, Timestamp::now())
                 .await
@@ -267,6 +347,21 @@ pub async fn federation_provider_callback(
     path: String,
     query: OidcCallbackQuery,
 ) -> HttpResponse {
+    federation_provider_callback_with_sessions(
+        limiter, client_ip, service, config, None, req, path, query,
+    ).await
+}
+
+pub async fn federation_provider_callback_with_sessions(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    sessions: Option<&SessionProfileHandles>,
+    req: &HttpRequest,
+    path: String,
+    query: OidcCallbackQuery,
+) -> HttpResponse {
     if let Err(response) =
         crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
     {
@@ -278,8 +373,8 @@ pub async fn federation_provider_callback(
     };
     match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
-            oidc_callback_after_rate_limit_for_provider(
-                service, config, client_ip, req, query, provider,
+            oidc_callback_with_link_session(
+                service, config, client_ip, sessions, req, query, provider,
             )
             .await
         }
@@ -302,6 +397,18 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
     service: &LocalFederationService,
     config: &FederationHttpConfig,
     client_ip: &ClientIpConfig,
+    req: &HttpRequest,
+    query: OidcCallbackQuery,
+    provider: &OidcFederationSettings,
+) -> HttpResponse {
+    oidc_callback_with_link_session(service, config, client_ip, None, req, query, provider).await
+}
+
+async fn oidc_callback_with_link_session(
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    client_ip: &ClientIpConfig,
+    sessions: Option<&SessionProfileHandles>,
     req: &HttpRequest,
     query: OidcCallbackQuery,
     provider: &OidcFederationSettings,
@@ -416,7 +523,9 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
     } else {
         None
     };
-    let upstream = if provider.backchannel_logout {
+    // Linking does not create or rotate a local session; upstream logout
+    // metadata belongs only to an actual federated login session.
+    let upstream = if stored.link_intent.is_none() && provider.backchannel_logout {
         match claims.upstream_login(
             service.tenant_id(),
             &provider.provider_id,
@@ -456,6 +565,42 @@ pub async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
+    if let Some(intent) = stored.link_intent.as_ref() {
+        let Some(sessions) = sessions else {
+            return federation_state_error(FederationError::InvalidState);
+        };
+        let current = match sessions.current_session(req).await {
+            Ok(Some(session)) => session,
+            Ok(None) => return sessions.login_required_response(),
+            Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
+        };
+        if !nazo_identity::session::recent_credential_management_authentication(
+            current.auth_time, &current.amr, current.user.account.mfa_enabled,
+            Timestamp::now().as_second(),
+        ) {
+            return oauth_error(
+                StatusCode::PRECONDITION_REQUIRED,
+                "reauthentication_required",
+                "Linking an external identity requires recent account authentication.",
+            );
+        }
+        let Some(session_id) = crate::http::cookie_value(
+            req,
+            sessions.http_config().session_cookie_name(),
+        ) else {
+            return sessions.login_required_response();
+        };
+        return match service
+            .link_oidc(identity, intent, current.user.user_id(), &session_id)
+            .await
+        {
+            Ok(()) => json_response_no_store(json!({
+                "linked": true,
+                "provider_id": &provider.provider_id,
+            })),
+            Err(error) => federation_completion_error(error),
+        };
+    }
     match service
         .complete_oidc(identity, upstream, client_ip_with_config(req, client_ip))
         .await
@@ -923,6 +1068,11 @@ pub fn federation_state_error(error: FederationError) -> HttpResponse {
 
 pub fn federation_completion_error(error: FederationError) -> HttpResponse {
     match error {
+        FederationError::LinkConflict => oauth_error(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "This external identity is already bound to another account.",
+        ),
         FederationError::VerifiedEmailRequired => oauth_error(
             StatusCode::UNAUTHORIZED,
             "access_denied",

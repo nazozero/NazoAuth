@@ -85,6 +85,7 @@ fn identity(subject: &str, email: &str) -> NewFederatedIdentity {
 fn oidc() -> OidcFederationState {
     OidcFederationState {
         discovery: None,
+        link_intent: None,
         browser_binding_hash: Some("browser-binding".into()),
         provider_id: Some("upstream".into()),
         nonce: "nonce".into(),

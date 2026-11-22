@@ -89,6 +89,13 @@ impl FederationLoginRepositoryPort for CompletionPorts {
         let account = self.account.clone();
         Box::pin(async move { Ok(account) })
     }
+    fn link_authenticated(
+        &self,
+        _: NewFederationLink,
+    ) -> crate::ports::RepositoryFuture<'_, ()> {
+        panic!("unexpected link mutation in login-only fixture")
+    }
+
 }
 
 impl FederationStatePort for CompletionPorts {

@@ -4,12 +4,14 @@ use serde_json::Value;
 
 pub mod oidc;
 
+use uuid::Uuid;
+
 use crate::{
     LoginSuccess, PublicAccount, TenantContext,
     ports::{
         FederationAuditPort, FederationLogin, FederationLoginRepositoryPort,
         FederationPasswordHasherPort, FederationStatePort, LoginSessionCreate, LoginSessionPort,
-        NewFederatedIdentity, RepositoryError,
+        NewFederatedIdentity, NewFederationLink, RepositoryError,
     },
     session::SessionRecord,
 };
@@ -38,6 +40,29 @@ pub struct OidcFederationState {
     pub created_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discovery: Option<oidc::OidcProviderMetadata>,
+    /// Only account-link ceremonies retain this session-bound target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_intent: Option<OidcLinkIntent>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OidcLinkIntent {
+    user_id: Uuid,
+    session_binding: [u8; 32],
+}
+
+impl OidcLinkIntent {
+    fn new(tenant: crate::TenantId, user_id: crate::UserId, session_id: &str) -> Self {
+        Self {
+            user_id: user_id.as_uuid(),
+            session_binding: link_session_digest(tenant, session_id),
+        }
+    }
+
+    fn matches(&self, tenant: crate::TenantId, user_id: crate::UserId, session_id: &str) -> bool {
+        self.user_id == user_id.as_uuid()
+            && self.session_binding == link_session_digest(tenant, session_id)
+    }
 }
 
 impl std::fmt::Debug for OidcFederationState {
@@ -125,6 +150,7 @@ pub enum FederationError {
     VerifiedEmailRequired,
     LoginFailed,
     InactiveExistingLink,
+    LinkConflict,
     Account(RepositoryError),
     Password(RepositoryError),
     Session(RepositoryError),
@@ -210,12 +236,43 @@ where
             .await
     }
 
+    pub async fn start_oidc_link_with_metadata(
+        &self,
+        provider_id: String,
+        discovery: Option<oidc::OidcProviderMetadata>,
+        browser_binding_seed: &[u8; 32],
+        user_id: crate::UserId,
+        session_id: &str,
+        now: Timestamp,
+    ) -> Result<OidcFederationStart, FederationError> {
+        self.start_oidc_state(
+            provider_id,
+            discovery,
+            browser_binding_seed,
+            now,
+            Some(OidcLinkIntent::new(self.config.tenant.tenant_id, user_id, session_id)),
+        )
+        .await
+    }
+
     pub async fn start_oidc_with_metadata(
         &self,
         provider_id: String,
         discovery: Option<oidc::OidcProviderMetadata>,
         browser_binding_seed: &[u8; 32],
         now: Timestamp,
+    ) -> Result<OidcFederationStart, FederationError> {
+        self.start_oidc_state(provider_id, discovery, browser_binding_seed, now, None)
+            .await
+    }
+
+    async fn start_oidc_state(
+        &self,
+        provider_id: String,
+        discovery: Option<oidc::OidcProviderMetadata>,
+        browser_binding_seed: &[u8; 32],
+        now: Timestamp,
+        link_intent: Option<OidcLinkIntent>,
     ) -> Result<OidcFederationStart, FederationError> {
         let state = random_urlsafe_token();
         let stored = OidcFederationState {
@@ -225,6 +282,7 @@ where
             )),
             provider_id: Some(provider_id),
             discovery,
+            link_intent,
             nonce: random_urlsafe_token(),
             pkce_verifier: random_urlsafe_token(),
             created_at: now.as_second(),
@@ -374,6 +432,36 @@ where
         let account = self.resolve(identity, false).await?;
         self.create_session(account, "oidc".to_owned(), source_ip, upstream)
             .await
+    }
+
+    pub async fn link_oidc(
+        &self,
+        identity: VerifiedExternalIdentity,
+        intent: &OidcLinkIntent,
+        user_id: crate::UserId,
+        session_id: &str,
+    ) -> Result<(), FederationError> {
+        if !intent.matches(self.config.tenant.tenant_id, user_id, session_id) {
+            return Err(FederationError::InvalidState);
+        }
+        if identity.provider_type != "oidc" {
+            return Err(FederationError::LoginFailed);
+        }
+        self.accounts
+            .link_authenticated(NewFederationLink {
+                tenant_id: self.config.tenant.tenant_id,
+                user_id,
+                provider_type: identity.provider_type,
+                provider_id: identity.provider_id,
+                subject: identity.subject,
+                email: identity.email.unwrap_or_default(),
+                claims: identity.claims,
+            })
+            .await
+            .map_err(|error| match error {
+                RepositoryError::Conflict => FederationError::LinkConflict,
+                other => FederationError::Account(other),
+            })
     }
 
     pub async fn revoke_oidc(
@@ -563,6 +651,14 @@ where
 
 // Fixed-size tenant and seed inputs keep this domain-separated digest unambiguous.
 // Only identity derives it; HTTP transports the borrowed seed, never a request digest.
+fn link_session_digest(tenant_id: crate::TenantId, session_id: &str) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"NazoAuth/federation/link-session/v1\0");
+    hasher.update(tenant_id.as_uuid().as_bytes());
+    hasher.update(session_id.as_bytes());
+    *hasher.finalize().as_bytes()
+}
+
 fn browser_binding_hash(tenant_id: crate::TenantId, seed: &[u8; 32]) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"NazoAuth/federation/browser-binding/v1\0");

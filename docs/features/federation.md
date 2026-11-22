@@ -300,10 +300,25 @@ Upstream identity proof is not repeated at this gate.
 Successful federation login creates the normal HTTPOnly server-side session.
 The session `amr` contains the federation method and `federated`.
 
-Current users can inspect and remove their own external identity links through:
+Current users can inspect, explicitly bind and remove their own external identity links through:
 
 - `GET /auth/me/federation/links`
+- `POST /auth/me/federation/links/{provider_id}/start` (normal authenticated OIDC link start)
 - `DELETE /auth/me/federation/links/{link_id}`
+
+OIDC linking starts with a fresh, fully authenticated local session and the
+existing CSRF token (header or form field). The RP reuses the configured
+provider, OIDC authorization-code/PKCE/nonce, browser binding, single-use
+state and checked upstream subject. The consumed link state also binds the
+initiating local user and session. The callback requires that exact active
+session and a recent credential-management authentication, then inserts the
+tenant-scoped subject or returns a conflict if another user owns it.
+Successful binding does not rotate the local login session, create a user
+or infer identity from matching email. An ID Token with no verified email
+may be linked by a recently authenticated user. A new link and required
+`external_identity_linked` audit event commit atomically on PostgreSQL and D1;
+a repeated binding to the same user is idempotent. This is an ordinary
+production account feature, not an OIDF-specific admission path.
 
 The link list uses a tenant/user-scoped metadata projection without loading raw
 provider claims. Unlink keeps the complete deleted-link result for its existing
