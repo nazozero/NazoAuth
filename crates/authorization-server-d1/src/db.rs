@@ -390,11 +390,7 @@ impl Database {
             let mut query = transaction
                 .prepare_cached(&statement.sql)
                 .map_err(|_| DbError::Unavailable)?;
-            let names = query
-                .column_names()
-                .into_iter()
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
+            let names = query.column_names().map(str::to_owned).collect::<Vec<_>>();
             let params = statement
                 .params
                 .iter()

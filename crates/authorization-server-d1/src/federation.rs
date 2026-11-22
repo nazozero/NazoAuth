@@ -10,8 +10,8 @@ use nazo_identity::{
     UserRole,
     ports::{
         FederationLinkRepositoryPort, FederationLinkSummary, FederationLogin,
-        FederationLoginRepositoryPort, FederationStatePort, NewFederatedIdentity, RepositoryError,
-        RepositoryFuture,
+        FederationLoginRepositoryPort, FederationStatePort, NewFederatedIdentity,
+        NewFederationLink, RepositoryError, RepositoryFuture,
     },
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -110,6 +110,57 @@ impl FederationLinkRepositoryPort for D1Provider {
 }
 
 impl FederationLoginRepositoryPort for D1Provider {
+    fn link_authenticated(&self, link: NewFederationLink) -> RepositoryFuture<'_, ()> {
+        Box::pin(async move {
+            self.require_tenant(link.tenant_id.as_uuid())?;
+            let id = Uuid::new_v4();
+            let event = Uuid::new_v4();
+            let mut results = self.database.batch(vec![
+                Statement::new(format!(
+                    "INSERT INTO nazo_federation_links(tenant_id,id,user_id,provider_type,provider_id,subject,email,claims,created_at,updated_at)
+                     VALUES (?1,?3,?2,?4,?5,?6,?7,?8,{NOW},{NOW})
+                     ON CONFLICT(tenant_id,provider_type,provider_id,subject) DO NOTHING"
+                ), vec![json!(link.tenant_id),json!(link.user_id),json!(id),
+                    json!(link.provider_type),json!(link.provider_id),json!(link.subject),
+                    json!(link.email),json!(encode(&link.claims)?)]),
+                Statement::new(format!(
+                    "INSERT INTO nazo_audit(tenant_id,event_id,event_type,category,occurred_at,payload)
+                     SELECT ?1,?4,'external_identity_linked','identity_lifecycle',{NOW},
+                        json_object('schema_version','nazo.audit.v1',
+                            'event_category','identity_lifecycle','tenant_id',?1,
+                            'user_id',?2,'provider_type',provider_type,'provider_id',provider_id)
+                     FROM nazo_federation_links WHERE tenant_id=?1 AND id=?3 AND user_id=?2"
+                ), vec![json!(link.tenant_id),json!(link.user_id),json!(id),json!(event)]),
+                Statement::new(
+                    "SELECT CASE WHEN
+                        (EXISTS(SELECT 1 FROM nazo_federation_links WHERE tenant_id=?1 AND id=?2))
+                        = (EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?1 AND event_id=?3 AND event_type='external_identity_linked'))
+                     THEN 1 ELSE json('federation link audit atomicity failure') END AS checked",
+                    vec![json!(link.tenant_id),json!(id),json!(event)],
+                ),
+                Statement::new(
+                    "SELECT user_id FROM nazo_federation_links
+                     WHERE tenant_id=?1 AND provider_type=?2 AND provider_id=?3 AND subject=?4",
+                    vec![json!(link.tenant_id),json!(link.provider_type),json!(link.provider_id),json!(link.subject)],
+                ),
+            ]).await?;
+            let row = results
+                .pop()
+                .ok_or(RepositoryError::Unavailable)?
+                .rows
+                .into_iter()
+                .next();
+            match row
+                .as_ref()
+                .and_then(|record| record.get("user_id"))
+                .and_then(Value::as_str)
+            {
+                Some(owner) if owner == link.user_id.as_uuid().to_string() => Ok(()),
+                Some(_) | None => Err(RepositoryError::Conflict),
+            }
+        })
+    }
+
     fn resolve_existing<'a>(
         &'a self,
         login: &'a FederationLogin,

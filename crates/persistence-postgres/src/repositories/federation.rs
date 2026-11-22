@@ -107,6 +107,73 @@ impl FederationRepository {
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
+    /// Bind only the verified external subject; the database's existing unique
+    /// tenant/provider/subject key is the ownership authority.
+    pub async fn link_authenticated(&self, link: NewFederationLink) -> Result<(), RepositoryError> {
+        let connection = get_conn(&self.pool)
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
+        let result = guard
+            .connection()
+            .transaction::<_, Error, _>(async |connection| {
+                let inserted = diesel::insert_into(external_identity_links::table)
+                    .values((
+                        external_identity_links::tenant_id.eq(link.tenant_id.as_uuid()),
+                        external_identity_links::user_id.eq(link.user_id.as_uuid()),
+                        external_identity_links::provider_type.eq(&link.provider_type),
+                        external_identity_links::provider_id.eq(&link.provider_id),
+                        external_identity_links::subject.eq(&link.subject),
+                        external_identity_links::email.eq(&link.email),
+                        external_identity_links::claims.eq(&link.claims),
+                    ))
+                    .on_conflict_do_nothing()
+                    .returning(external_identity_links::id)
+                    .get_result::<uuid::Uuid>(connection)
+                    .await
+                    .optional()?;
+                if inserted.is_some() {
+                    super::audit_ledger::append_fresh_security_audit_on_connection(
+                        connection,
+                        &nazo_persistence::SecurityAuditEvent {
+                            event_id: uuid::Uuid::now_v7(),
+                            event_type: "external_identity_linked".into(),
+                            event_category: "identity_lifecycle".into(),
+                            occurred_at: jiff::Timestamp::now(),
+                            payload: serde_json::json!({
+                                "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                                "event_category": "identity_lifecycle",
+                                "tenant_id": link.tenant_id.as_uuid(),
+                                "user_id": link.user_id.as_uuid(),
+                                "provider_type": &link.provider_type,
+                                "provider_id": &link.provider_id,
+                            }),
+                        },
+                    )
+                    .await?;
+                    Ok(true)
+                } else {
+                    // Only a genuine insert conflict needs an ownership read.
+                    let owner = external_identity_links::table
+                        .filter(external_identity_links::tenant_id.eq(link.tenant_id.as_uuid()))
+                        .filter(external_identity_links::provider_type.eq(&link.provider_type))
+                        .filter(external_identity_links::provider_id.eq(&link.provider_id))
+                        .filter(external_identity_links::subject.eq(&link.subject))
+                        .select(external_identity_links::user_id)
+                        .first::<uuid::Uuid>(connection)
+                        .await
+                        .optional()?;
+                    Ok(owner == Some(link.user_id.as_uuid()))
+                }
+            })
+            .await;
+        guard.return_to_pool();
+        match result.map_err(map_error)? {
+            true => Ok(()),
+            false => Err(RepositoryError::Conflict),
+        }
+    }
+
     pub async fn resolve_existing(
         &self,
         login: &FederationLogin,
@@ -293,6 +360,13 @@ impl nazo_identity::ports::FederationLoginRepositoryPort for FederationRepositor
         identity: NewFederatedIdentity,
     ) -> nazo_identity::ports::RepositoryFuture<'_, PublicAccount> {
         Box::pin(async move { FederationRepository::create_federated(self, identity).await })
+    }
+
+    fn link_authenticated(
+        &self,
+        link: NewFederationLink,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, ()> {
+        Box::pin(async move { FederationRepository::link_authenticated(self, link).await })
     }
 }
 fn map_error(error: Error) -> RepositoryError {

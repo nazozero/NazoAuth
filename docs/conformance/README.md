@@ -40,6 +40,20 @@ identifies the artifact tested.
 Maintained commands and evidence formats belong to the controller's
 [OIDF guide](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/oidf.md).
 
+## OIDC Relying Party regression
+
+The controller owns the official RP Basic, Configuration and Back-Channel Logout
+plans. Its [RP guide](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/oidf-rp.md)
+describes the independent production server, normal account binding precondition,
+28 module executions and recovery. The server remains an ordinary black-box
+target. Setup uses public authentication and link APIs; it does not seed identity
+links or add conformance-specific routes to the server.
+
+The controller records the exact server and controller source revisions, binary
+digest and original Suite outcomes. Application session assertions supplement
+those outcomes. A Suite `SKIPPED` result remains a skip, and project acceptance
+does not imply a new formal OIDF certification.
+
 ## Public OIDF regression
 
 [NazoAuth v0.3.5 release results](https://github.com/nazozero/NazoAuth/releases/tag/v0.3.5)

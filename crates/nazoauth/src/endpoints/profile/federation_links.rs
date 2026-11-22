@@ -53,10 +53,28 @@ pub async fn unlink_my_federation_link(
     }
     // link_id 来自路径参数，但后续删除仍必须叠加当前 user_id 约束。
     let link_id = path;
-    let user = match sessions.current_session_or_login_required(req).await {
-        Ok(session) => session.user,
-        Err(response) => return response,
+    let current = match sessions.current_session(req).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return sessions.login_required_response(),
+        Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
     };
+    if !nazo_identity::session::recent_credential_management_authentication(
+        current.auth_time,
+        &current.amr,
+        current.user.account.mfa_enabled,
+        jiff::Timestamp::now().as_second(),
+    ) || !current
+        .amr
+        .iter()
+        .any(|method| matches!(method.as_str(), "pwd" | "passkey"))
+    {
+        return oauth_error(
+            StatusCode::PRECONDITION_REQUIRED,
+            "reauthentication_required",
+            "Unlinking an external identity requires recent password or passkey authentication.",
+        );
+    }
+    let user = current.user.principal;
     match federation.unlink(&user, link_id).await {
         Ok(Some(_)) => {}
         Ok(None) => {

@@ -103,13 +103,15 @@ signing algorithm. The validated endpoints are bound to that browser's callback
 state. Discovery is limited to the configured issuer. See
 [OpenID Connect Discovery §4](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig).
 
-Discovered endpoints must use HTTPS. Native validates the actual DNS answers
-when opening a connection and reuses admitted TLS connections. IP literals
-receive the same check against private and special-use networks. Worker
-requires each server-side origin, including any distinct JWKS or UserInfo origin,
-in the existing outbound allowlist. TLS validation and the response size limit
-apply to all discovery exchanges, and redirects are rejected. Use static
-configuration for trusted private upstreams on Native.
+Discovered endpoints must use HTTPS. The configured issuer origin has the
+operator's explicit trust, so Native supports private enterprise issuers and
+same-origin discovery endpoints through its configured transport. Metadata-selected
+origins that differ by host, scheme or port use the public-network transport:
+Native validates the actual DNS answers when opening a connection and reuses
+admitted TLS connections. IP literals receive the same check against private and
+special-use networks. Worker requires every server-side origin, including the
+issuer and any distinct JWKS or UserInfo origin, in its outbound allowlist. TLS
+validation, response limits and the no-redirect policy apply to both paths.
 
 ### Back-Channel Logout
 
@@ -241,8 +243,9 @@ NazoAuth access tokens, session credentials, or long-lived local privileges.
 Social adapters normalize a provider subject from `openid`, `unionid`, or a
 configured subject claim. A verified email claim may be used as a contact and
 provisioning attribute, but email is not the external identity root. Providers
-without email can only authenticate an already linked external identity; they do
-not auto-provision or auto-link local accounts.
+without email authenticate an already linked external identity. An authenticated
+local user can create that link through the account-binding endpoint below;
+email is never required to bind a verified provider subject.
 
 This is not an OpenID Federation trust-chain implementation. The service does
 not expose `/.well-known/openid-federation` or implement Federation entity
@@ -300,17 +303,37 @@ Upstream identity proof is not repeated at this gate.
 Successful federation login creates the normal HTTPOnly server-side session.
 The session `amr` contains the federation method and `federated`.
 
-Current users can inspect and remove their own external identity links through:
+Current users can inspect, explicitly bind and remove their own external identity links through:
 
 - `GET /auth/me/federation/links`
+- `POST /auth/me/federation/links/{provider_id}/start` (authenticated OIDC or OAuth2 social link start)
 - `DELETE /auth/me/federation/links/{link_id}`
+
+Linking starts with a fresh, fully authenticated local session and the
+existing CSRF token (header or form field). The RP reuses the configured
+provider's authorization-code flow, PKCE, browser binding, single-use state
+and checked upstream subject. OIDC also validates its existing nonce and ID Token;
+social providers use their existing token and UserInfo adapter. The consumed link state also binds the
+initiating local user and session. The callback requires that exact active
+session and a recent credential-management authentication, then inserts the
+tenant-scoped subject or returns a conflict if another user owns it.
+Successful binding does not rotate the local login session, create a user
+or infer identity from matching email. A verified OIDC or social subject needs
+no email claim when linked by a recently authenticated user. A new link and required
+`external_identity_linked` audit event commit atomically on PostgreSQL and D1;
+a repeated binding to the same user is idempotent. This is an ordinary
+production account feature.
 
 The link list uses a tenant/user-scoped metadata projection without loading raw
 provider claims. Unlink keeps the complete deleted-link result for its existing
 audit contract. Unlink operations are scoped by the
-current session user, require the same configured cookie/header CSRF token check
-as other profile writes before account/link lookup, and emit
-`external_identity_unlinked` audit events.
+current session user and require a valid cookie/header CSRF token before
+account/link lookup. A password or Passkey authentication completed
+within five minutes is required, including interactive MFA for accounts that
+require it. A federated-only session must first authenticate with a local
+credential; users without a usable password can enroll and sign in with a
+Passkey before unlinking. Successful removal emits
+`external_identity_unlinked` in the same transaction.
 
 Local session state remains the NazoAuth fact source. External provider logout
 failures do not mark remote logout as complete; local `/auth/logout` and OIDC

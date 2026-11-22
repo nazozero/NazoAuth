@@ -15,6 +15,9 @@ const redirect = 'https://client.example/callback';
 const password = 'Worker-integration-password-206';
 const email = 'worker-test@example.com';
 const registrationInitialAccessToken = randomBytes(32).toString('base64url');
+const federationOrigin = 'https://federation.example';
+const federationKey = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const federationJwk = { ...federationKey.publicKey.export({ format: 'jwk' }), kid: 'worker-upstream', alg: 'RS256', use: 'sig' };
 const configuration = {
   tenant: {
     tenant_id: '00000000-0000-0000-0000-000000000001',
@@ -166,6 +169,16 @@ before(async () => {
     NAZO_SIGNING_KEY: input.signing_key_base64, NAZO_CLIENT_SECRET_PEPPER: input.client_secret_pepper,
     NAZO_DUMMY_PASSWORD_HASH: provisioned.dummy_password_hash,
     NAZO_DCR_INITIAL_ACCESS_TOKEN: registrationInitialAccessToken,
+    NAZO_SERVICE_SECRETS: JSON.stringify({ federation_provider_configs: ['oidc', 'social'].map(provider => ({
+      provider_id: provider, enabled: true, display_name: provider,
+      adapter_type: provider === 'oidc' ? 'oidc' : 'oauth2_social',
+      issuer: federationOrigin, client_id: 'worker-rp', client_secret: 'worker-rp-secret',
+      redirect_uri: `${issuer}/auth/federation/${provider}/callback`,
+      authorization_endpoint: `${federationOrigin}/authorize`, token_endpoint: `${federationOrigin}/token`,
+      ...(provider === 'oidc' ? { jwks_url: `${federationOrigin}/jwks`, scopes: 'openid' }
+        : { provider_kind: 'custom', userinfo_endpoint: `${federationOrigin}/userinfo`, subject_claim: 'sub' }),
+    })) }),
+    NAZO_TEST_FEDERATION_JWKS: JSON.stringify({ keys: [federationJwk] }),
   };
   options = {
     host: '127.0.0.1', port,
@@ -210,6 +223,99 @@ async function login() {
   const cookies = response.headers.getSetCookie();
   assert.equal(cookies.length, 2, 'session and CSRF cookies must remain separate');
   return { cookie: cookies.map((value) => value.split(';')[0]).join('; '), csrf: body.csrf_token };
+}
+
+async function startFederation(provider, session) {
+  const response = session
+    ? await postForm(`/auth/me/federation/links/${provider}/start`, { csrf_token: session.csrf }, {
+      cookie: session.cookie, origin: 'https://client.example',
+    })
+    : await request(`/auth/federation/${provider}/start`);
+  assert.equal(response.status, 302, await response.clone().text());
+  const authorization = new URL(response.headers.get('location'));
+  assert.equal(authorization.origin, federationOrigin);
+  assert.equal(authorization.searchParams.get('code_challenge_method'), 'S256');
+  const binding = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  assert.match(binding, /^nazo_federation_binding=/);
+  return { authorization, binding, cookie: [session?.cookie, binding].filter(Boolean).join('; ') };
+}
+
+function federationCallback(provider, started, subject, cookie = started.cookie) {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = { iss: federationOrigin, sub: subject, aud: 'worker-rp', iat: now, exp: now + 300,
+    nonce: started.authorization.searchParams.get('nonce') };
+  const input = [{ alg: 'RS256', kid: federationJwk.kid, typ: 'JWT' }, payload]
+    .map(value => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.');
+  const token = `${input}.${sign('RSA-SHA256', Buffer.from(input), federationKey.privateKey).toString('base64url')}`;
+  const query = form({ state: started.authorization.searchParams.get('state'), code: 'worker-upstream-code' });
+  return request(`/auth/federation/${provider}/callback?${query}`, { headers: {
+    cookie,
+    'x-nazo-test-federation': JSON.stringify({ id_token: token, sub: subject,
+      challenge: started.authorization.searchParams.get('code_challenge') }),
+  } });
+}
+
+for (const provider of ['oidc', 'social']) {
+  test(`${provider} linking preserves the Worker session and supports login and unlink without email`, async () => {
+    const session = await login();
+    const auth = { cookie: session.cookie };
+    const me = await expectJson(await request('/auth/me', { headers: auth }));
+    const subject = `worker-${provider}-${randomUUID()}`;
+    const sessions = async () => (await database.prepare(
+      "SELECT key,value,version,expires_at FROM nazo_state WHERE kind='session' ORDER BY key",
+    ).all()).results;
+    const before = await sessions();
+    const started = await startFederation(provider, session);
+    const linked = await federationCallback(provider, started, subject);
+    assert.deepEqual(await expectJson(linked), { linked: true, provider_id: provider });
+    assert.deepEqual(linked.headers.getSetCookie(), []);
+    assert.deepEqual(await sessions(), before, 'linking must neither create nor rotate a session');
+    assert.equal((await expectJson(await request('/auth/me', { headers: auth }))).id, me.id);
+    await expectJson(await federationCallback(provider, started, subject), 400);
+    const list = await expectJson(await request('/auth/me/federation/links', { headers: auth }));
+    assert.equal(list.total, 1);
+    assert.equal(list.items[0].subject, subject);
+    assert.equal(list.items[0].email, '');
+    assert.equal(list.items[0].last_login_at, null);
+    const remove = `/auth/me/federation/links/${list.items[0].id}`;
+    await expectJson(await request(remove, { method: 'DELETE', headers: auth }), 400);
+
+    const external = await federationCallback(provider, await startFederation(provider), subject);
+    const externalBody = await expectJson(external);
+    const externalCookie = external.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    assert.equal((await expectJson(await request('/auth/me', { headers: { cookie: externalCookie } }))).id, me.id);
+    await expectJson(await request(remove, { method: 'DELETE', headers: {
+      cookie: externalCookie, 'x-csrf-token': externalBody.csrf_token,
+    } }), 428);
+    const unlinked = await request(remove, { method: 'DELETE', headers: { ...auth, 'x-csrf-token': session.csrf } });
+    assert.equal(unlinked.status, 204, await unlinked.clone().text());
+    assert.equal((await expectJson(await request('/auth/me/federation/links', { headers: auth }))).total, 0);
+    await expectJson(await federationCallback(provider, await startFederation(provider), subject), 401);
+  });
+
+  test(`${provider} linking requires CSRF and the original active Worker session`, async () => {
+    const session = await login();
+    const start = `/auth/me/federation/links/${provider}/start`;
+    await expectJson(await postForm(start, {}, { cookie: session.cookie }), 400);
+    const csrfCookie = session.cookie.split('; ').find(value => value.startsWith('nazo_oauth_csrf='));
+    await expectJson(await postForm(start, { csrf_token: session.csrf }, { cookie: csrfCookie }), 401);
+    await expectJson(await postForm(start, { csrf_token: session.csrf }, {
+      cookie: session.cookie, 'x-nazo-test-clock-ms': String(Date.now() + 301_000),
+    }), 428);
+
+    const started = await startFederation(provider, session);
+    const other = await login();
+    const subject = `rejected-${provider}-${randomUUID()}`;
+    await expectJson(await federationCallback(provider, started, subject, `${other.cookie}; ${started.binding}`), 400);
+    await expectJson(await federationCallback(provider, started, subject), 400);
+    const revoked = await startFederation(provider, session);
+    await expectJson(await request('/auth/logout', { method: 'POST', headers: {
+      cookie: session.cookie, 'x-csrf-token': session.csrf,
+    } }));
+    await expectJson(await federationCallback(provider, revoked, subject), 401);
+    const list = await expectJson(await request('/auth/me/federation/links', { headers: { cookie: other.cookie } }));
+    assert.equal(list.total, 0);
+  });
 }
 
 test('R2 avatar storage reads a D1 avatar and replaces and deletes R2 versions', async () => {

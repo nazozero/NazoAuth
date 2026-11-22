@@ -5,6 +5,37 @@ import Worker from './worker/shim.mjs';
 export default {
   async fetch(request, env, context) {
     const invoke = (bindings) => new Worker(context, bindings).fetch(request);
+    const federation = request.headers.get('x-nazo-test-federation');
+    if (federation !== null) {
+      // Only the upstream transport is simulated. The real WASM RP validates
+      // the signed proof and commits the link/session through the real D1 host.
+      const proof = JSON.parse(federation);
+      const configuration = JSON.parse(env.NAZO_CONFIG);
+      configuration.services = { ...configuration.services, outbound_origins: ['https://federation.example'] };
+      const systemFetch = globalThis.fetch;
+      globalThis.fetch = async (input, init) => {
+        const outbound = new Request(input, init);
+        const url = new URL(outbound.url);
+        if (url.origin !== 'https://federation.example') return systemFetch(input, init);
+        if (url.pathname === '/token') {
+          const form = new URLSearchParams(await outbound.text());
+          const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(form.get('code_verifier'))));
+          const challenge = btoa(String.fromCharCode(...digest)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+          if (outbound.method !== 'POST' || form.get('code') !== 'worker-upstream-code' || challenge !== proof.challenge) {
+            throw new Error('Worker RP did not redeem the authorized code and PKCE verifier');
+          }
+          return Response.json({ id_token: proof.id_token, access_token: 'worker-upstream-token', token_type: 'Bearer' });
+        }
+        if (url.pathname === '/jwks') return Response.json(JSON.parse(env.NAZO_TEST_FEDERATION_JWKS));
+        if (url.pathname === '/userinfo') return Response.json({ sub: proof.sub });
+        throw new Error(`Unexpected federation fixture endpoint ${url.pathname}`);
+      };
+      try {
+        return await invoke({ ...env, NAZO_CONFIG: JSON.stringify(configuration) });
+      } finally {
+        globalThis.fetch = systemFetch;
+      }
+    }
     const clock = request.headers.get('x-nazo-test-clock-ms');
     if (clock !== null) {
       const SystemDate = Date;

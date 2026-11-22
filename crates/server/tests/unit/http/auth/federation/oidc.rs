@@ -184,7 +184,7 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
         fetch_oidc_jwks(
             &super::super::federation_http_client().unwrap(),
             &provider.jwks_url,
-            provider.discovery
+            &provider
         )
         .await
         .expect("keys array should be accepted"),
@@ -201,7 +201,7 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
         fetch_oidc_jwks(
             &super::super::federation_http_client().unwrap(),
             &provider.jwks_url,
-            provider.discovery
+            &provider
         )
         .await
         .is_err(),
@@ -233,7 +233,7 @@ async fn userinfo_uses_bearer_authorization_and_requires_a_subject() {
     ] {
         let (endpoint, request) = one_shot_json_server("200 OK", body).await;
         assert_eq!(
-            fetch_oidc_userinfo(&client, &endpoint, &token, false)
+            fetch_oidc_userinfo(&client, &endpoint, &token, &provider())
                 .await
                 .is_ok(),
             expected_success
@@ -293,28 +293,77 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
         let mut provider = provider();
         provider.jwks_url = endpoint;
         assert_eq!(
-            fetch_oidc_jwks(
-                config.client.as_ref(),
-                &provider.jwks_url,
-                provider.discovery
-            )
-            .await
-            .unwrap(),
+            fetch_oidc_jwks(config.client.as_ref(), &provider.jwks_url, &provider)
+                .await
+                .unwrap(),
             json!({"keys": []})
         );
         let shared_config = config.clone();
         assert_eq!(
-            fetch_oidc_jwks(
-                shared_config.client.as_ref(),
-                &provider.jwks_url,
-                provider.discovery
-            )
-            .await
-            .unwrap(),
+            fetch_oidc_jwks(shared_config.client.as_ref(), &provider.jwks_url, &provider)
+                .await
+                .unwrap(),
             json!({"keys": []})
         );
         server.await.unwrap();
     })
     .await
     .expect("shared federation client should reuse its established connection");
+}
+
+#[actix_web::test]
+async fn discovery_trusts_only_the_configured_issuer_origin() {
+    struct ConfiguredIssuer;
+    impl nazoauth::capabilities::FederationHttpClient for ConfiguredIssuer {
+        fn send(
+            &self,
+            request: http::Request<bytes::Bytes>,
+            limit: usize,
+        ) -> nazoauth::test_support::endpoints::auth::federation::FederationHttpFuture<'_> {
+            assert_eq!(request.uri().host(), Some("127.0.0.1"));
+            assert_eq!(request.uri().scheme_str(), Some("https"));
+            assert_eq!(request.uri().port_u16().unwrap_or(443), 443);
+            assert_eq!(limit, super::super::MAX_FEDERATION_PROVIDER_RESPONSE_BYTES);
+            let body = if request.uri().path().ends_with("openid-configuration") {
+                json!({
+                    "issuer": "https://127.0.0.1/enterprise",
+                    "authorization_endpoint": "https://127.0.0.1/authorize",
+                    "token_endpoint": "https://127.0.0.1/token",
+                    "jwks_uri": "https://127.0.0.1/keys",
+                    "response_types_supported": ["code"],
+                    "subject_types_supported": ["public"],
+                    "id_token_signing_alg_values_supported": ["RS256"],
+                })
+            } else {
+                json!({ "keys": [] })
+            };
+            Box::pin(async move { Ok(http::Response::new(bytes::Bytes::from(body.to_string()))) })
+        }
+    }
+    let mut provider = provider();
+    provider.discovery = true;
+    provider.issuer = "https://127.0.0.1/enterprise".into();
+    let metadata = discover_oidc(&ConfiguredIssuer, &provider).await.unwrap();
+    assert_eq!(metadata.issuer, provider.issuer);
+    for endpoint in ["https://127.0.0.1/keys", "https://127.0.0.1:443/keys"] {
+        assert_eq!(
+            fetch_oidc_jwks(&ConfiguredIssuer, endpoint, &provider)
+                .await
+                .unwrap(),
+            json!({"keys": []})
+        );
+    }
+    // Metadata is not authority to extend operator trust to another host,
+    // port or scheme. This fixture deliberately has no discovered transport.
+    for endpoint in [
+        "https://127.0.0.1:8443/keys",
+        "https://localhost/keys",
+        "http://127.0.0.1/keys",
+    ] {
+        assert!(
+            fetch_oidc_jwks(&ConfiguredIssuer, endpoint, &provider)
+                .await
+                .is_err()
+        );
+    }
 }

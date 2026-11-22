@@ -33,6 +33,8 @@ fn legacy_state_deserializes_without_inventing_a_browser_binding() {
     .unwrap();
     assert!(oidc.browser_binding_hash.is_none());
     assert!(social.browser_binding_hash.is_none());
+    assert!(oidc.link_intent.is_none());
+    assert!(social.link_intent.is_none());
     assert!(
         serde_json::to_value(oidc)
             .unwrap()
@@ -55,6 +57,7 @@ struct CompletionPorts {
     sessions: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     audit: std::sync::Arc<std::sync::Mutex<Vec<FederationAuditEvent>>>,
     claim_addresses: std::sync::Arc<std::sync::Mutex<Vec<usize>>>,
+    links: std::sync::Arc<std::sync::Mutex<Vec<NewFederationLink>>>,
 }
 
 impl FederationLoginRepositoryPort for CompletionPorts {
@@ -88,6 +91,13 @@ impl FederationLoginRepositoryPort for CompletionPorts {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let account = self.account.clone();
         Box::pin(async move { Ok(account) })
+    }
+    fn link_authenticated(
+        &self,
+        link: NewFederationLink,
+    ) -> crate::ports::RepositoryFuture<'_, ()> {
+        self.links.lock().unwrap().push(link);
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -200,6 +210,7 @@ fn completion_ports(existing: bool, active: bool) -> std::sync::Arc<CompletionPo
         sessions: Default::default(),
         audit: Default::default(),
         claim_addresses: Default::default(),
+        links: Default::default(),
     })
 }
 
@@ -284,4 +295,65 @@ async fn every_account_result_passes_active_gate_before_link_audit_or_session_cr
         Err(FederationError::InactiveExistingLink)
     ));
     assert_eq!(ports.sessions.load(std::sync::atomic::Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn explicit_link_reuses_verified_subject_without_creating_a_session() {
+    let ports = completion_ports(true, true);
+    let service = FederationService::from_port(
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        FederationServiceConfig {
+            tenant: TenantContext::default_system(),
+            state_ttl_seconds: 300,
+            saml_replay_ttl_seconds: 300,
+            session_ttl_seconds: 300,
+            pending_mfa_session_ttl_seconds: 120,
+        },
+    );
+    let user = ports.account.user_id();
+    let tenant = TenantContext::default_system().tenant_id;
+    let intent = FederationLinkIntent::new(tenant, user, "session-a");
+    assert!(!intent.matches(tenant, user, "session-b"));
+    assert!(!intent.matches(
+        crate::TenantId::new(uuid::Uuid::from_u128(2)).unwrap(),
+        user,
+        "session-a"
+    ));
+    let other = crate::UserId::new(uuid::Uuid::from_u128(2)).unwrap();
+    for provider_type in ["oidc", "oauth2_social"] {
+        let mut identity = completion_identity();
+        identity.provider_type = provider_type.into();
+        identity.email = None;
+        for (session_user, session_id) in [(user, "session-b"), (other, "session-a")] {
+            assert!(matches!(
+                service
+                    .link_verified(identity.clone(), &intent, session_user, session_id)
+                    .await,
+                Err(FederationError::InvalidState)
+            ));
+        }
+        let claims_address = identity.claims["payload"].as_str().unwrap().as_ptr();
+        service
+            .link_verified(identity, &intent, user, "session-a")
+            .await
+            .unwrap();
+        let links = ports.links.lock().unwrap();
+        let stored = links.last().unwrap();
+        assert_eq!(stored.user_id, user);
+        assert_eq!(stored.provider_type, provider_type);
+        assert_eq!(stored.subject, "subject");
+        assert_eq!(stored.email, "");
+        assert_eq!(
+            stored.claims["payload"].as_str().unwrap().as_ptr(),
+            claims_address
+        );
+    }
+    let links = ports.links.lock().unwrap();
+    assert_eq!(links.len(), 2);
+    assert_eq!(ports.sessions.load(std::sync::atomic::Ordering::Relaxed), 0);
+    assert_eq!(ports.creates.load(std::sync::atomic::Ordering::Relaxed), 0);
 }

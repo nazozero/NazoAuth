@@ -103,6 +103,7 @@ async fn social_federation_state_is_consumed_once_and_keeps_provider_binding() {
     let store = AuthenticationStore::new(&connection);
     let state = format!("social-{}", uuid::Uuid::now_v7());
     let value = nazo_identity::federation::SocialFederationState {
+        link_intent: None,
         browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: "github".to_owned(),
         pkce_verifier: "verifier".to_owned(),
