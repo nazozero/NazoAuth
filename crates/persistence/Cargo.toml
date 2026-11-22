@@ -1,11 +1,12 @@
 [package]
 name = "nazo-persistence"
+description = "Storage contracts for NazoAuth protocol and identity state"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true

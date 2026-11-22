@@ -1,11 +1,12 @@
 [package]
 name = "nazo-scim-events"
+description = "SCIM security event types and delivery contracts for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 jiff.workspace = true

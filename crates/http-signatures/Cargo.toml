@@ -1,11 +1,12 @@
 [package]
 name = "nazo-http-signatures"
+description = "HTTP Message Signatures and content digest verification for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 base64.workspace = true

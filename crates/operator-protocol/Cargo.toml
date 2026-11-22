@@ -1,10 +1,12 @@
 [package]
 name = "nazo-operator-protocol"
+description = "Signed operator requests, receipts and recovery contracts for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 base64.workspace = true

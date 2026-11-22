@@ -1,11 +1,12 @@
 [package]
 name = "nazo-auth"
+description = "OAuth 2.0 and OpenID Connect authorization policies and protocol types for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true

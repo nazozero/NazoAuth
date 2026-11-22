@@ -5,7 +5,8 @@ resolver = "3"
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
+publish = false
 edition = "2024"
 rust-version = "1.100.0"
 license = "AGPL-3.0-or-later"
@@ -13,8 +14,8 @@ repository = "https://github.com/nazozero/NazoAuth"
 
 [workspace.dependencies]
 nazo-auth.path = "crates/authorization-server-core"
-# The packaged operator protocol needs a registry version for its crypto dependency.
-nazo-crypto = { version = "0.4.0", path = "crates/crypto", default-features = false }
+nazo-crypto.path = "crates/crypto"
+nazo-crypto.default-features = false
 nazo-digital-credentials.path = "crates/digital-credentials"
 nazo-http-actix.path = "crates/http-actix"
 nazo-http-signatures.path = "crates/http-signatures"
@@ -35,7 +36,8 @@ nazo-resource-server.path = "crates/resource-server"
 nazo-runtime-modules.path = "crates/runtime-capabilities"
 nazo-scim-events.path = "crates/scim-events"
 nazo-valkey.path = "crates/state-store-valkey"
-nazoauth = { path = "crates/nazoauth", default-features = false }
+nazoauth.path = "crates/nazoauth"
+nazoauth.default-features = false
 
 actix-files = "0.7.5"
 actix-tls = "3.6.1"

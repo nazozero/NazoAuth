@@ -2718,7 +2718,7 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
 name = "nazo-auth"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2745,7 +2745,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-crypto"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aes-gcm",
  "aes-kw",
@@ -2783,7 +2783,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-digital-credentials"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.23.1",
  "flate2",
@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-http-actix"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "actix-web",
  "bytes",
@@ -2812,7 +2812,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-http-signatures"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -2831,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-http-worker"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bytes",
  "flate2",
@@ -2847,7 +2847,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-identity"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -2877,7 +2877,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-key-management"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2940,7 +2940,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-oauth-server"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-oauth-server-d1"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-oauth-server-object-store"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aws-credential-types",
  "aws-sigv4",
@@ -3048,7 +3048,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-oauth-server-postgres"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nazo-auth",
  "nazo-identity",
@@ -3065,7 +3065,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-oauth-server-valkey"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nazo-auth",
  "nazo-identity",
@@ -3076,7 +3076,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-openid4vci"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "bytes",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-openid4vp"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "ciborium",
@@ -3112,7 +3112,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-operator-protocol"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.23.1",
  "hex",
@@ -3148,7 +3148,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-persistence"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3170,7 +3170,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-postgres"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3218,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-resource-server"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -3238,7 +3238,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-runtime-modules"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "arc-swap",
  "futures-util",
@@ -3251,7 +3251,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-scim-events"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "jiff 1.0.2",
  "serde",
@@ -3263,7 +3263,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-server"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "actix-files",
  "actix-tls",
@@ -3354,7 +3354,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-server-worker"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3392,7 +3392,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-valkey"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "fred",
@@ -3411,7 +3411,7 @@ dependencies = [
 
 [[package]]
 name = "nazoauth"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "arc-swap",

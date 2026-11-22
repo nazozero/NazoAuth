@@ -1,11 +1,12 @@
 [package]
 name = "nazo-openid4vci"
+description = "OpenID for Verifiable Credential Issuance services for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 blake3.workspace = true

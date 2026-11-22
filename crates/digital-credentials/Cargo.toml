@@ -1,11 +1,12 @@
 [package]
 name = "nazo-digital-credentials"
+description = "Digital credential claims, status and trust policy for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 base64.workspace = true

@@ -1,10 +1,12 @@
 [package]
 name = "nazo-crypto"
+description = "Cryptographic primitives and key operations for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [features]
 default = []

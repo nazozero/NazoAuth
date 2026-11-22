@@ -1,11 +1,12 @@
 [package]
 name = "nazoauth"
+description = "Framework-neutral OAuth 2.0 and OpenID Connect server library for Rust hosts"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [features]
 default = ["deployment-control"]

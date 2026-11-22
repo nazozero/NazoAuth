@@ -1,11 +1,12 @@
 [package]
 name = "nazo-key-management"
+description = "Signing key management, rotation and JWKS support for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [features]
 test-support = []

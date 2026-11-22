@@ -1,11 +1,12 @@
 [package]
 name = "nazo-runtime-modules"
+description = "Runtime protocol capabilities and lifecycle state for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 arc-swap.workspace = true
