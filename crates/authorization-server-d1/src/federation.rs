@@ -129,8 +129,7 @@ impl FederationLoginRepositoryPort for D1Provider {
             let mut results = self.database.batch(vec![
                 Statement::new(format!(
                     "INSERT INTO nazo_federation_links(tenant_id,id,user_id,provider_type,provider_id,subject,email,claims,created_at,updated_at,last_login_at)
-                     SELECT ?1,?3,?2,?4,?5,?6,?7,?8,{NOW},{NOW},{NOW}
-                     WHERE EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND active=1)
+                     VALUES (?1,?3,?2,?4,?5,?6,?7,?8,{NOW},{NOW},{NOW})
                      ON CONFLICT(tenant_id,provider_type,provider_id,subject) DO NOTHING"
                 ), params[..8].to_vec()),
                 Statement::new(format!(
