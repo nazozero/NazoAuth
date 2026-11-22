@@ -1894,15 +1894,22 @@ async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
         Err(RepositoryError::Conflict)
     ));
     let mut connection = get_conn(&pool).await.unwrap();
-    let count: (i64,) = diesel::sql_query(
-        "SELECT count(*) AS count FROM external_identity_links WHERE provider_id=$1",
+    let counts = diesel::sql_query(
+        "SELECT
+           (SELECT count(*) FROM external_identity_links WHERE provider_id=$1) AS count,
+           (SELECT count(*) FROM security_audit_events WHERE event_type='external_identity_linked'
+            AND payload->>'provider_id'=$1) AS audit_count",
     )
     .bind::<Text, _>(&provider)
     .get_result::<AuditCount>(&mut connection)
     .await
-    .map(|record| (record.count,))
     .unwrap();
-    assert_eq!(count.0, 1);
+    assert_eq!((counts.count, counts.audit_count), (1, 1));
+    diesel::sql_query("DELETE FROM external_identity_links WHERE provider_id=$1")
+        .bind::<Text, _>(&provider)
+        .execute(&mut connection)
+        .await
+        .unwrap();
     drop(connection);
     cleanup(&pool, original).await;
     cleanup(&pool, other).await;
@@ -1912,6 +1919,8 @@ async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
 struct AuditCount {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     count: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    audit_count: i64,
 }
 
 #[tokio::test]

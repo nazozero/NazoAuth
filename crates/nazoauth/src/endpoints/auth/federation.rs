@@ -363,6 +363,10 @@ pub async fn federation_provider_callback(
     .await
 }
 
+// This transport boundary combines the existing callback inputs with the
+// optional already-authorized local account-linking session. A single-use
+// context object would add indirection but no new invariant.
+#[allow(clippy::too_many_arguments)]
 pub async fn federation_provider_callback_with_sessions(
     limiter: &AuthRequestLimiter,
     client_ip: &ClientIpConfig,

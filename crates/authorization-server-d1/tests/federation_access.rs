@@ -134,6 +134,34 @@ fn authenticated_oidc_link_is_idempotent_and_never_moves_another_users_subject()
 }
 
 #[test]
+fn external_link_and_required_audit_roll_back_together_when_audit_is_suppressed() {
+    let (db, provider) = block_on(fixture());
+    db.execute_sql(
+        "CREATE TRIGGER suppress_link_audit BEFORE INSERT ON nazo_audit
+         WHEN NEW.event_type='external_identity_linked'
+         BEGIN SELECT RAISE(IGNORE); END;",
+    )
+    .unwrap();
+    let link = NewFederationLink {
+        tenant_id: tenant(),
+        user_id: user(),
+        provider_type: "oidc".into(),
+        provider_id: "link-audit-required".into(),
+        subject: "validated-subject".into(),
+        email: String::new(),
+        claims: json!({"sub":"validated-subject"}),
+    };
+    assert!(block_on(
+        FederationLoginRepositoryPort::link_authenticated(&provider, link)
+    ).is_err());
+    assert_sql(
+        &db,
+        "NOT EXISTS(SELECT 1 FROM nazo_federation_links WHERE provider_id='link-audit-required')
+         AND NOT EXISTS(SELECT 1 FROM nazo_audit WHERE event_type='external_identity_linked')",
+    );
+}
+
+#[test]
 fn concurrent_federation_creation_has_one_account_link_and_required_event() {
     let (db, provider) = block_on(fixture());
     let provider = Arc::new(provider);

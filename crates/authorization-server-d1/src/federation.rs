@@ -151,7 +151,7 @@ impl FederationLoginRepositoryPort for D1Provider {
                 Statement::new(
                     "SELECT user_id FROM nazo_federation_links
                      WHERE tenant_id=?1 AND provider_type=?4 AND provider_id=?5 AND subject=?6",
-                    params,
+                    params[..6].to_vec(),
                 ),
             ]).await?;
             let row = results
