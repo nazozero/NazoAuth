@@ -10,8 +10,8 @@ use nazo_identity::{
     UserRole,
     ports::{
         FederationLinkRepositoryPort, FederationLinkSummary, FederationLogin,
-        FederationLoginRepositoryPort, FederationStatePort, NewFederatedIdentity, NewFederationLink,
-        RepositoryError, RepositoryFuture,
+        FederationLoginRepositoryPort, FederationStatePort, NewFederatedIdentity,
+        NewFederationLink, RepositoryError, RepositoryFuture,
     },
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -160,7 +160,12 @@ impl FederationLoginRepositoryPort for D1Provider {
                 .rows
                 .into_iter()
                 .next();
-            match row.and_then(|record| record.get("user_id").and_then(Value::as_str).map(str::to_owned)) {
+            match row.and_then(|record| {
+                record
+                    .get("user_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            }) {
                 Some(owner) if owner == link.user_id.as_uuid().to_string() => Ok(()),
                 Some(_) | None => Err(RepositoryError::Conflict),
             }

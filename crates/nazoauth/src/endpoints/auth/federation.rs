@@ -1,5 +1,6 @@
 //! External OIDC, OAuth2-social, and trusted SAML-gateway federation.
 
+use crate::endpoints::sessions::SessionProfileHandles;
 use crate::http::Request as HttpRequest;
 use crate::http::Response as HttpResponse;
 use crate::http::{
@@ -10,7 +11,6 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http::StatusCode;
 use jiff::Timestamp;
 use nazo_identity::{FederationError, LoginSuccess, VerifiedExternalIdentity};
-use crate::endpoints::sessions::SessionProfileHandles;
 use serde::{Serialize, de::DeserializeOwned};
 
 use serde_json::json;
@@ -172,7 +172,9 @@ pub async fn federation_provider_link_start(
         return crate::http::csrf_error();
     }
     if !nazo_identity::session::recent_credential_management_authentication(
-        current.auth_time, &current.amr, current.user.account.mfa_enabled,
+        current.auth_time,
+        &current.amr,
+        current.user.account.mfa_enabled,
         Timestamp::now().as_second(),
     ) {
         return oauth_error(
@@ -181,22 +183,30 @@ pub async fn federation_provider_link_start(
             "Linking an external identity requires recent account authentication.",
         );
     }
-    let Some(session_id) = crate::http::cookie_value(
-        req,
-        sessions.http_config().session_cookie_name(),
-    ) else {
+    let Some(session_id) =
+        crate::http::cookie_value(req, sessions.http_config().session_cookie_name())
+    else {
         return sessions.login_required_response();
     };
     if !matches!(
-        config.providers.enabled_provider(&provider_id).map(|provider| &provider.adapter),
+        config
+            .providers
+            .enabled_provider(&provider_id)
+            .map(|provider| &provider.adapter),
         Some(ExternalLoginProviderAdapter::Oidc(_))
     ) {
         return unknown_provider_response();
     }
     federation_provider_start_inner(
-        limiter, client_ip, service, config, req, provider_id,
+        limiter,
+        client_ip,
+        service,
+        config,
+        req,
+        provider_id,
         Some((current.user.user_id(), session_id.as_str())),
-    ).await
+    )
+    .await
 }
 
 async fn federation_provider_start_inner(
@@ -349,7 +359,8 @@ pub async fn federation_provider_callback(
 ) -> HttpResponse {
     federation_provider_callback_with_sessions(
         limiter, client_ip, service, config, None, req, path, query,
-    ).await
+    )
+    .await
 }
 
 pub async fn federation_provider_callback_with_sessions(
@@ -575,7 +586,9 @@ async fn oidc_callback_with_link_session(
             Err(error) => return crate::endpoints::sessions::session_lookup_error_response(error),
         };
         if !nazo_identity::session::recent_credential_management_authentication(
-            current.auth_time, &current.amr, current.user.account.mfa_enabled,
+            current.auth_time,
+            &current.amr,
+            current.user.account.mfa_enabled,
             Timestamp::now().as_second(),
         ) {
             return oauth_error(
@@ -584,10 +597,9 @@ async fn oidc_callback_with_link_session(
                 "Linking an external identity requires recent account authentication.",
             );
         }
-        let Some(session_id) = crate::http::cookie_value(
-            req,
-            sessions.http_config().session_cookie_name(),
-        ) else {
+        let Some(session_id) =
+            crate::http::cookie_value(req, sessions.http_config().session_cookie_name())
+        else {
             return sessions.login_required_response();
         };
         return match service

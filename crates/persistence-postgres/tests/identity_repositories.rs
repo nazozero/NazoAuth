@@ -1861,7 +1861,6 @@ async fn passkey_authentication_commits_observed_protocol_state_with_compare_and
     cleanup(&pool, user_id).await;
 }
 
-
 #[tokio::test]
 async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
     let Some((pool, tenant, original)) = database_fixture().await else {
@@ -1882,19 +1881,27 @@ async fn authenticated_oidc_link_is_atomic_idempotent_and_uniquely_owned() {
         email: String::new(),
         claims: json!({"sub":"external-subject"}),
     };
-    repository.link_authenticated(make_link(original)).await.unwrap();
-    repository.link_authenticated(make_link(original)).await.unwrap();
+    repository
+        .link_authenticated(make_link(original))
+        .await
+        .unwrap();
+    repository
+        .link_authenticated(make_link(original))
+        .await
+        .unwrap();
     assert!(matches!(
         repository.link_authenticated(make_link(other)).await,
         Err(RepositoryError::Conflict)
     ));
     let mut connection = get_conn(&pool).await.unwrap();
     let count: (i64,) = diesel::sql_query(
-        "SELECT count(*) AS count FROM external_identity_links WHERE provider_id=$1"
+        "SELECT count(*) AS count FROM external_identity_links WHERE provider_id=$1",
     )
     .bind::<Text, _>(&provider)
-    .get_result::<AuditCount>(&mut connection).await
-    .map(|record| (record.count,)).unwrap();
+    .get_result::<AuditCount>(&mut connection)
+    .await
+    .map(|record| (record.count,))
+    .unwrap();
     assert_eq!(count.0, 1);
     drop(connection);
     cleanup(&pool, original).await;

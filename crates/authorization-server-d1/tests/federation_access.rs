@@ -11,7 +11,8 @@ use nazo_identity::{
         AccessRequestRepositoryPort, DeliveryConsume, DeliveryPublish, DeliveryRecord,
         DeliveryStage, DeliveryStageResult, DeliveryStorePort, FederationLinkRepositoryPort,
         FederationLogin, FederationLoginRepositoryPort, FederationStatePort, NewFederatedIdentity,
-        NewFederationLink, NewUser, PasswordHashInput, RegistrationAccountRepositoryPort, RepositoryError,
+        NewFederationLink, NewUser, PasswordHashInput, RegistrationAccountRepositoryPort,
+        RepositoryError,
     },
 };
 use nazo_oauth_server_d1::{D1Provider, Database};
@@ -94,7 +95,6 @@ fn oidc() -> OidcFederationState {
     }
 }
 
-
 #[test]
 fn authenticated_oidc_link_is_idempotent_and_never_moves_another_users_subject() {
     let (db, provider) = block_on(fixture());
@@ -109,14 +109,19 @@ fn authenticated_oidc_link_is_idempotent_and_never_moves_another_users_subject()
         claims: json!({"sub":"shared-subject"}),
     };
     block_on(FederationLoginRepositoryPort::link_authenticated(
-        &provider, make_link(user()),
-    )).unwrap();
+        &provider,
+        make_link(user()),
+    ))
+    .unwrap();
     block_on(FederationLoginRepositoryPort::link_authenticated(
-        &provider, make_link(user()),
-    )).unwrap();
+        &provider,
+        make_link(user()),
+    ))
+    .unwrap();
     assert!(matches!(
         block_on(FederationLoginRepositoryPort::link_authenticated(
-            &provider, make_link(other),
+            &provider,
+            make_link(other),
         )),
         Err(RepositoryError::Conflict)
     ));

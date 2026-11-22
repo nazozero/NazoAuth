@@ -97,7 +97,6 @@ impl FederationLoginRepositoryPort for CompletionPorts {
         self.links.lock().unwrap().push(link);
         Box::pin(async { Ok(()) })
     }
-
 }
 
 impl FederationStatePort for CompletionPorts {
@@ -295,17 +294,22 @@ async fn every_account_result_passes_active_gate_before_link_audit_or_session_cr
     ));
     assert_eq!(ports.sessions.load(std::sync::atomic::Ordering::Relaxed), 0);
 }
- 
 
 #[tokio::test]
 async fn explicit_oidc_link_reuses_verified_subject_without_creating_a_session() {
     let ports = completion_ports(true, true);
     let service = FederationService::from_port(
-        ports.clone(), ports.clone(), ports.clone(), ports.clone(), ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
+        ports.clone(),
         FederationServiceConfig {
             tenant: TenantContext::default_system(),
-            state_ttl_seconds: 300, saml_replay_ttl_seconds: 300,
-            session_ttl_seconds: 300, pending_mfa_session_ttl_seconds: 120,
+            state_ttl_seconds: 300,
+            saml_replay_ttl_seconds: 300,
+            session_ttl_seconds: 300,
+            pending_mfa_session_ttl_seconds: 120,
         },
     );
     let user = ports.account.user_id();
@@ -314,16 +318,22 @@ async fn explicit_oidc_link_reuses_verified_subject_without_creating_a_session()
     assert!(!intent.matches(tenant, user, "session-b"));
     assert!(!intent.matches(
         crate::TenantId::new(uuid::Uuid::from_u128(2)).unwrap(),
-        user, "session-a"
+        user,
+        "session-a"
     ));
     let mut identity = completion_identity();
     identity.email = None;
     assert!(matches!(
-        service.link_oidc(identity.clone(), &intent, user, "session-b").await,
+        service
+            .link_oidc(identity.clone(), &intent, user, "session-b")
+            .await,
         Err(FederationError::InvalidState)
     ));
     assert!(ports.links.lock().unwrap().is_empty());
-    service.link_oidc(identity, &intent, user, "session-a").await.unwrap();
+    service
+        .link_oidc(identity, &intent, user, "session-a")
+        .await
+        .unwrap();
     let links = ports.links.lock().unwrap();
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].user_id, user);

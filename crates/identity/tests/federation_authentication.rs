@@ -56,13 +56,9 @@ impl FederationLoginRepositoryPort for Ports {
     fn create_federated(&self, _: NewFederatedIdentity) -> RepositoryFuture<'_, PublicAccount> {
         panic!("existing link must not provision an account")
     }
-    fn link_authenticated(
-        &self,
-        _: NewFederationLink,
-    ) -> RepositoryFuture<'_, ()> {
+    fn link_authenticated(&self, _: NewFederationLink) -> RepositoryFuture<'_, ()> {
         panic!("unexpected link mutation in login-only fixture")
     }
-
 }
 impl FederationStatePort for Ports {
     fn store_oidc<'a>(

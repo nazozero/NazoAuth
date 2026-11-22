@@ -250,7 +250,11 @@ where
             discovery,
             browser_binding_seed,
             now,
-            Some(OidcLinkIntent::new(self.config.tenant.tenant_id, user_id, session_id)),
+            Some(OidcLinkIntent::new(
+                self.config.tenant.tenant_id,
+                user_id,
+                session_id,
+            )),
         )
         .await
     }
