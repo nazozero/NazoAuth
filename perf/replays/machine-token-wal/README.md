@@ -158,7 +158,16 @@ checks and issuance of a token for introspection precede the counted window.
 
 For the separate wrk2 capacity search, run `bash policy-wrk2.sh N machine 12000`
 or `bash policy-wrk2.sh N introspect 15000`. Select `K` or `H` for the peers.
-The third argument supplies the first rate to try. The fixture's original
+The third argument supplies the first rate to try. The comparison requests
+RS256 with 2,048-bit RSA. Hydra's built-in RSA generator uses 4,096 bits.
+To match the signing workload, the fixture creates a 2,048-bit key outside
+the measurement window, imports it using Hydra's key management API and checks
+the key ID of a token issued by Hydra. Hydra introspection uses its private
+administration port. NazoAuth and Keycloak authenticate the introspecting
+client. [Hydra key generation](https://github.com/ory/hydra/blob/v26.2.0/jwk/generate.go)
+and [key management API](https://github.com/ory/hydra/blob/v26.2.0/jwk/handler.go).
+
+The fixture's original
 search uses 15 threads and 960 connections, 24-second screens and three
 36-second confirmations. Each response is checked. The wrk2 percentiles are
 corrected for coordinated omission and its timings include shutdown. Keep these
@@ -172,4 +181,6 @@ The k6 full-window counters support exact success-to-audit comparisons.
 For a common lower-concurrency profile, export `BENCH_WRK2_CONNECTIONS=64`
 for each service. The replay retains the 15 generator threads and the same
 response, throughput and resource checks, and writes the separate profile to
-`results/wrk2-c64`. Compare products at the same number of connections.
+`results/wrk2-c64`. Set the value to 15 for one connection per generator
+thread. Each profile writes a separate set of results. Compare products at
+the same number of connections.
