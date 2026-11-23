@@ -103,8 +103,8 @@ impl std::fmt::Debug for IssuedAccessToken {
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenIssuanceMode {
     Fresh,
-    /// Machine grant with no owned writes. The caller queues issuance telemetry
-    /// after the repository accepts the current client epoch.
+    /// Machine grant with no owned writes. The caller waits for its required
+    /// audit commit after the repository accepts the current client epoch.
     ClientCredentials,
     SingleUse {
         grant_key: String,

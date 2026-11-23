@@ -144,7 +144,7 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | `identity_lifecycle` | `external_identity_linked`, `external_identity_relink_denied`, `external_identity_unlinked` |
 | `provisioning` | `scim_token_denied`, `scim_token_used` |
 | `session_lifecycle` | `oidc_logout` |
-| `token_lifecycle` | `client_credentials_token_issued`, `token_issued`, `token_revoked`, `refresh_family_security_revoked` |
+| `token_lifecycle` | `token_issued`, `token_revoked`, `refresh_family_security_revoked` |
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 
@@ -169,14 +169,16 @@ durable event. A rotation carries `rotated_from_id` and `refresh_token_family_id
 `token_issued`. Fresh issuance creates no per-token ownership row and commits
 Required audit with the principal-version check and any refresh-family mutation.
 
-Successful PostgreSQL `client_credentials` issuance through the native server
-queues `client_credentials_token_issued` in the `token_lifecycle` category after
-the final client activity and epoch check. Its fields include the public client
-ID, issuance ID, token JTI, subject hash, scope and audience. The response can
-succeed during an audit outage. Queue pressure, anchor health and process exit
-can cause telemetry loss under the existing queue policy. The D1 server and
-hosts without a persistent telemetry queue use transactional `token_issued`
-for this grant.
+A successful machine-token issuance preserves Required security evidence.
+The public client ID, issuance ID, token JTI, subject hash, scope and audience
+correlate an issued credential with incident timelines and revocation decisions.
+The native PostgreSQL host submits `token_issued` to the existing Required
+batch writer after the final client activity and epoch check. The response
+releases the token after the writer acknowledges the durable commit. Queue
+saturation, a closed writer or an unconfirmed append prevent a successful
+response. An audit row may precede a failed response delivery after commit.
+Required external-anchor mode still checks exporter health before signing.
+The D1 host keeps the Required event in its issuance transaction.
 
 The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
 writes `tenant_directory_{operation}` with category `tenant_directory`; the

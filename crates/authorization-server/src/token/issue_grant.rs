@@ -3,6 +3,15 @@ use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{CommitTokenIssuanceResult, GrantType, TokenIssuanceMode};
 use uuid::Uuid;
 
+fn issuance_audit_unavailable() -> OAuthEndpointError {
+    OAuthEndpointError::token(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "令牌签发审计存储不可用.",
+        false,
+    )
+}
+
 #[allow(clippy::needless_return)]
 pub async fn issue_token_response(
     context: &TokenIssuanceContext<'_>,
@@ -290,28 +299,21 @@ pub async fn issue_token_response(
         }
     };
     let issuance_id = Uuid::now_v7();
-    // These paths write their refresh state and required audit in the same
-    // commit. Earlier authorization-code consumption or Native SSO persistence
-    // still requires the full preflight before those independent effects.
-    let background_audit = matches!(mode, TokenIssuanceMode::ClientCredentials);
-    if !background_audit {
-        let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
-            && issue.authorization_code_hash.is_none()
-            && issue.native_sso.is_none();
-        let audit_ready = if commit_owned {
-            context.security_audit.ensure_transactional_ready().await
-        } else {
-            context.security_audit.ensure_storage().await
-        };
-        if let Err(error) = audit_ready {
-            tracing::error!(%error, "token issuance audit preflight failed");
-            return Err(OAuthEndpointError::token(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "令牌签发审计存储不可用.",
-                false,
-            ));
-        }
+    // For a stateless machine grant, the required batch append is the writer
+    // check. Fresh state changes carry their own required audit. Earlier code
+    // consumption or Native SSO persistence still requires the full preflight.
+    let batched_audit = matches!(mode, TokenIssuanceMode::ClientCredentials);
+    let commit_owned = (matches!(mode, TokenIssuanceMode::Fresh) || batched_audit)
+        && issue.authorization_code_hash.is_none()
+        && issue.native_sso.is_none();
+    let audit_ready = if commit_owned {
+        context.security_audit.ensure_transactional_ready().await
+    } else {
+        context.security_audit.ensure_storage().await
+    };
+    if let Err(error) = audit_ready {
+        tracing::error!(%error, "token issuance audit preflight failed");
+        return Err(issuance_audit_unavailable());
     }
     let now = Timestamp::now();
     if client.client_type == "public"
@@ -681,10 +683,13 @@ pub async fn issue_token_response(
         _ => None,
     };
     let subject_hash = blake3_hex(&issue.subject);
-    let issuance_telemetry = background_audit.then(|| {
+    let required_audit = batched_audit.then(|| {
         crate::ports::audit::audit_fields([
             ("client_id", json!(client.client_id)),
             ("issuance_id", json!(issuance_id)),
+            ("user_id", json!(None::<Uuid>)),
+            ("refresh_token_family_id", json!(None::<Uuid>)),
+            ("rotated_from_id", json!(None::<Uuid>)),
             ("access_token_jti", json!(issued_access_token.jti)),
             ("subject_hash", json!(subject_hash)),
             ("scope", json!(scope)),
@@ -715,10 +720,14 @@ pub async fn issue_token_response(
         .await
     {
         Ok(CommitTokenIssuanceResult::Committed) => {
-            if let Some(fields) = issuance_telemetry {
-                context
+            if let Some(fields) = required_audit
+                && let Err(error) = context
                     .security_audit
-                    .record("client_credentials_token_issued", fields);
+                    .record_required("token_issued", fields)
+                    .await
+            {
+                tracing::error!(%error, "required machine token audit append failed");
+                return Err(issuance_audit_unavailable());
             }
             // Busy and Missing replays consult the durable receipt. Discard
             // the consumed payload; a cleanup failure cannot undo issuance.

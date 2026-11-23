@@ -705,34 +705,35 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
     #[derive(diesel::QueryableByName)]
     struct IssuanceEvent {
         #[diesel(sql_type = SqlText)]
-        event_type: String,
+        jti: String,
     }
-    tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            let events = diesel::sql_query(
-                "SELECT event_type FROM security_audit_events
-                 WHERE payload->>'tenant_id' = $1 AND payload->>'client_id' = 'fresh-client'
-                   AND event_type IN ('token_issued', 'client_credentials_token_issued')",
-            )
-            .bind::<SqlText, _>(fixture.tenant.tenant_id.as_uuid().to_string())
-            .load::<IssuanceEvent>(&mut connection)
-            .await
-            .expect("issuance events should query");
-            assert!(
-                events
-                    .iter()
-                    .all(|event| event.event_type == "client_credentials_token_issued"),
-                "machine issuance must use the background telemetry path"
-            );
-            if events.len() >= 2 {
-                assert_eq!(events.len(), 2);
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
+    let mut recorded = diesel::sql_query(
+        "SELECT payload->>'access_token_jti' AS jti FROM security_audit_events
+         WHERE payload->>'tenant_id' = $1 AND payload->>'client_id' = 'fresh-client'
+           AND event_type = 'token_issued'",
+    )
+    .bind::<SqlText, _>(fixture.tenant.tenant_id.as_uuid().to_string())
+    .load::<IssuanceEvent>(&mut connection)
     .await
-    .expect("both machine issuance events should reach the ledger");
+    .expect("durable issuance events should be immediately visible")
+    .into_iter()
+    .map(|event| event.jti)
+    .collect::<Vec<_>>();
+    let mut issued = [&first, &second].map(|body| {
+        let token = body["access_token"].as_str().unwrap();
+        let payload = token.split('.').nth(1).unwrap();
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .unwrap();
+        let claims: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+        claims["jti"].as_str().unwrap().to_owned()
+    });
+    recorded.sort_unstable();
+    issued.sort_unstable();
+    assert_eq!(
+        recorded, issued,
+        "each successful token has a committed audit event"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

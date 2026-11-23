@@ -1025,7 +1025,7 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
             .await
             .unwrap(),
         CommitTokenIssuanceResult::Committed,
-        "a valid machine issuance is accepted while audit append is unavailable"
+        "the stateless principal fence does not own the application audit append"
     );
     assert_no_writes(&database_url, machine.issuance_id).await;
 

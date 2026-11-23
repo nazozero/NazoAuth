@@ -140,7 +140,7 @@ pub async fn token_client_credentials_with_service(
         Ok(issue_request) => issue_request,
         Err(response) => return Err(response),
     };
-    let mode = if issuance.security_audit.supports_background_persistence() {
+    let mode = if issuance.security_audit.supports_batched_required_audit() {
         TokenIssuanceMode::ClientCredentials
     } else {
         TokenIssuanceMode::Fresh

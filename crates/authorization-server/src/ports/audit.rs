@@ -16,8 +16,9 @@ pub trait SecurityAudit: Send + Sync {
         self.ensure_storage()
     }
 
-    /// Whether telemetry recorded here is queued for background persistence.
-    fn supports_background_persistence(&self) -> bool {
+    /// Whether required records can share a batch with other requests.
+    /// A successful `record_required` always acknowledges durable persistence.
+    fn supports_batched_required_audit(&self) -> bool {
         false
     }
 

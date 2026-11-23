@@ -305,9 +305,10 @@ the state required for each grant:
   source with an optional replacement. Current AT/RT selections never rebuild
   that immutable contract.
 - `ClientCredentials` rechecks the active client and authenticated epoch after
-  signing, in one PostgreSQL statement. A successful issuance queues
-  `client_credentials_token_issued` telemetry for background persistence.
-  Hosts without a background audit sink use `Fresh`, including the D1 host.
+  signing, in one PostgreSQL statement. The native host then submits the Required
+  `token_issued` event to its batch writer. The response releases the token after
+  the writer acknowledges the database commit. Full queues and writer failures
+  return a service-unavailable response. The D1 host uses transactional `Fresh`.
 - `SingleUse` and `AuthorizationCode` retain a compact receipt under the 32-byte BLAKE3 grant fence,
   with the issued JTI, acceptance deadline and optional refresh family needed
   for replay handling. New receipts do not store user ownership. Grant expiry

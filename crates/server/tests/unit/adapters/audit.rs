@@ -985,7 +985,6 @@ fn audit_event_definitions_pin_required_and_telemetry_classes() {
                 | "ciba_authorization_approved"
                 | "ciba_authorization_denied"
                 | "ciba_authorization_started"
-                | "client_credentials_token_issued"
                 | "device_authorization_approved"
                 | "device_authorization_denied"
                 | "device_authorization_started"
