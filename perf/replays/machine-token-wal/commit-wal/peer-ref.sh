@@ -2,6 +2,8 @@
 set -euo pipefail
 source "$(dirname "$0")/support.sh"
 peer=$1
+scenario=${BENCH_MACHINE_SCENARIO:-machine}
+case "$scenario" in machine|introspect) ;; *) exit 2 ;; esac
 shift
 case "$peer" in
   keycloak) app=$kc; discovery=/realms/api-audit/.well-known/openid-configuration ;;
@@ -25,6 +27,6 @@ for trial in "$@"; do
   fi
   vus=960; seconds=36
   if [[ $rate == 400 ]]; then vus=64; seconds=30; fi
-  (cd ../peer-comparison/bench && BENCH_VUS=$vus bash peer-point.sh "$peer" machine "$rate" 10 "$seconds" "$ROOT/results/$trial.json")
+  (cd ../peer-comparison/bench && BENCH_VUS=$vus bash peer-point.sh "$peer" "$scenario" "$rate" 10 "$seconds" "$ROOT/results/$trial.json")
   jq -c '{whole_success,whole_failed,success_per_second,p95_ms,p99_ms,dropped_whole_trial,outcome}' "$ROOT/results/$trial.json"
 done

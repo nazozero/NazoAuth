@@ -51,7 +51,8 @@ meta = {
         Path("bench/durable-k6.js").read_bytes()
     ).hexdigest(),
     "binaries": {
-        k: cmd("sha256sum", f"out/{k}").split()[0] for k in ("control", "candidate")
+        k: cmd("sha256sum", f"out/{k}").split()[0]
+        for k in (sys.argv[2:] or ["control", "candidate"])
     },
 }
 assert (

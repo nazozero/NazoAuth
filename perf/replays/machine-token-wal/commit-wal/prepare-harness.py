@@ -32,3 +32,18 @@ swap(
     '''lsn >"$out.end-lsn"
 snapshot >"$scratch/count-after"''',
 )
+
+swap("comparison-seal.py", "import json\n", "import json\nimport os\n")
+swap(
+    "comparison-seal.py",
+    "        result.update(whole_success=whole_success",
+    """        expect_audit = {"required": True, "off": False}[os.environ.get("BENCH_ISSUANCE_AUDIT", "required")]
+        expected_rows = whole_success if expect_audit else 0
+        result.update(expected_audit_rows=expected_rows, whole_success=whole_success""",
+)
+swap("comparison-seal.py", "audit_count_difference=signatures-whole_success", "audit_count_difference=signatures-expected_rows")
+swap(
+    "comparison-seal.py",
+    "elif not whole_success or signatures != whole_success:",
+    "elif not whole_success or signatures != expected_rows:",
+)

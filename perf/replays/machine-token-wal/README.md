@@ -70,3 +70,51 @@ The Markdown report compares equal offered loads and retains dropped
 arrivals. Each window's WAL interval starts after fixture validation and
 covers the warm-up. Counting the physical audit relation assumes that this
 fixture is its only audit producer during the window.
+
+## Machine-token success audit
+
+To replay the machine-grant refactor, extract the fixture archive and copy
+the `commit-wal` directory as above. From that directory, run:
+
+```sh
+bash build-machine-policy.sh "$repo" HEAD
+bash setup-fixture.sh
+bash compare-machine-policy.sh \
+  B-2400-1 A-2400-1 N-2400-1 N-2400-2 B-2400-2 A-2400-2 A-2400-3 N-2400-3 B-2400-3
+bash peer-ref.sh keycloak K-2400-1 K-2400-2 K-2400-3
+bash peer-ref.sh hydra H-2400-1 H-2400-2 H-2400-3
+```
+
+`B` runs the previous implementation. `A` uses the revised binary with its
+default audit configuration. `N` uses the same binary with
+`AUDIT_CLIENT_CREDENTIALS_ISSUANCE=false`. Use a new trial label for each
+window. Supply the desired rate as the middle field and rotate the arms
+between rounds. All three share the API-created machine client and NazoAuth
+database. Each peer retains its own database. For audited runs the controller
+matches HTTP successes, committed-event acknowledgements and committed audit
+inserts in flushed WAL. For the explicitly disabled setting it requires zero
+acknowledgements and zero audit inserts, while applying the same load and
+resource checks. Table row locks can generate WAL in either mode.
+
+Use `BENCH_MACHINE_SCENARIO=introspect` with either comparison script to query
+a valid access token prepared through the product API before measurement.
+`policy-peers.sh` accepts `machine` or `introspect` followed by window names
+with prefixes `B`, `A`, `N`, `K` (Keycloak) or `H` (Hydra) to rotate products.
+`metadata.py results/environment.json control revised` records the benchmark
+binary and k6 workload hashes and checks the original PostgreSQL durability settings.
+
+For the optional client-lookup diagnostic, set `BENCH_BUILD_SNAPSHOT_TIMING=1`
+when building, then set `BENCH_REVISED_BINARY=out/diagnostic` for one A or N window.
+Pass the completed window JSON to `snapshot-share.py` with timestamped Docker
+logs on standard input. It retains only aggregates from the measured interval.
+The diagnostic samples one in 32 machine requests and times the full client
+lookup and the interval from that lookup's start through grant completion.
+Use ordinary binaries for the comparative latency and capacity tables.
+
+For the separate wrk2 capacity search, run `bash policy-wrk2.sh N machine 12000`
+or `bash policy-wrk2.sh N introspect 15000`. Select `K` or `H` for the peers.
+The third argument supplies the first rate to try. The fixture's original
+search uses 15 threads and 960 connections, 24-second screens and three
+36-second confirmations. Each response is checked. The wrk2 percentiles are
+corrected for coordinated omission and its timings include shutdown. Keep these
+results separate from the k6 open-arrival measurements and WAL reconciliation.
