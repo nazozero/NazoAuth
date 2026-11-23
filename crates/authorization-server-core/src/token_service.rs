@@ -103,9 +103,6 @@ impl std::fmt::Debug for IssuedAccessToken {
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenIssuanceMode {
     Fresh,
-    /// Machine grant with no owned writes. The caller waits for its required
-    /// audit commit after the repository accepts the current client epoch.
-    ClientCredentials,
     SingleUse {
         grant_key: String,
         grant_expires_at: Timestamp,
@@ -147,7 +144,7 @@ pub struct NativeSsoSourceFence {
     pub device_secret_expires_at: Timestamp,
 }
 
-/// Owned input for the final token-issuance acceptance boundary.
+/// Owned input for the one durable token-issuance commit boundary.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommitTokenIssuance {
     /// When present, must be this issuance root or its checked refresh family.
@@ -169,7 +166,7 @@ pub struct CommitTokenIssuance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommitTokenIssuanceResult {
-    /// Principal state was accepted and any owned changes committed atomically.
+    /// Owned state changes and required audit committed atomically.
     Committed,
     /// A single-use grant key was already committed.
     AlreadyUsed,

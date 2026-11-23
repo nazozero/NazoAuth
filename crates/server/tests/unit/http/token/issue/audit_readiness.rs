@@ -10,9 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 struct CountingSecurityAudit {
     storage_calls: AtomicU64,
     transactional_calls: AtomicU64,
-    required_calls: AtomicU64,
     reject_transactional: bool,
-    reject_required: bool,
 }
 
 impl CountingSecurityAudit {
@@ -50,13 +48,7 @@ impl SecurityAudit for CountingSecurityAudit {
         _: &'a str,
         _: serde_json::Map<String, serde_json::Value>,
     ) -> AuditFuture<'a> {
-        Box::pin(async move {
-            self.required_calls.fetch_add(1, AtomicOrdering::SeqCst);
-            if self.reject_required {
-                anyhow::bail!("required writer did not acknowledge the commit");
-            }
-            Ok(())
-        })
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -152,50 +144,6 @@ async fn commit_owned_fresh_issuance_uses_transactional_readiness() {
         (0, 1),
         "commit-owned Fresh issuance must take the transactional gate once"
     );
-}
-
-#[actix_web::test]
-async fn machine_issuance_requires_audit_acknowledgement_before_returning_a_token() {
-    let Some(state) = issue_state_with_live_database() else {
-        return;
-    };
-    let mut client = client_with_grants(&["client_credentials"]);
-    client.client_id = format!("audit-ack-machine-{}", Uuid::now_v7());
-    insert_issue_client(&state, &client).await;
-    for (reject_transactional, reject_required, expected, appends) in [
-        (true, false, StatusCode::SERVICE_UNAVAILABLE, 0),
-        (false, true, StatusCode::SERVICE_UNAVAILABLE, 1),
-        (false, false, StatusCode::OK, 1),
-    ] {
-        let mut issue = token_issue_without_openid();
-        issue.user_id = None;
-        issue.subject = client.client_id.clone();
-        issue.scopes = vec!["accounts".to_owned()];
-        issue.include_refresh = false;
-        issue.refresh_token_policy = RefreshTokenPolicy::NoRefresh;
-        issue.auth_time = None;
-        issue.amr.clear();
-        let audit = CountingSecurityAudit {
-            reject_transactional,
-            reject_required,
-            ..Default::default()
-        };
-        let response = issue_counted(
-            &state,
-            &client,
-            TokenIssuanceMode::ClientCredentials,
-            issue,
-            state.active_module_snapshot(),
-            &audit,
-            None,
-        )
-        .await;
-        assert_eq!(response.status(), expected);
-        let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
-        assert_eq!(body["access_token"].is_string(), expected == StatusCode::OK);
-        assert_eq!(audit.counts(), (0, 1));
-        assert_eq!(audit.required_calls.load(AtomicOrdering::SeqCst), appends);
-    }
 }
 
 /// New-family state and its required audit commit atomically.

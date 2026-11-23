@@ -42,10 +42,6 @@ impl SecurityAudit for TenantSecurityAudit {
         Box::pin(ensure_transactional_audit_ready())
     }
 
-    fn supports_batched_required_audit(&self) -> bool {
-        true
-    }
-
     fn record(&self, event: &str, fields: serde_json::Map<String, serde_json::Value>) {
         enqueue_event(
             event,
@@ -644,20 +640,19 @@ async fn run_audit_persist_worker(
             };
             match result {
                 Ok(()) => {
-                    tracing::debug!(
-                        target: "audit.persistence",
-                        batch_len,
-                        required,
-                        token_issued = events.iter().filter(|event| event.event_type == "token_issued").count(),
-                        first_event_id = %events[0].event_id,
-                        persistence_status = "durable",
-                        "security audit batch appended"
-                    );
+                    let first_event_id = events[0].event_id;
                     for (event, completion) in events.into_iter().zip(completions) {
                         if let Some(completion) = completion {
                             let _ = completion.send(Ok(event));
                         }
                     }
+                    tracing::debug!(
+                        target: "audit.persistence",
+                        batch_len,
+                        first_event_id = %first_event_id,
+                        persistence_status = "durable",
+                        "security audit batch appended"
+                    );
                     break;
                 }
                 Err(error) => {

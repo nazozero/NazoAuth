@@ -16,12 +16,6 @@ pub trait SecurityAudit: Send + Sync {
         self.ensure_storage()
     }
 
-    /// Whether required records can share a batch with other requests.
-    /// A successful `record_required` always acknowledges durable persistence.
-    fn supports_batched_required_audit(&self) -> bool {
-        false
-    }
-
     fn record(&self, event: &str, fields: serde_json::Map<String, serde_json::Value>);
     fn record_required<'a>(
         &'a self,

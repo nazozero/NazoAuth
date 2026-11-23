@@ -294,8 +294,8 @@ advertisement rules stay in the core.
 
 ## Token Issuance and Security State
 
-Token issuance is accepted through `TokenIssuanceRepository`. Its modes retain
-the state required for each grant:
+Token issuance commits through `TokenIssuanceRepository`. Its two modes retain
+only state required by their semantics:
 
 - `Fresh` creates no `oauth_token_issuances` row. Refresh rotation/family
   changes, a first non-public subject binding when needed, and Required audit
@@ -303,13 +303,8 @@ the state required for each grant:
   through commit, even though it writes no new refresh member. The refresh
   commit enum owns one original contract: new-family creation or an existing
   source with an optional replacement. Current AT/RT selections never rebuild
-  that immutable contract.
-- `ClientCredentials` rechecks the active client and authenticated epoch after
-  signing, in one PostgreSQL statement. The native host then submits the Required
-  `token_issued` event to its batch writer. The response releases the token after
-  the writer acknowledges the database commit. Full queues and writer failures
-  return a service-unavailable response. The D1 host uses transactional `Fresh`.
-- `SingleUse` and `AuthorizationCode` retain a compact receipt under the 32-byte BLAKE3 grant fence,
+  that immutable contract. A client-credentials issuance ordinarily writes only audit.
+- `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
   with the issued JTI, acceptance deadline and optional refresh family needed
   for replay handling. New receipts do not store user ownership. Grant expiry
   is rechecked in the transaction; expiry rolls it back and returns the healthy
