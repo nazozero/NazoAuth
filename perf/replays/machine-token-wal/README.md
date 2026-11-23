@@ -1,5 +1,14 @@
 # Machine access token issuance on a fixed PostgreSQL server
 
+The [machine-grant replay](#machine-token-success-audit) compares the previous
+implementation, the current default with a committed success event, and the
+same binary with that event disabled. It also compares Keycloak and Ory Hydra
+and measures valid-token introspection. The [comparison tables and round-by-round
+measurements](https://github.com/nazozero/NazoAuth/pull/310) include CPU, memory,
+latency, failed requests and missed arrivals.
+
+## Earlier commit-latency experiment
+
 The control and candidate use the same Rust release toolchain, API-provisioned
 client, PostgreSQL process, database, Valkey instance and k6 workload. The
 candidate combines the client fence and audit insert in one SQL statement
@@ -73,6 +82,25 @@ fixture is its only audit producer during the window.
 
 ## Machine-token success audit
 
+In the 2026-11-23 k6 comparison, each service received 2,400 requests/s to
+issue a machine access token. P95 and P99 give the time within which 95% and
+99% of successful requests finished. Each cell is the median of three windows.
+
+| Service and success-event setting | Successful requests/s | P95 (ms) | P99 (ms) | Passing windows |
+| --- | ---: | ---: | ---: | ---: |
+| NazoAuth before the change, durable event | 2,400.0 | 5.391 | 12.756 | 3/3 |
+| NazoAuth revised default, durable event | 2,400.0 | 4.682 | 9.104 | 3/3 |
+| NazoAuth revised, success event disabled | 2,400.0 | 0.796 | 0.922 | 3/3 |
+| Keycloak 26.8.2, realm event storage disabled | 2,400.0 | 1.396 | 1.709 | 3/3 |
+| Ory Hydra 26.2.0 | 0.2 | 4,013.678 | 4,808.042 | 0/3 |
+
+Hydra timed out at this load; its percentiles cover the few successful
+responses. Every success in the revised default windows had a committed
+audit row (331,204 including warm-up). The
+[full results](https://github.com/nazozero/NazoAuth/pull/310) also include a
+common lower load, valid-token introspection, higher offered rates and resource
+observations for each process role.
+
 To replay the machine-grant refactor, extract the fixture archive and copy
 the `commit-wal` directory as above. From that directory, run:
 
@@ -109,7 +137,24 @@ Pass the completed window JSON to `snapshot-share.py` with timestamped Docker
 logs on standard input. It retains only aggregates from the measured interval.
 The diagnostic samples one in 32 machine requests and times the full client
 lookup and the interval from that lookup's start through grant completion.
-Use ordinary binaries for the comparative latency and capacity tables.
+Use the builds without the request-timing probe for the comparative latency
+and capacity tables. To reproduce the lock-only transaction experiment, build
+`f6334de07687dddce1d81db803d896b050cbca9a` first and copy `out/revised` to
+`out/ref-lock`. Then build `864215aac8818235ef5646fb69481821e332ea7e`.
+Use `BENCH_NO_AUDIT_REFERENCE=out/ref-lock` with `compare-machine-policy.sh`
+to run `P` alongside the final builds. The optional client-relation WAL counts
+show how many observed lock transactions committed or aborted.
+
+To render a comparison from a specified set of windows, run:
+
+```sh
+python3 policy-report.py --details results/{B,A,N}-2400-{4,5,6}.json
+```
+
+Select matching builds, scenarios and trial numbers. Capacity uses three
+passing windows at one offered rate. Each k6 window checks all responses and
+missed arrivals, including warm-up. PostgreSQL connection startup, fixture
+checks and issuance of a token for introspection precede the counted window.
 
 For the separate wrk2 capacity search, run `bash policy-wrk2.sh N machine 12000`
 or `bash policy-wrk2.sh N introspect 15000`. Select `K` or `H` for the peers.
