@@ -464,6 +464,7 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
 | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
 | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
 | `modules` | Optional array of constructed capabilities from the module matrix; initializes desired state during provisioning and bounds later runtime enablement |
+| `audit_client_credentials_issuance` | Defaults to `true`. Set to `false` to skip the success event for machine grants. The client version is still checked after signing. |
 | `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
 | `passkey_only` | Restricted interactive route profile with Passkey/MFA and selected OAuth flows; broader administration/service APIs and password routes are excluded. Use the full profile for all adapted routes. |
 | `services` | Non-secret configuration for admitted outbound origins, mTLS, email and digital credentials; fields below |

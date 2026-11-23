@@ -21,6 +21,7 @@ fn configuration() -> WorkerConfiguration {
         cors_allowed_origins: vec![],
         modules: vec![],
         machine_only: false,
+        audit_client_credentials_issuance: None,
         passkey_only: false,
         services: Default::default(),
     }
@@ -358,5 +359,25 @@ fn registration_admission_follows_the_deployment_capabilities() {
             .grant_types
             .unwrap(),
         vec!["client_credentials"]
+    );
+}
+
+#[test]
+fn machine_success_auditing_defaults_on_and_can_be_disabled() {
+    let mut config = configuration();
+    assert!(
+        config
+            .application("p".repeat(32))
+            .unwrap()
+            .protocol
+            .audit_client_credentials_issuance
+    );
+    config.audit_client_credentials_issuance = Some(false);
+    assert!(
+        !config
+            .application("p".repeat(32))
+            .unwrap()
+            .protocol
+            .audit_client_credentials_issuance
     );
 }

@@ -578,15 +578,16 @@ async fn fresh_issuance_rejects_oversized_audit_payload() {
 /// state and refuses the inactive client without any partial write.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_waits_for_client_deactivation_and_rechecks() {
-    check_concurrent_deactivation(true).await;
+    check_concurrent_deactivation(true, true).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn machine_final_check_waits_for_client_deactivation() {
-    check_concurrent_deactivation(false).await;
+    check_concurrent_deactivation(false, true).await;
+    check_concurrent_deactivation(false, false).await;
 }
 
-async fn check_concurrent_deactivation(audited: bool) {
+async fn check_concurrent_deactivation(audited: bool, commit_disable: bool) {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -636,15 +637,19 @@ async fn check_concurrent_deactivation(audited: bool) {
     });
     wait_for_lock_wait_or_task(&mut observer, &application_name, &mut issuer).await;
     coordinator
-        .batch_execute("COMMIT")
+        .batch_execute(if commit_disable { "COMMIT" } else { "ROLLBACK" })
         .await
-        .expect("client deactivation should commit");
+        .expect("competing deactivation should finish");
     assert_eq!(
         issuer
             .await
             .expect("issuance task should join")
-            .expect("issuance should classify a committed deactivation"),
-        CommitTokenIssuanceResult::ClientInactive
+            .expect("issuance should see the resolved client state"),
+        if commit_disable {
+            CommitTokenIssuanceResult::ClientInactive
+        } else {
+            CommitTokenIssuanceResult::Committed
+        }
     );
     assert_no_writes(&database_url, issuance_id).await;
 }
@@ -841,6 +846,15 @@ async fn fresh_issuance_lock_timeout_discards_connection_cleanly() {
 /// connection instead of returning an unknown transaction state to the pool.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
+    check_cancelled_fence(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_a_lock_only_machine_check_releases_its_connection() {
+    check_cancelled_fence(false).await;
+}
+
+async fn check_cancelled_fence(audited: bool) {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -867,8 +881,23 @@ async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
         .await
         .expect("lock observer should connect");
     let issuer_repository = repository.clone();
-    let mut issuer =
-        tokio::spawn(async move { issuer_repository.commit_token_issuance(input).await });
+    let mut issuer = tokio::spawn(async move {
+        if audited {
+            issuer_repository
+                .commit_token_issuance(input)
+                .await
+                .map(|_| ())
+        } else {
+            issuer_repository
+                .machine_client_active(
+                    tenant_id,
+                    input.client_id,
+                    input.principal_state.client_epoch,
+                )
+                .await
+                .map(|_| ())
+        }
+    });
     wait_for_lock_wait_or_task(&mut observer, &application_name, &mut issuer).await;
     issuer.abort();
     assert!(

@@ -175,7 +175,10 @@ even if the caller misses the response. Set the option to `false` when the deplo
 does not need a per-token issuance history for this grant. Both settings recheck
 the authenticated client version after signing. On PostgreSQL the check takes
 a shared row lock, including when auditing is off, so a concurrent deactivation
-that already holds the row lock completes first. The setting applies only to
+that already holds the row lock completes first. With auditing disabled the server
+rolls back its lock-only transaction after the check. This releases the lock
+and increments PostgreSQL's rollback count for an otherwise successful request.
+The setting applies only to
 successful `client_credentials` issuance. Hash chaining, batch signing and
 external delivery run independently in the [anchor worker](audit-anchor.md).
 

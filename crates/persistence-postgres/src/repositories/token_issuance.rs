@@ -541,9 +541,18 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let result = self
                 .pool
                 .read(move |conn| {
-                    Box::pin(super::token_principals::lock_and_recheck(
-                        conn, tenant_id, client_id, epoch, None, None,
-                    ))
+                    Box::pin(async move {
+                        use diesel_async::{AnsiTransactionManager, TransactionManager};
+                        // This transaction owns only a row lock. Once admission is known,
+                        // release it without committing a persistent change.
+                        AnsiTransactionManager::begin_transaction(conn).await?;
+                        let result = super::token_principals::lock_and_recheck(
+                            conn, tenant_id, client_id, epoch, None, None,
+                        )
+                        .await;
+                        AnsiTransactionManager::rollback_transaction(conn).await?;
+                        result
+                    })
                 })
                 .await
                 .map_err(|_| TokenPortError::Unavailable)?

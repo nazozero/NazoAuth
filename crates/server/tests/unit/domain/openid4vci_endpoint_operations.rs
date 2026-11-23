@@ -357,11 +357,12 @@ struct SubjectStateOutage {
 impl TokenRepositoryPort for SubjectStateOutage {
     fn machine_client_active(
         &self,
-        _tenant_id: Uuid,
-        _client_id: Uuid,
-        _epoch: i64,
-    ) -> TokenFuture<'_, bool> {
-        panic!("unexpected machine-client check")
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> nazo_auth::TokenFuture<'_, bool> {
+        self.inner
+            .machine_client_active(tenant_id, client_id, epoch)
     }
 
     fn token_principal_state<'a>(
