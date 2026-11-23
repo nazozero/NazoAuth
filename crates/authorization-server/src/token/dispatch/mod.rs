@@ -243,11 +243,15 @@ impl TokenEndpointHandles {
                 has_basic,
             ));
         };
-        let (mut client, secret_salt, client_epoch) = match authorization_service
+        let (mut client, secret_digest, client_epoch) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
-            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
+            Ok(Some(snapshot)) => (
+                snapshot.client,
+                snapshot.secret_digest,
+                snapshot.client_epoch,
+            ),
             Ok(None) => {
                 return Err(OAuthEndpointError::invalid_client(
                     "客户端不存在或已停用.",
@@ -374,7 +378,7 @@ impl TokenEndpointHandles {
                 &mut client,
                 credentials,
                 ClientAuthenticationContext::AllowPublicNone,
-                secret_salt.as_deref(),
+                secret_digest.as_deref(),
             )
             .await
             {

@@ -422,18 +422,12 @@ impl nazo_auth::AuthorizationRepositoryPort for D1Provider {
         Box::pin(async move {
             self.client_row(client_id)
                 .await?
-                .map(|row| {
+                .map(|mut row| {
                     let client_epoch = row.epoch;
-                    let secret_salt = row
-                        .secret_digest
-                        .as_deref()
-                        .filter(|_| row.active != 0)
-                        .and_then(|digest| digest.strip_prefix("client-secret-v1:"))
-                        .and_then(|value| value.split_once(':'))
-                        .map(|(salt, _)| salt.to_owned());
+                    let secret_digest = row.secret_digest.take().filter(|_| row.active != 0);
                     Ok(nazo_auth::ClientAuthenticationSnapshot {
                         client_epoch,
-                        secret_salt,
+                        secret_digest,
                         client: row.into_domain()?,
                     })
                 })
@@ -460,15 +454,6 @@ impl nazo_auth::AuthorizationRepositoryPort for D1Provider {
                     AuthorizationPortError::Unexpected
                 }
             })
-        })
-    }
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        Box::pin(async move {
-            Ok(self.database.query::<Flag>("SELECT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND active=1 AND secret_digest=?3) AS value", vec![json!(self.tenant_id),json!(client_id),json!(candidate_digest)]).await?.first().is_some_and(|row| row.value != 0))
         })
     }
     fn grant<'a>(

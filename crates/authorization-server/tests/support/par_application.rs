@@ -557,13 +557,10 @@ fn protocol_par_dpop_header_requires_pkce_even_for_confidential_oidc_compatibili
             client.security_policy.allow_confidential_oidc_without_pkce = true;
             let fixture = par_fixture(Ok(Some(client)));
             let salt = app::crypto::random_urlsafe_token();
-            *fixture.ports.client_secret.lock().unwrap() = Some((
-                salt.clone(),
-                app::crypto::client_secret_digest(
-                    "test-secret",
-                    &fixture.config.client_secret_pepper,
-                    &salt,
-                ),
+            *fixture.ports.client_secret.lock().unwrap() = Some(app::crypto::client_secret_digest(
+                "test-secret",
+                &fixture.config.client_secret_pepper,
+                &salt,
             ));
             let mut params = params();
             params.remove("code_challenge");

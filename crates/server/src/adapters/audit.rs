@@ -42,6 +42,10 @@ impl SecurityAudit for TenantSecurityAudit {
         Box::pin(ensure_transactional_audit_ready())
     }
 
+    fn supports_background_persistence(&self) -> bool {
+        true
+    }
+
     fn record(&self, event: &str, fields: serde_json::Map<String, serde_json::Value>) {
         enqueue_event(
             event,
@@ -399,6 +403,11 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         AuditEventClass::Telemetry,
     ),
     ("token_issued", "token_lifecycle", AuditEventClass::Required),
+    (
+        "client_credentials_token_issued",
+        "token_lifecycle",
+        AuditEventClass::Telemetry,
+    ),
     // Deliberate server-side retirement of a refresh family when the
     // (tenant, user, client) active-family cap evicts the oldest live family.
     (

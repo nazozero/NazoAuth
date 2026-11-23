@@ -11,7 +11,7 @@ implements their storage. A structured log line alone is not a durable receipt.
 | --- | --- |
 | `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. Attempted batches retry intact from 100 ms up to 5 s. In Required anchor mode, explicit Telemetry that has never been submitted may instead be discarded before its first append, as specified below. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"` — or `"dropped_required"` when the dropped event belongs to the required evidence class. Queued events can be lost on process exit before persistence. Required-class events emitted through this path additionally log `persistence_status="misrouted_required"` (once per event name per process): they should use `audit_event_required` or a transactional append instead. |
 | `audit_event_required` | Awaits ledger append before logging `persistence_status="durable"` and `event_id`; append failure propagates to the caller. This does not put a separate business mutation in the same transaction. |
-| Transactional repository append | Token issuance, refresh rotation/reuse handling, and tenant directory/resource operations append their owned audit event with the corresponding durable mutation in one database transaction. |
+| Transactional repository append | Stateful token issuance, refresh rotation/reuse handling, and tenant directory/resource operations append their owned audit event with the corresponding durable mutation in one database transaction. |
 | External anchor worker | Exports only committed ledger events through the durable outbox. Receiver acceptance, retry ordering, freshness, and remaining trust limits are specified in [audit anchoring](audit-anchor.md). |
 
 `ensure_audit_storage` checks writer availability and required privileges before
@@ -144,7 +144,7 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | `identity_lifecycle` | `external_identity_linked`, `external_identity_relink_denied`, `external_identity_unlinked` |
 | `provisioning` | `scim_token_denied`, `scim_token_used` |
 | `session_lifecycle` | `oidc_logout` |
-| `token_lifecycle` | `token_issued`, `token_revoked`, `refresh_family_security_revoked` |
+| `token_lifecycle` | `client_credentials_token_issued`, `token_issued`, `token_revoked`, `refresh_family_security_revoked` |
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 
@@ -163,13 +163,22 @@ fact. The transaction owner remains responsible for confirmed commit before succ
 the function neither commits independently nor changes retention deadlines. The principal fence similarly sets the transaction-local lock timeout, then locks and rechecks the client followed by the user in one call; the timeout remains active for the later receipt and family locks.
 
 The [token issuance repository](../../crates/persistence-postgres/src/repositories/token_issuance.rs)
-writes `token_issued` and `refresh_reuse_detected` with its
-issuance/tenant identity. One committed issuance produces exactly one durable
-event: a rotation carries `rotated_from_id` and `refresh_token_family_id` on
-`token_issued` rather than a separate event, so routine flows stay at one
-ledger row per logical operation. Fresh issuance no longer creates a separate
-per-token ownership row; its Required audit remains synchronous with the
-principal-version check and any refresh-family mutation. The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
+writes Required `token_issued` and `refresh_reuse_detected` with its
+issuance/tenant identity. A committed issuance with Required audit produces one
+durable event. A rotation carries `rotated_from_id` and `refresh_token_family_id` on
+`token_issued`. Fresh issuance creates no per-token ownership row and commits
+Required audit with the principal-version check and any refresh-family mutation.
+
+Successful PostgreSQL `client_credentials` issuance through the native server
+queues `client_credentials_token_issued` in the `token_lifecycle` category after
+the final client activity and epoch check. Its fields include the public client
+ID, issuance ID, token JTI, subject hash, scope and audience. The response can
+succeed during an audit outage. Queue pressure, anchor health and process exit
+can cause telemetry loss under the existing queue policy. The D1 server and
+hosts without a persistent telemetry queue use transactional `token_issued`
+for this grant.
+
+The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
 writes `tenant_directory_{operation}` with category `tenant_directory`; the
 [tenant resource executor](../../crates/persistence-postgres/src/tenant_resource_executor.rs)
 writes `tenant_resource_{operation}` with category `tenant_resource`. These

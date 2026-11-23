@@ -127,12 +127,12 @@ impl ServerTokenManagementOperations {
                 basic_challenge: has_basic,
             });
         };
-        let (mut client, secret_salt) = match self
+        let (mut client, secret_digest) = match self
             .authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
-            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
+            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_digest),
             Ok(None) => {
                 return Err(TokenManagementError::InvalidClient {
                     basic_challenge: has_basic,
@@ -167,7 +167,7 @@ impl ServerTokenManagementOperations {
                     &auth_request,
                     &mut client,
                     credentials,
-                    secret_salt.as_deref(),
+                    secret_digest.as_deref(),
                 )
                 .await
             }
@@ -178,7 +178,7 @@ impl ServerTokenManagementOperations {
                     &auth_request,
                     &mut client,
                     credentials,
-                    secret_salt.as_deref(),
+                    secret_digest.as_deref(),
                 )
                 .await
             }

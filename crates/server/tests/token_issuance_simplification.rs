@@ -695,12 +695,44 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
         "a repeated Idempotency-Key must never replay a stored response"
     );
 
-    // Fresh responses are distinct without producing per-token business rows.
-    let rows = issuance_rows(&mut connection, &fixture.tenant).await;
     assert!(
-        rows.is_empty(),
-        "Fresh must not create issuance ownership records"
+        issuance_rows(&mut connection, &fixture.tenant)
+            .await
+            .is_empty(),
+        "machine grants must not create issuance ownership records"
     );
+
+    #[derive(diesel::QueryableByName)]
+    struct IssuanceEvent {
+        #[diesel(sql_type = SqlText)]
+        event_type: String,
+    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let events = diesel::sql_query(
+                "SELECT event_type FROM security_audit_events
+                 WHERE payload->>'tenant_id' = $1 AND payload->>'client_id' = 'fresh-client'
+                   AND event_type IN ('token_issued', 'client_credentials_token_issued')",
+            )
+            .bind::<SqlText, _>(fixture.tenant.tenant_id.as_uuid().to_string())
+            .load::<IssuanceEvent>(&mut connection)
+            .await
+            .expect("issuance events should query");
+            assert!(
+                events
+                    .iter()
+                    .all(|event| event.event_type == "client_credentials_token_issued"),
+                "machine issuance must use the background telemetry path"
+            );
+            if events.len() >= 2 {
+                assert_eq!(events.len(), 2);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("both machine issuance events should reach the ledger");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

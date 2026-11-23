@@ -166,7 +166,8 @@ impl TokenRepositoryPort for CountingTokenRepository {
                 | nazo_auth::TokenIssuanceMode::AuthorizationCode {
                     grant_expires_at, ..
                 } => grant_expires_at,
-                nazo_auth::TokenIssuanceMode::Fresh => {
+                nazo_auth::TokenIssuanceMode::Fresh
+                | nazo_auth::TokenIssuanceMode::ClientCredentials => {
                     panic!("expiration fault requires a grant commit")
                 }
             };
@@ -335,14 +336,11 @@ impl TokenRepositoryPort for CountingTokenRepository {
 }
 
 /// Delegating `AuthorizationRepositoryPort` that counts the client-data reads
-/// on the secret-authentication path: the combined
-/// `client_authentication_snapshot` (client + salt in one query) and the
-/// retained `client_secret_digest_matches` check.
+/// on the secret-authentication path.
 #[derive(Clone)]
 pub(crate) struct CountingAuthorizationRepository {
     inner: Arc<dyn AuthorizationRepositoryPort>,
     pub(crate) snapshot_calls: Arc<AtomicUsize>,
-    pub(crate) digest_calls: Arc<AtomicUsize>,
     pub(crate) client_by_id_calls: Arc<AtomicUsize>,
 }
 
@@ -351,17 +349,12 @@ impl CountingAuthorizationRepository {
         Self {
             inner,
             snapshot_calls: Arc::new(AtomicUsize::new(0)),
-            digest_calls: Arc::new(AtomicUsize::new(0)),
             client_by_id_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub(crate) fn snapshot_count(&self) -> usize {
         self.snapshot_calls.load(Ordering::SeqCst)
-    }
-
-    pub(crate) fn digest_count(&self) -> usize {
-        self.digest_calls.load(Ordering::SeqCst)
     }
 
     pub(crate) fn client_by_id_count(&self) -> usize {
@@ -410,15 +403,5 @@ impl AuthorizationRepositoryPort for CountingAuthorizationRepository {
         input: nazo_auth::AuthorizationDecisionCommit,
     ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
         self.inner.commit_decision(input)
-    }
-
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        self.digest_calls.fetch_add(1, Ordering::SeqCst);
-        self.inner
-            .client_secret_digest_matches(client_id, candidate_digest)
     }
 }

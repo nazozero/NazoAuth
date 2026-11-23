@@ -294,8 +294,8 @@ advertisement rules stay in the core.
 
 ## Token Issuance and Security State
 
-Token issuance commits through `TokenIssuanceRepository`. Its two modes retain
-only state required by their semantics:
+Token issuance is accepted through `TokenIssuanceRepository`. Its modes retain
+the state required for each grant:
 
 - `Fresh` creates no `oauth_token_issuances` row. Refresh rotation/family
   changes, a first non-public subject binding when needed, and Required audit
@@ -303,16 +303,22 @@ only state required by their semantics:
   through commit, even though it writes no new refresh member. The refresh
   commit enum owns one original contract: new-family creation or an existing
   source with an optional replacement. Current AT/RT selections never rebuild
-  that immutable contract. A client-credentials issuance ordinarily writes only audit.
-- `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
+  that immutable contract.
+- `ClientCredentials` rechecks the active client and authenticated epoch after
+  signing, in one PostgreSQL statement. A successful issuance queues
+  `client_credentials_token_issued` telemetry for background persistence.
+  Hosts without a background audit sink use `Fresh`, including the D1 host.
+- `SingleUse` and `AuthorizationCode` retain a compact receipt under the 32-byte BLAKE3 grant fence,
   with the issued JTI, acceptance deadline and optional refresh family needed
   for replay handling. New receipts do not store user ownership. Grant expiry
   is rechecked in the transaction; expiry rolls it back and returns the healthy
   connection to the pool.
 
-Every issuance reuses the access-token epoch read in the request's client
-authentication snapshot; a later subject read never replaces that version. Its fixed salt/epoch projection preserves prepared-query
-reuse while reading current values on every request. OIDC issuance with a public
+Each client authentication snapshot reads current client policy, epoch and
+secret verifier in one tenant-scoped query. Basic and POST secret authentication
+verify the existing HMAC digest locally using a constant-time comparison.
+Each issuance carries the authenticated client epoch through the final check.
+OIDC issuance with a public
 subject also reuses the user epoch returned with the active subject claims in
 `PreparedTokenSubject`. This
 request-local snapshot belongs to the authorization core; its security version

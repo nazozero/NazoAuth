@@ -559,6 +559,27 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         Box::pin(async move {
             let access_token_expires_at =
                 validate_commit_input(&input).map_err(map_repository_error)?;
+            if matches!(input.mode, TokenIssuanceMode::ClientCredentials) {
+                if input.user_id.is_some()
+                    || input.refresh_token.is_some()
+                    || input.native_sso_source.is_some()
+                {
+                    return Err(TokenPortError::CorruptData);
+                }
+                // An implicit transaction holds the existing principal lock
+                // through this statement, which is the acceptance point.
+                let result = self
+                    .pool
+                    .read(move |connection| {
+                        Box::pin(async move {
+                            super::token_principals::lock_and_recheck(connection, &input).await
+                        })
+                    })
+                    .await
+                    .map_err(|_| TokenPortError::Unavailable)?
+                    .map_err(map_diesel_error)?;
+                return Ok(result.err().unwrap_or(CommitTokenIssuanceResult::Committed));
+            }
             let ownership_horizon = access_token_expires_at
                 .checked_add(jiff::SignedDuration::from_secs(
                     MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
@@ -569,6 +590,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             // has no receipt and persists neither deadline.
             let (single_use, retain_until) = match &input.mode {
                 TokenIssuanceMode::Fresh => (None, ownership_horizon),
+                TokenIssuanceMode::ClientCredentials => {
+                    unreachable!("machine grant accepted above")
+                }
                 TokenIssuanceMode::SingleUse {
                     grant_key,
                     grant_expires_at,

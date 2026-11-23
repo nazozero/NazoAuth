@@ -227,17 +227,10 @@ impl AuthorizationRepositoryPort for HolderFixture {
                 client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
                     client_epoch: 0,
                     client,
-                    secret_salt: None,
+                    secret_digest: None,
                 })
             })
         })
-    }
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationRepositoryPort::client_secret_digest_matches call")
     }
 }
 

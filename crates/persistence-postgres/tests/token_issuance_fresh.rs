@@ -414,7 +414,7 @@ async fn assert_no_writes(database_url: &str, issuance_id: Uuid) {
     assert_eq!(
         write_counts(&mut connection, issuance_id).await,
         (0, 0),
-        "a rejected issuance must leave no ownership or audit row"
+        "issuance must leave no ownership or Required audit row"
     );
 }
 
@@ -559,13 +559,23 @@ async fn fresh_issuance_rejects_oversized_audit_payload() {
 /// wait; once the deactivation commits, the issuance re-checks the committed
 /// state and refuses the inactive client without any partial write.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fresh_issuance_waits_for_client_deactivation_and_rechecks() {
+async fn issuance_modes_wait_for_client_deactivation_and_recheck() {
+    for mode in [
+        TokenIssuanceMode::Fresh,
+        TokenIssuanceMode::ClientCredentials,
+    ] {
+        assert_issuance_rechecks_deactivation(mode).await;
+    }
+}
+
+async fn assert_issuance_rechecks_deactivation(mode: TokenIssuanceMode) {
     let Some(database_url) = database_url() else {
         return;
     };
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
-    let input = fresh_issuance(&fixture, tenant_id);
+    let mut input = fresh_issuance(&fixture, tenant_id);
+    input.mode = mode;
     let application_name = format!("fresh-issuance-{}", Uuid::now_v7().simple());
     let repository = TokenIssuanceRepository::new(
         create_pool(tagged_database_url(&database_url, &application_name), 1).unwrap(),
@@ -1007,6 +1017,18 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
         "revoking append EXECUTE mid-run must fail the commit, got {result:?}"
     );
     assert_no_writes(&database_url, revoked.issuance_id).await;
+    let mut machine = fresh_issuance(&fixture, tenant_id);
+    machine.mode = TokenIssuanceMode::ClientCredentials;
+    assert_eq!(
+        repository
+            .commit_token_issuance(machine.clone())
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::Committed,
+        "a valid machine issuance is accepted while audit append is unavailable"
+    );
+    assert_no_writes(&database_url, machine.issuance_id).await;
+
     let mut verify = AsyncPgConnection::establish(&database_url)
         .await
         .expect("verification connection should connect");

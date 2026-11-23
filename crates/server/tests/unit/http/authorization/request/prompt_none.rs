@@ -79,14 +79,6 @@ impl AuthorizationRepositoryPort for GrantFailureRepository {
     ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientAuthenticationSnapshot>> {
         self.live.client_authentication_snapshot(client_id)
     }
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        self.live
-            .client_secret_digest_matches(client_id, candidate_digest)
-    }
 }
 
 impl AuthorizationStateStorePort for PromptNoneStore {

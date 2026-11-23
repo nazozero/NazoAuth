@@ -576,6 +576,7 @@ impl D1Provider {
         }
         let (grant_hash, grant_expiry, holder) = match &input.mode {
             TokenIssuanceMode::Fresh => (None, None, None),
+            TokenIssuanceMode::ClientCredentials => return Err(TokenPortError::CorruptData),
             TokenIssuanceMode::SingleUse {
                 grant_key,
                 grant_expires_at,

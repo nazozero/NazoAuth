@@ -293,22 +293,25 @@ pub async fn issue_token_response(
     // These paths write their refresh state and required audit in the same
     // commit. Earlier authorization-code consumption or Native SSO persistence
     // still requires the full preflight before those independent effects.
-    let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
-        && issue.authorization_code_hash.is_none()
-        && issue.native_sso.is_none();
-    let audit_ready = if commit_owned {
-        context.security_audit.ensure_transactional_ready().await
-    } else {
-        context.security_audit.ensure_storage().await
-    };
-    if let Err(error) = audit_ready {
-        tracing::error!(%error, "token issuance audit preflight failed");
-        return Err(OAuthEndpointError::token(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "令牌签发审计存储不可用.",
-            false,
-        ));
+    let background_audit = matches!(mode, TokenIssuanceMode::ClientCredentials);
+    if !background_audit {
+        let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
+            && issue.authorization_code_hash.is_none()
+            && issue.native_sso.is_none();
+        let audit_ready = if commit_owned {
+            context.security_audit.ensure_transactional_ready().await
+        } else {
+            context.security_audit.ensure_storage().await
+        };
+        if let Err(error) = audit_ready {
+            tracing::error!(%error, "token issuance audit preflight failed");
+            return Err(OAuthEndpointError::token(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "令牌签发审计存储不可用.",
+                false,
+            ));
+        }
     }
     let now = Timestamp::now();
     if client.client_type == "public"
@@ -678,6 +681,16 @@ pub async fn issue_token_response(
         _ => None,
     };
     let subject_hash = blake3_hex(&issue.subject);
+    let issuance_telemetry = background_audit.then(|| {
+        crate::ports::audit::audit_fields([
+            ("client_id", json!(client.client_id)),
+            ("issuance_id", json!(issuance_id)),
+            ("access_token_jti", json!(issued_access_token.jti)),
+            ("subject_hash", json!(subject_hash)),
+            ("scope", json!(scope)),
+            ("audience", json!(issue.audiences)),
+        ])
+    });
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
             authorization_id: Some(authorization_id),
@@ -702,6 +715,11 @@ pub async fn issue_token_response(
         .await
     {
         Ok(CommitTokenIssuanceResult::Committed) => {
+            if let Some(fields) = issuance_telemetry {
+                context
+                    .security_audit
+                    .record("client_credentials_token_issued", fields);
+            }
             // Busy and Missing replays consult the durable receipt. Discard
             // the consumed payload; a cleanup failure cannot undo issuance.
             if let Some(code_hash) = issue.authorization_code_hash.as_deref()

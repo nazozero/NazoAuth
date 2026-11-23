@@ -140,11 +140,16 @@ pub async fn token_client_credentials_with_service(
         Ok(issue_request) => issue_request,
         Err(response) => return Err(response),
     };
+    let mode = if issuance.security_audit.supports_background_persistence() {
+        TokenIssuanceMode::ClientCredentials
+    } else {
+        TokenIssuanceMode::Fresh
+    };
     issue_token_response(
         issuance,
         token_service,
         client,
-        TokenIssuanceMode::Fresh,
+        mode,
         TokenIssue {
             native_sso_source: None,
             user_id: None,

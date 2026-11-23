@@ -16,6 +16,11 @@ pub trait SecurityAudit: Send + Sync {
         self.ensure_storage()
     }
 
+    /// Whether telemetry recorded here is queued for background persistence.
+    fn supports_background_persistence(&self) -> bool {
+        false
+    }
+
     fn record(&self, event: &str, fields: serde_json::Map<String, serde_json::Value>);
     fn record_required<'a>(
         &'a self,

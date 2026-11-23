@@ -683,9 +683,9 @@ async fn client_secret_comparison_returns_only_salt_and_database_equality() {
             .authentication_snapshot(client.tenant_id, &client.client_id)
             .await
             .unwrap()
-            .and_then(|(_, salt, _)| salt)
+            .and_then(|snapshot| snapshot.secret_digest)
             .as_deref(),
-        Some("c2FsdA")
+        Some(stored)
     );
     assert!(
         repository
@@ -3274,12 +3274,9 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
     cleanup(&pool, user_id).await;
 }
 
-/// CA-01/CA-02/CA-07 (PostgreSQL side): `authentication_snapshot` returns the
-/// same client and salt the split `by_client_id` + `client_secret_salt` reads
-/// return, stays tenant-scoped, suppresses the salt for inactive clients, and
-/// `client_secret_salt` keeps serving the DCR path directly.
+/// The client row, verifier and epoch share one tenant-scoped read.
 #[tokio::test]
-async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
+async fn authentication_snapshot_preserves_client_metadata_digest_and_epoch() {
     let Some((pool, tenant, user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
@@ -3293,18 +3290,15 @@ async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
         )
         .await
         .unwrap();
-    // A second active client with no usable secret verifier exercises the
-    // salt-suppression branch without deactivating anything.
     let public_client = oauth_client(tenant, format!("ca-public-{}", Uuid::now_v7()));
     repository.insert(&public_client, None, None).await.unwrap();
 
-    // CA-01: one snapshot equals the two reads it replaces.
-    let (snapshot_client, snapshot_salt, snapshot_epoch) = repository
+    let snapshot = repository
         .authentication_snapshot(client.tenant_id, &client.client_id)
         .await
         .unwrap()
         .expect("the registered client resolves a snapshot");
-    assert_eq!(snapshot_epoch, 0);
+    assert_eq!(snapshot.client_epoch, 0);
     // Inspect the same physical connection: only the query plan may be cached.
     #[derive(QueryableByName)]
     struct PreparedCount {
@@ -3312,7 +3306,7 @@ async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
         count: i64,
     }
     let mut connection = get_conn(&pool).await.unwrap();
-    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%split_part%' AND statement LIKE '%access_token_epoch%' AND statement NOT LIKE '%pg_prepared_statements%'")
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%client_secret_hash%' AND statement LIKE '%access_token_epoch%' AND statement NOT LIKE '%pg_prepared_statements%'")
         .get_result::<PreparedCount>(&mut connection).await.unwrap();
     assert_eq!(
         prepared.count, 1,
@@ -3326,19 +3320,22 @@ async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&snapshot_client.registration).unwrap(),
+        serde_json::to_value(&snapshot.client.registration).unwrap(),
         serde_json::to_value(&split_client.registration).unwrap(),
         "the snapshot client must equal the client_by_id read"
     );
-    assert_eq!(snapshot_client.id, split_client.id);
-    assert_eq!(snapshot_client.tenant_id, split_client.tenant_id);
-    assert_eq!(snapshot_client.realm_id, split_client.realm_id);
+    assert_eq!(snapshot.client.id, split_client.id);
+    assert_eq!(snapshot.client.tenant_id, split_client.tenant_id);
+    assert_eq!(snapshot.client.realm_id, split_client.realm_id);
     assert_eq!(
-        snapshot_client.organization_id,
+        snapshot.client.organization_id,
         split_client.organization_id
     );
-    assert_eq!(snapshot_client.is_active, split_client.is_active);
-    assert_eq!(snapshot_salt.as_deref(), Some("ca-salt"));
+    assert_eq!(snapshot.client.is_active, split_client.is_active);
+    assert_eq!(
+        snapshot.secret_digest.as_deref(),
+        Some("client-secret-v1:ca-salt:ca-digest")
+    );
 
     // The authorization-flow port adapter forwards the same snapshot.
     let flow = nazo_postgres::AuthorizationFlowRepository::new(pool.clone(), client.tenant_id);
@@ -3350,7 +3347,7 @@ async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
     .unwrap()
     .expect("the port adapter resolves the same snapshot");
     assert_eq!(ported.client.id, client.id);
-    assert_eq!(ported.secret_salt.as_deref(), Some("ca-salt"));
+    assert_eq!(ported.secret_digest, snapshot.secret_digest);
 
     // A wrong-tenant lookup resolves no authentication snapshot.
     let foreign_tenant = Uuid::now_v7();
@@ -3370,16 +3367,13 @@ async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
             .is_none()
     );
 
-    // An active client without a versioned secret verifier yields no salt.
-    let (_, public_salt, _) = repository
+    let public_snapshot = repository
         .authentication_snapshot(public_client.tenant_id, &public_client.client_id)
         .await
         .unwrap()
         .expect("a secret-less client still resolves its metadata");
-    assert_eq!(public_salt, None);
+    assert_eq!(public_snapshot.secret_digest, None);
 
-    // An inactive client still returns its row (callers reject it via
-    // `is_active`) but the snapshot suppresses the salt.
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
         .bind::<SqlUuid, _>(client.id)
@@ -3387,20 +3381,20 @@ async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
         .await
         .unwrap();
     drop(connection);
-    let (inactive_client, inactive_salt, inactive_epoch) = repository
+    let inactive = repository
         .authentication_snapshot(client.tenant_id, &client.client_id)
         .await
         .unwrap()
         .expect("the snapshot still returns the deactivated client's metadata");
-    assert!(!inactive_client.is_active);
-    assert_eq!(inactive_epoch, snapshot_epoch + 1);
+    assert!(!inactive.client.is_active);
+    assert_eq!(inactive.client_epoch, snapshot.client_epoch + 1);
     assert_eq!(
-        inactive_salt, None,
-        "an inactive client must not leak a usable secret salt"
+        inactive.secret_digest, None,
+        "inactive clients must not supply a secret verifier"
     );
 
     let mut connection = get_conn(&pool).await.unwrap();
-    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%split_part%' AND statement LIKE '%access_token_epoch%' AND statement NOT LIKE '%pg_prepared_statements%'")
+    let prepared = sql_query("SELECT COUNT(*)::bigint AS count FROM pg_prepared_statements WHERE statement LIKE '%client_secret_hash%' AND statement LIKE '%access_token_epoch%' AND statement NOT LIKE '%pg_prepared_statements%'")
         .get_result::<PreparedCount>(&mut connection).await.unwrap();
     assert_eq!(
         prepared.count, 1,

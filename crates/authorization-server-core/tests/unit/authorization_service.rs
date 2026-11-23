@@ -124,14 +124,6 @@ impl AuthorizationRepositoryPort for FakeRepository {
     ) -> AuthorizationFuture<'a, Option<crate::ClientAuthenticationSnapshot>> {
         Box::pin(async { Ok(None) })
     }
-
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        _client_id: Uuid,
-        _candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        Box::pin(async { Ok(false) })
-    }
 }
 
 #[derive(Default)]

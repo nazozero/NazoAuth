@@ -1,7 +1,7 @@
 //! token 管理端点复用的客户端认证。
 use std::borrow::Cow;
 
-use crate::crypto::{blake3_hex, client_secret_digest};
+use crate::crypto::{blake3_hex, client_secret_matches_digest};
 use crate::domain::client_policy::refresh_client_jwks;
 use crate::domain::rows::ClientRow;
 use crate::security::client_assertion::ClientAssertionError;
@@ -102,7 +102,7 @@ pub async fn authenticate_introspection_client_with_dependencies<'credential>(
     request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
-    secret_salt: Option<&str>,
+    secret_digest: Option<&str>,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
@@ -111,7 +111,7 @@ pub async fn authenticate_introspection_client_with_dependencies<'credential>(
         client,
         credentials,
         ClientAuthenticationContext::ConfidentialOnly,
-        secret_salt,
+        secret_digest,
     )
     .await?;
     consume_token_client_assertion_with_authorization_service(
@@ -135,7 +135,7 @@ pub async fn authenticate_revocation_client_with_dependencies<'credential>(
     request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
-    secret_salt: Option<&str>,
+    secret_digest: Option<&str>,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
@@ -144,7 +144,7 @@ pub async fn authenticate_revocation_client_with_dependencies<'credential>(
         client,
         credentials,
         ClientAuthenticationContext::AllowPublicNone,
-        secret_salt,
+        secret_digest,
     )
     .await?;
     consume_token_client_assertion_with_authorization_service(
@@ -163,7 +163,7 @@ pub async fn authenticate_client_with_dependencies<'credential>(
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     context: ClientAuthenticationContext,
-    secret_salt: Option<&str>,
+    secret_digest: Option<&str>,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
     let credentials = credentials.into();
     let requirement =
@@ -215,17 +215,9 @@ pub async fn authenticate_client_with_dependencies<'credential>(
             })
         }
         ClientAuthenticationRequirement::ClientSecret { secret, .. } => {
-            let secret_match = match secret_salt {
-                Some(salt) => {
-                    let candidate_digest =
-                        client_secret_digest(secret, config.client_secret_pepper, salt);
-                    service
-                        .client_secret_digest_matches(client.id, &candidate_digest)
-                        .await
-                }
-                None => Ok(false),
-            };
-            if client_secret_auth_result(secret_match)? {
+            if secret_digest.is_some_and(|digest| {
+                client_secret_matches_digest(secret, config.client_secret_pepper, digest)
+            }) {
                 Ok(None)
             } else {
                 log_client_auth_rejection(request, client, &credentials, "client_secret");
@@ -273,15 +265,6 @@ pub async fn authenticate_client_with_dependencies<'credential>(
             Ok(None)
         }
     }
-}
-
-fn client_secret_auth_result<E: std::fmt::Display>(
-    result: Result<bool, E>,
-) -> Result<bool, TokenManagementClientAuthError> {
-    result.map_err(|error| {
-        tracing::warn!(%error, "failed to verify management client secret");
-        TokenManagementClientAuthError::StoreUnavailable
-    })
 }
 
 fn client_assertion_error_reason(error: &ClientAssertionError) -> &'static str {

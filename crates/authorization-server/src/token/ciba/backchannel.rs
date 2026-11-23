@@ -44,7 +44,7 @@ pub struct PreparedCibaClient {
     form: BackchannelAuthenticationForm,
     credentials: PresentedClientCredentials,
     client: ClientRow,
-    secret_salt: Option<String>,
+    secret_digest: Option<String>,
 }
 
 impl CibaApplication {
@@ -77,12 +77,12 @@ impl CibaApplication {
                 transport.basic_challenge(),
             ));
         };
-        let (client, secret_salt) = match authorization_service
+        let (client, secret_digest) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
             Ok(Some(snapshot)) if snapshot.client.is_active => {
-                (snapshot.client, snapshot.secret_salt)
+                (snapshot.client, snapshot.secret_digest)
             }
             Ok(_) => {
                 return Err(OAuthEndpointError::invalid_client(
@@ -103,7 +103,7 @@ impl CibaApplication {
             form,
             credentials,
             client,
-            secret_salt,
+            secret_digest,
         })
     }
     pub async fn create(
@@ -116,7 +116,7 @@ impl CibaApplication {
             mut form,
             credentials,
             mut client,
-            secret_salt,
+            secret_digest,
         } = prepared;
         let authorization_service = &self.authorization;
         let ciba_service = &self.handles.service;
@@ -142,7 +142,7 @@ impl CibaApplication {
             &mut client,
             &credentials,
             ClientAuthenticationContext::ConfidentialOnly,
-            secret_salt.as_deref(),
+            secret_digest.as_deref(),
         )
         .await
         {

@@ -837,9 +837,7 @@ async fn rv09_revoke_issued_tokens_short_circuits_without_a_family() {
 // CA-01: authentication snapshot
 // ---------------------------------------------------------------------------
 
-/// CA-01: `authentication_snapshot` reads the client row and derives the
-/// secret salt in one SELECT — the salt split happens in SQL, not in a second
-/// round trip.
+/// CA-01: the client row, secret verifier and epoch come from one SELECT.
 #[tokio::test]
 async fn ca01_authentication_snapshot_is_single_combined_read() {
     let _serial = SERIAL.lock().await;
@@ -861,19 +859,16 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
     )
     .await;
 
-    let (client, salt, epoch) = result
+    let snapshot = result
         .expect("snapshot query should succeed")
         .expect("the seeded client must produce a snapshot");
-    assert_eq!(client.client_id, seed.client.client_id);
+    assert_eq!(snapshot.client.client_id, seed.client.client_id);
     assert_eq!(
-        salt.as_deref(),
-        Some(format!("qc-salt-{}", seed.client.id).as_str()),
-        "the salt must be derived inside the same SELECT"
+        snapshot.secret_digest.as_deref(),
+        Some(format!("client-secret-v1:qc-salt-{}:qc-digest", seed.client.id).as_str())
     );
-    assert_eq!(epoch, 0, "the client version is part of the same snapshot");
-    // 1 data statement: SELECT oauth_clients row plus
-    // split_part(client_secret_hash, ':', 2) as a computed column. No
-    // transaction is opened for a read-only snapshot.
+    assert_eq!(snapshot.client_epoch, 0);
+    // A single read with no explicit transaction.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_clean(delta);
@@ -2403,7 +2398,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
             .await
             .unwrap()
             .unwrap()
-            .2;
+            .client_epoch;
         let source = repo
             .refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true)
             .await
