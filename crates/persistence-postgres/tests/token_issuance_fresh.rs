@@ -801,6 +801,7 @@ async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let input = fresh_issuance(&fixture, tenant_id);
+    let cancelled_issuance_id = input.issuance_id;
     let application_name = format!("fresh-abort-{}", Uuid::now_v7().simple());
     let pool = create_pool(tagged_database_url(&database_url, &application_name), 1).unwrap();
     let repository = TokenIssuanceRepository::new(pool.clone());
@@ -841,6 +842,7 @@ async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
         CommitTokenIssuanceResult::Committed
     );
     assert_eq!(pool.status().available, 1);
+    assert_no_writes(&database_url, cancelled_issuance_id).await;
 }
 
 /// The runtime role boundary is the real one: a least-privilege role created
@@ -1069,6 +1071,20 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
 /// Audit append failure rejects Fresh issuance and returns no partial state.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_audit_function_failure_rejects_commit() {
+    assert_fresh_audit_failure("TRIGGER", "BEFORE", "").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fresh_issuance_rejects_an_error_at_deferred_commit() {
+    assert_fresh_audit_failure(
+        "CONSTRAINT TRIGGER",
+        "AFTER",
+        "DEFERRABLE INITIALLY DEFERRED",
+    )
+    .await;
+}
+
+async fn assert_fresh_audit_failure(kind: &str, timing: &str, deferrability: &str) {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1101,7 +1117,7 @@ async fn fresh_issuance_audit_function_failure_rejects_commit() {
     // shared test database.
     let issuance_id = input.issuance_id;
     sql_query(format!(
-        "CREATE TRIGGER {trigger} BEFORE INSERT ON security_audit_events \
+        "CREATE {kind} {trigger} {timing} INSERT ON security_audit_events {deferrability} \
          FOR EACH ROW \
          WHEN (NEW.payload->>'issuance_id' = '{issuance_id}') \
          EXECUTE FUNCTION {function}()"

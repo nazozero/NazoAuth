@@ -169,7 +169,14 @@ event: a rotation carries `rotated_from_id` and `refresh_token_family_id` on
 `token_issued` rather than a separate event, so routine flows stay at one
 ledger row per logical operation. Fresh issuance no longer creates a separate
 per-token ownership row; its Required audit remains synchronous with the
-principal-version check and any refresh-family mutation. The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
+principal-version check and any refresh-family mutation. For a machine access
+token this event records the client, the token identifier and its granted
+scope. The endpoint waits for the database commit before returning the
+token. A client disconnect after commit can leave a valid issuance record even
+when the response never reaches the caller. Hash chaining, batch signing and
+external delivery run independently in the [anchor worker](audit-anchor.md).
+
+The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
 writes `tenant_directory_{operation}` with category `tenant_directory`; the
 [tenant resource executor](../../crates/persistence-postgres/src/tenant_resource_executor.rs)
 writes `tenant_resource_{operation}` with category `tenant_resource`. These

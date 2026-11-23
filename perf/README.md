@@ -3,6 +3,10 @@
 This directory contains reproducible Docker Compose based load benchmarks for
 NazoAuth. It is separate from correctness, conformance, and browser UI tests.
 
+The [machine-token issuance replay](replays/machine-token-wal/README.md)
+compares application revisions against an unchanged PostgreSQL server and
+reconciles successful responses with audit records in flushed WAL.
+
 Python benchmark tooling uses Python 3.15.2. The runner recipe pins exact
 package versions; coverage and E2E environments use the separate hash locks
 under `requirements/`. Redis clients
