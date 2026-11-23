@@ -101,6 +101,27 @@ audit row (331,204 including warm-up). The
 common lower load, valid-token introspection, higher offered rates and resource
 observations for each process role.
 
+### Valid-token introspection at 2,400 requests/s
+
+The revised NazoAuth configurations ran in three alternating pairs on the same
+binary and persistent database after PostgreSQL restarted. Each window used
+10 seconds of warm-up and 36 seconds of measurement. The before-change and
+peer rows come from the original session. Values are medians across three windows.
+
+| Service and machine-token issuance audit setting | Successful queries/s | P95 (ms) | P99 (ms) | Passing windows |
+| --- | ---: | ---: | ---: | ---: |
+| NazoAuth before the change, durable event | 2,400.0 | 0.748 | 0.866 | 3/3 |
+| NazoAuth revised default, durable event | 2,400.0 | 0.812 | 0.966 | 3/3 |
+| NazoAuth revised, success event disabled | 2,400.0 | 0.815 | 0.960 | 3/3 |
+| Keycloak 26.8.2 | 2,400.0 | 0.551 | 0.734 | 3/3 |
+| Ory Hydra 26.2.0 | 2,400.0 | 1.969 | 7.988 | 3/3 |
+
+A valid token was issued through the product API before each window. All six
+revised windows had zero failed queries, zero dropped iterations, and zero
+machine-token issuance audit rows during the observation interval.
+
+### Replay the machine-token benchmarks
+
 To replay the machine-grant refactor, extract the fixture archive and copy
 the `commit-wal` directory as above. From that directory, run:
 
@@ -126,6 +147,13 @@ resource checks. Table row locks can generate WAL in either mode.
 
 Use `BENCH_MACHINE_SCENARIO=introspect` with either comparison script to query
 a valid access token prepared through the product API before measurement.
+After fixture setup, repeat the paired comparison with the same window order.
+
+```sh
+BENCH_MACHINE_SCENARIO=introspect bash compare-machine-policy.sh \
+  N-2400-31 A-2400-31 A-2400-32 N-2400-32 N-2400-33 A-2400-33
+```
+
 `policy-peers.sh` accepts `machine` or `introspect` followed by window names
 with prefixes `B`, `A`, `N`, `K` (Keycloak) or `H` (Hydra) to rotate products.
 `metadata.py results/environment.json control revised` records the benchmark
