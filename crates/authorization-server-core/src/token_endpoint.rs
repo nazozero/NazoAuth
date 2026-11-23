@@ -139,43 +139,67 @@ pub const fn sender_constraint_policy(
     }
 }
 
+pub type PresentedSenderConstraint<'a> = SenderProofs<&'a str>;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PresentedSenderConstraint<'a> {
-    pub dpop_jkt: Option<&'a str>,
-    pub mtls_x5t_s256: Option<&'a str>,
+pub struct SenderProofs<T> {
+    pub dpop_jkt: Option<T>,
+    pub mtls_x5t_s256: Option<T>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AppliedSenderConstraint<'a> {
+pub enum SenderConstraint<T> {
     Bearer,
-    Dpop(&'a str),
-    MutualTls(&'a str),
+    Dpop(T),
+    MutualTls(T),
 }
 
-pub fn apply_sender_constraint<'a>(
+pub type AppliedSenderConstraint<'a> = SenderConstraint<&'a str>;
+
+impl<T> SenderConstraint<T> {
+    pub fn into_parts(self) -> (Option<T>, Option<T>) {
+        match self {
+            Self::Bearer => (None, None),
+            Self::Dpop(value) => (Some(value), None),
+            Self::MutualTls(value) => (None, Some(value)),
+        }
+    }
+}
+
+impl SenderConstraint<String> {
+    pub fn as_borrowed(&self) -> AppliedSenderConstraint<'_> {
+        match self {
+            Self::Bearer => SenderConstraint::Bearer,
+            Self::Dpop(value) => SenderConstraint::Dpop(value),
+            Self::MutualTls(value) => SenderConstraint::MutualTls(value),
+        }
+    }
+}
+
+pub fn apply_sender_constraint<T>(
     policy: SenderConstraintPolicy,
-    presented: PresentedSenderConstraint<'a>,
-) -> Result<AppliedSenderConstraint<'a>, TokenEndpointError> {
+    presented: SenderProofs<T>,
+) -> Result<SenderConstraint<T>, TokenEndpointError> {
     let constraint = match (presented.dpop_jkt, presented.mtls_x5t_s256) {
         (Some(_), Some(_)) => return Err(TokenEndpointError::InvalidRequest),
-        (Some(thumbprint), None) => AppliedSenderConstraint::Dpop(thumbprint),
-        (None, Some(thumbprint)) => AppliedSenderConstraint::MutualTls(thumbprint),
-        (None, None) => AppliedSenderConstraint::Bearer,
+        (Some(thumbprint), None) => SenderConstraint::Dpop(thumbprint),
+        (None, Some(thumbprint)) => SenderConstraint::MutualTls(thumbprint),
+        (None, None) => SenderConstraint::Bearer,
     };
     let allowed = matches!(
-        (policy, constraint),
+        (policy, &constraint),
         (SenderConstraintPolicy::BearerAllowed, _)
             | (
                 SenderConstraintPolicy::DpopRequired,
-                AppliedSenderConstraint::Dpop(_)
+                SenderConstraint::Dpop(_)
             )
             | (
                 SenderConstraintPolicy::MtlsRequired,
-                AppliedSenderConstraint::MutualTls(_)
+                SenderConstraint::MutualTls(_)
             )
             | (
                 SenderConstraintPolicy::DpopOrMtls,
-                AppliedSenderConstraint::Dpop(_) | AppliedSenderConstraint::MutualTls(_)
+                SenderConstraint::Dpop(_) | SenderConstraint::MutualTls(_)
             )
     );
     allowed

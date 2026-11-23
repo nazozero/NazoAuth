@@ -309,11 +309,12 @@ pub fn token_exchange_issue_binding(
     presented: &ValidatedSenderConstraints,
     policy: TokenExchangePolicy<'_>,
 ) -> Result<(), OAuthEndpointError> {
+    let (dpop_jkt, mtls_x5t_s256) = presented.as_borrowed().into_parts();
     token_exchange_issuance_binding(
         subject_binding,
         PresentedSenderConstraint {
-            dpop_jkt: presented.dpop_jkt.as_deref(),
-            mtls_x5t_s256: presented.mtls_x5t_s256.as_deref(),
+            dpop_jkt,
+            mtls_x5t_s256,
         },
         policy,
     )
@@ -441,10 +442,7 @@ pub async fn token_exchange(
         &presented_sender,
         policy,
     )?;
-    let ValidatedSenderConstraints {
-        dpop_jkt,
-        mtls_x5t_s256,
-    } = presented_sender;
+    let (dpop_jkt, mtls_x5t_s256) = presented_sender.into_parts();
     let actor = match validate_actor_token(
         token_service,
         issuance.config.issuer(),

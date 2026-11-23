@@ -135,6 +135,24 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
         .execute(&mut connection)
         .await
         .unwrap();
+    assert!(
+        !repository
+            .machine_client_active(tenant, fixture.client_id, 0)
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .machine_client_active(tenant, fixture.client_id, 1)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .machine_client_active(Uuid::now_v7(), fixture.client_id, 1)
+            .await
+            .unwrap()
+    );
     let stale = fresh_issuance(&fixture, tenant);
     assert_eq!(
         repository
@@ -560,6 +578,15 @@ async fn fresh_issuance_rejects_oversized_audit_payload() {
 /// state and refuses the inactive client without any partial write.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_waits_for_client_deactivation_and_rechecks() {
+    check_concurrent_deactivation(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn machine_final_check_waits_for_client_deactivation() {
+    check_concurrent_deactivation(false).await;
+}
+
+async fn check_concurrent_deactivation(audited: bool) {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -587,7 +614,26 @@ async fn fresh_issuance_waits_for_client_deactivation_and_rechecks() {
         .expect("client deactivation should hold its row lock");
     assert_eq!(changed, 1, "client fixture must start active");
     let issuance_id = input.issuance_id;
-    let mut issuer = tokio::spawn(async move { repository.commit_token_issuance(input).await });
+    let mut issuer = tokio::spawn(async move {
+        if audited {
+            repository.commit_token_issuance(input).await
+        } else {
+            repository
+                .machine_client_active(
+                    tenant_id,
+                    input.client_id,
+                    input.principal_state.client_epoch,
+                )
+                .await
+                .map(|active| {
+                    if active {
+                        CommitTokenIssuanceResult::Committed
+                    } else {
+                        CommitTokenIssuanceResult::ClientInactive
+                    }
+                })
+        }
+    });
     wait_for_lock_wait_or_task(&mut observer, &application_name, &mut issuer).await;
     coordinator
         .batch_execute("COMMIT")

@@ -531,6 +531,31 @@ struct SingleUseInsertRow {
 }
 
 impl TokenRepositoryPort for TokenIssuanceRepository {
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        Box::pin(async move {
+            let result = self
+                .pool
+                .read(move |conn| {
+                    Box::pin(super::token_principals::lock_and_recheck(
+                        conn, tenant_id, client_id, epoch, None, None,
+                    ))
+                })
+                .await
+                .map_err(|_| TokenPortError::Unavailable)?
+                .map_err(map_diesel_error)?;
+            match result {
+                Ok(_) => Ok(true),
+                Err(CommitTokenIssuanceResult::ClientInactive) => Ok(false),
+                Err(_) => Err(TokenPortError::CorruptData),
+            }
+        })
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -621,7 +646,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
                             async |connection| {
                                 let client_type = match
-                                    super::token_principals::lock_and_recheck(connection, &input)
+                                    super::token_principals::lock_and_recheck(connection, input.tenant_id, input.client_id, input.principal_state.client_epoch, input.user_id, input.principal_state.user_epoch)
                                         .await?
                                 {
                                     Ok(client_type) => client_type,

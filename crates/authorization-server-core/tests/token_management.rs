@@ -23,6 +23,15 @@ struct Ports {
 
 #[allow(unused_variables)]
 impl TokenRepositoryPort for Ports {
+    fn machine_client_active(
+        &self,
+        _tenant_id: Uuid,
+        _client_id: Uuid,
+        _epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        panic!("unexpected machine-client check")
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         _tenant_id: Uuid,

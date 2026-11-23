@@ -348,6 +348,7 @@ async fn start_issuance_fixture(
     database_url: &str,
     valkey_url: &str,
     slug: &str,
+    audit_client_credentials: Option<bool>,
 ) -> IssuanceFixture {
     let database_name = format!("issuance_{}_{}", slug, Uuid::now_v7().simple());
     let mut coordinator = AsyncPgConnection::establish(database_url)
@@ -403,10 +404,11 @@ async fn start_issuance_fixture(
     let process_dir = temporary_directory("server");
     let port = free_port();
     let config = process_dir.join(".env.yaml");
-    write_config(
-        &config,
-        &server_config_yaml(port, &isolated_url, valkey_url, &process_dir, &signing_key),
-    );
+    let mut yaml = server_config_yaml(port, &isolated_url, valkey_url, &process_dir, &signing_key);
+    if let Some(enabled) = audit_client_credentials {
+        yaml.push_str(&format!("\nAUDIT_CLIENT_CREDENTIALS_ISSUANCE: {enabled}\n"));
+    }
+    write_config(&config, &yaml);
     let mut server = spawn_server(&config, port);
     server.wait_until_ready("127.0.0.1");
 
@@ -601,10 +603,19 @@ async fn issuance_column_names(connection: &mut AsyncPgConnection) -> Vec<String
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatcher() {
+    check_machine_issuance("fresh", None).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn machine_issuance_without_success_audit_returns_distinct_tokens() {
+    check_machine_issuance("noaudit", Some(false)).await;
+}
+
+async fn check_machine_issuance(slug: &str, audit: Option<bool>) {
     let Some((database_url, valkey_url)) = test_databases() else {
         return;
     };
-    let fixture = start_issuance_fixture(&database_url, &valkey_url, "fresh").await;
+    let fixture = start_issuance_fixture(&database_url, &valkey_url, slug, audit).await;
     let mut connection = AsyncPgConnection::establish(&fixture.isolated_url)
         .await
         .expect("isolated database should connect");
@@ -730,10 +741,14 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
     });
     recorded.sort_unstable();
     issued.sort_unstable();
-    assert_eq!(
-        recorded, issued,
-        "each successful token has a committed audit event"
-    );
+    if audit == Some(false) {
+        assert!(recorded.is_empty());
+    } else {
+        assert_eq!(
+            recorded, issued,
+            "each successful token has a committed audit event"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -741,7 +756,7 @@ async fn device_code_consumes_exactly_once_under_concurrent_polling() {
     let Some((database_url, valkey_url)) = test_databases() else {
         return;
     };
-    let fixture = start_issuance_fixture(&database_url, &valkey_url, "device").await;
+    let fixture = start_issuance_fixture(&database_url, &valkey_url, "device", Some(false)).await;
     let mut connection = AsyncPgConnection::establish(&fixture.isolated_url)
         .await
         .expect("isolated database should connect");
@@ -826,6 +841,19 @@ async fn device_code_consumes_exactly_once_under_concurrent_polling() {
         "exactly one concurrent device poll may succeed: {responses:?}"
     );
 
+    #[derive(diesel::QueryableByName)]
+    struct EventCount {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        events: i64,
+    }
+    let count = diesel::sql_query("SELECT count(*) AS events FROM security_audit_events WHERE event_type = 'token_issued' AND payload->>'tenant_id' = $1 AND payload->>'client_id' = 'device-client'")
+        .bind::<SqlText, _>(fixture.tenant.tenant_id.as_uuid().to_string())
+        .get_result::<EventCount>(&mut connection).await.unwrap();
+    assert_eq!(
+        count.events, 1,
+        "device issuance still records its required success event"
+    );
+
     // The consumed grant keeps its fence row; a late retry still fails closed.
     let rows = issuance_rows(&mut connection, &fixture.tenant).await;
     assert_eq!(
@@ -856,7 +884,7 @@ async fn expired_device_grant_fails_closed_without_an_issuance_row() {
     let Some((database_url, valkey_url)) = test_databases() else {
         return;
     };
-    let fixture = start_issuance_fixture(&database_url, &valkey_url, "expired").await;
+    let fixture = start_issuance_fixture(&database_url, &valkey_url, "expired", None).await;
     let mut connection = AsyncPgConnection::establish(&fixture.isolated_url)
         .await
         .expect("isolated database should connect");

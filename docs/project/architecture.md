@@ -303,7 +303,7 @@ only state required by their semantics:
   through commit, even though it writes no new refresh member. The refresh
   commit enum owns one original contract: new-family creation or an existing
   source with an optional replacement. Current AT/RT selections never rebuild
-  that immutable contract. A client-credentials issuance ordinarily writes only audit.
+  that immutable contract. A client-credentials grant records only the configured success audit. With that option disabled, its final client-version check has no business mutation to commit.
 - `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
   with the issued JTI, acceptance deadline and optional refresh family needed
   for replay handling. New receipts do not store user ownership. Grant expiry

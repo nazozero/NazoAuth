@@ -357,6 +357,7 @@ deployment path. They are candidates for the administrator UI:
   `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`,
   `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS`,
   `BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS`
+- successful machine-token audit: `AUDIT_CLIENT_CREDENTIALS_ISSUANCE` (default `true`), described in [security events](../security/security-events.md)
 - token and session lifetimes: `SESSION_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`,
   `ACCESS_TOKEN_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`,
   `REFRESH_TOKEN_TTL_SECONDS`

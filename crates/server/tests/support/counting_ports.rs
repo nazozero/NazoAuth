@@ -135,6 +135,16 @@ impl CountingTokenRepository {
 }
 
 impl TokenRepositoryPort for CountingTokenRepository {
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        self.inner
+            .machine_client_active(tenant_id, client_id, epoch)
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,

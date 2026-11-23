@@ -9,9 +9,8 @@ use crate::domain::client_policy::parse_scope;
 use nazo_auth::ValidatedClientAssertion;
 
 use crate::contracts::request_facts::DpopErrorContext;
-use crate::domain::oauth::{RefreshTokenPolicy, TokenIssue};
 use crate::domain::rows::ClientRow;
-use nazo_auth::TokenIssuanceMode;
+use nazo_auth::{CommitTokenIssuanceResult, TokenIssuanceMode};
 
 use http::StatusCode;
 
@@ -22,7 +21,7 @@ use crate::contracts::token_forms::TokenForm;
 use crate::services::ServerTokenService;
 use crate::token::SenderConstraintValidationError;
 use crate::token::client_auth::consume_token_client_assertion_with_authorization_service;
-use crate::token::issue::{TokenIssuanceContext, issue_token_response};
+use crate::token::issue::{TokenIssuanceContext, sign_access_response};
 use crate::token::sender_constraint_multiple_error;
 use crate::token::validate_token_sender_constraints;
 
@@ -140,40 +139,101 @@ pub async fn token_client_credentials_with_service(
         Ok(issue_request) => issue_request,
         Err(response) => return Err(response),
     };
-    issue_token_response(
+    let audit = issuance.config.audit_client_credentials_issuance;
+    if audit && let Err(error) = issuance.security_audit.ensure_transactional_ready().await {
+        tracing::error!(%error, "token issuance audit preflight failed");
+        return Err(OAuthEndpointError::token(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "令牌签发审计存储不可用.",
+            false,
+        ));
+    }
+    let issuance_id = uuid::Uuid::now_v7();
+    let require_fapi2 = issuance.config.profile.requires_fapi2_security()
+        || client.security_policy.requires_fapi2_security();
+    let signed = sign_access_response(
         issuance,
         token_service,
-        client,
-        TokenIssuanceMode::Fresh,
-        TokenIssue {
-            native_sso_source: None,
+        nazo_auth::AccessTokenSignInput {
+            signing_algorithm: require_fapi2.then_some("PS256"),
+            authorization_id: Some(issuance_id),
+            client_epoch: Some(issuance.client_epoch),
+            user_epoch: None,
+            issuer: issuance.config.issuer(),
+            tenant_id: client.tenant_id,
+            subject: &client.client_id,
             user_id: None,
-            prepared_subject: None,
-            subject: client.client_id.clone(),
-            scopes: issue_request.scopes,
-            authorization_details: json!([]),
-            audiences: issue_request.audiences,
-            nonce: None,
-            auth_time: None,
-            amr: Vec::new(),
-            oidc_sid: None,
-            acr: None,
-            userinfo_claim_requests: (Vec::new()).into(),
-            id_token_claim_requests: (Vec::new()).into(),
-            include_refresh: false,
-            refresh_token_policy: RefreshTokenPolicy::NoRefresh,
-            dpop_jkt: sender.dpop_jkt,
-            refresh_token_dpop_jkt: None,
-            mtls_x5t_s256: sender.mtls_x5t_s256,
-            refresh_token_mtls_x5t_s256: None,
-            refresh_token_client_attestation_jkt: None,
-            refresh_authority: None,
-            refresh_grant_audiences: None,
-            authorization_code_hash: None,
+            subject_type: "client",
+            client_id: &client.client_id,
+            audiences: &issue_request.audiences,
+            scopes: &issue_request.scopes,
+            authorization_details: &json!([]),
+            userinfo_claim_requests: &[],
+            ttl_seconds: issuance.config.access_token_ttl_seconds,
+            sender_constraint: sender.as_borrowed(),
             actor: None,
-            issued_token_type: None,
-            native_sso: None,
         },
+        None,
     )
-    .await
+    .await?;
+    let active = if audit {
+        let outcome = token_service
+            .commit_token_issuance(nazo_auth::CommitTokenIssuance {
+                authorization_id: Some(issuance_id),
+                issuance_id,
+                tenant_id: client.tenant_id,
+                client_id: client.id,
+                user_id: None,
+                subject: client.client_id.clone(),
+                principal_state: nazo_auth::TokenPrincipalState {
+                    client_epoch: issuance.client_epoch,
+                    user_epoch: None,
+                    subject_bound: false,
+                },
+                native_sso_source: None,
+                mode: TokenIssuanceMode::Fresh,
+                refresh_token: None,
+                access_token_jti: signed.jti,
+                access_token_expires_at: signed.expires_at,
+                audit_fields: nazo_auth::TokenIssuedAuditFields {
+                    client_id: client.client_id.clone(),
+                    subject_hash: crate::crypto::blake3_hex(&client.client_id),
+                    scope: signed.scope,
+                    audience: issue_request.audiences,
+                },
+            })
+            .await;
+        outcome.and_then(|result| match result {
+            CommitTokenIssuanceResult::Committed => Ok(true),
+            CommitTokenIssuanceResult::ClientInactive => Ok(false),
+            _ => Err(nazo_auth::TokenPortError::CorruptData),
+        })
+    } else {
+        // With nothing to commit, this final primary read orders issuance against client disable.
+        token_service
+            .machine_client_active(client.tenant_id, client.id, issuance.client_epoch)
+            .await
+    };
+    match active {
+        Ok(true) => Ok(TokenEndpointSuccess::Issued {
+            body: signed.body,
+            dpop_nonce: signed.dpop_nonce,
+        }),
+        Ok(false) => Err(OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "该客户端未启用当前授权类型.",
+            false,
+        )),
+        Err(error) => {
+            tracing::warn!(%error, %issuance_id, "failed to finalize machine token issuance");
+            Err(OAuthEndpointError::token(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "令牌签发状态不可用.",
+                false,
+            ))
+        }
+    }
 }

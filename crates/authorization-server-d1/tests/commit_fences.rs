@@ -275,3 +275,34 @@ fn authorization_completion_requires_the_receipt_grant_and_history() {
         database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN (SELECT count(*) FROM nazo_decisions)=1 AND (SELECT count(*) FROM nazo_audit)=1 AND (SELECT authorization_count FROM nazo_grant_activity)=1 THEN 1 ELSE 0 END;").unwrap();
     });
 }
+
+#[test]
+fn machine_final_check_requires_the_active_tenant_client_and_original_epoch() {
+    block_on(async {
+        let (_, provider) = fixture().await;
+        assert!(
+            provider
+                .machine_client_active(TENANT, CLIENT, 0)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !provider
+                .machine_client_active(TENANT, CLIENT, 1)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !provider
+                .machine_client_active(TENANT, Uuid::now_v7(), 0)
+                .await
+                .unwrap()
+        );
+        assert!(
+            provider
+                .machine_client_active(Uuid::now_v7(), CLIENT, 0)
+                .await
+                .is_err()
+        );
+    });
+}

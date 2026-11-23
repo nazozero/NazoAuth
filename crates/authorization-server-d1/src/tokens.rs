@@ -215,6 +215,22 @@ impl D1Provider {
     }
 }
 impl TokenRepositoryPort for D1Provider {
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        Box::pin(async move {
+            self.require_tenant(tenant_id)?;
+            let row = self.database.query::<Flag>(
+                "SELECT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND active=1 AND epoch=?3) AS value",
+                vec![json!(tenant_id), json!(client_id), json!(epoch)],
+            ).await?;
+            Ok(row.first().ok_or(TokenPortError::CorruptData)?.value != 0)
+        })
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,

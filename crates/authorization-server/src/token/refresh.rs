@@ -246,8 +246,7 @@ pub async fn token_refresh_with_service(
             return Err(sender_constraint_multiple_error());
         }
     };
-    let dpop_jkt = sender.dpop_jkt;
-    let mtls_x5t_s256 = sender.mtls_x5t_s256;
+    let (dpop_jkt, mtls_x5t_s256) = sender.into_parts();
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,

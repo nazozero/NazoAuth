@@ -30,6 +30,7 @@ pub fn token_issuance_config(settings: &Configuration) -> TokenIssuanceConfig {
         rate_limit_window_seconds: settings.identity.rate_limit.window_seconds,
         token_rate_limit_max_requests: settings.identity.rate_limit.token_max_requests,
         auth_code_ttl_seconds: settings.protocol.auth_code_ttl_seconds,
+        audit_client_credentials_issuance: settings.protocol.audit_client_credentials_issuance,
         access_token_ttl_seconds: settings.protocol.access_token_ttl_seconds,
         id_token_ttl_seconds: settings.protocol.id_token_ttl_seconds,
         refresh_token_ttl_seconds: settings.protocol.refresh_token_ttl_seconds,

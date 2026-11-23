@@ -222,8 +222,8 @@ pub use token::{
     RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 pub use token_endpoint::{
-    AdmittedTokenClient, AppliedSenderConstraint, PresentedSenderConstraint,
-    TokenClientAuthPresentation, TokenClientAuthenticationContext, TokenClientPolicy,
+    AdmittedTokenClient, AppliedSenderConstraint, PresentedSenderConstraint, SenderConstraint,
+    SenderProofs, TokenClientAuthPresentation, TokenClientAuthenticationContext, TokenClientPolicy,
     TokenEndpointError, admit_token_client, apply_sender_constraint, sender_constraint_policy,
     token_client_authentication_context,
 };

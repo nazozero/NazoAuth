@@ -301,6 +301,7 @@ pub async fn token_jwt_bearer_with_service(
             }
         };
     }
+    let (dpop_jkt, mtls_x5t_s256) = sender.into_parts();
     issue_token_response(
         issuance,
         token_service,
@@ -326,9 +327,9 @@ pub async fn token_jwt_bearer_with_service(
             id_token_claim_requests: (Vec::new()).into(),
             include_refresh: false,
             refresh_token_policy: RefreshTokenPolicy::NoRefresh,
-            dpop_jkt: sender.dpop_jkt,
+            dpop_jkt,
             refresh_token_dpop_jkt: None,
-            mtls_x5t_s256: sender.mtls_x5t_s256,
+            mtls_x5t_s256,
             refresh_token_mtls_x5t_s256: None,
             refresh_token_client_attestation_jkt: None,
             refresh_authority: None,

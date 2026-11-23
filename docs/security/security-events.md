@@ -23,7 +23,7 @@ Device decisions, and CIBA creation/decisions use this path; a readiness or
 required-intent append failure prevents the business mutation. Silent
 `prompt=none` authorization applies the same dynamic readiness gate before its
 atomic decision commit. Fresh token
-issuance without earlier authorization-code consumption or Native SSO persistence
+issuance with required auditing without earlier authorization-code consumption or Native SSO persistence
 also uses it for every refresh policy, including new families and lost-response
 rotation: their required audit and state changes share the commit. Issuance with
 earlier grant consumption or Native SSO persistence retains the full storage preflight.
@@ -163,17 +163,20 @@ fact. The transaction owner remains responsible for confirmed commit before succ
 the function neither commits independently nor changes retention deadlines. The principal fence similarly sets the transaction-local lock timeout, then locks and rechecks the client followed by the user in one call; the timeout remains active for the later receipt and family locks.
 
 The [token issuance repository](../../crates/persistence-postgres/src/repositories/token_issuance.rs)
-writes `token_issued` and `refresh_reuse_detected` with its
-issuance/tenant identity. One committed issuance produces exactly one durable
-event: a rotation carries `rotated_from_id` and `refresh_token_family_id` on
-`token_issued` rather than a separate event, so routine flows stay at one
-ledger row per logical operation. Fresh issuance no longer creates a separate
-per-token ownership row; its Required audit remains synchronous with the
-principal-version check and any refresh-family mutation. For a machine access
-token this event records the client, the token identifier and its granted
-scope. The endpoint waits for the database commit before returning the
-token. A client disconnect after commit can leave a valid issuance record even
-when the response never reaches the caller. Hash chaining, batch signing and
+records `token_issued` in the transaction that checks principal versions and commits grant
+and refresh-family changes. A rotation includes `rotated_from_id` and
+`refresh_token_family_id` on that same event. Refresh replay records
+`refresh_reuse_detected`.
+
+The native server defaults `AUDIT_CLIENT_CREDENTIALS_ISSUANCE` to `true`.
+A successful machine grant then records the client, token identifier and granted
+scope before returning the token. A disconnect after commit can leave a record
+even if the caller misses the response. Set the option to `false` when the deployment
+does not need a per-token issuance history for this grant. Both settings recheck
+the authenticated client version after signing. On PostgreSQL the check takes
+a shared row lock, including when auditing is off, so a concurrent deactivation
+that already holds the row lock completes first. The setting applies only to
+successful `client_credentials` issuance. Hash chaining, batch signing and
 external delivery run independently in the [anchor worker](audit-anchor.md).
 
 The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)

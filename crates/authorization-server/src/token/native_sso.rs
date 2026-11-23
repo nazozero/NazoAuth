@@ -244,7 +244,7 @@ pub async fn native_sso_issue_binding(
             ),
             SenderConstraintValidationError::Multiple => sender_constraint_multiple_error(),
         })?;
-    Ok((sender.dpop_jkt, sender.mtls_x5t_s256))
+    Ok(sender.into_parts())
 }
 
 pub async fn token_native_sso_exchange(

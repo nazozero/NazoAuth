@@ -70,7 +70,11 @@ pub(super) async fn snapshot(
 
 pub(super) async fn lock_and_recheck(
     connection: &mut AsyncPgConnection,
-    input: &CommitTokenIssuance,
+    tenant_id: Uuid,
+    client_id: Uuid,
+    client_epoch: i64,
+    user_id: Option<Uuid>,
+    user_epoch: Option<i64>,
 ) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
     #[derive(QueryableByName)]
     struct Fence {
@@ -79,7 +83,15 @@ pub(super) async fn lock_and_recheck(
         #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
         client_type: Option<String>,
     }
-    let rows = PrincipalFence(input).load::<Fence>(connection).await?;
+    let rows = PrincipalFence {
+        tenant_id,
+        client_id,
+        client_epoch,
+        user_id,
+        user_epoch,
+    }
+    .load::<Fence>(connection)
+    .await?;
     let mut rows = rows.into_iter();
     let row = rows
         .next()
@@ -99,32 +111,36 @@ pub(super) async fn lock_and_recheck(
     }
 }
 
-struct PrincipalFence<'a>(&'a CommitTokenIssuance);
-impl diesel::query_builder::QueryId for PrincipalFence<'_> {
-    type QueryId = PrincipalFence<'static>;
+struct PrincipalFence {
+    tenant_id: Uuid,
+    client_id: Uuid,
+    client_epoch: i64,
+    user_id: Option<Uuid>,
+    user_epoch: Option<i64>,
+}
+impl diesel::query_builder::QueryId for PrincipalFence {
+    type QueryId = PrincipalFence;
     const HAS_STATIC_QUERY_ID: bool = true;
 }
-impl diesel::query_builder::Query for PrincipalFence<'_> {
+impl diesel::query_builder::Query for PrincipalFence {
     type SqlType = sql_types::Untyped;
 }
-impl diesel::query_dsl::RunQueryDslSupport for PrincipalFence<'_> {}
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PrincipalFence<'_> {
+impl diesel::query_dsl::RunQueryDslSupport for PrincipalFence {}
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PrincipalFence {
     fn walk_ast<'b>(
         &'b self,
         mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
     ) -> diesel::QueryResult<()> {
         out.push_sql("SELECT outcome, client_type FROM public.nazo_lock_token_principals(");
-        out.push_bind_param::<sql_types::Uuid, _>(&self.0.tenant_id)?;
+        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
         out.push_sql(", ");
-        out.push_bind_param::<sql_types::Uuid, _>(&self.0.client_id)?;
+        out.push_bind_param::<sql_types::Uuid, _>(&self.client_id)?;
         out.push_sql(", ");
-        out.push_bind_param::<sql_types::BigInt, _>(&self.0.principal_state.client_epoch)?;
+        out.push_bind_param::<sql_types::BigInt, _>(&self.client_epoch)?;
         out.push_sql(", ");
-        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.0.user_id)?;
+        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.user_id)?;
         out.push_sql(", ");
-        out.push_bind_param::<sql_types::Nullable<sql_types::BigInt>, _>(
-            &self.0.principal_state.user_epoch,
-        )?;
+        out.push_bind_param::<sql_types::Nullable<sql_types::BigInt>, _>(&self.user_epoch)?;
         out.push_sql(")");
         Ok(())
     }

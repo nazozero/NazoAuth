@@ -538,12 +538,13 @@ impl TokenEndpointHandles {
                 {
                     return Err(crate::token::token_client_assertion_error(error));
                 }
+                let (dpop_jkt, mtls_x5t_s256) = sender.into_parts();
                 execute_pre_authorized(
                     endpoint.as_ref(),
                     pre_authorized,
                     Some(client.registration.client_id),
-                    sender.dpop_jkt,
-                    sender.mtls_x5t_s256,
+                    dpop_jkt,
+                    mtls_x5t_s256,
                 )
                 .await
             }

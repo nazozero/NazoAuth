@@ -1032,6 +1032,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "AUDIT_ANCHOR_TOKEN",
             "AUDIT_ANCHOR_TOKEN_FILE",
             "AUDIT_ANCHOR_URL",
+            "AUDIT_CLIENT_CREDENTIALS_ISSUANCE",
             "AVATAR_MAX_BYTES",
             "AVATAR_STORAGE_DIR",
             "BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS",

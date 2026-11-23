@@ -495,6 +495,14 @@ pub struct UserinfoSnapshot {
 }
 
 pub trait TokenRepositoryPort: Send + Sync {
+    /// Final authoritative read for a signed client-credentials token with no durable effects.
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> TokenFuture<'_, bool>;
+
     /// Read user authority without replacing the client epoch from authentication.
     /// The commit still rechecks both versions under its principal locks.
     fn token_principal_state<'a>(
@@ -829,6 +837,17 @@ where
         user_id: Uuid,
     ) -> Result<Option<Uuid>, TokenPortError> {
         self.repository.active_subject_id(tenant_id, user_id).await
+    }
+
+    pub async fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> Result<bool, TokenPortError> {
+        self.repository
+            .machine_client_active(tenant_id, client_id, epoch)
+            .await
     }
 
     pub async fn token_principal_state(

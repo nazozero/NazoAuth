@@ -7,20 +7,14 @@ use crate::contracts::token_endpoint::TokenRequestFacts;
 use crate::domain::rows::ClientRow;
 use crate::token::client_auth::TokenManagementClientAuthError;
 use http::StatusCode;
-use nazo_auth::{
-    DpopError, PresentedSenderConstraint, apply_sender_constraint, sender_constraint_policy,
-};
+use nazo_auth::{DpopError, SenderProofs, apply_sender_constraint, sender_constraint_policy};
 /// Sender proofs admitted for one token request.
 ///
 /// The token service stores at most one sender constraint in a token.  Keep
 /// this exact-one invariant at the HTTP boundary too: when both client flags
 /// are enabled, either proof is sufficient, but presenting both proofs is a
 /// protocol error rather than an implicit AND binding.
-#[derive(Debug, Eq, PartialEq)]
-pub struct ValidatedSenderConstraints {
-    pub dpop_jkt: Option<String>,
-    pub mtls_x5t_s256: Option<String>,
-}
+pub type ValidatedSenderConstraints = nazo_auth::SenderConstraint<String>;
 
 #[derive(Debug)]
 pub enum SenderConstraintValidationError {
@@ -83,32 +77,24 @@ pub async fn validate_token_sender_constraints(
 
     let has_dpop = dpop_jkt.is_some();
     let has_mtls = mtls_x5t_s256.is_some();
-    if apply_sender_constraint(
+    apply_sender_constraint(
         sender_constraint_policy(
             client.require_dpop_bound_tokens,
             client.require_mtls_bound_tokens,
         ),
-        PresentedSenderConstraint {
-            dpop_jkt: dpop_jkt.as_deref(),
-            mtls_x5t_s256: mtls_x5t_s256.as_deref(),
+        SenderProofs {
+            dpop_jkt,
+            mtls_x5t_s256,
         },
     )
-    .is_err()
-    {
+    .map_err(|_| {
         if has_dpop && has_mtls {
-            return Err(SenderConstraintValidationError::Multiple);
+            SenderConstraintValidationError::Multiple
+        } else if client.require_dpop_bound_tokens && !client.require_mtls_bound_tokens {
+            SenderConstraintValidationError::Dpop(DpopError::MissingProof)
+        } else {
+            SenderConstraintValidationError::MissingMtls
         }
-        if client.require_dpop_bound_tokens && !client.require_mtls_bound_tokens {
-            return Err(SenderConstraintValidationError::Dpop(
-                DpopError::MissingProof,
-            ));
-        }
-        return Err(SenderConstraintValidationError::MissingMtls);
-    }
-
-    Ok(ValidatedSenderConstraints {
-        dpop_jkt,
-        mtls_x5t_s256,
     })
 }
 
