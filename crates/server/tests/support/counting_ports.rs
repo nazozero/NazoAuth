@@ -166,8 +166,7 @@ impl TokenRepositoryPort for CountingTokenRepository {
                 | nazo_auth::TokenIssuanceMode::AuthorizationCode {
                     grant_expires_at, ..
                 } => grant_expires_at,
-                nazo_auth::TokenIssuanceMode::Fresh
-                | nazo_auth::TokenIssuanceMode::ClientCredentials => {
+                nazo_auth::TokenIssuanceMode::Fresh => {
                     panic!("expiration fault requires a grant commit")
                 }
             };

@@ -1057,7 +1057,7 @@ fn malformed_commit_cannot_create_redemption_or_refresh_authority() {
             let key = match &input.mode {
                 TokenIssuanceMode::AuthorizationCode { code_identity, .. } => code_identity.clone(),
                 TokenIssuanceMode::SingleUse { grant_key, .. } => grant_key.clone(),
-                TokenIssuanceMode::Fresh | TokenIssuanceMode::ClientCredentials => unreachable!(),
+                TokenIssuanceMode::Fresh => unreachable!(),
             };
             assert!(
                 matches!(
