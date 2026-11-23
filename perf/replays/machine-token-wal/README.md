@@ -168,3 +168,8 @@ WAL for each wrk2 point. Its observations start after the fixture's test token.
 At shutdown, wrk2 may close connections before the client reads every response.
 The report retains any difference between committed rows and completed responses.
 The k6 full-window counters support exact success-to-audit comparisons.
+
+For a common lower-concurrency profile, export `BENCH_WRK2_CONNECTIONS=64`
+for each service. The replay retains the 15 generator threads and the same
+response, throughput and resource checks, and writes the separate profile to
+`results/wrk2-c64`. Compare products at the same number of connections.
