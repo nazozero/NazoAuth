@@ -30,11 +30,14 @@ arms = {
     "K": "Keycloak",
     "H": "Ory Hydra",
 }
-rates = (400, 2400, 6000, 8000)
+rates = (400, 2400, 4375, 5000, 6000, 8000)
+capacity_only = (4375, 5000)
 retested = "--replace-third-8000" in sys.argv[2:]
 windows = {}
 for arm in arms:
     for rate in rates:
+        if rate in capacity_only and arm != "F":
+            continue
         has_repeat = retested and arm in ("F", "E") and rate == 8000
         for rep in range(1, 5 if has_repeat else 4):
             d = read(root / f"{arm}-{rate}-{rep}.json")
@@ -55,6 +58,9 @@ summary, rounds, resources = [], [], []
 for rate in rates:
     cols = []
     for arm in arms:
+        if (arm, rate, 1) not in windows:
+            cols.append(["—"] * 6)
+            continue
         chosen = (
             (1, 2, 4) if retested and arm in ("F", "E") and rate == 8000 else (1, 2, 3)
         )
@@ -70,10 +76,19 @@ for rate in rates:
                 median_latency("p95_ms"),
                 median_latency("p99_ms"),
                 f"{sum(d['accepted'] for d in rows)}/3",
+                f"{statistics.median(d['resources']['app']['mean_cpu_cores'] for d in rows):.2f}",
+                f"{statistics.median(d['resources']['app']['max_single_process_rss_mib'] for d in rows):,.1f}",
             ]
         )
     for i, title in enumerate(
-        ("实际成功请求/秒", "P95（ms）", "P99（ms）", "严格通过轮数")
+        (
+            "实际成功请求/秒",
+            "P95（ms）",
+            "P99（ms）",
+            "严格通过轮数",
+            "应用平均 CPU（核）",
+            "应用峰值 RSS（MiB）",
+        )
     ):
         summary.append([f"{rate:,}", title] + [c[i] for c in cols])
     for i in range(1, 5):
@@ -136,6 +151,10 @@ phase_table = table(
 timings = [read(root / f"http-{r}.timing.json") for r in (400, 6000)]
 http_windows = [read(root / f"http-{r}.json") for r in (400, 6000)]
 for timing, window in zip(timings, http_windows, strict=True):
+    assert window["k6_exit"] == 0 and window["outcome"] in ("accepted", "load")
+    assert all(
+        role["affinity_mismatches"] == 0 for role in window["resources"].values()
+    )
     assert timing["measured_success"]["count"] == window["success"]
     assert 100 <= timing["postcommit_samples"]["count"] <= window["success"]
     assert (
@@ -183,12 +202,49 @@ repeat_note = (
 )
 events = read(root / "keycloak-events.json")
 assert isinstance(events["eventsEnabled"], bool)
+proofs = {d["peer"]: d for d in read(root / "token-proofs.json")}
+assert set(proofs) == {"nazo", "keycloak", "hydra"}
+assert all(
+    p["signature_verified"] and p["requested_scope"] == "profile"
+    for p in proofs.values()
+)
+proof_table = table(
+    ["产品", "签名与密钥位数", "有效期（秒）", "返回的授权范围"],
+    [
+        [
+            label,
+            f"{proofs[k]['signature']} / {proofs[k]['rsa_bits']}",
+            proofs[k]["ttl_seconds"],
+            ", ".join(proofs[k]["returned_scope"]),
+        ]
+        for k, label in (
+            ("nazo", "NazoAuth"),
+            ("keycloak", "Keycloak"),
+            ("hydra", "Ory Hydra"),
+        )
+    ],
+)
 events_status = "开启" if events["eventsEnabled"] else "关闭"
+excluded = []
+if (root / "excluded-http-diagnostic-400.json").exists():
+    excluded.append(
+        "第一次 HTTP 诊断没有取得响应时间标记。修正数据库运行时与请求运行时之间的标记传递后重测，表内仅列有同请求时钟配对的诊断轮。"
+    )
+for file in sorted(root.glob("excluded-affinity-*.json")):
+    bad = read(file)
+    assert bad["outcome"] == "harness"
+    excluded.append(
+        f"{file.stem} 的 PostgreSQL 进程采样发现 {bad['resources']['postgres']['affinity_mismatches']} 次 CPU 亲和性不符。"
+        f"该窗口的 {bad['whole_success']:,} 次成功与 {bad['wal_committed_audit_rows']:,} 条已提交审计另行保留，"
+        "已重测该档同一轮次，原窗口排除在主表与对账合计之外。"
+    )
 report = f"""# 机器访问令牌签发延迟
 
 ## 同负载直接比较
 
 {sum_table}
+
+4,375 和 5,000 档各用三轮单独确认保留版本的容量。其余四档直接比较所有产品。
 
 每格取三轮中位数。P95 和 P99 分别表示 95% 和 99% 的成功请求在该时间内完成，越低越快。严格通过要求含预热零漏发、零失败、负载发生器有余量且采样有效。NazoAuth 还要求审计计数相符。吞吐只统计计时段成功响应。漏发计入稳定性判定，成功响应延迟不包含漏发。Keycloak 26.8.2 的 realm 管理 API 显示本次用户事件持久化{events_status}。{repeat_note}
 
@@ -216,7 +272,13 @@ F 为原版，E 为合并语句候选，K 为 Keycloak，H 为 Ory Hydra。NazoA
 
 {res_table}
 
+{chr(10).join(excluded)}
+
 ## 环境与限制
+
+三个服务均以 HTTP Basic 认证机器客户端，使用 `client_credentials` 签发访问令牌，请求范围为 `profile`。夹具通过各服务的 JWKS 和公钥验签。
+
+{proof_table}
 
 k6 2.1.0 恒定到达率。应用使用 16 个物理核、PostgreSQL 14 个逻辑 CPU、Valkey 2 个、k6 15 个，采样另绑 1 核。逐轮核验线程亲和性。两版相同 32 连接池、产品数据库、持久卷和 API 夹具。使用原有 PostgreSQL 18.7 进程和启动参数，fsync、同步提交与整页写开启，wal_sync_method=fdatasync、commit_delay=0。NazoAuth 在一个显式事务内持久化签发审计；外部锚定关闭。
 
@@ -230,6 +292,8 @@ for r in summary:
         "P95（ms）": "P95 ms",
         "P99（ms）": "P99 ms",
         "严格通过轮数": "Passing trials",
+        "应用平均 CPU（核）": "Mean application CPU cores",
+        "应用峰值 RSS（MiB）": "Peak application RSS, MiB",
     }[r[1]]
     prsum.append([r[0], translated, *r[2:]])
 (output / "tables-pr.md").write_text(

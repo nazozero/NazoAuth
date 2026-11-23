@@ -9,8 +9,9 @@ if ! docker inspect "$app" >/dev/null 2>&1; then
     --log-opt max-size=16m --log-opt max-file=2 -e RUST_LOG=warn \
     --entrypoint /affinity "$app_image" "$BENCH_APP_CPUS" /usr/local/bin/nazoauth server >/dev/null
   install_tools "$app"
-  docker cp out/http-timing "$app:/usr/local/bin/nazoauth"
 fi
+docker stop -t 15 "$app" >/dev/null
+docker cp out/http-timing "$app:/usr/local/bin/nazoauth"
 start_deps
 tmp=$(mktemp)
 cleanup() {

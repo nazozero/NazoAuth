@@ -8,7 +8,7 @@ pg = root / "crates/persistence-postgres/src"
 with (pg / "lib.rs").open("a") as f:
     f.write("""
 tokio::task_local! {
-    pub static BENCH_HTTP_ACK: std::cell::Cell<Option<std::time::Instant>>;
+    pub static BENCH_HTTP_ACK: std::sync::Arc<std::sync::OnceLock<std::time::Instant>>;
 }
 """)
 
@@ -21,9 +21,14 @@ def replace(path, old, new):
 
 replace(
     pg / "repositories/token_issuance.rs",
+    "let mut operation = tokio::task::JoinSet::new();",
+    "let bench_ack = crate::BENCH_HTTP_ACK.try_with(std::sync::Arc::clone).ok();\n            let mut operation = tokio::task::JoinSet::new();",
+)
+replace(
+    pg / "repositories/token_issuance.rs",
     "crate::bench_count_audit(1);",
     """
-                                let _ = crate::BENCH_HTTP_ACK.try_with(|v| v.set(Some(std::time::Instant::now())));
+                                if let Some(ack) = &bench_ack { let _ = ack.set(std::time::Instant::now()); }
                                 crate::bench_count_audit(1);""",
 )
 factory = root / "crates/server/src/bootstrap/startup/services/factory.rs"
@@ -40,9 +45,9 @@ replace(
     if SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 16 != 0 {
         return observed.await;
     }
-    nazo_postgres::BENCH_HTTP_ACK.scope(std::cell::Cell::new(None), async {
+    nazo_postgres::BENCH_HTTP_ACK.scope(std::sync::Arc::default(), async {
         let mut result = observed.await;
-        if let (Ok(response), Some(ack)) = (&mut result, nazo_postgres::BENCH_HTTP_ACK.with(|v| v.get())) {
+        if let (Ok(response), Some(ack)) = (&mut result, nazo_postgres::BENCH_HTTP_ACK.with(|v| v.get().copied())) {
             let nanos = ack.elapsed().as_nanos().to_string();
             use actix_web::http::header::{HeaderName, HeaderValue};
             response.headers_mut().insert(HeaderName::from_static("x-bench-after-commit-ns"),

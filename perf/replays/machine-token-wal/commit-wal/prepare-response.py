@@ -38,7 +38,7 @@ s = s.replace(
     marker,
     """const timing = {};
   for (const key of ['after_commit_ms', 'wait_first_byte_ms', 'receive_ms', 'postcommit_samples', 'measured_success']) {
-    timing[key] = data.metrics[key].values;
+    timing[key] = data.metrics[key] ? data.metrics[key].values : {};
   }
   return {'/tmp/k6-http-timing.json': JSON.stringify(timing), '/tmp/k6-window.json':""",
 )

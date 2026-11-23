@@ -18,11 +18,12 @@ def swap(file, old, new):
 
 
 swap("topology.sh", "PG=oauthbench-pg", "PG=${BENCH_WINDOW_PG:-oauthbench-pg}")
+# Pin the observer too: it can still be visible to the database process sampler.
 swap(
     "comparison-point.sh",
     'snapshot >"$scratch/count-before"',
     '''snapshot >"$scratch/count-before"
-lsn() { docker exec -u postgres "$PG" psql -XAt 'dbname=postgres replication=database' -c IDENTIFY_SYSTEM | cut -d'|' -f3; }
+lsn() { docker exec -u postgres "$PG" /affinity "$PG_CPUS" psql -XAt 'dbname=postgres replication=database' -c IDENTIFY_SYSTEM | cut -d'|' -f3; }
 lsn >"$out.start-lsn"''',
 )
 swap(

@@ -8,6 +8,8 @@ event after the transaction confirms its commit. The runner independently
 matches audit heap insertions with committed transaction IDs in flushed WAL.
 Keycloak and Ory Hydra each use their own database. The runner records the
 actual Keycloak realm event configuration through its administration API.
+The [reference measurements](https://github.com/nazozero/NazoAuth/pull/310)
+include per-window throughput, latency and audit counts.
 
 Use a dedicated Linux amd64 Docker host with Bash, Python 3, Git, jq, OpenSSL,
 `flock`, `taskset`, a C compiler with static linking support and access to
@@ -55,6 +57,10 @@ requests. A request-scoped timestamp measures the interval from the
 repository's commit confirmation to the outer HTTP middleware's response.
 The diagnostic k6 copy measures time to first byte and response transfer.
 The unmodified k6 workload is restored after these windows.
+
+The retained NazoAuth implementation also runs three trials at 4,375 and
+5,000 requests/s to narrow the interval between the common 2,400 and 6,000
+settings. These are capacity measurements for NazoAuth alone.
 
 `F` identifies the unchanged NazoAuth transaction, `E` the application
 candidate, `K` Keycloak and `H` Hydra. CPU is reported as mean cores and memory as
