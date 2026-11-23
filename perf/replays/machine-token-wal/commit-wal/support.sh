@@ -33,15 +33,19 @@ prepare_machine_app() {
   fi
   docker cp "$binary" "$app:/usr/local/bin/nazoauth"
 }
+relation_numbers() {
+  local database=$1 dbid rel client_rel
+  rel=$(docker exec -u postgres "$database" oid2name -d nazo_revised_ready -t security_audit_events | awk '$2=="security_audit_events"{print $1}')
+  client_rel=$(docker exec -u postgres "$database" oid2name -d nazo_revised_ready -t oauth_clients | awk '$2=="oauth_clients"{print $1}')
+  dbid=$(docker exec -u postgres "$database" oid2name | awk '$2=="nazo_revised_ready"{print $1}')
+  [[ $rel =~ ^[0-9]+$ && $client_rel =~ ^[0-9]+$ && $dbid =~ ^[0-9]+$ ]]
+  printf '%s %s %s\n' "$dbid" "$rel" "$client_rel"
+}
 point() {
   local label=$1 service=$2 database=$3 rate=$4 seconds=$5 vus=$6 scenario=${7:-machine}
   local output="$ROOT/results/$label.json"
-  local lo hi rel client_rel
-  rel=$(docker exec -u postgres "$database" oid2name -d nazo_revised_ready -t security_audit_events | awk '$2=="security_audit_events"{print $1}')
-  client_rel=$(docker exec -u postgres "$database" oid2name -d nazo_revised_ready -t oauth_clients | awk '$2=="oauth_clients"{print $1}')
-  local dbid
-  dbid=$(docker exec -u postgres "$database" oid2name | awk '$2=="nazo_revised_ready"{print $1}')
-  [[ $rel =~ ^[0-9]+$ && $client_rel =~ ^[0-9]+$ && $dbid =~ ^[0-9]+$ ]]
+  local lo hi dbid rel client_rel
+  read -r dbid rel client_rel < <(relation_numbers "$database")
 
   (cd bench && BENCH_WINDOW_PG="$database" BENCH_NAZO_CONTAINER="$service" BENCH_VUS="$vus" \
     bash comparison-point.sh nazo "$scenario" "$rate" 10 "$seconds" "$output")

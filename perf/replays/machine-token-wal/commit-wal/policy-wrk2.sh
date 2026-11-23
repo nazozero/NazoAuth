@@ -22,6 +22,13 @@ if [[ $peer != nazo ]]; then docker stop -t 5 "$vk" >/dev/null; fi
 trap 'docker stop -t 15 "$app" "$wrk" >/dev/null' EXIT
 docker start "$app" >/dev/null
 ready "$app" "$discovery"
+if [[ $arm == A && $scenario == machine ]]; then
+  read -r dbid audit_rel _ < <(relation_numbers "$pg")
+  python3 prepare-wrk2-audit.py
+  export BENCH_WRK2_AUDIT_REL="1663/$dbid/$audit_rel"
+  export BENCH_WRK2_WAL_COUNT="$ROOT/count-wal.py"
+  export BENCH_CAPACITY_POINT_SCRIPT=capacity/audited-point.sh
+fi
 dest="$ROOT/results/wrk2/$arm/$scenario"
 (cd bench && BENCH_NAZO_CONTAINER="$app" BENCH_WRK2_SEED="$seed" \
   taskset -c "$BENCH_CONTROL_CPU" python3 capacity/screen.py "$peer" "$scenario" "$dest")

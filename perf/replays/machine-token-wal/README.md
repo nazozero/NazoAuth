@@ -94,7 +94,7 @@ issue a machine access token. P95 and P99 give the time within which 95% and
 | Keycloak 26.8.2, realm event storage disabled | 2,400.0 | 1.396 | 1.709 | 3/3 |
 | Ory Hydra 26.2.0 | 0.2 | 4,013.678 | 4,808.042 | 0/3 |
 
-Hydra timed out at this load; its percentiles cover the few successful
+Hydra timed out at this load. Its percentiles cover the few successful
 responses. Every success in the revised default windows had a committed
 audit row (331,204 including warm-up). The
 [full results](https://github.com/nazozero/NazoAuth/pull/310) also include a
@@ -162,4 +162,9 @@ The third argument supplies the first rate to try. The fixture's original
 search uses 15 threads and 960 connections, 24-second screens and three
 36-second confirmations. Each response is checked. The wrk2 percentiles are
 corrected for coordinated omission and its timings include shutdown. Keep these
-results separate from the k6 open-arrival measurements and WAL reconciliation.
+results separate from the k6 open-arrival measurements. Arm `A machine` also
+records the native commit-counter delta and the committed audit rows in flushed
+WAL for each wrk2 point. Its observations start after the fixture's test token.
+At shutdown, wrk2 may close connections before the client reads every response.
+The report retains any difference between committed rows and completed responses.
+The k6 full-window counters support exact success-to-audit comparisons.

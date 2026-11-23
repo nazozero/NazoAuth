@@ -5,6 +5,10 @@ from collections import Counter
 from pathlib import Path
 
 rel, path, *client_relation = sys.argv[1:]
+wrk2_ack = None
+if client_relation[:1] == ["--wrk2"]:
+    wrk2_ack = int(client_relation[1])
+    client_relation = []
 inserts, commits = Counter(), set()
 locks, aborts = set(), set()
 for line in sys.stdin:
@@ -32,6 +36,18 @@ doc["wal_committed_audit_rows"] = sum(n for x, n in inserts.items() if x in comm
 doc["wal_uncommitted_audit_inserts"] = sum(
     n for x, n in inserts.items() if x not in commits
 )
+if wrk2_ack is not None:
+    # wrk2 closes connections on exit. The server can commit a request whose
+    # response did not reach the generator. Preserve that distinction explicitly.
+    doc["durable_token_issued"] = wrk2_ack
+    success = doc.get("success")
+    rows = doc["wal_committed_audit_rows"]
+    doc["wal_minus_completed_success"] = rows - success if success is not None else None
+    doc["wal_minus_acknowledgements"] = rows - wrk2_ack
+    p.write_text(json.dumps(doc, indent=2) + "\n")
+    if rows != wrk2_ack or (success is not None and rows < success):
+        raise SystemExit(f"wrk2 audit discrepancy: WAL={rows}, adapter={wrk2_ack}, HTTP={success}")
+    raise SystemExit(0)
 expected_rows = {"required": doc["whole_success"], "off": 0}[
     os.environ.get("BENCH_ISSUANCE_AUDIT", "required")
 ]
