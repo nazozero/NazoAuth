@@ -47,6 +47,27 @@ grid lower. If both leading confirmation candidates fail, the check confirms
 the highest lower rate that passed screening. The completion and error
 thresholds stay the same.
 
+For a fixed-rate repeat of issuance at 6,000, 6,750, 7,500, 9,000 and
+12,000 requests/s and active-token introspection at 2,400 requests/s, run
+`bash repeat-grid.sh` from the prepared `commit-wal` directory. The runner
+rotates the rates between rounds and puts each service first, second and last
+once at every load. It writes the order, token checks, configuration and 54
+aggregate windows under a new `results/grid-<run>` directory. To render those
+windows, run `python3 policy-report.py --details results/grid-<run>/windows/*.json`
+with the actual run identifier.
+
+Each window uses 960 k6 VUs, 10 seconds of warm-up and 36 seconds of timed
+arrivals. Pass requires zero failed operations and zero dropped arrivals over
+the full window, at least 99% of scheduled successful operations in both the
+timed and full windows, and a valid successful-operation P99. A token response
+must have the expected status and a nonempty access token. Introspection must
+have the expected status and return `active: true`. P95/P99 cover successful
+timed operations. There is no latency SLO in the pass rule. A valid comparison
+also requires k6 to exit cleanly, at least four correctly pinned CPU samples
+per required role, host-pressure coverage of at least 65% of the timed window
+and generator utilization below 12 average cores. NazoAuth's default audit
+count must reconcile to zero in both the adapter and committed WAL.
+
 ## Earlier commit-latency experiment
 
 The control and candidate use the same Rust release toolchain, API-provisioned

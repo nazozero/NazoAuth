@@ -22,8 +22,9 @@ for trial in "$@"; do
   docker stop -t 20 "$app" >/dev/null
   docker start "$app" >/dev/null
   ready "$app" "$discovery"
-  if [[ $peer == keycloak && ! -s results/keycloak-events.json ]]; then
-    docker exec "$prep" python3 /tmp/commit-kc-events.py >results/keycloak-events.json
+  events_file=${BENCH_KEYCLOAK_EVENTS_FILE:-results/keycloak-events.json}
+  if [[ $peer == keycloak && ! -s $events_file ]]; then
+    docker exec "$prep" python3 /tmp/commit-kc-events.py >"$events_file"
   fi
   vus=960; seconds=36
   if [[ $rate == 400 ]]; then vus=64; seconds=30; fi
