@@ -172,8 +172,8 @@ The native server defaults `AUDIT_CLIENT_CREDENTIALS_ISSUANCE` to `false`.
 Deployments that rely on per-token history must explicitly set it to `true`
 before upgrading. With that setting, a successful machine grant records the client, token identifier and granted
 scope before returning the token. A disconnect after commit can leave a record
-even if the caller misses the response. The issuing transaction waits for local commit. The external exporter can
-then deliver the event and reclaim it on acknowledgement. With export disabled,
+even if the caller misses the response. The external exporter can then deliver
+the committed event and reclaim it on acknowledgement. With export disabled,
 local events accumulate. Both settings recheck
 the authenticated client version after signing. On PostgreSQL the check takes
 a shared row lock, including when auditing is off, so a concurrent deactivation

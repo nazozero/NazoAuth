@@ -155,7 +155,7 @@ BENCH_MACHINE_SCENARIO=introspect bash compare-machine-policy.sh \
 ```
 
 `policy-peers.sh` accepts `machine` or `introspect` followed by window names
-with prefixes `B`, `A`, `N`, `K` (Keycloak) or `H` (Hydra) to rotate products.
+with prefixes `B`, `A`, `D`, `N`, `K` (Keycloak) or `H` (Hydra) to rotate products.
 `metadata.py results/environment.json control revised` records the benchmark
 binary and k6 workload hashes and checks the original PostgreSQL durability settings.
 

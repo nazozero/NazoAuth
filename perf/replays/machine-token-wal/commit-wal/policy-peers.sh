@@ -8,7 +8,7 @@ for trial in "$@"; do
   case "$trial" in
     K-*) bash peer-ref.sh keycloak "$trial" ;;
     H-*) bash peer-ref.sh hydra "$trial" ;;
-    B-*|A-*|N-*) bash compare-machine-policy.sh "$trial" ;;
+    B-*|A-*|D-*|N-*) bash compare-machine-policy.sh "$trial" ;;
     *) exit 2 ;;
   esac
 done
