@@ -22,6 +22,7 @@ bash compare-defaults.sh k6
 python3 metadata.py results/peer-default-k6-end.json revised
 bash compare-defaults.sh wrk2
 bash compare-defaults.sh k6-high
+bash compare-defaults.sh wrk2-check
 python3 metadata.py results/peer-default-end.json revised
 cmp results/peer-default-start.json results/peer-default-end.json
 ```
@@ -36,6 +37,13 @@ rounds remain available at their recorded commits.
 If PostgreSQL has recycled a window's first WAL segment, retain its HTTP
 observations separately and repeat the same trial with a new trial ID.
 Only completed WAL reads can establish the number of committed audit rows.
+
+The final wrk2 check repeats the 960-connection introspection search for all
+three services from 9,600 requests/s. A missed arrival-rate target in a short
+screen can terminate a search before the service saturates. Keep both searches
+under their separate result roots and report the higher three-window
+confirmation. Issuance profiles with no passing starting rate continue one
+grid lower. The completion and error thresholds stay the same.
 
 ## Earlier commit-latency experiment
 

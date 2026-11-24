@@ -26,5 +26,19 @@ case ${1:-} in
         K-$rate-92 H-$rate-92 D-$rate-92 H-$rate-93 D-$rate-93 K-$rate-93
     done
     ;;
-  *) echo "Usage: bash compare-defaults.sh prepare|k6|wrk2|k6-high" >&2; exit 2 ;;
+  wrk2-check)
+    # Test whether the query search is sensitive to its starting rate.
+    for arm in H D K; do
+      BENCH_WRK2_CONNECTIONS=960 bash policy-wrk2.sh "$arm" introspect 9600 "$PWD/results/second-start"
+    done
+    # Continue below the initial grid only when none of its three rates passed.
+    for summary in "$PWD"/results/wrk2*/*/machine/summary.json; do
+      [[ $(jq -r .status "$summary") == no-accepted-starting-rate ]] || continue
+      arm=$(basename "$(dirname "$(dirname "$summary")")")
+      connections=$(jq -r '.trials[0].connections' "$summary")
+      rate=$(jq -r '.first_rejected_rate / 2 | floor' "$summary")
+      BENCH_WRK2_CONNECTIONS=$connections bash policy-wrk2.sh "$arm" machine "$rate" "$PWD/results/second-start"
+    done
+    ;;
+  *) echo "Usage: bash compare-defaults.sh prepare|k6|wrk2|k6-high|wrk2-check" >&2; exit 2 ;;
 esac
