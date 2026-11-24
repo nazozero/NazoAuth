@@ -33,11 +33,21 @@ case ${1:-} in
     done
     # Continue below the initial grid only when none of its three rates passed.
     for summary in "$PWD"/results/wrk2*/*/machine/summary.json; do
-      [[ $(jq -r .status "$summary") == no-accepted-starting-rate ]] || continue
+      case $(jq -r .status "$summary") in
+        no-accepted-starting-rate)
+          rate=$(jq -r '.first_rejected_rate / 2 | floor' "$summary")
+          ceiling=131072 ;;
+        confirmation-failed)
+          rate=$(jq -r '[.trials[] | select(.confirmation and (.accepted|not)) | .offered_per_second] | min' "$summary")
+          rate=$(jq -r --argjson failed "$rate" '[.trials[] | select(.accepted and .offered_per_second < $failed) | .offered_per_second] | max // empty' "$summary")
+          [[ -n $rate ]] || continue
+          ceiling=$rate ;;
+        *) continue ;;
+      esac
       arm=$(basename "$(dirname "$(dirname "$summary")")")
       connections=$(jq -r '.trials[0].connections' "$summary")
-      rate=$(jq -r '.first_rejected_rate / 2 | floor' "$summary")
-      BENCH_WRK2_CONNECTIONS=$connections bash policy-wrk2.sh "$arm" machine "$rate" "$PWD/results/second-start"
+      BENCH_WRK2_CONNECTIONS=$connections BENCH_WRK2_MAX_RATE=$ceiling \
+        bash policy-wrk2.sh "$arm" machine "$rate" "$PWD/results/second-start"
     done
     ;;
   *) echo "Usage: bash compare-defaults.sh prepare|k6|wrk2|k6-high|wrk2-check" >&2; exit 2 ;;

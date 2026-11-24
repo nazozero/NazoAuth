@@ -43,7 +43,9 @@ three services from 9,600 requests/s. A missed arrival-rate target in a short
 screen can terminate a search before the service saturates. Keep both searches
 under their separate result roots and report the higher three-window
 confirmation. Issuance profiles with no passing starting rate continue one
-grid lower. The completion and error thresholds stay the same.
+grid lower. If both leading confirmation candidates fail, the check confirms
+the highest lower rate that passed screening. The completion and error
+thresholds stay the same.
 
 ## Earlier commit-latency experiment
 
@@ -64,7 +66,7 @@ the pinned images. Reserve the named Docker network and containers for this
 fixture. The fixture generates its credentials locally. Its stock k6 workload,
 API provisioners and resource samplers are pinned in the source-only
 `fixture-sources.tgz` archive (SHA-256
-`7d9bcb149c7e9cf170e7bd656acf38749d008227fe881c42269b45d67d3ab1d4`).
+`4b6e4d3016d1e8c31a54a65c2f27e13de37e36063284c0758d70bb03e73cd5fa`).
 
 ```bash
 repo=$(git rev-parse --show-toplevel)
