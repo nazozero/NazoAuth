@@ -505,7 +505,7 @@ impl Settings {
                 request_object_jti_policy,
                 auth_code_ttl_seconds,
                 audit_client_credentials_issuance: config
-                    .bool("AUDIT_CLIENT_CREDENTIALS_ISSUANCE", true)?,
+                    .bool("AUDIT_CLIENT_CREDENTIALS_ISSUANCE", false)?,
                 access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,
                 id_token_ttl_seconds: config.parse("ID_TOKEN_TTL_SECONDS", 600)?,
                 refresh_token_ttl_seconds: config.parse("REFRESH_TOKEN_TTL_SECONDS", 2_592_000)?,

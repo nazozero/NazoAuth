@@ -593,16 +593,11 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         Box::pin(async move {
             let access_token_expires_at =
                 validate_commit_input(&input).map_err(map_repository_error)?;
-            let ownership_horizon = access_token_expires_at
-                .checked_add(jiff::SignedDuration::from_secs(
-                    MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
-                ))
-                .map_err(|_| TokenPortError::CorruptData)?;
             // A SingleUse receipt retains replay-revocation evidence until the
             // token acceptance window and grant deadline both close. Fresh
             // has no receipt and persists neither deadline.
-            let (single_use, retain_until) = match &input.mode {
-                TokenIssuanceMode::Fresh => (None, ownership_horizon),
+            let single_use = match &input.mode {
+                TokenIssuanceMode::Fresh => None,
                 TokenIssuanceMode::SingleUse {
                     grant_key,
                     grant_expires_at,
@@ -611,13 +606,18 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     code_identity: grant_key,
                     grant_expires_at,
                     ..
-                } => (
+                } => {
+                    let ownership_horizon = access_token_expires_at
+                        .checked_add(jiff::SignedDuration::from_secs(
+                            MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
+                        ))
+                        .map_err(|_| TokenPortError::CorruptData)?;
                     Some((
                         <[u8; 32]>::from(blake3::hash(grant_key.as_bytes())),
                         *grant_expires_at,
-                    )),
-                    std::cmp::max(ownership_horizon, *grant_expires_at),
-                ),
+                        ownership_horizon.max(*grant_expires_at),
+                    ))
+                }
             };
             let authorization_code_holder = match &input.mode {
                 TokenIssuanceMode::AuthorizationCode { holder, .. } => {
@@ -661,7 +661,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                     Ok(client_type) => client_type,
                                     Err(result) => return Ok(result),
                                 };
-                                if let Some((digest, grant_expires_at)) = single_use {
+                                if let Some((digest, grant_expires_at, retain_until)) = single_use {
                                     let inserted = sql_query(
                                         "INSERT INTO oauth_token_issuances (\
                                          issuance_id, tenant_id, client_id, user_id, \

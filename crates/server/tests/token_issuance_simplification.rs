@@ -603,12 +603,12 @@ async fn issuance_column_names(connection: &mut AsyncPgConnection) -> Vec<String
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatcher() {
-    check_machine_issuance("fresh", None).await;
+    check_machine_issuance("fresh", Some(true)).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn machine_issuance_without_success_audit_returns_distinct_tokens() {
-    check_machine_issuance("noaudit", Some(false)).await;
+async fn machine_issuance_defaults_to_no_success_audit() {
+    check_machine_issuance("noaudit", None).await;
 }
 
 async fn check_machine_issuance(slug: &str, audit: Option<bool>) {
@@ -741,7 +741,7 @@ async fn check_machine_issuance(slug: &str, audit: Option<bool>) {
     });
     recorded.sort_unstable();
     issued.sort_unstable();
-    if audit == Some(false) {
+    if !audit.unwrap_or(false) {
         assert!(recorded.is_empty());
     } else {
         assert_eq!(

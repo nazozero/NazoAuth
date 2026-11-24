@@ -363,18 +363,18 @@ fn registration_admission_follows_the_deployment_capabilities() {
 }
 
 #[test]
-fn machine_success_auditing_defaults_on_and_can_be_disabled() {
+fn machine_success_auditing_defaults_off_and_can_be_enabled() {
     let mut config = configuration();
     assert!(
-        config
+        !config
             .application("p".repeat(32))
             .unwrap()
             .protocol
             .audit_client_credentials_issuance
     );
-    config.audit_client_credentials_issuance = Some(false);
+    config.audit_client_credentials_issuance = Some(true);
     assert!(
-        !config
+        config
             .application("p".repeat(32))
             .unwrap()
             .protocol

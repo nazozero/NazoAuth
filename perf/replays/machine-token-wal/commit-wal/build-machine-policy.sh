@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 repo=$(git -C "$1" rev-parse --show-toplevel)
 revision=$(git -C "$repo" rev-parse "${2:-HEAD}^{commit}")
-base=5a2de27de35041a751c020224f3601f4a2fc4ffa
+base=${BENCH_CONTROL_REVISION:-5a2de27de35041a751c020224f3601f4a2fc4ffa}
 work=$(mktemp -d)
 builder=machine-policy-build-$$
 cleanup() {

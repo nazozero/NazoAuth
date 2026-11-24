@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# B is the previous binary, A and N run the same revised binary with auditing on/off.
+# B is the control. A enables audit, N disables it explicitly, and D uses the new default.
 set -euo pipefail
 source "$(dirname "$0")/support.sh"
 mkdir -p results
@@ -11,8 +11,12 @@ trap cleanup EXIT
 docker start "$pg" >/dev/null
 ready_pg "$pg"
 start_deps
-variants=(B A N)
-if [[ -n ${BENCH_NO_AUDIT_REFERENCE:-} ]]; then variants+=(P); fi
+variants=()
+for trial in "$@"; do
+  variant=${trial%%-*}
+  case "$variant" in B|A|D|N|P) ;; *) exit 2 ;; esac
+  if [[ " ${variants[*]} " != *" $variant "* ]]; then variants+=("$variant"); fi
+done
 scenario=${BENCH_MACHINE_SCENARIO:-machine}
 case "$scenario" in machine|introspect) ;; *) exit 2 ;; esac
 for variant in "${variants[@]}"; do
@@ -22,7 +26,7 @@ for variant in "${variants[@]}"; do
 done
 for trial in "$@"; do
   IFS=- read -r variant rate round <<<"$trial"
-  case "$variant" in B|A) export BENCH_ISSUANCE_AUDIT=required ;; N|P) export BENCH_ISSUANCE_AUDIT=off ;; *) exit 2 ;; esac
+  case "$variant" in B|A) export BENCH_ISSUANCE_AUDIT=required ;; D|N|P) export BENCH_ISSUANCE_AUDIT=off ;; *) exit 2 ;; esac
   if [[ $scenario == introspect ]]; then export BENCH_ISSUANCE_AUDIT=off; fi
   app="nazo-machine-policy-$variant"
   docker start "$app" >/dev/null

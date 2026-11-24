@@ -23,6 +23,7 @@ prepare_machine_app() {
   binary=out/control; extra=()
   if [[ $variant != B ]]; then binary=${BENCH_REVISED_BINARY:-out/revised}; fi
   if [[ $variant == P ]]; then binary=$BENCH_NO_AUDIT_REFERENCE; fi
+  if [[ $variant == A ]]; then extra=(-e AUDIT_CLIENT_CREDENTIALS_ISSUANCE=true); fi
   if [[ $variant == N || $variant == P ]]; then extra=(-e AUDIT_CLIENT_CREDENTIALS_ISSUANCE=false); fi
   if ! docker inspect "$app" >/dev/null 2>&1; then
     docker create --name "$app" --network "$net" --network-alias oauthbench-api-audit \
@@ -30,6 +31,14 @@ prepare_machine_app() {
       --log-opt max-size=16m --log-opt max-file=2 -e RUST_LOG=warn "${extra[@]}" \
       --entrypoint /affinity "$app_image" "$BENCH_APP_CPUS" /usr/local/bin/nazoauth server >/dev/null
     install_tools "$app"
+  fi
+  if [[ $variant == A || $variant == D ]]; then
+    local setting
+    setting=$(docker inspect "$app" | jq -r '.[0].Config.Env[] | select(startswith("AUDIT_CLIENT_CREDENTIALS_ISSUANCE="))')
+    if [[ $variant == A && $setting != AUDIT_CLIENT_CREDENTIALS_ISSUANCE=true || $variant == D && -n $setting ]]; then
+      echo "$app has a stale audit setting; recreate the benchmark container." >&2
+      return 1
+    fi
   fi
   docker cp "$binary" "$app:/usr/local/bin/nazoauth"
 }

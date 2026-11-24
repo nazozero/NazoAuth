@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from statistics import median
 
-ARMS = {"B": "NazoAuth 修前", "A": "NazoAuth 审计开", "N": "NazoAuth 审计关",
+ARMS = {"B": "NazoAuth 修前", "A": "NazoAuth 审计开", "N": "NazoAuth 审计关", "D": "NazoAuth 默认关闭",
         "P": "NazoAuth 审计关，行锁隐式提交", "K": "Keycloak", "H": "Ory Hydra"}
 ROLES = ("app", "postgres", "valkey", "generator")
 
@@ -36,7 +36,7 @@ def main():
         arm, rate, _ = label.split("-")
         row = json.loads(path.read_text())
         assert int(rate) == row["offered_per_second"]
-        if arm in "BANP":
+        if arm in "BADNP":
             assert row["expected_audit_rows"] == row["wal_committed_audit_rows"] == row["durable_token_issued"]
             assert row["wal_uncommitted_audit_inserts"] == 0
         groups[(row["case"], int(rate))][arm].append((label, row))
@@ -52,7 +52,7 @@ def main():
             pairs = arms[arm]
             data = [row for _, row in pairs]
             ok = sum(row["accepted"] for row in data)
-            audits = sum(row["wal_committed_audit_rows"] for row in data) if arm in "BANP" else "—"
+            audits = sum(row["wal_committed_audit_rows"] for row in data) if arm in "BADNP" else "—"
             overview.append((ARMS[arm], quant([r["success_per_second"] for r in data], 1),
                 quant([r.get("p95_ms") for r in data]), quant([r.get("p99_ms") for r in data]),
                 f"{ok}/{len(data)}", f"{sum(r['whole_success'] for r in data):,}", audits))

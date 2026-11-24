@@ -168,11 +168,13 @@ and refresh-family changes. A rotation includes `rotated_from_id` and
 `refresh_token_family_id` on that same event. Refresh replay records
 `refresh_reuse_detected`.
 
-The native server defaults `AUDIT_CLIENT_CREDENTIALS_ISSUANCE` to `true`.
-A successful machine grant then records the client, token identifier and granted
+The native server defaults `AUDIT_CLIENT_CREDENTIALS_ISSUANCE` to `false`.
+Deployments that rely on per-token history must explicitly set it to `true`
+before upgrading. With that setting, a successful machine grant records the client, token identifier and granted
 scope before returning the token. A disconnect after commit can leave a record
-even if the caller misses the response. Set the option to `false` when the deployment
-does not need a per-token issuance history for this grant. Both settings recheck
+even if the caller misses the response. The issuing transaction waits for local commit. The external exporter can
+then deliver the event and reclaim it on acknowledgement. With export disabled,
+local events accumulate. Both settings recheck
 the authenticated client version after signing. On PostgreSQL the check takes
 a shared row lock, including when auditing is off, so a concurrent deactivation
 that already holds the row lock completes first. With auditing disabled the server

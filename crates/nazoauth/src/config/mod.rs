@@ -206,7 +206,7 @@ impl Configuration {
                 fapi_resource_dpop_nonce_policy: DpopNoncePolicy::Optional,
                 request_object_jti_policy: RequestObjectJtiPolicy::Optional,
                 auth_code_ttl_seconds: 60,
-                audit_client_credentials_issuance: true,
+                audit_client_credentials_issuance: false,
                 access_token_ttl_seconds: 300,
                 id_token_ttl_seconds: 600,
                 refresh_token_ttl_seconds: 2_592_000,

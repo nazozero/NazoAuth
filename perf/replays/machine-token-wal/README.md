@@ -1,7 +1,7 @@
 # Machine access token issuance on a fixed PostgreSQL server
 
 The [machine-grant replay](#machine-token-success-audit) compares the previous
-implementation, the current default with a committed success event, and the
+implementation, explicitly enabled auditing with a committed success event, and the
 same binary with that event disabled. It also compares Keycloak and Ory Hydra
 and measures valid-token introspection. The [comparison tables and round-by-round
 measurements](https://github.com/nazozero/NazoAuth/pull/310) include CPU, memory,
@@ -89,7 +89,7 @@ issue a machine access token. P95 and P99 give the time within which 95% and
 | Service and success-event setting | Successful requests/s | P95 (ms) | P99 (ms) | Passing windows |
 | --- | ---: | ---: | ---: | ---: |
 | NazoAuth before the change, durable event | 2,400.0 | 5.391 | 12.756 | 3/3 |
-| NazoAuth revised default, durable event | 2,400.0 | 4.682 | 9.104 | 3/3 |
+| NazoAuth revised, durable event (then default) | 2,400.0 | 4.682 | 9.104 | 3/3 |
 | NazoAuth revised, success event disabled | 2,400.0 | 0.796 | 0.922 | 3/3 |
 | Keycloak 26.8.2, realm event storage disabled | 2,400.0 | 1.396 | 1.709 | 3/3 |
 | Ory Hydra 26.2.0 | 0.2 | 4,013.678 | 4,808.042 | 0/3 |
@@ -111,7 +111,7 @@ peer rows come from the original session. Values are medians across three window
 | Service and machine-token issuance audit setting | Successful queries/s | P95 (ms) | P99 (ms) | Passing windows |
 | --- | ---: | ---: | ---: | ---: |
 | NazoAuth before the change, durable event | 2,400.0 | 0.748 | 0.866 | 3/3 |
-| NazoAuth revised default, durable event | 2,400.0 | 0.812 | 0.966 | 3/3 |
+| NazoAuth revised, durable event (then default) | 2,400.0 | 0.812 | 0.966 | 3/3 |
 | NazoAuth revised, success event disabled | 2,400.0 | 0.815 | 0.960 | 3/3 |
 | Keycloak 26.8.2 | 2,400.0 | 0.551 | 0.734 | 3/3 |
 | Ory Hydra 26.2.0 | 2,400.0 | 1.969 | 7.988 | 3/3 |
@@ -134,8 +134,8 @@ bash peer-ref.sh keycloak K-2400-1 K-2400-2 K-2400-3
 bash peer-ref.sh hydra H-2400-1 H-2400-2 H-2400-3
 ```
 
-`B` runs the previous implementation. `A` uses the revised binary with its
-default audit configuration. `N` uses the same binary with
+`B` runs the control revision selected by `BENCH_CONTROL_REVISION` at build time.
+`A` uses the revised binary with explicit success auditing. `D` uses its default (off). `N` uses the same binary with
 `AUDIT_CLIENT_CREDENTIALS_ISSUANCE=false`. Use a new trial label for each
 window. Supply the desired rate as the middle field and rotate the arms
 between rounds. All three share the API-created machine client and NazoAuth
