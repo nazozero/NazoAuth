@@ -68,6 +68,44 @@ per required role, host-pressure coverage of at least 65% of the timed window
 and generator utilization below 12 average cores. NazoAuth's default audit
 count must reconcile to zero in both the adapter and committed WAL.
 
+To repeat only Keycloak issuance at 12,000 requests/s on the original
+16 application CPUs, use the same prepared fixture and exported CPU masks.
+Run these commands from `commit-wal`:
+
+```sh
+bash compare-defaults.sh prepare
+run=$(date -u +%Y%m%d%H%M%S)
+dest="$PWD/results/keycloak-pressure-$run"
+mkdir "$dest"
+python3 metadata.py "$dest/start.json" revised
+export BENCH_KEYCLOAK_EVENTS_FILE="$dest/keycloak-events.json"
+python3 keycloak-pressure.py "$run"
+python3 metadata.py "$dest/end.json" revised
+cmp "$dest/start.json" "$dest/end.json"
+```
+
+For each of three windows, the control CPU samples 15 seconds before startup.
+A quiet baseline requires CPU PSI at most 0.43% (the highest original
+NazoAuth window) and at most one busy core summed across the 16 application
+CPUs. After ten attempts the point runs with its baseline marked unqualified.
+The same observer measures the timed load and 15 seconds after Keycloak stops.
+Each result includes every idle attempt and mean busy cores on the assigned
+CPUs from Linux v15 schedstat. The stock application sampler independently
+measures process CPU consumption inside Keycloak. Their sampling intervals
+overlap but their endpoints can differ. Host PSI includes runnable work
+outside the application mask. The after-load PSI has no influence on trial
+selection. The [three measured windows](keycloak-12000.md) include the
+before-load, timed and after-load pressure for each round.
+
+For the optional cgroup cross-check on this v1 host, run an observer on
+the control CPU inside the fixture container. Verify that the fixture and
+Keycloak share the same cpuacct path in `/proc/self/cgroup`. Sample
+`cpuacct.usage_percpu` under `/sys/fs/cgroup/cpuacct` once a second along
+with schedstat and a timestamp. Sum each counter over the application CPU
+IDs. The two deltas divided by elapsed nanoseconds give group and total
+busy cores over the same interval. Use only samples inside the timed
+window and report its actual coverage.
+
 ## Earlier commit-latency experiment
 
 The control and candidate use the same Rust release toolchain, API-provisioned
