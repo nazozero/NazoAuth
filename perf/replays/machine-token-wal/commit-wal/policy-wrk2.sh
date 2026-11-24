@@ -36,4 +36,5 @@ if [[ $connections != 960 ]]; then suite="wrk2-c$connections"; fi
 dest="${4:-$ROOT/results}/$suite/$arm/$scenario"
 (cd bench && BENCH_NAZO_CONTAINER="$app" BENCH_WRK2_SEED="$seed" \
   taskset -c "$BENCH_CONTROL_CPU" python3 capacity/screen.py "$peer" "$scenario" "$dest")
+jq -e --argjson count "$connections" 'all(.trials[]; .connections == $count or (.outcome == "harness" and .connections == null))' "$dest/summary.json" >/dev/null
 jq -c '{status,confirmed_rate,first_rejected_rate,bounding_observation}' "$dest/summary.json"

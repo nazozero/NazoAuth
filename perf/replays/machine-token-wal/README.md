@@ -66,7 +66,7 @@ the pinned images. Reserve the named Docker network and containers for this
 fixture. The fixture generates its credentials locally. Its stock k6 workload,
 API provisioners and resource samplers are pinned in the source-only
 `fixture-sources.tgz` archive (SHA-256
-`4b6e4d3016d1e8c31a54a65c2f27e13de37e36063284c0758d70bb03e73cd5fa`).
+`8e3715901b669d5ed3bff8dd308a38f9b6c0bcc7b45f1ad7a920a7e4f9f4ae14`).
 
 ```bash
 repo=$(git rev-parse --show-toplevel)

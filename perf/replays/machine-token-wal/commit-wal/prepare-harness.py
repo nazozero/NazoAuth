@@ -47,5 +47,3 @@ swap(
     "elif not whole_success or signatures != whole_success:",
     "elif not whole_success or signatures != expected_rows:",
 )
-
-swap("capacity/screen.py", "CONNECTIONS = 960", 'CONNECTIONS = int(os.environ.get("BENCH_WRK2_CONNECTIONS", "960"))')
