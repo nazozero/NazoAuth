@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/support.sh"
-arm=${1:?A, N, K or H}
+arm=${1:?A, D, N, K or H}
 scenario=${2:?machine or introspect}
 seed=${3:?initial offered rate}
 case "$scenario" in machine|introspect) ;; *) exit 2 ;; esac
@@ -10,7 +10,7 @@ ready_pg "$pg"
 start_deps
 docker start "$wrk" >/dev/null
 case "$arm" in
-  N|A)
+  D|N|A)
     app=nazo-machine-policy-$arm; peer=nazo; discovery=/health
     prepare_machine_app "$arm" "$app"
     ;;

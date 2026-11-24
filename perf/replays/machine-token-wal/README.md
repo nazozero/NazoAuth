@@ -1,11 +1,36 @@
 # Machine access token issuance on a fixed PostgreSQL server
 
-The [machine-grant replay](#machine-token-success-audit) compares the previous
-implementation, explicitly enabled auditing with a committed success event, and the
-same binary with that event disabled. It also compares Keycloak and Ory Hydra
-and measures valid-token introspection. The [comparison tables and round-by-round
-measurements](https://github.com/nazozero/NazoAuth/pull/310) include CPU, memory,
-latency, failed requests and missed arrivals.
+The current three-service comparison uses the revised NazoAuth binary with the
+machine-token success-audit option unset, Keycloak 26.8.2 and Ory Hydra 26.2.0.
+The [side-by-side results](https://github.com/nazozero/NazoAuth/pull/310) cover
+fixed-rate issuance, valid-token introspection and wrk2 capacity at matched
+connection counts. All three services run sequentially on one host and keep
+their API-created fixtures in separate databases.
+
+### Reproduce the current comparison
+
+Extract the kit as described below, set the CPU masks for your host, then run
+the following commands from `commit-wal` on a dedicated fixture. The baseline
+binary also bootstraps the NazoAuth database.
+
+```sh
+BENCH_CONTROL_REVISION=fbfd1575f89f698ba1adf050ef71efc11a6c501f bash build-machine-policy.sh "$repo" 75f56f692be0efe27359268099f08dea8db2f8ac
+bash setup-fixture.sh
+bash compare-defaults.sh prepare
+python3 metadata.py results/peer-default-start.json revised
+bash compare-defaults.sh k6
+python3 metadata.py results/peer-default-k6-end.json revised
+bash compare-defaults.sh wrk2
+python3 metadata.py results/peer-default-end.json revised
+cmp results/peer-default-start.json results/peer-default-end.json
+```
+
+Preparation aligns the dedicated Keycloak machine client's granted scope via its
+admin API. It issues and cryptographically verifies a token from each service:
+RS256, 2,048-bit RSA, 300-second lifetime and the granted scope `profile`.
+Hydra uses its admin endpoint for introspection; NazoAuth and Keycloak use
+client authentication. The original archive and result tables for the earlier
+rounds remain available at their recorded commits.
 
 ## Earlier commit-latency experiment
 
@@ -26,7 +51,7 @@ the pinned images. Reserve the named Docker network and containers for this
 fixture. The fixture generates its credentials locally. Its stock k6 workload,
 API provisioners and resource samplers are pinned in the source-only
 `fixture-sources.tgz` archive (SHA-256
-`9917d77b53767fa4d625f38f5404ae3a45b8e73abfdfac678f4f66b26e884f75`).
+`7d9bcb149c7e9cf170e7bd656acf38749d008227fe881c42269b45d67d3ab1d4`).
 
 ```bash
 repo=$(git rev-parse --show-toplevel)
