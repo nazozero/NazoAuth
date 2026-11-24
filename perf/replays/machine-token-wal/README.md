@@ -21,6 +21,7 @@ python3 metadata.py results/peer-default-start.json revised
 bash compare-defaults.sh k6
 python3 metadata.py results/peer-default-k6-end.json revised
 bash compare-defaults.sh wrk2
+bash compare-defaults.sh k6-high
 python3 metadata.py results/peer-default-end.json revised
 cmp results/peer-default-start.json results/peer-default-end.json
 ```
@@ -31,6 +32,10 @@ RS256, 2,048-bit RSA, 300-second lifetime and the granted scope `profile`.
 Hydra uses its admin endpoint for introspection; NazoAuth and Keycloak use
 client authentication. The original archive and result tables for the earlier
 rounds remain available at their recorded commits.
+
+If PostgreSQL has recycled a window's first WAL segment, retain its HTTP
+observations separately and repeat the same trial with a new trial ID.
+Only completed WAL reads can establish the number of committed audit rows.
 
 ## Earlier commit-latency experiment
 

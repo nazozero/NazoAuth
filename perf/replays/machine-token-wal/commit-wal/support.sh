@@ -62,8 +62,19 @@ point() {
   if [[ "$lo" == "$hi" ]]; then
     python3 count-wal.py "1663/$dbid/$rel" "$output" "1663/$dbid/$client_rel" </dev/null
   else
-    docker exec -u postgres "$database" pg_waldump -s "$lo" -e "$hi" \
-      | python3 count-wal.py "1663/$dbid/$rel" "$output" "1663/$dbid/$client_rel"
+    # Publish WAL counts only after both the reader and counter finish.
+    (
+      staged=$(mktemp "$output.XXXXXX")
+      trap 'rm -f "$staged"' EXIT
+      cp "$output" "$staged"
+      docker exec -u postgres "$database" pg_waldump -s "$lo" -e "$hi" \
+        | python3 count-wal.py "1663/$dbid/$rel" "$staged" "1663/$dbid/$client_rel" || {
+          jq '.accepted=false | .outcome="harness" | .audit_observation="unverified"' "$output" >"$staged"
+          mv "$staged" "$output"
+          exit 1
+        }
+      mv "$staged" "$output"
+    )
   fi
   jq -c '{whole_success,durable_token_issued,wal_committed_audit_rows,dropped_whole_trial,p95_ms,p99_ms,outcome}' "$output"
 }

@@ -20,5 +20,11 @@ case ${1:-} in
     for arm in H D K; do BENCH_WRK2_CONNECTIONS=64 bash policy-wrk2.sh "$arm" machine 400; done
     for arm in K D H; do BENCH_WRK2_CONNECTIONS=15 bash policy-wrk2.sh "$arm" machine 400; done
     ;;
-  *) echo "Usage: bash compare-defaults.sh prepare|k6|wrk2" >&2; exit 2 ;;
+  k6-high)
+    for rate in 6000 6750 7500 9000 12000; do
+      bash policy-peers.sh machine D-$rate-91 K-$rate-91 H-$rate-91 \
+        K-$rate-92 H-$rate-92 D-$rate-92 H-$rate-93 D-$rate-93 K-$rate-93
+    done
+    ;;
+  *) echo "Usage: bash compare-defaults.sh prepare|k6|wrk2|k6-high" >&2; exit 2 ;;
 esac
