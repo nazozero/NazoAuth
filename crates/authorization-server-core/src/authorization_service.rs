@@ -68,6 +68,8 @@ impl AuthorizationDecisionKind {
 pub struct AuthorizationDecisionCommit {
     pub tenant_id: Uuid,
     pub user_id: Uuid,
+    /// Browser authentication generation, checked under the commit's account fence.
+    pub user_epoch: i64,
     pub client_id: String,
     pub request_id: String,
     pub pushed_request_uri: Option<String>,
@@ -88,6 +90,7 @@ pub enum AuthorizationDecisionCommitResult {
     Conflict,
     Expired,
     ClientUnavailable,
+    SubjectUnavailable,
     GrantUnavailable,
 }
 
@@ -761,7 +764,9 @@ where
         mut input: AuthorizationDecisionCommit,
         code: Option<PreparedAuthorizationCode>,
     ) -> Result<AuthorizationDecisionCommitResult, AuthorizationPortError> {
-        if (input.decision == AuthorizationDecisionKind::Deny) != code.is_none() {
+        if input.user_epoch < 0
+            || (input.decision == AuthorizationDecisionKind::Deny) != code.is_none()
+        {
             return Err(AuthorizationPortError::CorruptData);
         }
         if let Some(code) = code.as_ref() {

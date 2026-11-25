@@ -91,15 +91,17 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                                     };
                                     let actor = sql_query(
                                         "SELECT id FROM users \
-                                         WHERE tenant_id = $1 AND id = $2 AND is_active FOR SHARE",
+                                         WHERE tenant_id = $1 AND id = $2 AND is_active \
+                                           AND access_token_epoch = $3 FOR SHARE",
                                     )
                                     .bind::<sql_types::Uuid, _>(input.tenant_id)
                                     .bind::<sql_types::Uuid, _>(input.user_id)
+                                    .bind::<sql_types::BigInt, _>(input.user_epoch)
                                     .get_result::<DecisionPrincipalRow>(connection)
                                     .await
                                     .optional()?;
                                     if actor.is_none() {
-                                        return Ok(AuthorizationDecisionCommitResult::ClientUnavailable);
+                                        return Ok(AuthorizationDecisionCommitResult::SubjectUnavailable);
                                     }
                                     let grant = sql_query(
                                         "SELECT last_scopes AS scopes, \
@@ -305,6 +307,7 @@ fn validate_decision_input(
     if input.tenant_id != tenant_id
         || input.tenant_id.is_nil()
         || input.user_id.is_nil()
+        || input.user_epoch < 0
         || input.event_id.is_nil()
         || input.request_id.is_empty()
         || input.request_id.len() > 512
@@ -345,6 +348,7 @@ async fn execute_decision(
         "conflict" => Ok(AuthorizationDecisionCommitResult::Conflict),
         "expired" => Ok(AuthorizationDecisionCommitResult::Expired),
         "client_unavailable" => Ok(AuthorizationDecisionCommitResult::ClientUnavailable),
+        "subject_unavailable" => Ok(AuthorizationDecisionCommitResult::SubjectUnavailable),
         _ => Err(diesel::result::Error::DeserializationError(Box::new(
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -432,6 +436,8 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthorizationDecis
         out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.resources)?;
         out.push_sql(", ");
         out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.input.authorization_details)?;
+        out.push_sql(", ");
+        out.push_bind_param::<diesel::sql_types::BigInt, _>(&self.input.user_epoch)?;
         out.push_sql(") AS outcome");
         Ok(())
     }

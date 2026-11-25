@@ -47,6 +47,7 @@ fn decision(id: Uuid, request: &str) -> AuthorizationDecisionCommit {
     AuthorizationDecisionCommit {
         tenant_id: TENANT,
         user_id: USER,
+        user_epoch: 0,
         client_id: "client".into(),
         request_id: request.into(),
         pushed_request_uri: None,
@@ -164,6 +165,47 @@ fn prior_decision_event_cannot_authorize_an_expired_request_or_replace_its_grant
         assert_eq!(
             provider.grant(USER, CLIENT).await.unwrap().unwrap().scopes,
             json!(["openid"])
+        );
+    });
+}
+
+#[test]
+fn authorization_decision_rechecks_browser_epoch_in_the_atomic_batch() {
+    block_on(async {
+        let (database, provider) = fixture().await;
+        database
+            .execute_sql(&format!(
+                "UPDATE nazo_users SET epoch=1 WHERE tenant_id='{TENANT}' AND id='{USER}'"
+            ))
+            .unwrap();
+        for kind in [
+            AuthorizationDecisionKind::Approve,
+            AuthorizationDecisionKind::Deny,
+            AuthorizationDecisionKind::PromptNone,
+        ] {
+            let mut stale = decision(Uuid::new_v4(), "stale-session");
+            stale.decision = kind;
+            // Silent admission requires an existing grant before reaching the
+            // atomic batch; explicit decisions must reject without any writes.
+            if kind == AuthorizationDecisionKind::PromptNone {
+                let mut fresh = decision(Uuid::new_v4(), "fresh-session");
+                fresh.user_epoch = 1;
+                assert_eq!(
+                    provider.commit_decision(fresh).await.unwrap(),
+                    AuthorizationDecisionCommitResult::Committed
+                );
+            }
+            assert_eq!(
+                provider.commit_decision(stale).await.unwrap(),
+                AuthorizationDecisionCommitResult::SubjectUnavailable
+            );
+        }
+        database.execute_sql("CREATE TEMP TABLE assertion(ok INTEGER CHECK(ok=1)); INSERT INTO assertion SELECT CASE WHEN (SELECT count(*) FROM nazo_audit)=1 AND (SELECT count(*) FROM nazo_decisions)=1 AND (SELECT authorization_count FROM nazo_grant_activity)=1 THEN 1 ELSE 0 END;").unwrap();
+        let mut invalid = decision(Uuid::new_v4(), "negative-session-epoch");
+        invalid.user_epoch = -1;
+        assert_eq!(
+            provider.commit_decision(invalid).await.unwrap_err(),
+            AuthorizationPortError::CorruptData
         );
     });
 }

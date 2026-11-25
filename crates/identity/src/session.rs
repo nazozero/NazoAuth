@@ -250,6 +250,48 @@ pub enum SessionResolution<A = PublicAccount> {
     Invalidated,
 }
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Keep this transient record inline instead of allocating on every session lookup"
+)]
+enum SessionRecordResolution {
+    Present(SessionRecord),
+    Missing,
+    Invalidated,
+}
+
+/// Completed browser authentication awaiting current account admission.
+/// Its epoch must be checked by the transaction accepting the authorization.
+#[derive(Debug, Eq, PartialEq)]
+pub struct AuthorizationSessionEvidence {
+    tenant_id: TenantId,
+    user_id: UserId,
+    authorization_epoch: i64,
+    oidc_sid: String,
+}
+
+impl AuthorizationSessionEvidence {
+    #[must_use]
+    pub const fn tenant_id(&self) -> TenantId {
+        self.tenant_id
+    }
+
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.user_id
+    }
+
+    #[must_use]
+    pub const fn authorization_epoch(&self) -> i64 {
+        self.authorization_epoch
+    }
+
+    #[must_use]
+    pub fn oidc_sid(&self) -> &str {
+        &self.oidc_sid
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct SessionRotation {
     session_id: SessionId,
@@ -387,6 +429,30 @@ impl SessionService {
         .await
     }
 
+    /// Reads completed browser authentication without admitting its account.
+    /// The accepting transaction must check this record's tenant-scoped user
+    /// and authorization epoch against the live account before committing.
+    pub async fn authorization_evidence(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+    ) -> Result<Option<AuthorizationSessionEvidence>, RepositoryError> {
+        Ok(
+            match self
+                .resolve_record(session_id, now, Some(false), false)
+                .await?
+            {
+                SessionRecordResolution::Present(record) => Some(AuthorizationSessionEvidence {
+                    tenant_id: self.tenant_id,
+                    user_id: record.user_id,
+                    authorization_epoch: record.authorization_epoch,
+                    oidc_sid: record.oidc_sid.expect("validated session has an OIDC sid"),
+                }),
+                SessionRecordResolution::Missing | SessionRecordResolution::Invalidated => None,
+            },
+        )
+    }
+
     pub async fn pending_mfa(
         &self,
         session_id: &SessionId,
@@ -472,21 +538,14 @@ impl SessionService {
         allow_bootstrap: bool,
         load_account: impl FnOnce(UserId) -> crate::ports::RepositoryFuture<'a, Option<A>>,
     ) -> Result<SessionResolution<A>, RepositoryError> {
-        let Some(snapshot) = self.load_fail_closed(session_id).await? else {
-            return Ok(SessionResolution::Missing);
-        };
-        let record = snapshot.record;
-        if !valid_authentication_metadata(record.auth_time(), record.amr(), record.oidc_sid(), now)
+        let record = match self
+            .resolve_record(session_id, now, expected_pending_mfa, allow_bootstrap)
+            .await?
         {
-            let _ = self.sessions.delete(session_id).await;
-            return Ok(SessionResolution::Invalidated);
-        }
-        if !allow_bootstrap && record.amr().iter().any(|method| method == "bootstrap") {
-            return Ok(SessionResolution::Missing);
-        }
-        if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
-            return Ok(SessionResolution::Missing);
-        }
+            SessionRecordResolution::Present(record) => record,
+            SessionRecordResolution::Missing => return Ok(SessionResolution::Missing),
+            SessionRecordResolution::Invalidated => return Ok(SessionResolution::Invalidated),
+        };
         let Some(user) = load_account(record.user_id()).await?.filter(|account| {
             let principal = account.as_ref();
             principal.active && principal.authorization_epoch == record.authorization_epoch()
@@ -504,6 +563,32 @@ impl SessionService {
             logged_in_client_ids: record.logged_in_client_ids,
             upstream: record.upstream,
         })))
+    }
+
+    async fn resolve_record(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+        expected_pending_mfa: Option<bool>,
+        allow_bootstrap: bool,
+    ) -> Result<SessionRecordResolution, RepositoryError> {
+        let Some(snapshot) = self.load_fail_closed(session_id).await? else {
+            return Ok(SessionRecordResolution::Missing);
+        };
+        let record = snapshot.record;
+        if !valid_authentication_metadata(record.auth_time(), record.amr(), record.oidc_sid(), now)
+            || record.authorization_epoch() < 0
+        {
+            let _ = self.sessions.delete(session_id).await;
+            return Ok(SessionRecordResolution::Invalidated);
+        }
+        if !allow_bootstrap && record.amr().iter().any(|method| method == "bootstrap") {
+            return Ok(SessionRecordResolution::Missing);
+        }
+        if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
+            return Ok(SessionRecordResolution::Missing);
+        }
+        Ok(SessionRecordResolution::Present(record))
     }
 
     async fn load_fail_closed(

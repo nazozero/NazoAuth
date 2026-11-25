@@ -13,7 +13,7 @@ use nazo_auth::{
     plan_authorization_response, prepare_authorization_code,
     signed_jarm_authorization_response_uri,
 };
-use nazo_identity::{SessionResolution, SessionService};
+use nazo_identity::SessionService;
 use nazo_runtime_modules::ModuleId;
 use serde_json::json;
 use uuid::Uuid;
@@ -68,19 +68,18 @@ impl ServerAuthorizationDecisionOperations {
         &self,
         command: AuthorizationDecisionCommand,
     ) -> Result<AuthorizationDecisionResponse, AuthorizationDecisionError> {
-        let session = match self
+        let session = self
             .sessions
-            .current(&command.session_id, Timestamp::now().as_second())
+            .authorization_evidence(&command.session_id, Timestamp::now().as_second())
             .await
             .map_err(|error| {
                 tracing::warn!(%error, "failed to resolve authorization decision session");
                 AuthorizationDecisionError::SessionLookupUnavailable
-            })? {
-            SessionResolution::Present(session) => session,
-            SessionResolution::Missing | SessionResolution::Invalidated => {
-                return Err(AuthorizationDecisionError::LoginRequired);
-            }
-        };
+            })?
+            .ok_or(AuthorizationDecisionError::LoginRequired)?;
+        if session.tenant_id() != self.tenant_id {
+            return Err(AuthorizationDecisionError::LoginRequired);
+        }
 
         self.security_audit
             .ensure_transactional_ready()
@@ -93,7 +92,7 @@ impl ServerAuthorizationDecisionOperations {
         //    nothing is consumed yet.
         let preview = match self
             .service
-            .preview_user_decision(&command.request_id, session.user().id())
+            .preview_user_decision(&command.request_id, session.user_id().as_uuid())
             .await
         {
             Ok(preview) => preview,
@@ -176,6 +175,7 @@ impl ServerAuthorizationDecisionOperations {
                 AuthorizationDecisionCommit {
                     tenant_id: self.tenant_id.as_uuid(),
                     user_id: payload.user_id,
+                    user_epoch: session.authorization_epoch(),
                     client_id: payload.client_id.clone(),
                     request_id: command.request_id.clone(),
                     pushed_request_uri: payload.pushed_request_uri.clone(),
@@ -202,6 +202,10 @@ impl ServerAuthorizationDecisionOperations {
             })?;
         match result {
             AuthorizationDecisionCommitResult::Committed => {}
+            AuthorizationDecisionCommitResult::SubjectUnavailable => {
+                let _ = self.sessions.delete(&command.session_id).await;
+                return Err(AuthorizationDecisionError::LoginRequired);
+            }
             AuthorizationDecisionCommitResult::Conflict
             | AuthorizationDecisionCommitResult::Expired => {
                 return Err(AuthorizationDecisionError::ConsentInvalid);
@@ -328,7 +332,8 @@ impl ServerAuthorizationDecisionOperations {
                     client.authorization_encrypted_response_alg.is_some()
                         || client.authorization_encrypted_response_enc.is_some();
                 refresh_client_jwks_for_encryption(
-                    &mut client,
+                    client.registration.jwks_uri.as_deref(),
+                    &mut client.registration.jwks,
                     self.remote_client_documents.as_ref(),
                     response_encryption_configured,
                 )

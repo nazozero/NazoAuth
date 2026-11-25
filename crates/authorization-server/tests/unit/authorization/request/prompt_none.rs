@@ -849,6 +849,9 @@ async fn issue_authorization_code_without_interaction_with_context(
         &mut client,
         facts,
         payload,
+        crate::test_support::authorization::account()
+            .principal
+            .authorization_epoch,
         pushed_request_expires_at,
         pushed_request_version,
     )

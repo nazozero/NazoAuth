@@ -199,7 +199,8 @@ pub async fn token_jwt_bearer_with_service(
     if let Ok(header) = &header
         && header.kid.is_some()
         && let Err(error) = refresh_client_jwks(
-            client,
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
             issuance.remote_client_documents,
             header.kid.as_deref(),
         )

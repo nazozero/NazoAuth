@@ -235,8 +235,8 @@ pub use token_service::{
     PreparedTokenSubject, RefreshTokenSnapshot, SingleUseRedemption, TokenFuture, TokenInspection,
     TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError, TokenPrincipalState,
     TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
-    UserinfoSnapshot, UserinfoSubjectRef, id_token_signing_algorithm,
-    jwt_response_signing_algorithm, validate_sender_constraint,
+    UserinfoClient, UserinfoSnapshot, id_token_signing_algorithm, jwt_response_signing_algorithm,
+    validate_sender_constraint,
 };
 pub use transaction::{
     AUTHORIZATION_CODE_REDEMPTION_VERSION, AuthorizationCodeState, CodePayload, ConsentPayload,

@@ -34,6 +34,12 @@ struct CountRow {
 }
 
 #[derive(QueryableByName)]
+struct EpochRow {
+    #[diesel(sql_type = sql_types::BigInt)]
+    epoch: i64,
+}
+
+#[derive(QueryableByName)]
 struct Fixture {
     #[diesel(sql_type = sql_types::Uuid)]
     user_id: Uuid,
@@ -43,6 +49,8 @@ struct Fixture {
     client_public_id: String,
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
+    #[diesel(sql_type = sql_types::BigInt)]
+    user_epoch: i64,
 }
 
 async fn fixture(connection: &mut AsyncPgConnection) -> Fixture {
@@ -52,7 +60,7 @@ async fn fixture(connection: &mut AsyncPgConnection) -> Fixture {
         WITH actor AS (
             INSERT INTO users (username, email, password_hash)
             VALUES ('decision-{suffix}', 'decision-{suffix}@example.test', 'test-only-hash')
-            RETURNING id, tenant_id
+            RETURNING id, tenant_id, access_token_epoch
         ), client AS (
             INSERT INTO oauth_clients (
                 client_id, client_name, client_type, redirect_uris, scopes, grant_types,
@@ -64,7 +72,7 @@ async fn fixture(connection: &mut AsyncPgConnection) -> Fixture {
                 '{{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}}'::jsonb
             ) RETURNING id, client_id
         )
-        SELECT actor.id AS user_id, actor.tenant_id, client.id AS client_id,
+        SELECT actor.id AS user_id, actor.tenant_id, actor.access_token_epoch AS user_epoch, client.id AS client_id,
                client.client_id AS client_public_id FROM actor CROSS JOIN client
         "#
     ))
@@ -78,6 +86,7 @@ fn decision(fixture: &Fixture, kind: Kind) -> AuthorizationDecisionCommit {
     AuthorizationDecisionCommit {
         tenant_id: fixture.tenant_id,
         user_id: fixture.user_id,
+        user_epoch: fixture.user_epoch,
         client_id: fixture.client_public_id.clone(),
         request_id: Uuid::now_v7().to_string(),
         pushed_request_uri: Some(format!(
@@ -327,7 +336,11 @@ async fn verify_runtime_privileges(url: &str, connection: &mut AsyncPgConnection
     }
 }
 
-async fn verify_atomicity(connection: &mut AsyncPgConnection, pool: &DbPool, fixture: &Fixture) {
+async fn verify_atomicity(
+    connection: &mut AsyncPgConnection,
+    pool: &DbPool,
+    fixture: &mut Fixture,
+) {
     let repository = AuthorizationFlowRepository::new(pool.clone(), fixture.tenant_id);
     let approve = decision(fixture, Kind::Approve);
     let mut deny = decision(fixture, Kind::Deny);
@@ -413,14 +426,28 @@ async fn verify_atomicity(connection: &mut AsyncPgConnection, pool: &DbPool, fix
     let disabled = decision(fixture, Kind::Approve);
     assert_eq!(
         repository.commit_decision(disabled.clone()).await.unwrap(),
-        Outcome::ClientUnavailable
+        Outcome::SubjectUnavailable
     );
     assert_eq!(fact_count(connection, disabled.event_id).await, 0);
-    sql_query("UPDATE users SET is_active = TRUE WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(fixture.user_id)
-        .execute(connection)
-        .await
-        .unwrap();
+    let reactivated_epoch = sql_query(
+        "UPDATE users SET is_active = TRUE WHERE id = $1 RETURNING access_token_epoch AS epoch",
+    )
+    .bind::<sql_types::Uuid, _>(fixture.user_id)
+    .get_result::<EpochRow>(connection)
+    .await
+    .unwrap()
+    .epoch;
+    assert!(reactivated_epoch > fixture.user_epoch);
+    for kind in [Kind::Approve, Kind::Deny, Kind::PromptNone] {
+        let stale = decision(fixture, kind);
+        assert_eq!(
+            repository.commit_decision(stale.clone()).await.unwrap(),
+            Outcome::SubjectUnavailable
+        );
+        assert_eq!(fact_count(connection, stale.event_id).await, 0);
+        assert_eq!(grant_count(connection, fixture).await, before);
+    }
+    fixture.user_epoch = reactivated_epoch;
 
     // Force a database failure AFTER fact insertion, at the grant mutation.
     connection
@@ -913,8 +940,8 @@ async fn authorization_decisions_commit_once_and_survive_export_ack() {
     let pool = create_pool(url.clone(), 4).unwrap();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     verify_runtime_privileges(&url, &mut connection, &pool).await;
-    let fixture = fixture(&mut connection).await;
-    verify_atomicity(&mut connection, &pool, &fixture).await;
+    let mut fixture = fixture(&mut connection).await;
+    verify_atomicity(&mut connection, &pool, &mut fixture).await;
     verify_lock_expiry_and_cancellation(&url, &mut connection, &fixture).await;
     verify_prompt_none_lock_order(&url, &mut connection, &fixture).await;
     verify_audit_lifetime(&mut connection, &pool, &fixture).await;
@@ -922,6 +949,173 @@ async fn authorization_decisions_commit_once_and_survive_export_ack() {
     drop(pool);
     coordinator
         .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decision_rechecks_session_epoch_after_waiting_for_the_account_lock() {
+    let Some(base_url) = database_url() else {
+        return;
+    };
+    let name = format!("decision_epoch_{}", Uuid::now_v7().simple());
+    let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+        .await
+        .unwrap();
+    let mut isolated = url::Url::parse(&base_url).unwrap();
+    isolated.set_path(&format!("/{name}"));
+    let url = isolated.to_string();
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let mut blocker = AsyncPgConnection::establish(&url).await.unwrap();
+    let mut observer = AsyncPgConnection::establish(&url).await.unwrap();
+    let actor = fixture(&mut blocker).await;
+    let application = format!("decision-epoch-{}", Uuid::now_v7().simple());
+    isolated
+        .query_pairs_mut()
+        .append_pair("application_name", &application);
+    let pool = create_pool(isolated.to_string(), 1).unwrap();
+    let repository = AuthorizationFlowRepository::new(pool.clone(), actor.tenant_id);
+    blocker.batch_execute("BEGIN").await.unwrap();
+    let mut fresh_epoch = actor.user_epoch;
+    for active in [false, true] {
+        fresh_epoch = sql_query("UPDATE users SET is_active=$2 WHERE tenant_id=$1 AND id=$3 RETURNING access_token_epoch AS epoch")
+            .bind::<sql_types::Uuid, _>(actor.tenant_id)
+            .bind::<sql_types::Bool, _>(active)
+            .bind::<sql_types::Uuid, _>(actor.user_id)
+            .get_result::<EpochRow>(&mut blocker)
+            .await
+            .unwrap().epoch;
+    }
+    assert!(fresh_epoch > actor.user_epoch);
+    let stale = decision(&actor, Kind::Approve);
+    let event = stale.event_id;
+    let writer = repository.clone();
+    let pending = tokio::spawn(async move { writer.commit_decision(stale).await });
+    // Keep statistics reads outside the blocking transaction: PostgreSQL
+    // otherwise retains its first activity snapshot for that transaction.
+    wait_for_lock(&mut observer, &application).await;
+    assert!(!pending.is_finished());
+    assert_eq!(fact_count(&mut blocker, event).await, 0);
+    assert_eq!(grant_count(&mut blocker, &actor).await, 0);
+    blocker.batch_execute("COMMIT").await.unwrap();
+    assert_eq!(
+        pending.await.unwrap().unwrap(),
+        Outcome::SubjectUnavailable,
+        "the account is active again, but the browser belongs to its old generation"
+    );
+    assert_eq!(fact_count(&mut blocker, event).await, 0);
+    assert_eq!(grant_count(&mut blocker, &actor).await, 0);
+    let mut fresh = decision(&actor, Kind::Approve);
+    fresh.user_epoch = fresh_epoch;
+    assert_eq!(
+        repository.commit_decision(fresh).await.unwrap(),
+        Outcome::Committed
+    );
+    drop(repository);
+    drop(pool);
+    drop(blocker);
+    drop(observer);
+    coordinator
+        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn decision_epoch_upgrade_preserves_old_callers_without_inheriting_new_grants() {
+    let Some(base_url) = database_url() else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let name = format!("decision_epoch_upgrade_{suffix}");
+    let allowed = format!("decision_old_{suffix}");
+    let unrelated = format!("decision_default_{suffix}");
+    let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+        .await
+        .unwrap();
+    coordinator
+        .batch_execute(&format!("CREATE ROLE {allowed}; CREATE ROLE {unrelated}"))
+        .await
+        .unwrap();
+    let mut isolated = url::Url::parse(&base_url).unwrap();
+    isolated.set_path(&format!("/{name}"));
+    let url = isolated.to_string();
+    nazo_postgres::run_pending_migrations(&url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let actor = fixture(&mut connection).await;
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261125000100_authorization_decision_epoch/down.sql"
+        ))
+        .await
+        .unwrap();
+    let old = "public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)";
+    let new = "public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb,bigint)";
+    connection.batch_execute(&format!("GRANT EXECUTE ON FUNCTION {old} TO {allowed}; ALTER DEFAULT PRIVILEGES GRANT EXECUTE ON FUNCTIONS TO {unrelated}")).await.unwrap();
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261125000100_authorization_decision_epoch/up.sql"
+        ))
+        .await
+        .unwrap();
+    for signature in [old, new] {
+        for (role, expected) in [(&allowed, 1), (&unrelated, 0)] {
+            let status = sql_query("SELECT count(*)::bigint AS count FROM pg_roles WHERE rolname=$1 AND has_function_privilege(oid,$2,'EXECUTE')")
+                .bind::<sql_types::Text, _>(role)
+                .bind::<sql_types::Text, _>(signature)
+                .get_result::<CountRow>(&mut connection).await.unwrap();
+            assert_eq!(status.count, expected, "{role}: {signature}");
+        }
+    }
+    let same_owner = sql_query("SELECT count(*)::bigint AS count FROM pg_proc old_fn JOIN pg_proc new_fn ON new_fn.proowner=old_fn.proowner WHERE old_fn.oid=$1::regprocedure AND new_fn.oid=$2::regprocedure AND 'lock_timeout=2s'=ANY(new_fn.proconfig) AND 'search_path=pg_catalog, pg_temp'=ANY(new_fn.proconfig) AND new_fn.prosecdef AND new_fn.provolatile='v'")
+        .bind::<sql_types::Text, _>(old).bind::<sql_types::Text, _>(new)
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(same_owner.count, 1);
+    // A running older service retains the exact fourteen-argument interface.
+    let mut legacy = decision(&actor, Kind::Deny);
+    legacy.audit_fields["request_id_hash"] =
+        json!(blake3::hash(legacy.request_id.as_bytes()).to_hex().as_str());
+    connection
+        .batch_execute(&format!("SET ROLE {allowed}"))
+        .await
+        .unwrap();
+    #[derive(QueryableByName)]
+    struct LegacyOutcome {
+        #[diesel(sql_type = sql_types::Text)]
+        outcome: String,
+    }
+    let rows = sql_query("SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome")
+        .bind::<sql_types::Uuid, _>(legacy.tenant_id)
+        .bind::<sql_types::Uuid, _>(legacy.user_id)
+        .bind::<sql_types::Text, _>(&legacy.client_id)
+        .bind::<sql_types::Text, _>(&legacy.request_id)
+        .bind::<sql_types::Nullable<sql_types::Text>, _>(&legacy.pushed_request_uri)
+        .bind::<sql_types::Timestamptz, _>(jiff_diesel::Timestamp::from(legacy.valid_until))
+        .bind::<sql_types::Timestamptz, _>(jiff_diesel::Timestamp::from(legacy.retain_until))
+        .bind::<sql_types::Text, _>(legacy.decision.as_str())
+        .bind::<sql_types::Uuid, _>(legacy.event_id)
+        .bind::<sql_types::Timestamptz, _>(jiff_diesel::Timestamp::from(legacy.occurred_at))
+        .bind::<sql_types::Jsonb, _>(&legacy.audit_fields)
+        .bind::<sql_types::Jsonb, _>(json!(legacy.scopes))
+        .bind::<sql_types::Jsonb, _>(json!(legacy.resource_indicators))
+        .bind::<sql_types::Jsonb, _>(&legacy.authorization_details)
+        .load::<LegacyOutcome>(&mut connection).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].outcome, "committed");
+    connection.batch_execute("RESET ROLE").await.unwrap();
+    assert_eq!(fact_count(&mut connection, legacy.event_id).await, 1);
+    connection.batch_execute(&format!("ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM {unrelated}; DROP OWNED BY {allowed}; DROP OWNED BY {unrelated}")).await.unwrap();
+    drop(connection);
+    coordinator
+        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
+        .await
+        .unwrap();
+    coordinator
+        .batch_execute(&format!("DROP ROLE {allowed}; DROP ROLE {unrelated}"))
         .await
         .unwrap();
 }

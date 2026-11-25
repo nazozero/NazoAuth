@@ -266,7 +266,8 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     client.introspection_encrypted_response_alg.is_some()
                         || client.introspection_encrypted_response_enc.is_some();
                 refresh_client_jwks_for_encryption(
-                    &mut client,
+                    client.registration.jwks_uri.as_deref(),
+                    &mut client.registration.jwks,
                     self.remote_client_documents.as_ref(),
                     response_encryption_configured,
                 )

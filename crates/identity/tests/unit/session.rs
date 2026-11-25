@@ -550,12 +550,17 @@ impl SessionAccountPort for PrincipalOnlyAccounts {
 
 #[tokio::test]
 async fn principal_guard_uses_one_narrow_lookup_and_preserves_session_gates() {
-    for (pending, active) in [(false, true), (false, false), (true, true)] {
+    for (pending, active, epoch) in [
+        (false, true, 0),
+        (false, false, 0),
+        (true, true, 0),
+        (false, true, 1),
+    ] {
         let record = record(pending);
         let tenant = TenantContext::default_system();
         let accounts = Arc::new(PrincipalOnlyAccounts {
             principal: Principal {
-                authorization_epoch: 0,
+                authorization_epoch: epoch,
                 user_id: record.user_id(),
                 tenant,
                 role: UserRole::Admin { level: 2 },
@@ -571,21 +576,74 @@ async fn principal_guard_uses_one_narrow_lookup_and_preserves_session_gates() {
             .unwrap();
         match result {
             SessionResolution::Present(session) => {
-                assert!(!pending && active);
+                assert!(!pending && active && epoch == 0);
                 assert_eq!(session.user(), &accounts.principal);
                 assert_eq!(session.auth_time(), 900);
                 assert_eq!(session.amr(), ["password"]);
                 assert_eq!(session.oidc_sid(), "oidc-sid");
             }
             SessionResolution::Missing => assert!(pending),
-            SessionResolution::Invalidated => assert!(!active),
+            SessionResolution::Invalidated => assert!(!active || epoch != 0),
         }
         assert_eq!(
             accounts.calls.load(std::sync::atomic::Ordering::Relaxed),
             usize::from(!pending)
         );
         assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
-        assert_eq!(store.deleted.lock().unwrap().len(), usize::from(!active));
+        assert_eq!(
+            store.deleted.lock().unwrap().len(),
+            usize::from(!active || epoch != 0)
+        );
+    }
+}
+
+#[tokio::test]
+async fn authorization_evidence_preserves_session_gates_without_admitting_an_account() {
+    for (pending, bootstrap, auth_time, epoch, expected, deleted) in [
+        (false, false, 900, 7, true, false),
+        (true, false, 900, 7, false, false),
+        (false, true, 900, 7, false, false),
+        (false, false, 0, 7, false, true),
+        (false, false, 1031, 7, false, true),
+        (false, false, 900, -1, false, true),
+    ] {
+        let mut record = record(pending);
+        record.authorization_epoch = epoch;
+        record.set_auth_time(auth_time);
+        if bootstrap {
+            record.add_amr("bootstrap");
+        }
+        let tenant = TenantContext::default_system();
+        let accounts = Arc::new(PrincipalOnlyAccounts {
+            principal: Principal {
+                authorization_epoch: 8,
+                user_id: record.user_id(),
+                tenant,
+                role: UserRole::User,
+                active: false,
+            },
+            calls: 0.into(),
+        });
+        let store = Arc::new(FakeStore::with_record(record.clone()));
+        let service = SessionService::new(store.clone(), accounts.clone(), tenant.tenant_id);
+        let evidence = service
+            .authorization_evidence(&SessionId::new("session-1"), 1000)
+            .await
+            .unwrap();
+        assert_eq!(evidence.is_some(), expected);
+        if let Some(evidence) = evidence {
+            assert_eq!(evidence.tenant_id(), tenant.tenant_id);
+            assert_eq!(evidence.user_id(), record.user_id());
+            assert_eq!(evidence.authorization_epoch(), record.authorization_epoch());
+            assert_eq!(Some(evidence.oidc_sid()), record.oidc_sid());
+        }
+        assert_eq!(
+            accounts.calls.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "evidence must be admitted by the accepting transaction, not a preflight snapshot"
+        );
+        assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(store.deleted.lock().unwrap().len(), usize::from(deleted));
     }
 }
 

@@ -59,8 +59,7 @@ impl TokenRepositoryPort for Ports {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a Claims,
     ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
         panic!("unexpected userinfo_snapshot call")
     }

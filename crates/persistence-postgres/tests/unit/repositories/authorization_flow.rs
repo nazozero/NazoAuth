@@ -83,6 +83,7 @@ async fn fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_
             AuthorizationDecisionCommit {
                 tenant_id: Uuid::now_v7(),
                 user_id,
+                user_epoch: 0,
                 client_id: "public-client".to_owned(),
                 request_id: "request".to_owned(),
                 pushed_request_uri: None,

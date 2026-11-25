@@ -1,5 +1,5 @@
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
+    BoolExpressionMethods, ExpressionMethods, IntoSql, JoinOnDsl, NullableExpressionMethods,
     OptionalExtension, QueryDsl, QueryableByName, SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -7,7 +7,8 @@ use jiff::Timestamp;
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
     RefreshTokenCommit, RefreshTokenPersistResult, SingleUseRedemption, TokenFuture,
-    TokenIssuanceMode, TokenPortError, TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
+    TokenIssuanceMode, TokenPortError, TokenRepositoryPort, TokenRevocation, UserinfoClient,
+    UserinfoSnapshot,
 };
 use nazo_identity::{TenantId, UserId, ports::RepositoryError};
 use nazo_persistence::SecurityAuditEvent;
@@ -17,17 +18,100 @@ use uuid::Uuid;
 use crate::{
     DbPool, get_conn,
     pool::DiscardOnDrop,
-    schema::{oauth_clients, oauth_subject_bindings, oauth_token_issuances, users},
+    schema::{
+        access_token_revocations, oauth_clients, oauth_subject_bindings, oauth_token_issuances,
+        users,
+    },
 };
 
 use super::{
     AuthorizationRepository, TokenRepository, UserRepository,
     access_token_revocation::{NewAccessTokenRevocation, upsert_access_token_revocations},
     audit_ledger::append_fresh_security_audit_on_connection,
-    clients::OAuthClientRecord,
+    clients::client_security_policy,
     tokens::prepare_refresh_contract,
 };
 use crate::{convert::identity, rows::identity::SubjectClaimsRow};
+
+#[derive(diesel::Queryable, diesel::Selectable)]
+#[diesel(table_name = oauth_clients)]
+struct UserinfoClientRecord {
+    is_active: bool,
+    userinfo_signed_response_alg: Option<String>,
+    userinfo_encrypted_response_alg: Option<String>,
+    userinfo_encrypted_response_enc: Option<String>,
+    jwks_uri: Option<String>,
+    jwks: Option<serde_json::Value>,
+    security_policy: serde_json::Value,
+}
+
+impl UserinfoClientRecord {
+    fn into_domain(self) -> Result<UserinfoClient, RepositoryError> {
+        Ok(UserinfoClient {
+            is_active: self.is_active,
+            signed_response_alg: self.userinfo_signed_response_alg,
+            encrypted_response_alg: self.userinfo_encrypted_response_alg,
+            encrypted_response_enc: self.userinfo_encrypted_response_enc,
+            jwks_uri: self.jwks_uri,
+            jwks: self.jwks.map(Into::into),
+            require_fapi2: client_security_policy(self.security_policy)?.requires_fapi2_security(),
+        })
+    }
+}
+
+/// Resolve ownership inside the response snapshot. Only pre-epoch tokens may
+/// use a retained issuance when no active reusable binding is available.
+struct UserinfoSubjectId<'a> {
+    tenant_id: Uuid,
+    user_id: Option<Uuid>,
+    subject: &'a str,
+    jti: &'a str,
+    legacy: bool,
+    horizon: jiff_diesel::Timestamp,
+}
+
+impl diesel::query_builder::QueryId for UserinfoSubjectId<'_> {
+    type QueryId = UserinfoSubjectId<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+
+impl diesel::Expression for UserinfoSubjectId<'_> {
+    type SqlType = sql_types::Nullable<sql_types::Uuid>;
+}
+
+impl<QS> diesel::AppearsOnTable<QS> for UserinfoSubjectId<'_> {}
+
+impl<GB> diesel::expression::ValidGrouping<GB> for UserinfoSubjectId<'_> {
+    type IsAggregate = diesel::expression::is_aggregate::No;
+}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for UserinfoSubjectId<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("COALESCE(");
+        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.user_id)?;
+        out.push_sql(
+            "::uuid, (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = ",
+        );
+        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
+        out.push_sql(" AND b.subject = ");
+        out.push_bind_param::<sql_types::Text, _>(self.subject)?;
+        out.push_sql(" AND (NOT ");
+        out.push_bind_param::<sql_types::Bool, _>(&self.legacy)?;
+        out.push_sql(" OR EXISTS (SELECT 1 FROM users owner WHERE owner.tenant_id = b.tenant_id AND owner.id = b.user_id AND owner.is_active))), (SELECT i.user_id FROM oauth_token_issuances i WHERE ");
+        out.push_bind_param::<sql_types::Bool, _>(&self.legacy)?;
+        out.push_sql(" AND i.tenant_id = ");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
+        out.push_sql(" AND i.access_token_jti = ");
+        out.push_bind_param::<sql_types::Text, _>(self.jti)?;
+        out.push_sql(" AND i.access_token_expires_at > ");
+        out.push_bind_param::<sql_types::Timestamptz, _>(&self.horizon)?;
+        out.push_sql("))");
+        Ok(())
+    }
+}
 
 #[derive(QueryableByName)]
 struct OwnedAccessTokenRow {
@@ -168,93 +252,90 @@ impl TokenIssuanceRepository {
             .map_err(|_| RepositoryError::Unavailable)
     }
 
-    /// One-read UserInfo snapshot: resolve the active subject by user UUID or
-    /// by a reusable subject binding (legacy JTI fallback), and LEFT JOIN the
-    /// already-verified protocol client id in the same statement. The client
-    /// join carries no `is_active` or WHERE filtering — the original
-    /// `into_domain` conversion and the caller's inactive decision keep their
-    /// order. Conversion runs subject-first so corrupt client data cannot
-    /// mask a user-side consistency error.
+    /// Read token authority, subject ownership and response facts from one
+    /// fresh statement snapshot. Legacy tokens retain JTI-only revocation;
+    /// modern tokens must also match both active principal epochs.
     pub async fn userinfo_snapshot(
         &self,
         tenant_id: Uuid,
-        subject: nazo_auth::UserinfoSubjectRef<'_>,
-        client_id: &str,
+        verified_claims: &nazo_auth::Claims,
     ) -> Result<Option<UserinfoSnapshot>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        let client_join = oauth_clients::table.on(oauth_clients::tenant_id
-            .eq(users::tenant_id)
-            .and(oauth_clients::client_id.eq(client_id)));
-        let row = match subject {
-            nazo_auth::UserinfoSubjectRef::UserId(user_id) => users::table
-                .filter(users::id.eq(user_id))
-                .filter(users::tenant_id.eq(tenant_id))
-                .filter(users::is_active.eq(true))
-                .left_join(client_join)
-                .select((
-                    SubjectClaimsRow::as_select(),
-                    Option::<OAuthClientRecord>::as_select(),
-                ))
-                .first::<(SubjectClaimsRow, Option<OAuthClientRecord>)>(&mut connection)
-                .await
-                .optional()
-                .map_err(|error| RepositoryError::Unexpected(error.to_string()))?,
-            nazo_auth::UserinfoSubjectRef::AccessToken { subject, jti } => {
-                let bound = users::table
-                    .inner_join(
-                        oauth_subject_bindings::table.on(users::id
-                            .eq(oauth_subject_bindings::user_id)
-                            .and(users::tenant_id.eq(oauth_subject_bindings::tenant_id))),
-                    )
-                    .left_join(client_join)
-                    .filter(oauth_subject_bindings::tenant_id.eq(tenant_id))
-                    .filter(oauth_subject_bindings::subject.eq(subject))
-                    .filter(users::is_active.eq(true))
-                    .select((
-                        SubjectClaimsRow::as_select(),
-                        Option::<OAuthClientRecord>::as_select(),
-                    ))
-                    .first::<(SubjectClaimsRow, Option<OAuthClientRecord>)>(&mut connection)
-                    .await
-                    .optional()
-                    .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-                if bound.is_some() {
-                    bound
-                } else {
-                    let horizon = Timestamp::now()
-                        - jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
-                    users::table
-                        .inner_join(
-                            oauth_token_issuances::table.on(users::id
-                                .nullable()
-                                .eq(oauth_token_issuances::user_id)
-                                .and(users::tenant_id.eq(oauth_token_issuances::tenant_id))),
-                        )
-                        .left_join(client_join)
-                        .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
-                        .filter(oauth_token_issuances::access_token_jti.eq(jti))
-                        .filter(
-                            oauth_token_issuances::access_token_expires_at
-                                .gt((horizon).to_diesel()),
-                        )
-                        .filter(users::is_active.eq(true))
-                        .select((
-                            SubjectClaimsRow::as_select(),
-                            Option::<OAuthClientRecord>::as_select(),
-                        ))
-                        .first::<(SubjectClaimsRow, Option<OAuthClientRecord>)>(&mut connection)
-                        .await
-                        .optional()
-                        .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-                }
-            }
+        if tenant_id.is_nil()
+            || Uuid::parse_str(&verified_claims.tenant_id).ok() != Some(tenant_id)
+            || verified_claims.subject_type != "user"
+        {
+            return Ok(None);
+        }
+        let legacy = match (verified_claims.client_epoch, verified_claims.user_epoch) {
+            (None, None) => true,
+            (Some(client), Some(user)) if client >= 0 && user >= 0 => false,
+            _ => return Ok(None),
         };
+        let user_id = match verified_claims.user_id.as_deref().map(Uuid::parse_str) {
+            Some(Ok(user_id)) => Some(user_id),
+            Some(Err(_)) if !legacy => return Ok(None),
+            _ => None,
+        };
+        let owner = UserinfoSubjectId {
+            tenant_id,
+            user_id,
+            subject: &verified_claims.sub,
+            jti: &verified_claims.jti,
+            legacy,
+            horizon: (Timestamp::now()
+                - jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS))
+            .to_diesel(),
+        };
+        let jti_blake3 = blake3::hash(verified_claims.jti.as_bytes()).to_hex();
+        let mut connection = self.connection().await?;
+        let row = users::table
+            .left_join(
+                oauth_clients::table.on(oauth_clients::tenant_id
+                    .eq(users::tenant_id)
+                    .and(oauth_clients::client_id.eq(&verified_claims.client_id))),
+            )
+            .filter(users::tenant_id.eq(tenant_id))
+            .filter(users::id.nullable().eq(owner))
+            .filter(users::is_active.eq(true))
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                access_token_revocations::table
+                    .filter(access_token_revocations::tenant_id.eq(tenant_id))
+                    .filter(
+                        access_token_revocations::access_token_jti_blake3.eq(jti_blake3.as_str()),
+                    ),
+            )))
+            .filter(
+                legacy
+                    .into_sql::<sql_types::Bool>()
+                    .or(oauth_clients::is_active
+                        .eq(true)
+                        .and(
+                            oauth_clients::access_token_epoch
+                                .nullable()
+                                .eq(verified_claims.client_epoch),
+                        )
+                        .and(
+                            users::access_token_epoch
+                                .nullable()
+                                .eq(verified_claims.user_epoch),
+                        )),
+            )
+            .select((
+                SubjectClaimsRow::as_select(),
+                Option::<UserinfoClientRecord>::as_select(),
+            ))
+            .first::<(SubjectClaimsRow, Option<UserinfoClientRecord>)>(&mut connection)
+            .await
+            .optional()
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
         let Some((claims_row, client_row)) = row else {
             return Ok(None);
         };
         let subject = identity::active_subject_claims(claims_row)
             .map_err(|error| RepositoryError::Consistency(error.0))?;
-        let client = client_row.map(OAuthClientRecord::into_domain).transpose()?;
+        let client = client_row
+            .map(UserinfoClientRecord::into_domain)
+            .transpose()?;
         Ok(Some(UserinfoSnapshot { subject, client }))
     }
 
@@ -530,6 +611,61 @@ struct SingleUseInsertRow {
     grant_valid: bool,
 }
 
+struct SingleUseReceiptInsert<'a> {
+    input: &'a CommitTokenIssuance,
+    digest: &'a [u8; 32],
+    access_token_expires_at: jiff_diesel::Timestamp,
+    retain_until: jiff_diesel::Timestamp,
+    refresh_token_family_id: Option<Uuid>,
+    authorization_code_holder: Option<&'a serde_json::Value>,
+    grant_expires_at: jiff_diesel::Timestamp,
+}
+
+impl diesel::query_builder::QueryId for SingleUseReceiptInsert<'_> {
+    type QueryId = SingleUseReceiptInsert<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+
+impl diesel::query_builder::Query for SingleUseReceiptInsert<'_> {
+    type SqlType = sql_types::Untyped;
+}
+
+impl diesel::query_dsl::RunQueryDslSupport for SingleUseReceiptInsert<'_> {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for SingleUseReceiptInsert<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, refresh_token_family_id, principal_epoch_bound, receipt_contract_version, authorization_code_holder) VALUES (");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.input.issuance_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.input.tenant_id)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.input.client_id)?;
+        out.push_sql(", NULL, ");
+        out.push_bind_param::<sql_types::Binary, _>(self.digest.as_slice())?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Varchar, _>(self.input.access_token_jti.as_str())?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Timestamptz, _>(&self.access_token_expires_at)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Timestamptz, _>(&self.retain_until)?;
+        out.push_sql(", ");
+        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(
+            &self.refresh_token_family_id,
+        )?;
+        out.push_sql(", TRUE, 2, ");
+        out.push_bind_param::<sql_types::Nullable<sql_types::Jsonb>, _>(
+            &self.authorization_code_holder,
+        )?;
+        out.push_sql(") ON CONFLICT (client_id, single_use_key_blake3) WHERE single_use_key_blake3 IS NOT NULL DO NOTHING RETURNING (clock_timestamp() < ");
+        out.push_bind_param::<sql_types::Timestamptz, _>(&self.grant_expires_at)?;
+        out.push_sql(") AS grant_valid");
+        Ok(())
+    }
+}
+
 impl TokenRepositoryPort for TokenIssuanceRepository {
     fn machine_client_active(
         &self,
@@ -662,37 +798,18 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                     Err(result) => return Ok(result),
                                 };
                                 if let Some((digest, grant_expires_at, retain_until)) = single_use {
-                                    let inserted = sql_query(
-                                        "INSERT INTO oauth_token_issuances (\
-                                         issuance_id, tenant_id, client_id, user_id, \
-                                         single_use_key_blake3, access_token_jti, \
-                                         access_token_expires_at, retain_until, \
-                                         refresh_token_family_id, principal_epoch_bound, \
-                                         receipt_contract_version, authorization_code_holder) \
-                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 2, $11) \
-                                     ON CONFLICT (client_id, single_use_key_blake3) \
-                                       WHERE single_use_key_blake3 IS NOT NULL \
-                                     DO NOTHING \
-                                     RETURNING (clock_timestamp() < $10) AS grant_valid",
-                                    )
-                                    .bind::<sql_types::Uuid, _>(input.issuance_id)
-                                    .bind::<sql_types::Uuid, _>(input.tenant_id)
-                                    .bind::<sql_types::Uuid, _>(input.client_id)
-                                    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(None::<Uuid>)
-                                    .bind::<sql_types::Binary, _>(digest.as_slice())
-                                    .bind::<sql_types::Varchar, _>(input.access_token_jti.as_str())
-                                    .bind::<sql_types::Timestamptz, _>((access_token_expires_at).to_diesel())
-                                    .bind::<sql_types::Timestamptz, _>((retain_until).to_diesel())
-                                    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(
-                                        input
+                                    let inserted = SingleUseReceiptInsert {
+                                        input: &input,
+                                        digest: &digest,
+                                        access_token_expires_at: access_token_expires_at.to_diesel(),
+                                        retain_until: retain_until.to_diesel(),
+                                        refresh_token_family_id: input
                                             .refresh_token
                                             .as_ref()
                                             .map(RefreshTokenCommit::family_id),
-                                    )
-                                    .bind::<sql_types::Timestamptz, _>((grant_expires_at).to_diesel())
-                                    .bind::<sql_types::Nullable<sql_types::Jsonb>, _>(
-                                        authorization_code_holder.as_ref(),
-                                    )
+                                        authorization_code_holder: authorization_code_holder.as_ref(),
+                                        grant_expires_at: grant_expires_at.to_diesel(),
+                                    }
                                     .get_result::<SingleUseInsertRow>(connection)
                                     .await
                                     .optional()?;
@@ -858,11 +975,10 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: nazo_auth::UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a nazo_auth::Claims,
     ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
         Box::pin(async move {
-            TokenIssuanceRepository::userinfo_snapshot(self, tenant_id, subject, client_id)
+            TokenIssuanceRepository::userinfo_snapshot(self, tenant_id, verified_claims)
                 .await
                 .map_err(map_repository_error)
         })

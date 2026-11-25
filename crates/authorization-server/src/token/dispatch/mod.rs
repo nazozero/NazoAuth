@@ -415,8 +415,13 @@ impl TokenEndpointHandles {
             "authorization_code" | "refresh_token"
         ) && (client.id_token_encrypted_response_alg.is_some()
             || client.id_token_encrypted_response_enc.is_some())
-            && let Err(error) =
-                refresh_client_jwks(&mut client, self.remote_client_documents.as_ref(), None).await
+            && let Err(error) = refresh_client_jwks(
+                client.registration.jwks_uri.as_deref(),
+                &mut client.registration.jwks,
+                self.remote_client_documents.as_ref(),
+                None,
+            )
+            .await
         {
             tracing::warn!(%error, "id_token encryption jwks_uri could not be refreshed");
             return Err(OAuthEndpointError::token(

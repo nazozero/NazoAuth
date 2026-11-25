@@ -188,12 +188,17 @@ pub async fn authenticate_client_with_dependencies<'credential>(
             // assertions are rejected by the existing verifier without a
             // network request.
             if let Ok(header) = decode_header(assertion) {
-                refresh_client_jwks(client, config.remote_jwks, header.kid.as_deref())
-                    .await
-                    .map_err(|error| {
-                        tracing::warn!(%error, "dynamic client jwks_uri could not be refreshed");
-                        TokenManagementClientAuthError::StoreUnavailable
-                    })?;
+                refresh_client_jwks(
+                    client.registration.jwks_uri.as_deref(),
+                    &mut client.registration.jwks,
+                    config.remote_jwks,
+                    header.kid.as_deref(),
+                )
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "dynamic client jwks_uri could not be refreshed");
+                    TokenManagementClientAuthError::StoreUnavailable
+                })?;
             }
             verify_private_key_jwt_claims_for_issuer(
                 config.issuer,
@@ -235,12 +240,17 @@ pub async fn authenticate_client_with_dependencies<'credential>(
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
             if client.token_endpoint_auth_method == "self_signed_tls_client_auth" {
-                refresh_client_jwks(client, config.remote_jwks, None)
-                    .await
-                    .map_err(|error| {
-                        tracing::warn!(%error, "dynamic client mTLS jwks_uri could not be refreshed");
-                        TokenManagementClientAuthError::StoreUnavailable
-                    })?;
+                refresh_client_jwks(
+                    client.registration.jwks_uri.as_deref(),
+                    &mut client.registration.jwks,
+                    config.remote_jwks,
+                    None,
+                )
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "dynamic client mTLS jwks_uri could not be refreshed");
+                    TokenManagementClientAuthError::StoreUnavailable
+                })?;
             }
             if !client_mtls_certificate_matches(client, certificate) {
                 log_client_auth_rejection(request, client, &credentials, "mtls_certificate");

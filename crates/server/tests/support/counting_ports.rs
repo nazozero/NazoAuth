@@ -210,11 +210,10 @@ impl TokenRepositoryPort for CountingTokenRepository {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: nazo_auth::UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a nazo_auth::Claims,
     ) -> TokenFuture<'a, Option<nazo_auth::UserinfoSnapshot>> {
         self.userinfo_snapshot_calls.fetch_add(1, Ordering::SeqCst);
-        self.inner.userinfo_snapshot(tenant_id, subject, client_id)
+        self.inner.userinfo_snapshot(tenant_id, verified_claims)
     }
 
     fn refresh_token<'a>(

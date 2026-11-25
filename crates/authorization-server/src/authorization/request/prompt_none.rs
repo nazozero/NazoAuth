@@ -23,6 +23,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     client: &mut ClientRow,
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
+    user_epoch: i64,
     pushed_request_expires_at: Option<Timestamp>,
     pushed_request_version: Option<&str>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
@@ -84,6 +85,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
             AuthorizationDecisionCommit {
                 tenant_id: context.tenant_id,
                 user_id: payload.user_id,
+                user_epoch,
                 client_id: payload.client_id.clone(),
                 request_id: payload.request_id.clone(),
                 pushed_request_uri: payload.pushed_request_uri.clone(),
@@ -119,6 +121,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 }
             }
             AuthorizationDecisionCommitResult::GrantUnavailable => "consent_required",
+            AuthorizationDecisionCommitResult::SubjectUnavailable => "login_required",
             _ => "server_error",
         };
         return authorization_response_redirect_with_context(

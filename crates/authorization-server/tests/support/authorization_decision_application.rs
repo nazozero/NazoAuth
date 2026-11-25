@@ -15,6 +15,7 @@ enum Failure {
     None,
     DynamicReadiness,
     DecisionCommit,
+    SubjectUnavailable,
     ConsentCleanup,
     ParCleanup,
 }
@@ -97,6 +98,7 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                 Failure::None,
                 Failure::DynamicReadiness,
                 Failure::DecisionCommit,
+                Failure::SubjectUnavailable,
                 Failure::ConsentCleanup,
                 Failure::ParCleanup,
             ] {
@@ -134,12 +136,13 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                     .unwrap()
                     .push(("par".into(), par, 600));
                 *fixture.ports.consent.lock().unwrap() = Some(payload);
-                fixture.ports.decisions.lock().unwrap().outcome =
-                    Some(if matches!(failure, Failure::DecisionCommit) {
-                        Err(AuthorizationPortError::Unavailable)
-                    } else {
-                        Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed)
-                    });
+                fixture.ports.decisions.lock().unwrap().outcome = Some(match failure {
+                    Failure::DecisionCommit => Err(AuthorizationPortError::Unavailable),
+                    Failure::SubjectUnavailable => {
+                        Ok(nazo_auth::AuthorizationDecisionCommitResult::SubjectUnavailable)
+                    }
+                    _ => Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed),
+                });
                 let audit = Arc::new(Audit {
                     failure,
                     calls: Mutex::new(vec![]),
@@ -167,6 +170,10 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                     })
                     .await;
                 let calls = fixture.ports.calls();
+                assert!(
+                    !calls.contains(&"account"),
+                    "the commit owns current account admission"
+                );
                 match failure {
                     Failure::None | Failure::ConsentCleanup | Failure::ParCleanup => {
                         assert!(result.is_ok(), "{result:?}");
@@ -203,6 +210,7 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                             }
                         );
                         assert_eq!(decisions.facts[0].valid_until, valid_until);
+                        assert_eq!(decisions.facts[0].user_epoch, 0);
                         assert_eq!(
                             decisions.facts[0].retain_until, retain_until,
                             "a shorter consent must not free a still-live PAR fence"
@@ -216,18 +224,26 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                             usize::from(decision == UserAuthorizationDecision::Approve)
                         );
                     }
-                    Failure::DynamicReadiness | Failure::DecisionCommit => {
+                    Failure::DynamicReadiness
+                    | Failure::DecisionCommit
+                    | Failure::SubjectUnavailable => {
                         assert_eq!(
                             result.unwrap_err(),
-                            if matches!(failure, Failure::DynamicReadiness) {
-                                AuthorizationDecisionError::AuditUnavailable
-                            } else {
-                                AuthorizationDecisionError::ApprovalUnavailable
+                            match failure {
+                                Failure::DynamicReadiness =>
+                                    AuthorizationDecisionError::AuditUnavailable,
+                                Failure::SubjectUnavailable =>
+                                    AuthorizationDecisionError::LoginRequired,
+                                _ => AuthorizationDecisionError::ApprovalUnavailable,
                             }
                         );
                         assert!(fixture.ports.consent.lock().unwrap().is_some());
                         assert!(!calls.contains(&"consume_consent"));
                         assert!(fixture.ports.decisions.lock().unwrap().facts.is_empty());
+                        assert_eq!(
+                            calls.contains(&"delete_session"),
+                            matches!(failure, Failure::SubjectUnavailable)
+                        );
                     }
                 }
                 let committed = matches!(
@@ -241,5 +257,53 @@ fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
                 assert_eq!(*audit.calls.lock().unwrap(), ["dynamic_readiness"]);
             }
         }
+    });
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn decision_rejects_session_evidence_from_another_tenant_before_preview() {
+    block_on(async {
+        let fixture = Fixture::new(Ok(Some(client(true))), Ok(Some(session())));
+        *fixture.ports.consent.lock().unwrap() = Some(consent());
+        let audit = Arc::new(Audit {
+            failure: Failure::None,
+            calls: Mutex::new(vec![]),
+        });
+        let tenant = nazo_identity::TenantId::new(fixture.tenant_id).unwrap();
+        let other_tenant = nazo_identity::TenantId::new(uuid::Uuid::from_u128(901)).unwrap();
+        assert_ne!(tenant, other_tenant);
+        let application = ServerAuthorizationDecisionOperations::new(
+            fixture.service,
+            nazo_identity::SessionService::new(
+                fixture.ports.clone(),
+                fixture.ports.clone(),
+                other_tenant,
+            ),
+            tenant,
+            Arc::new(fixture.config),
+            fixture.snapshots,
+            fixture.remote_client_documents,
+            audit.clone(),
+        );
+        assert_eq!(
+            application
+                .decide(AuthorizationDecisionCommand {
+                    request_id: "request".into(),
+                    decision: UserAuthorizationDecision::Approve,
+                    session_id: SessionId::new("active"),
+                    source_ip: "192.0.2.1".into(),
+                })
+                .await
+                .unwrap_err(),
+            AuthorizationDecisionError::LoginRequired
+        );
+        assert_eq!(fixture.ports.calls(), ["session"]);
+        assert!(audit.calls.lock().unwrap().is_empty());
+        assert!(fixture.ports.consent.lock().unwrap().is_some());
+        assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
     });
 }

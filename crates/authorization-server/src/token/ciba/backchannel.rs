@@ -177,8 +177,13 @@ impl CibaApplication {
         if let Some(request_object) = form.request.as_deref()
             && let Ok(header) = nazo_crypto::jwt::decode_header(request_object)
             && header.kid.is_some()
-            && let Err(error) =
-                refresh_client_jwks(&mut client, remote_jwks, header.kid.as_deref()).await
+            && let Err(error) = refresh_client_jwks(
+                client.registration.jwks_uri.as_deref(),
+                &mut client.registration.jwks,
+                remote_jwks,
+                header.kid.as_deref(),
+            )
+            .await
         {
             tracing::warn!(%error, "CIBA request object jwks_uri could not be refreshed");
             return Err(OAuthEndpointError::json(

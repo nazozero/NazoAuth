@@ -479,19 +479,25 @@ pub struct TokenRevocation<'a> {
     pub access_token: Option<AccessTokenRevocation>,
 }
 
-/// How the UserInfo subject read resolves ownership: a directly carried user
-/// UUID, or a reusable non-public subject binding with a legacy JTI fallback.
-pub enum UserinfoSubjectRef<'a> {
-    UserId(Uuid),
-    AccessToken { subject: &'a str, jti: &'a str },
-}
-
-/// One-read UserInfo result. `None` overall means there is no valid subject;
-/// inside `Some`, `client: None` means the subject is valid but the client is
-/// absent — the two absences are deliberately not collapsible into one flag.
+/// Current UserInfo authority and response facts from one storage snapshot.
+/// `None` overall rejects a revoked token or an unavailable subject. Legacy
+/// tokens without principal epochs may have no client; the application still
+/// requires an active client before releasing a response.
 pub struct UserinfoSnapshot {
     pub subject: SubjectClaims,
-    pub client: Option<OAuthClient>,
+    pub client: Option<UserinfoClient>,
+}
+
+/// Current client facts consumed by UserInfo response protection. The verified
+/// access token supplies the protocol client id used to read these facts.
+pub struct UserinfoClient {
+    pub is_active: bool,
+    pub signed_response_alg: Option<String>,
+    pub encrypted_response_alg: Option<String>,
+    pub encrypted_response_enc: Option<String>,
+    pub jwks_uri: Option<String>,
+    pub jwks: Option<std::sync::Arc<Value>>,
+    pub require_fapi2: bool,
 }
 
 pub trait TokenRepositoryPort: Send + Sync {
@@ -530,11 +536,13 @@ pub trait TokenRepositoryPort: Send + Sync {
         grant_key: &'a str,
     ) -> TokenFuture<'a, Option<SingleUseRedemption>>;
 
+    /// The caller has verified the token's signature, issuer, audience and time.
+    /// Read JTI revocation, principal activity/epochs, subject ownership and
+    /// response facts together. No token authority may come from a cache.
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a Claims,
     ) -> TokenFuture<'a, Option<UserinfoSnapshot>>;
 
     fn refresh_token<'a>(
@@ -797,11 +805,10 @@ where
     pub async fn userinfo_snapshot(
         &self,
         tenant_id: Uuid,
-        subject: UserinfoSubjectRef<'_>,
-        client_id: &str,
+        verified_claims: &Claims,
     ) -> Result<Option<UserinfoSnapshot>, TokenPortError> {
         self.repository
-            .userinfo_snapshot(tenant_id, subject, client_id)
+            .userinfo_snapshot(tenant_id, verified_claims)
             .await
     }
 

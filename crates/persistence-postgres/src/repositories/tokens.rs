@@ -48,58 +48,6 @@ pub(super) struct TypedRevocationLookupKey<'a> {
     pub(super) user_epoch: Option<i64>,
 }
 
-// Only the bound values vary. Reuse the prepared statement while reading
-// revocations, principal activity and epochs from a fresh MVCC snapshot.
-struct AccessTokenStateQuery<'a> {
-    tenant_id: Uuid,
-    jti_blake3: &'a str,
-    subject_type: Option<&'a str>,
-    user_id: Option<Uuid>,
-    subject: &'a str,
-    client_id: &'a str,
-    client_epoch: i64,
-    user_epoch: Option<i64>,
-}
-
-impl diesel::query_builder::QueryId for AccessTokenStateQuery<'_> {
-    type QueryId = AccessTokenStateQuery<'static>;
-    const HAS_STATIC_QUERY_ID: bool = true;
-}
-
-impl diesel::query_builder::Query for AccessTokenStateQuery<'_> {
-    type SqlType = sql_types::Untyped;
-}
-
-impl diesel::query_dsl::RunQueryDslSupport for AccessTokenStateQuery<'_> {}
-
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AccessTokenStateQuery<'_> {
-    fn walk_ast<'b>(
-        &'b self,
-        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
-    ) -> diesel::QueryResult<()> {
-        out.push_sql("SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = ");
-        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
-        out.push_sql(" AND access_token_jti_blake3 = ");
-        out.push_bind_param::<sql_types::Text, _>(self.jti_blake3)?;
-        out.push_sql(" ) OR NOT EXISTS (SELECT 1 FROM oauth_clients c LEFT JOIN users u ON ");
-        out.push_bind_param::<sql_types::Nullable<sql_types::Text>, _>(&self.subject_type)?;
-        out.push_sql(" = 'user' AND u.tenant_id = c.tenant_id AND u.id = COALESCE(");
-        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.user_id)?;
-        // This standalone query reuses the earlier typed parameters when a
-        // predicate needs the same value more than once.
-        out.push_sql("::uuid, (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = ");
-        out.push_bind_param::<sql_types::Text, _>(self.subject)?;
-        out.push_sql(")) WHERE c.tenant_id = $1 AND c.client_id = ");
-        out.push_bind_param::<sql_types::Text, _>(self.client_id)?;
-        out.push_sql(" AND c.is_active AND c.access_token_epoch = ");
-        out.push_bind_param::<sql_types::BigInt, _>(&self.client_epoch)?;
-        out.push_sql(" AND (($3 = 'client' AND $4::uuid IS NULL AND ");
-        out.push_bind_param::<sql_types::Nullable<sql_types::BigInt>, _>(&self.user_epoch)?;
-        out.push_sql("::bigint IS NULL) OR ($3 = 'user' AND u.is_active AND u.access_token_epoch = $8))) AS revoked");
-        Ok(())
-    }
-}
-
 #[derive(Clone)]
 pub struct TokenRepository {
     pool: DbPool,
@@ -355,7 +303,7 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
-    /// One indexed read for individual and principal-wide revocation.
+    /// One current snapshot for individual and principal-wide revocation.
     pub(super) async fn access_token_state_revoked_typed(
         &self,
         key: TypedRevocationLookupKey<'_>,
@@ -370,6 +318,11 @@ impl TokenRepository {
         if client_epoch < 0 || key.user_epoch.is_some_and(|value| value < 0) {
             return Ok(true);
         }
+        let user_epoch = match (key.subject_type, key.user_epoch) {
+            (Some("client"), None) if key.user_id.is_none() => None,
+            (Some("user"), Some(epoch)) => Some(epoch),
+            _ => return Ok(true),
+        };
         let user_id = match key.user_id {
             Some(value) => match Uuid::parse_str(value) {
                 Ok(value) => Some(value),
@@ -384,18 +337,28 @@ impl TokenRepository {
         }
         let jti_blake3 = blake3::hash(key.jti.as_bytes()).to_hex();
         let mut connection = self.connection().await?;
-        let state = AccessTokenStateQuery {
-            tenant_id,
-            jti_blake3: jti_blake3.as_str(),
-            subject_type: key.subject_type,
-            user_id,
-            subject: key.subject,
-            client_id: key.client_id,
-            client_epoch,
-            user_epoch: key.user_epoch,
+        // Keep plans adaptive when initially empty authority tables grow.
+        // Each subject kind reads only the facts that can revoke that token.
+        let state = if let Some(user_epoch) = user_epoch {
+            sql_query("SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) OR NOT EXISTS (SELECT 1 FROM oauth_clients WHERE tenant_id = $1 AND client_id = $3 AND is_active AND access_token_epoch = $4) OR NOT EXISTS (SELECT 1 FROM users WHERE tenant_id = $1 AND id = COALESCE($6::uuid, (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = $5)) AND is_active AND access_token_epoch = $7) AS revoked")
+                .bind::<sql_types::Uuid, _>(tenant_id)
+                .bind::<sql_types::Text, _>(jti_blake3.as_str())
+                .bind::<sql_types::Text, _>(key.client_id)
+                .bind::<sql_types::BigInt, _>(client_epoch)
+                .bind::<sql_types::Text, _>(key.subject)
+                .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
+                .bind::<sql_types::BigInt, _>(user_epoch)
+                .get_result::<State>(&mut connection)
+                .await
+        } else {
+            sql_query("SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) OR NOT EXISTS (SELECT 1 FROM oauth_clients WHERE tenant_id = $1 AND client_id = $3 AND is_active AND access_token_epoch = $4) AS revoked")
+                .bind::<sql_types::Uuid, _>(tenant_id)
+                .bind::<sql_types::Text, _>(jti_blake3.as_str())
+                .bind::<sql_types::Text, _>(key.client_id)
+                .bind::<sql_types::BigInt, _>(client_epoch)
+                .get_result::<State>(&mut connection)
+                .await
         }
-        .get_result::<State>(&mut connection)
-        .await
         .map_err(map_error)?;
         Ok(state.revoked)
     }

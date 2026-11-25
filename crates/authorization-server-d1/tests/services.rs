@@ -25,6 +25,7 @@ async fn grant(provider: &D1Provider, now: Timestamp) {
             .commit_decision(AuthorizationDecisionCommit {
                 tenant_id: TENANT,
                 user_id: USER,
+                user_epoch: 0,
                 client_id: "client".into(),
                 request_id: Uuid::new_v4().to_string(),
                 pushed_request_uri: None,

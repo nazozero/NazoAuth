@@ -362,6 +362,10 @@ PAR and consent are immutable preparation material. Their cache deletion is
 post-commit cleanup, not authorization or cancellation authority. Explicit
 approval, denial, and prompt-none compete for the same durable consumption
 identities; prompt-none does not increment explicit approval counters. The
+accepting transaction checks the browser session's user authorization epoch
+against the active tenant account under its principal fence. Interactive
+decisions read session authentication evidence without a separate account
+query; this evidence alone cannot authorize a decision. The
 code and its payload are prepared in memory and bound to the fact. Only an
 affirmative durable result permits code storage/publication. An unknown result
 fails closed. A later code-store or response failure leaves a committed,
@@ -514,6 +518,11 @@ OP session before returning an authorization code; a missing session or failed
 binding cannot return the code. A committed decision is not undone by a later
 session-binding or response failure.
 
+Interactive decisions retain only the session's tenant, user, epoch and OIDC
+session identifier after validating its authentication metadata. This evidence
+is not an admitted `Principal`: the durable decision checks the live account
+and its original epoch atomically before writing a grant or publishing a code.
+
 Authorization, administrator and runtime-module guards resolve `Principal`
 through the existing tenant-scoped narrow query. Profile and MFA consumers use
 `PublicAccount` from a single full projection. Both projections pass through the
@@ -665,6 +674,8 @@ management view projects an applied revision only from the matching, settled
 local snapshot.
 
 ### Resource token presentation
+
+UserInfo verifies the access token and its audience, tenant, user subject type and `openid` scope before loading its authority and response snapshot. Its repository port receives the verified claims and reads JTI revocation, current principal activity and epochs, subject ownership, profile and client response facts in one fresh snapshot. Tokens with principal epochs require both epochs to match; legacy tokens retain individual JTI revocation and the adapter's existing ownership resolution. PostgreSQL can resolve a legacy subject from a retained issuance when no active reusable binding exists. UserInfo reads only the client activity, UserInfo JOSE metadata, JWKS source and validated security policy; unrelated registration and issuance metadata does not gate this protected-resource response. Its signed response audience comes from the verified client ID used by the snapshot lookup. The prepared request owns these facts, so response execution performs no second authority read. DPoP replay consumption and mTLS confirmation follow the valid snapshot; no claims are released before sender constraints pass.
 
 The neutral HTTP extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
 

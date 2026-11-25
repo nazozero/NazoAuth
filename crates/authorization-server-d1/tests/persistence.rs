@@ -103,6 +103,7 @@ fn decision(request: &str) -> AuthorizationDecisionCommit {
     AuthorizationDecisionCommit {
         tenant_id: TENANT,
         user_id: USER,
+        user_epoch: 0,
         client_id: "client".into(),
         request_id: request.into(),
         pushed_request_uri: Some("urn:request:test".into()),
