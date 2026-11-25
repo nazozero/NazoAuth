@@ -48,6 +48,58 @@ pub(super) struct TypedRevocationLookupKey<'a> {
     pub(super) user_epoch: Option<i64>,
 }
 
+// Only the bound values vary. Reuse the prepared statement while reading
+// revocations, principal activity and epochs from a fresh MVCC snapshot.
+struct AccessTokenStateQuery<'a> {
+    tenant_id: Uuid,
+    jti_blake3: &'a str,
+    subject_type: Option<&'a str>,
+    user_id: Option<Uuid>,
+    subject: &'a str,
+    client_id: &'a str,
+    client_epoch: i64,
+    user_epoch: Option<i64>,
+}
+
+impl diesel::query_builder::QueryId for AccessTokenStateQuery<'_> {
+    type QueryId = AccessTokenStateQuery<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+
+impl diesel::query_builder::Query for AccessTokenStateQuery<'_> {
+    type SqlType = sql_types::Untyped;
+}
+
+impl diesel::query_dsl::RunQueryDslSupport for AccessTokenStateQuery<'_> {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AccessTokenStateQuery<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        out.push_sql("SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = ");
+        out.push_bind_param::<sql_types::Uuid, _>(&self.tenant_id)?;
+        out.push_sql(" AND access_token_jti_blake3 = ");
+        out.push_bind_param::<sql_types::Text, _>(self.jti_blake3)?;
+        out.push_sql(" ) OR NOT EXISTS (SELECT 1 FROM oauth_clients c LEFT JOIN users u ON ");
+        out.push_bind_param::<sql_types::Nullable<sql_types::Text>, _>(&self.subject_type)?;
+        out.push_sql(" = 'user' AND u.tenant_id = c.tenant_id AND u.id = COALESCE(");
+        out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.user_id)?;
+        // This standalone query reuses the earlier typed parameters when a
+        // predicate needs the same value more than once.
+        out.push_sql("::uuid, (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = ");
+        out.push_bind_param::<sql_types::Text, _>(self.subject)?;
+        out.push_sql(")) WHERE c.tenant_id = $1 AND c.client_id = ");
+        out.push_bind_param::<sql_types::Text, _>(self.client_id)?;
+        out.push_sql(" AND c.is_active AND c.access_token_epoch = ");
+        out.push_bind_param::<sql_types::BigInt, _>(&self.client_epoch)?;
+        out.push_sql(" AND (($3 = 'client' AND $4::uuid IS NULL AND ");
+        out.push_bind_param::<sql_types::Nullable<sql_types::BigInt>, _>(&self.user_epoch)?;
+        out.push_sql("::bigint IS NULL) OR ($3 = 'user' AND u.is_active AND u.access_token_epoch = $8))) AS revoked");
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct TokenRepository {
     pool: DbPool,
@@ -330,26 +382,21 @@ impl TokenRepository {
             #[diesel(sql_type = sql_types::Bool)]
             revoked: bool,
         }
+        let jti_blake3 = blake3::hash(key.jti.as_bytes()).to_hex();
         let mut connection = self.connection().await?;
-        let state = sql_query(
-            "SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) \
-             OR NOT EXISTS ( \
-               SELECT 1 FROM oauth_clients c \
-               LEFT JOIN users u ON $7 = 'user' AND u.tenant_id = c.tenant_id AND u.id = COALESCE($6::uuid, \
-                 (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = $5)) \
-               WHERE c.tenant_id = $1 AND c.client_id = $3 AND c.is_active AND c.access_token_epoch = $4 \
-                 AND (($7 = 'client' AND $6::uuid IS NULL AND $8::bigint IS NULL) \
-                   OR ($7 = 'user' AND u.is_active AND u.access_token_epoch = $8)) \
-             ) AS revoked"
-        ).bind::<sql_types::Uuid, _>(tenant_id)
-            .bind::<sql_types::Text, _>(blake3_hex(key.jti))
-            .bind::<sql_types::Text, _>(key.client_id)
-            .bind::<sql_types::BigInt, _>(client_epoch)
-            .bind::<sql_types::Text, _>(key.subject)
-            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
-            .bind::<sql_types::Nullable<sql_types::Text>, _>(key.subject_type)
-            .bind::<sql_types::Nullable<sql_types::BigInt>, _>(key.user_epoch)
-            .get_result::<State>(&mut connection).await.map_err(map_error)?;
+        let state = AccessTokenStateQuery {
+            tenant_id,
+            jti_blake3: jti_blake3.as_str(),
+            subject_type: key.subject_type,
+            user_id,
+            subject: key.subject,
+            client_id: key.client_id,
+            client_epoch,
+            user_epoch: key.user_epoch,
+        }
+        .get_result::<State>(&mut connection)
+        .await
+        .map_err(map_error)?;
         Ok(state.revoked)
     }
 
@@ -1053,9 +1100,15 @@ async fn persist_refresh_token_inner(
             .await;
     }
     // Preserve owns no capacity mutation and never acquires scope after family.
-    // Rotation and creation retain the established scope -> family order.
+    // Rotations share the scope barrier so independent families can proceed,
+    // while capacity and grant writers retain exclusive scope -> family order.
     if refresh.token().is_some() {
-        lock_refresh_grant_scope(connection, tenant_id, user_id, client_id).await?;
+        sql_query("SELECT pg_advisory_xact_lock_shared($1)")
+            .bind::<sql_types::BigInt, _>(refresh_grant_scope_lock_key(
+                tenant_id, user_id, client_id,
+            ))
+            .execute(connection)
+            .await?;
     }
     let preserve = matches!(
         refresh,

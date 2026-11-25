@@ -1060,7 +1060,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     );
     // 8 data statements inside the single commit transaction:
     //   SELECT nazo_lock_token_principals (timeout, then client/user FOR SHARE)
-    //   SELECT pg_advisory_xact_lock(grant scope)
+    //   SELECT pg_advisory_xact_lock_shared(grant scope)
     //   SELECT pg_advisory_xact_lock(family)
     //   SELECT oauth_refresh_families                      (current member check)
     //   INSERT INTO oauth_refresh_spent_tokens             (predecessor proof)
@@ -2468,6 +2468,217 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
         assert_eq!(count.count, 0);
     }
     cleanup_seed(&url, tenant, &seed).await;
+}
+
+#[tokio::test]
+async fn access_token_state_reuses_one_statement_and_reads_current_security_facts() {
+    use nazo_resource_server::{AccessTokenRevocationLookup, RevocationLookupKey};
+
+    let _serial = SERIAL.lock().await;
+    let url = database_url().expect("isolated PostgreSQL required");
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let tenant_text = tenant_id.to_string();
+    let foreign_tenant = Uuid::now_v7().to_string();
+    let first = seed_principal(&url, tenant).await;
+    let second = seed_principal(&url, tenant).await;
+    let user_text = first.user_id.to_string();
+    let private_subject = format!("revocation-cache-{}", Uuid::now_v7());
+    let jti = format!("revocation-cache-jti-{}", Uuid::now_v7());
+    let other_jti = format!("revocation-cache-jti-{}", Uuid::now_v7());
+    let mut writer = connect(&url).await;
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Text, _>(&private_subject)
+    .bind::<sql_types::Uuid, _>(first.user_id)
+    .execute(&mut writer)
+    .await
+    .unwrap();
+
+    let (pool, counter) = instrumented_pool(&url).await;
+    let tokens = TokenRepository::new(pool.clone());
+    let user = RevocationLookupKey {
+        tenant_id: &tenant_text,
+        jti: &jti,
+        client_id: &first.client.client_id,
+        subject: &user_text,
+        user_id: Some(&user_text),
+        subject_type: Some("user"),
+        client_epoch: Some(0),
+        user_epoch: Some(0),
+    };
+    let mut executions = 0;
+    macro_rules! check {
+        ($key:expr, $revoked:expr) => {{
+            let (result, delta) = measure(&counter, tokens.is_revoked($key)).await;
+            assert_eq!(result.unwrap(), $revoked);
+            assert_eq!(delta.data_queries, 1);
+            assert_no_transaction(delta);
+            assert_clean(delta);
+            executions += 1;
+        }};
+    }
+    // Alternate principal kinds and tenants on the same physical connection.
+    // The cached statement must bind each execution's values independently.
+    for _ in 0..3 {
+        check!(user, false);
+        check!(
+            RevocationLookupKey {
+                subject: &private_subject,
+                user_id: None,
+                ..user
+            },
+            false
+        );
+        check!(
+            RevocationLookupKey {
+                client_id: &second.client.client_id,
+                subject: &second.client.client_id,
+                subject_type: Some("client"),
+                user_id: None,
+                user_epoch: None,
+                ..user
+            },
+            false
+        );
+        check!(
+            RevocationLookupKey {
+                tenant_id: &foreign_tenant,
+                ..user
+            },
+            true
+        );
+        check!(
+            RevocationLookupKey {
+                client_epoch: Some(1),
+                ..user
+            },
+            true
+        );
+        check!(
+            RevocationLookupKey {
+                user_epoch: Some(1),
+                ..user
+            },
+            true
+        );
+        check!(
+            RevocationLookupKey {
+                subject_type: None,
+                ..user
+            },
+            true
+        );
+    }
+    // Nullable principal fields are security predicates, not optional hints.
+    // Reusing a cached machine plan must not accept contradictory user facts.
+    check!(
+        RevocationLookupKey {
+            subject_type: Some("client"),
+            user_epoch: None,
+            ..user
+        },
+        true
+    );
+    check!(
+        RevocationLookupKey {
+            subject_type: Some("client"),
+            user_id: None,
+            ..user
+        },
+        true
+    );
+    check!(
+        RevocationLookupKey {
+            user_epoch: None,
+            ..user
+        },
+        true
+    );
+    sql_query("DELETE FROM oauth_subject_bindings WHERE tenant_id = $1 AND subject = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(&private_subject)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    check!(
+        RevocationLookupKey {
+            subject: &private_subject,
+            user_id: None,
+            ..user
+        },
+        true
+    );
+    seed_access_revocation(&mut writer, tenant, &first, &jti).await;
+    check!(user, true);
+    let current_user = RevocationLookupKey {
+        jti: &other_jti,
+        ..user
+    };
+    check!(current_user, false);
+    sql_query("UPDATE users SET access_token_epoch = access_token_epoch + 1 WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.user_id)
+        .execute(&mut writer).await.unwrap();
+    check!(current_user, true);
+    let current_user = RevocationLookupKey {
+        user_epoch: Some(1),
+        ..current_user
+    };
+    check!(current_user, false);
+    sql_query("UPDATE users SET is_active = FALSE WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.user_id)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    check!(current_user, true);
+    let machine = RevocationLookupKey {
+        subject_type: Some("client"),
+        user_id: None,
+        user_epoch: None,
+        subject: &first.client.client_id,
+        ..current_user
+    };
+    check!(machine, false);
+    sql_query("UPDATE oauth_clients SET access_token_epoch = access_token_epoch + 1 WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.client.id)
+        .execute(&mut writer).await.unwrap();
+    check!(machine, true);
+    let machine = RevocationLookupKey {
+        client_epoch: Some(1),
+        ..machine
+    };
+    check!(machine, false);
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.client.id)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    check!(machine, true);
+
+    #[derive(diesel::QueryableByName)]
+    struct CacheState {
+        #[diesel(sql_type = sql_types::BigInt)]
+        statements: i64,
+        #[diesel(sql_type = sql_types::BigInt)]
+        executions: i64,
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    let cache = sql_query(
+        "SELECT count(*) AS statements, coalesce(sum(generic_plans + custom_plans), 0)::bigint AS executions \
+         FROM pg_prepared_statements WHERE statement LIKE 'SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = %'"
+    ).get_result::<CacheState>(&mut connection).await.unwrap();
+    assert_eq!(cache.statements, 1);
+    assert_eq!(cache.executions, executions);
+    drop(connection);
+    cleanup_seed(&url, tenant, &first).await;
+    cleanup_seed(&url, tenant, &second).await;
 }
 
 #[tokio::test]
