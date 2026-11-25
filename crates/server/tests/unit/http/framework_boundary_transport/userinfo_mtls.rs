@@ -434,6 +434,7 @@ mod real_userinfo_contract {
             client,
             None,
             bound.then_some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+            "openid",
         )
         .await
     }
@@ -444,6 +445,7 @@ mod real_userinfo_contract {
         client: &str,
         jkt: Option<&str>,
         x5t: Option<&str>,
+        scope: &str,
     ) -> String {
         use crate::adapters::security::tokens::{AccessTokenJwtInput, make_jwt};
         let token = make_jwt(
@@ -456,7 +458,7 @@ mod real_userinfo_contract {
                 subject_type: "user",
                 client_id: client,
                 audiences: &["resource://default".to_owned()],
-                scopes: &["openid".to_owned()],
+                scopes: &[scope.to_owned()],
                 authorization_details: &json!([]),
                 userinfo_claim_requests: &[],
                 ttl: 300,
@@ -569,6 +571,57 @@ mod real_userinfo_contract {
     }
 
     #[actix_web::test]
+    async fn insufficient_scope_follows_sender_constraints_without_loading_response_facts() {
+        let state = state().await;
+        let user = Uuid::now_v7();
+        let client = format!("userinfo-scope-{}", Uuid::now_v7().simple());
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        for (jkt, x5t, status, error) in [
+            (None, None, StatusCode::FORBIDDEN, "insufficient_scope"),
+            (
+                Some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"),
+                None,
+                StatusCode::UNAUTHORIZED,
+                "invalid_dpop_proof",
+            ),
+            (
+                None,
+                Some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+            ),
+        ] {
+            calls.lock().unwrap().clear();
+            let token =
+                signed_token_with_bindings(&state, user, &client, jkt, x5t, "profile").await;
+            let response = userinfo(
+                &state,
+                endpoint(&state, calls.clone()),
+                request(&token, "not-a-proof"),
+                Bytes::new(),
+            )
+            .await;
+            assert_eq!(response.status(), status);
+            assert!(response.headers().get("dpop-nonce").is_none());
+            assert!(response.headers().get(header::SET_COOKIE).is_none());
+            let challenge = response
+                .headers()
+                .get(header::WWW_AUTHENTICATE)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert!(challenge.contains(error));
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(body["error"], error);
+            assert!(body.get("sub").is_none());
+            assert_eq!(*calls.lock().unwrap(), ["revocation"]);
+        }
+    }
+
+    #[actix_web::test]
     async fn revoked_token_stops_before_dpop_validation_or_nonce_state() {
         use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
         let state = state().await;
@@ -580,6 +633,7 @@ mod real_userinfo_contract {
             &client,
             Some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"),
             None,
+            "openid",
         )
         .await;
         let claims: Claims = serde_json::from_slice(
@@ -749,6 +803,7 @@ mod real_userinfo_contract {
                 &client,
                 dual.then_some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"),
                 Some(&certificate.thumbprint),
+                "openid",
             )
             .await;
             let request = actix_web::test::TestRequest::get()

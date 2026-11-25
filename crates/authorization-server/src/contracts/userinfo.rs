@@ -51,13 +51,14 @@ pub enum UserinfoError {
     ResponseProtectionFailed,
 }
 
-/// A verified token with current authority and response facts. Sender
-/// constraints are checked before any of these facts are released.
+/// A verified token with current authority. Response facts are read only for
+/// user tokens with `openid`; other tokens retain a pending scope rejection so
+/// sender constraints are checked before returning that error.
 pub struct PreparedUserinfo {
     pub(crate) scheme: AccessTokenAuthScheme,
     pub(crate) token: String,
     pub(crate) claims: nazo_auth::Claims,
-    pub(crate) snapshot: nazo_auth::UserinfoSnapshot,
+    pub(crate) snapshot: Option<nazo_auth::UserinfoSnapshot>,
 }
 
 impl PreparedUserinfo {

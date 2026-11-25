@@ -1402,27 +1402,29 @@ async fn userinfo_rejects_unverifiable_access_token_before_revocation_lookup() {
 #[actix_web::test]
 async fn userinfo_returns_server_error_when_revocation_lookup_fails_after_decode() {
     let state = userinfo_state_with_valid_signing_key_invalid_db();
-    let token = signed_userinfo_access_token(
-        &state,
-        "userinfo-client",
-        DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
-        None,
-        "user",
-        &["resource://default".to_owned()],
-        &["openid".to_owned()],
-        None,
-        None,
-    )
-    .await;
+    for scope in ["openid", "profile"] {
+        let token = signed_userinfo_access_token(
+            &state,
+            "userinfo-client",
+            DEFAULT_TENANT_ID,
+            &Uuid::now_v7().to_string(),
+            None,
+            "user",
+            &["resource://default".to_owned()],
+            &[scope.to_owned()],
+            None,
+            None,
+        )
+        .await;
 
-    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+        let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        oauth_error_code(response).await.as_deref(),
-        Some("server_error")
-    );
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            oauth_error_code(response).await.as_deref(),
+            Some("server_error")
+        );
+    }
 }
 
 #[actix_web::test]

@@ -99,23 +99,38 @@ impl ServerUserinfoOperations {
         }
         let tenant_id =
             access_token_tenant_id(&claims).ok_or(UserinfoError::InvalidTenantBoundary)?;
-        if claims.subject_type != "user"
-            || !claims
+        let snapshot = if claims.subject_type == "user"
+            && claims
                 .scope
                 .split_whitespace()
                 .any(|scope| scope == "openid")
         {
-            return Err(UserinfoError::InsufficientScope);
-        }
-        let snapshot = self
-            .token_service
-            .userinfo_snapshot(tenant_id, &claims)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to load userinfo authority and response facts");
-                UserinfoError::QueryUnavailable
-            })?
-            .ok_or(UserinfoError::InvalidAccessToken)?;
+            Some(
+                self.token_service
+                    .userinfo_snapshot(tenant_id, &claims)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "failed to load userinfo authority and response facts");
+                        UserinfoError::QueryUnavailable
+                    })?
+                    .ok_or(UserinfoError::InvalidAccessToken)?,
+            )
+        } else {
+            // Authentication failures precede insufficient_scope. These tokens
+            // need current revocation authority, but no UserInfo response facts.
+            let revoked = self
+                .token_service
+                .access_token_revoked(tenant_id, &claims)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to check userinfo token revocation");
+                    UserinfoError::QueryUnavailable
+                })?;
+            if revoked {
+                return Err(UserinfoError::RevokedAccessToken);
+            }
+            None
+        };
 
         Ok(PreparedUserinfo {
             scheme,
@@ -139,6 +154,7 @@ impl ServerUserinfoOperations {
         let dpop_nonce = self
             .validate_sender_constraint(facts, scheme, &token, &claims)
             .await?;
+        let snapshot = snapshot.ok_or(UserinfoError::InsufficientScope)?;
         let scopes = parse_scope(&claims.scope);
         let subject_claims = snapshot.subject;
         let mut client = match snapshot.client {
