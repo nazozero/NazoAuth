@@ -1100,15 +1100,9 @@ async fn persist_refresh_token_inner(
             .await;
     }
     // Preserve owns no capacity mutation and never acquires scope after family.
-    // Rotations share the scope barrier so independent families can proceed,
-    // while capacity and grant writers retain exclusive scope -> family order.
+    // Rotation and creation retain the established scope -> family order.
     if refresh.token().is_some() {
-        sql_query("SELECT pg_advisory_xact_lock_shared($1)")
-            .bind::<sql_types::BigInt, _>(refresh_grant_scope_lock_key(
-                tenant_id, user_id, client_id,
-            ))
-            .execute(connection)
-            .await?;
+        lock_refresh_grant_scope(connection, tenant_id, user_id, client_id).await?;
     }
     let preserve = matches!(
         refresh,

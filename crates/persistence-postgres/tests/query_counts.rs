@@ -1060,7 +1060,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     );
     // 8 data statements inside the single commit transaction:
     //   SELECT nazo_lock_token_principals (timeout, then client/user FOR SHARE)
-    //   SELECT pg_advisory_xact_lock_shared(grant scope)
+    //   SELECT pg_advisory_xact_lock(grant scope)
     //   SELECT pg_advisory_xact_lock(family)
     //   SELECT oauth_refresh_families                      (current member check)
     //   INSERT INTO oauth_refresh_spent_tokens             (predecessor proof)
