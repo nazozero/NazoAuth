@@ -38,7 +38,7 @@ class CiInputTests(unittest.TestCase):
         changes = {
             "crates/authorization-server/src/token.rs": {"rust", "codeql", "security"},
             "crates/crypto/src/signature.rs": {"rust", "codeql", "security", "fuzz"},
-            "perf/tests/test_capacity_producer.py": {"perf"},
+            "perf/report.py": {"perf"},
             "perf/env.yaml": {"security", "perf"},
             "scripts/full_real_request_load.py": {"security"},
             ".github/workflows/ci-inputs.yml": set(gate.WORKFLOWS),

@@ -1,0 +1,7 @@
+{
+  "git": "af4b849c63e1e8a68b5d7564f3513a54f991a5fc",
+  "patch_sha256": "a8f192f123f6558f0a1663ef0302b1eb9c56743e71f726fbe4fd5e4f01d21443",
+  "measured_executable_sha256": "001a87d50c7b4fceabe66b5b67cb0ca9b7093acf6696725b98cccdf1255ec549",
+  "database_max_connections": 32,
+  "oauth_token_ip_rate_limit_enabled": false
+}

@@ -1,0 +1,13 @@
+[package]
+name = "goose-rauthy-pow"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "goose-rauthy-pow"
+path = "main.rs"
+
+[dependencies]
+spow = { version = "=0.7.0", features = ["server"] }
+
+[workspace]

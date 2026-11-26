@@ -1,384 +1,155 @@
-# NazoAuth Performance Benchmarks
+# OAuth / OIDC 单实例性能基准
 
-This directory contains reproducible Docker Compose based load benchmarks for
-NazoAuth. It is separate from correctness, conformance, and browser UI tests.
+在同一类 CNB 主机上，每次运行一个 OAuth 服务，将主服务绑定到 **8 个不同物理核心，各使用 1 个逻辑 CPU**。CPU 列同时展示主服务与含外部依赖的消耗。各家保留原生签名、客户端认证和持久化行为。四家在隔离网络内使用 HTTP/1.1，Kanidm 的 TLS 开销计入测量。
 
-The [machine-token issuance replay](replays/machine-token-wal/README.md)
-compares application revisions against an unchanged PostgreSQL server and
-reconciles successful responses with audit records in flushed WAL.
+| 服务 | 被测版本 | 机器令牌与认证 | 运行配置 |
+|---|---|---|---|
+| NazoAuth | `af4b849c63e1e8a68b5d7564f3513a54f991a5fc` ＋随附令牌入口开关补丁 | RS256 JWT、Basic | PostgreSQL 池 32、Valkey，令牌入口 IP 配额关闭 |
+| Rauthy | 0.37.2 · 标签 `fe6bcb95192e8a83c29e2b525bf4960933bea3bd` | RS256 JWT、表单凭据 | PostgreSQL 池 32、内嵌缓存；令牌签发事件关闭 |
+| Kanidm | 1.12.1 · 标签 `fb052e5357cf09dcdffd07fef4045e8066a68c0b` | JWE、Basic | 内嵌数据库计入主服务，HTTPS/1.1，验证测试 CA |
+| Keycloak | 26.8.2 · 镜像修订 `26018f2a4c6155cfe2c28f078996390bf5191946` | RS256 JWT、Basic | PostgreSQL 池 32、JVM 堆 512 MiB–4 GiB，JVM 可见处理器参数 16，实际执行受 8 核亲和性约束 |
+| Ory Hydra | 26.2.0 · 镜像修订 `0b84568fffccf151dc5e6c7955fdfb738555bf4b` | RS256 JWT、Basic | PostgreSQL 池 32，私网隔离管理入口，以 `serve all --dev` 运行 |
 
-For the small CNB refresh and authorization replay, pass [the application
-environment file](replays/user-token-cnb/small-cnb.env) after the main
-environment file. This selects automatic pool sizing even when the main file
-has a fixed limit. Four available application CPUs select eight connections.
-Use the same binary and CPU allocation with `DATABASE_MAX_CONNECTIONS=32`
-for the control.
+**同档观察。** 在 1,000 TPS 的 UserInfo 测试中，五家成功吞吐均接近目标。Kanidm 的 P99 最低（1.56 ms）；NazoAuth 主服务平均使用 0.11 核，计入依赖后为 0.49 核。相同档位的授权码兑换，Keycloak P99 为 5.59 ms，NazoAuth 为 11.55 ms，Rauthy 为 48.96 ms。Hydra 在 12,000 TPS 的 UserInfo 测试中实际成功约 3,145 TPS，表中同时保留未发出量。
 
-Python benchmark tooling uses Python 3.15.2. The runner recipe pins exact
-package versions; coverage and E2E environments use the separate hash locks
-under `requirements/`. Redis clients
-explicitly use RESP2, the existing socket/connection settings, and zero retries,
-preserving the original `from_url` connection-pool behavior on redis-py 8.
-Valkey failures remain observable to the seed, ledger, runner and sampler.
+**覆盖范围。** 当前 NazoAuth 在刷新、兑换、已登录授权、UserInfo 和两种令牌内省上有符合版本条件的记录。机器签发及混合负载缺少该构建的独立测量。空缺表示未测或业务边界不同。单轮点只代表该次观察；固定档最高值也不足以确定系统容量上限。
 
-Audit evidence distinguishes pending export from retained business facts.
-On schemas with `security_audit_events.exported_at`, `pending`/`pending_export`
-and oldest-pending age cover only unexported rows. The ledger's `events` and
-boundary `total` counters still include every row; `exported_retained` counts
-ACKed decision facts kept for replay protection. Those retained rows do not
-prevent export drain. Historical schemas without that column keep the original
-pending=total semantics and report zero exported-retained rows. Schema capability
-is probed once per fixed run/ledger invocation, not per sampled row.
-Full retained-row counts are boundary diagnostics, with an additional sparse
-60-second sampler observation; pending sampling and acceptance thresholds are
-unchanged. Separate statements are observations at different instants, not an
-atomic accounting identity while writers/exporters are active.
+共 **314 个有效窗口**。各列取同一配置逐轮指标的中位数。失败、未发出以次/轮计，偶数轮的中位数可能为半整数。延迟从计划到达到成功完成，包含调度等待。无成功响应的轮次保留在吞吐及计数中，该轮没有延迟分位数。
 
-The runner image pins `orjson==3.13.0` for the streaming evidence decoder.
-Checkpoint evidence uses k6's buffered `--quiet --out json=-` output,
-redirected to the analyzer FIFO. The script writes summaries only to files;
-the runner closes its FIFO descriptor before sampler shutdown and waiting
-for the analyzer. This
-retains all metric points and flushes the final buffered batch without a
-relaxed lag gate.
+## 固定到达率对照
 
-The native JSON periodic flusher also flushes its stdout buffer after each
-batch. Sparse initialization gauges must arrive at that boundary, before a
-later workload fills 4 KiB or `Stop()` closes output. Otherwise old VU samples
-can appear late although business samples are timely. A native regression
-feeds two sub-4-KiB batches and verifies their complete envelopes arrive before
-the next batch or shutdown. All samples and the five-second lag gate remain
-unchanged.
+| 业务 | 服务 | 目标 TPS | 发压 | 发出 TPS | 成功 TPS | 失败 | 未发出 | P50 ms | P95 ms | P99 ms | P99.9 ms | CPU 主 / 总（核） | 峰值 RSS 主 / 总（MiB） | CPU PSI % | 轮数 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 机器令牌签发 | Rauthy | 12 | 标准 | 12.00 | 12.00 | 0.0 | 0.0 | 3.96 | 5.09 | 7.82 | 12.25 | 0.02 / 0.03 | 80.3 / 499.6 | 0.13 | 3 |
+| 机器令牌签发 | Kanidm | 12 | 标准 | 12.00 | 12.00 | 0.0 | 0.0 | 11.09 | 24.65 | 49.12 | 220.33 | 0.08 / 0.08 | 67.8 / 67.8 | 0.27 | 3 |
+| 机器令牌签发 | Keycloak | 12 | 标准 | 12.00 | 12.00 | 0.0 | 0.0 | 6.66 | 8.35 | 9.60 | 33.68 | 0.13 / 0.13 | 816.1 / 1,041.0 | 3.82 | 3 |
+| 机器令牌签发 | Hydra | 12 | 标准 | 12.00 | 12.00 | 0.0 | 0.0 | 9.15 | 10.86 | 13.94 | 16.11 | 0.09 / 0.10 | 51.8 / 261.0 | 0.19 | 3 |
+| 机器令牌签发 | Rauthy | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 3.23 | 5.74 | 8.26 | 12.69 | 0.16 / 0.18 | 82.2 / 533.6 | 0.31 | 3 |
+| 机器令牌签发 | Kanidm | 100 | 标准 | 100.00 | 18.81 | 2,923.0 | 0.0 | 3,444.72 | 4,998.66 | 5,000.82 | 5,001.78 | 0.62 / 0.62 | 328.1 / 328.1 | 0.27 | 6 |
+| 机器令牌签发 | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 2.80 | 3.82 | 4.40 | 7.19 | 0.40 / 0.41 | 886.4 / 1,100.4 | 0.29 | 3 |
+| 机器令牌签发 | Hydra | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 7.93 | 9.71 | 13.17 | 18.66 | 0.68 / 0.71 | 56.6 / 500.0 | 0.25 | 3 |
+| 机器令牌签发 | Hydra | 550 | 标准 | 549.97 | 422.25 | 4,598.0 | 1.0 | 8.43 | 12.87 | 18.08 | 68.17 | 3.28 / 3.41 | 314.4 / 2,496.0 | 0.31 | 1 |
+| 机器令牌签发 | Rauthy | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 4.97 | 13.25 | 21.82 | 42.28 | 1.55 / 1.69 | 85.5 / 1,876.1 | 0.22 | 1 |
+| 机器令牌签发 | Keycloak | 2,000 | 标准 | 1,999.94 | 1,999.94 | 0.0 | 2.0 | 2.02 | 2.68 | 3.22 | 7.48 | 2.69 / 2.80 | 1,010.5 / 2,962.6 | 0.19 | 1 |
+| 机器令牌签发 | Rauthy | 3,000 | 标准 | 2,375.72 | 2,375.72 | 0.0 | 22,474.0 | 3,665.88 | 3,897.74 | 3,963.20 | 3,991.95 | 3.15 / 3.34 | 390.9 / 2,100.7 | 0.14 | 1 |
+| 机器令牌签发 | Keycloak | 3,000 | 标准 | 2,999.90 | 2,999.90 | 0.0 | 3.5 | 2.29 | 991.18 | 1,195.63 | 1,240.82 | 5.04 / 5.22 | 1,752.2 / 3,102.5 | 8.22 | 2 |
+| 机器令牌内省 | NazoAuth | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.89 | 2.69 | 2.94 | 3.41 | 0.03 / 0.08 | 422.1 / 21,038.1 | 0.92 | 3 |
+| 机器令牌内省 | Rauthy | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.31 | 1.93 | 2.14 | 2.68 | 0.04 / 0.05 | 81.4 / 505.6 | 0.43 | 3 |
+| 机器令牌内省 | Kanidm | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.03 | 1.83 | 2.01 | 2.38 | 0.01 / 0.01 | 77.5 / 77.5 | 0.06 | 3 |
+| 机器令牌内省 | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 2.01 | 3.03 | 3.55 | 5.12 | 0.26 / 0.27 | 893.0 / 1,119.3 | 0.13 | 3 |
+| 机器令牌内省 | Hydra | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.90 | 2.71 | 3.10 | 3.88 | 0.13 / 0.15 | 56.0 / 270.3 | 0.21 | 3 |
+| 机器令牌内省 | NazoAuth | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.41 | 2.29 | 2.42 | 3.69 | 0.20 / 0.47 | 460.8 / 17,878.5 | 0.23 | 3 |
+| 机器令牌内省 | Rauthy | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.27 | 2.05 | 2.16 | 2.45 | 0.33 / 0.38 | 79.8 / 503.7 | 1.13 | 3 |
+| 机器令牌内省 | Kanidm | 1,000 | 标准 | 999.94 | 999.94 | 0.0 | 2.0 | 0.98 | 1.75 | 1.88 | 2.14 | 0.09 / 0.09 | 53.2 / 53.2 | 2.84 | 3 |
+| 机器令牌内省 | Keycloak | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.18 | 1.73 | 1.94 | 5.66 | 0.45 / 0.49 | 1,000.7 / 1,360.2 | 0.10 | 3 |
+| 机器令牌内省 | Hydra | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.30 | 2.31 | 2.74 | 3.81 | 1.11 / 1.20 | 57.2 / 438.4 | 0.16 | 3 |
+| 机器令牌内省 | NazoAuth | 3,000 | 标准 | 2,999.92 | 2,999.92 | 0.0 | 3.0 | 1.24 | 1.95 | 2.12 | 2.89 | 0.63 / 1.46 | 422.1 / 25,019.9 | 1.09 | 3 |
+| 机器令牌内省 | Rauthy | 3,000 | 标准 | 2,999.86 | 2,999.86 | 0.0 | 5.0 | 1.18 | 2.24 | 2.65 | 3.01 | 0.78 / 0.86 | 81.7 / 515.2 | 0.29 | 3 |
+| 机器令牌内省 | Kanidm | 3,000 | 标准 | 2,999.94 | 2,999.94 | 0.0 | 2.0 | 0.99 | 2.17 | 2.40 | 2.53 | 0.30 / 0.30 | 94.8 / 94.8 | 16.35 | 3 |
+| 机器令牌内省 | Keycloak | 3,000 | 标准 | 2,999.97 | 2,999.97 | 0.0 | 1.0 | 1.19 | 2.10 | 2.50 | 9.27 | 1.35 / 1.49 | 1,013.8 / 2,025.5 | 0.24 | 3 |
+| 机器令牌内省 | Hydra | 3,000 | 标准 | 2,999.89 | 2,999.89 | 0.0 | 4.0 | 3.28 | 67.70 | 82.74 | 90.28 | 2.74 / 3.09 | 90.7 / 3,275.6 | 0.75 | 3 |
+| 机器令牌内省 | Rauthy | 9,000 | 标准 | 8,999.78 | 8,999.78 | 0.0 | 8.0 | 1.65 | 3.00 | 3.78 | 6.18 | 2.37 / 2.64 | 85.0 / 1,382.1 | 0.10 | 1 |
+| 机器令牌内省 | Rauthy | 12,000 | 标准 | 11,999.53 | 11,999.53 | 0.0 | 17.0 | 1.70 | 3.34 | 4.38 | 6.79 | 3.14 / 3.48 | 87.7 / 1,456.8 | 0.51 | 2 |
+| 机器令牌内省 | Keycloak | 12,000 | 标准 | 10,846.40 | 10,846.40 | 0.0 | 41,529.5 | 4.11 | 1,145.40 | 1,271.31 | 1,336.41 | 6.75 / 7.38 | 3,807.2 / 5,336.5 | 15.68 | 4 |
+| 机器令牌内省 | Rauthy | 12,000 | 宽 | 11,996.06 | 11,996.06 | 0.0 | 142.0 | 1.80 | 3.59 | 4.76 | 10.04 | 3.19 / 3.71 | 96.5 / 1,416.1 | 8.13 | 3 |
+| 机器令牌内省 | Keycloak | 12,000 | 宽 | 10,205.67 | 10,205.67 | 0.0 | 64,596.0 | 2,297.65 | 4,392.94 | 4,790.36 | 4,876.01 | 7.79 / 8.49 | 4,836.9 / 5,646.9 | 18.99 | 3 |
+| 用户令牌内省 | NazoAuth | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.33 | 2.04 | 2.24 | 2.80 | 0.22 / 0.59 | 460.8 / 17,878.8 | 0.29 | 3 |
+| 用户资料 | NazoAuth | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.67 | 2.44 | 2.63 | 3.00 | 0.02 / 0.08 | 422.1 / 20,700.1 | 0.42 | 3 |
+| 用户资料 | Rauthy | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.40 | 2.04 | 2.20 | 2.43 | 0.04 / 0.05 | 81.6 / 502.3 | 0.27 | 3 |
+| 用户资料 | Kanidm | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.11 | 1.56 | 1.71 | 1.98 | 0.03 / 0.03 | 84.5 / 84.5 | 0.08 | 3 |
+| 用户资料 | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.42 | 2.20 | 2.76 | 4.37 | 0.17 / 0.17 | 1,034.6 / 1,616.5 | 0.63 | 3 |
+| 用户资料 | Hydra | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 2.13 | 3.13 | 3.52 | 4.45 | 0.14 / 0.15 | 58.5 / 758.7 | 0.16 | 3 |
+| 用户资料 | NazoAuth | 1,000 | 标准 | 999.97 | 999.97 | 0.0 | 1.0 | 1.30 | 2.00 | 2.18 | 2.51 | 0.11 / 0.49 | 422.1 / 19,986.1 | 1.08 | 3 |
+| 用户资料 | Rauthy | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.24 | 2.05 | 2.15 | 2.31 | 0.30 / 0.34 | 82.4 / 505.2 | 0.20 | 3 |
+| 用户资料 | Kanidm | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 0.91 | 1.45 | 1.56 | 1.81 | 0.23 / 0.23 | 90.6 / 90.6 | 0.10 | 3 |
+| 用户资料 | Keycloak | 1,000 | 标准 | 999.89 | 999.89 | 0.0 | 4.0 | 1.04 | 1.71 | 1.83 | 2.46 | 0.21 / 0.21 | 1,018.9 / 1,662.1 | 0.18 | 3 |
+| 用户资料 | Hydra | 1,000 | 标准 | 999.83 | 999.83 | 0.0 | 6.0 | 1.60 | 2.66 | 3.86 | 6.29 | 1.15 / 1.26 | 59.7 / 743.5 | 5.90 | 3 |
+| 用户资料 | NazoAuth | 3,000 | 标准 | 2,999.94 | 2,999.94 | 0.0 | 2.0 | 1.27 | 2.02 | 2.20 | 3.00 | 0.31 / 1.35 | 422.1 / 21,241.7 | 0.94 | 3 |
+| 用户资料 | Rauthy | 3,000 | 标准 | 2,999.89 | 2,999.89 | 0.0 | 4.0 | 1.60 | 2.72 | 3.18 | 3.33 | 0.94 / 1.03 | 83.1 / 511.9 | 1.26 | 3 |
+| 用户资料 | Kanidm | 3,000 | 标准 | 2,999.94 | 2,999.94 | 0.0 | 2.0 | 1.02 | 1.67 | 1.83 | 2.12 | 0.77 / 0.77 | 65.5 / 65.5 | 1.63 | 3 |
+| 用户资料 | Keycloak | 3,000 | 标准 | 2,999.89 | 2,999.89 | 0.0 | 4.0 | 1.12 | 2.33 | 2.54 | 3.09 | 0.69 / 0.69 | 1,067.0 / 1,718.7 | 1.39 | 3 |
+| 用户资料 | Hydra | 3,000 | 标准 | 2,999.97 | 2,999.97 | 0.0 | 1.0 | 3.87 | 9.25 | 14.14 | 19.85 | 2.98 / 3.29 | 67.0 / 706.8 | 0.87 | 3 |
+| 用户资料 | NazoAuth | 6,000 | 标准 | 5,999.75 | 5,999.75 | 0.0 | 9.0 | 1.39 | 2.24 | 2.50 | 4.17 | 0.63 / 2.86 | 422.1 / 25,021.4 | 1.09 | 3 |
+| 用户资料 | Rauthy | 6,000 | 标准 | 5,999.69 | 5,999.69 | 0.0 | 11.0 | 1.59 | 2.80 | 3.20 | 4.25 | 1.73 / 1.91 | 83.4 / 808.4 | 0.61 | 3 |
+| 用户资料 | Kanidm | 6,000 | 标准 | 5,999.92 | 5,999.92 | 0.0 | 3.0 | 1.13 | 1.96 | 2.21 | 2.69 | 1.54 / 1.54 | 63.7 / 63.7 | 0.90 | 3 |
+| 用户资料 | Keycloak | 6,000 | 标准 | 5,999.83 | 5,999.83 | 0.0 | 6.0 | 1.05 | 1.73 | 2.00 | 7.15 | 1.24 / 1.24 | 1,230.4 / 1,953.9 | 1.30 | 3 |
+| 用户资料 | Hydra | 6,000 | 标准 | 3,286.06 | 3,280.19 | 311.0 | 97,702.0 | 2,499.90 | 2,560.83 | 2,580.25 | 4,983.09 | 3.34 / 3.68 | 860.1 / 1,955.4 | 1.18 | 3 |
+| 用户资料 | NazoAuth | 12,000 | 标准 | 11,997.39 | 11,997.39 | 0.0 | 94.0 | 1.47 | 2.47 | 2.86 | 4.84 | 1.38 / 6.21 | 461.9 / 31,773.7 | 1.87 | 1 |
+| 用户资料 | Rauthy | 12,000 | 标准 | 11,999.75 | 11,999.75 | 0.0 | 9.0 | 1.92 | 4.03 | 5.78 | 10.52 | 3.22 / 3.54 | 88.3 / 1,095.2 | 0.36 | 3 |
+| 用户资料 | Kanidm | 12,000 | 标准 | 11,999.47 | 11,999.47 | 0.0 | 19.0 | 1.43 | 2.59 | 3.09 | 5.20 | 3.59 / 3.59 | 60.0 / 60.0 | 0.31 | 3 |
+| 用户资料 | Keycloak | 12,000 | 标准 | 11,999.53 | 11,999.53 | 0.0 | 17.0 | 1.57 | 2.90 | 12.92 | 102.24 | 2.97 / 2.97 | 2,840.5 / 3,563.4 | 3.37 | 3 |
+| 用户资料 | Hydra | 12,000 | 标准 | 3,158.39 | 3,144.94 | 484.0 | 318,298.0 | 2,606.90 | 2,664.22 | 2,696.44 | 2,703.40 | 3.35 / 3.67 | 870.2 / 1,944.3 | 0.39 | 3 |
+| 授权码兑换（PKCE） | NazoAuth | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 3.76 | 5.53 | 9.66 | 16.76 | 0.10 / 0.25 | 460.8 / 25,743.3 | 0.26 | 5 |
+| 授权码兑换（PKCE） | Rauthy | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 7.37 | 11.87 | 19.92 | 36.35 | 0.32 / 0.37 | 88.6 / 580.8 | 0.30 | 3 |
+| 授权码兑换（PKCE） | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 3.81 | 5.45 | 6.22 | 7.38 | 0.50 / 0.51 | 1,105.9 / 1,770.3 | 0.66 | 3 |
+| 授权码兑换（PKCE） | Hydra | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 17.36 | 21.84 | 26.96 | 34.46 | 1.46 / 1.55 | 60.8 / 1,878.8 | 2.65 | 6 |
+| 授权码兑换（PKCE） | NazoAuth | 1,000 | 标准 | 999.90 | 999.90 | 0.0 | 2.0 | 3.43 | 6.82 | 11.55 | 16.37 | 0.89 / 1.86 | 461.9 / 31,504.3 | 0.84 | 3 |
+| 授权码兑换（PKCE） | Rauthy | 1,000 | 标准 | 999.92 | 999.90 | 0.0 | 1.5 | 15.52 | 32.63 | 48.96 | 86.75 | 2.95 / 3.43 | 129.9 / 2,831.7 | 0.33 | 6 |
+| 授权码兑换（PKCE） | Keycloak | 1,000 | 标准 | 999.95 | 999.95 | 0.0 | 1.0 | 2.59 | 3.62 | 5.59 | 15.60 | 2.31 / 2.32 | 1,164.7 / 4,847.8 | 5.46 | 3 |
+| 授权码兑换（PKCE） | Hydra | 1,000 | 标准 | 999.95 | 376.90 | 12,458.0 | 1.0 | 4,016.06 | 4,903.49 | 4,983.41 | 4,997.73 | 7.98 / 8.40 | 604.0 / 11,318.4 | 0.79 | 3 |
+| 授权码兑换（PKCE） | Keycloak | 3,000 | 标准 | 2,997.28 | 2,997.28 | 0.0 | 54.5 | 2,047.12 | 2,673.38 | 2,705.78 | 2,756.08 | 7.79 / 7.81 | 2,523.8 / 4,851.3 | 44.14 | 4 |
+| 刷新令牌轮换（32×8） | NazoAuth | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 4.40 | 6.49 | 10.13 | 22.22 | 0.11 / 0.30 | 460.8 / 20,225.8 | 1.08 | 5 |
+| 刷新令牌轮换（32×8） | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 4.52 | 6.16 | 7.33 | 10.51 | 0.60 / 0.63 | 1,095.0 / 1,832.3 | 4.05 | 3 |
+| 刷新令牌轮换（32×8） | Hydra | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 15.71 | 20.06 | 22.80 | 52.84 | 1.41 / 1.49 | 61.9 / 1,392.0 | 4.85 | 3 |
+| 刷新令牌轮换（64×8） | NazoAuth | 1,000 | 标准 | 999.97 | 999.97 | 0.0 | 1.0 | 4.17 | 7.90 | 12.90 | 22.19 | 0.99 / 2.56 | 422.1 / 19,142.1 | 1.13 | 5 |
+| 刷新令牌轮换（64×8） | Keycloak | 1,000 | 标准 | 999.75 | 999.75 | 0.0 | 9.0 | 3.49 | 4.66 | 7.97 | 21.52 | 2.87 / 3.07 | 1,158.4 / 4,774.4 | 9.99 | 3 |
+| 刷新令牌轮换（64×8） | Hydra | 1,000 | 标准 | 585.42 | 585.42 | 0.0 | 14,925.0 | 577.04 | 1,163.93 | 1,483.76 | 1,909.82 | 7.81 / 8.53 | 113.7 / 14,387.7 | 0.92 | 3 |
+| 刷新令牌轮换（32×47） | Keycloak | 3,000 | 标准 | 2,871.97 | 2,871.97 | 0.0 | 4,609.0 | 296.97 | 495.36 | 533.43 | 577.37 | 7.95 / 8.72 | 1,450.6 / 4,873.7 | 22.36 | 5 |
+| 刷新令牌轮换（128×10） | Keycloak | 3,000 | 标准 | 2,844.11 | 2,844.11 | 0.0 | 5,612.0 | 288.70 | 426.58 | 491.20 | 532.70 | 7.95 / 8.77 | 1,406.9 / 7,923.8 | 15.33 | 3 |
+| 已登录静默授权＋兑换 | NazoAuth | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 5.73 | 11.17 | 16.67 | 27.71 | 1.30 / 3.18 | 420.5 / 16,804.4 | 1.61 | 5 |
+| 已登录授权＋兑换 | NazoAuth | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 6.01 | 12.43 | 28.95 | 120.83 | 1.32 / 3.17 | 420.8 / 19,832.2 | 0.49 | 5 |
+| 已登录授权＋兑换 | Keycloak | 3,000 | 标准 | 1,375.10 | 1,375.10 | 0.0 | 58,496.5 | 5,453.61 | 7,105.40 | 7,602.92 | 7,668.19 | 7.87 / 8.42 | 3,167.4 / 5,992.4 | 45.23 | 2 |
+| 两类混合 | Kanidm | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 1.62 | 12.84 | 19.27 | 44.80 | 0.19 / 0.19 | 87.0 / 87.0 | 0.07 | 3 |
+| 两类混合 | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 2.70 | 4.36 | 5.00 | 6.74 | 0.38 / 0.40 | 894.1 / 1,871.0 | 0.08 | 3 |
+| 两类混合 | Rauthy | 1,000 | 标准 | 999.94 | 999.94 | 0.0 | 2.0 | 1.63 | 4.30 | 8.73 | 23.60 | 0.73 / 0.80 | 85.5 / 1,142.7 | 2.17 | 3 |
+| 两类混合 | Kanidm | 1,000 | 标准 | 1,000.00 | 666.67 | 12,000.0 | 0.0 | 1.00 | 1.75 | 2.01 | 2.56 | 0.78 / 0.78 | 245.0 / 245.0 | 2.10 | 4 |
+| 两类混合 | Keycloak | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.46 | 2.54 | 2.83 | 5.66 | 0.87 / 0.92 | 968.7 / 1,434.8 | 1.36 | 3 |
+| 两类混合 | Rauthy | 3,000 | 标准 | 2,999.94 | 2,999.94 | 0.0 | 2.0 | 2.37 | 6.23 | 9.95 | 20.33 | 2.00 / 2.18 | 86.4 / 1,444.3 | 0.85 | 3 |
+| 两类混合 | Kanidm | 3,000 | 标准 | 2,999.83 | 1,999.86 | 35,999.0 | 6.0 | 1.38 | 2.80 | 3.79 | 7.73 | 1.17 / 1.17 | 465.9 / 465.9 | 0.11 | 3 |
+| 两类混合 | Keycloak | 3,000 | 标准 | 2,999.89 | 2,999.89 | 0.0 | 4.0 | 1.57 | 2.73 | 3.04 | 7.04 | 2.26 / 2.41 | 1,048.8 / 2,129.7 | 1.17 | 3 |
+| 两类混合 | Rauthy | 6,000 | 标准 | 5,999.89 | 5,999.89 | 0.0 | 4.0 | 4.21 | 14.18 | 23.07 | 38.80 | 3.83 / 4.10 | 95.9 / 2,168.8 | 0.16 | 3 |
+| 两类混合 | Keycloak | 6,000 | 标准 | 5,852.14 | 5,852.14 | 0.0 | 5,323.0 | 2.67 | 1,553.11 | 1,706.54 | 1,730.53 | 6.28 / 6.62 | 3,686.3 / 4,705.5 | 15.73 | 3 |
+| 两类混合 | Rauthy | 6,000 | 宽 | 5,999.08 | 5,999.08 | 0.0 | 33.0 | 5.31 | 690.10 | 840.97 | 894.99 | 3.94 / 4.36 | 261.4 / 2,475.0 | 2.78 | 4 |
+| 两类混合 | Kanidm | 6,000 | 宽 | 5,999.86 | 3,999.89 | 71,999.0 | 5.0 | 0.98 | 1.83 | 2.09 | 3.84 | 1.68 / 1.68 | 768.8 / 768.8 | 0.27 | 3 |
+| 两类混合 | Keycloak | 6,000 | 宽 | 5,999.31 | 5,999.31 | 0.0 | 25.0 | 2,592.05 | 4,451.55 | 4,507.66 | 4,543.35 | 7.08 / 7.47 | 4,850.1 / 5,656.3 | 17.98 | 3 |
+| 两类混合 | Rauthy | 12,000 | 标准 | 6,604.31 | 6,604.31 | 0.0 | 194,245.0 | 1,233.36 | 1,319.35 | 1,384.11 | 1,409.86 | 4.29 / 4.61 | 437.5 / 2,790.9 | 0.42 | 3 |
+| 两类混合 | Keycloak | 12,000 | 标准 | 7,639.25 | 7,639.25 | 0.0 | 156,987.0 | 985.25 | 1,525.80 | 1,616.29 | 1,693.96 | 7.87 / 8.36 | 3,771.9 / 5,907.4 | 35.06 | 3 |
+| 两类混合 | Rauthy | 12,000 | 宽 | 6,787.50 | 6,787.50 | 0.0 | 187,650.0 | 4,807.79 | 4,925.13 | 4,939.50 | 4,966.39 | 4.43 / 4.84 | 1,352.6 / 4,039.2 | 0.23 | 3 |
+| 两类混合 | Kanidm | 12,000 | 宽 | 11,999.36 | 7,999.61 | 143,991.0 | 23.0 | 1.04 | 1.99 | 2.45 | 7.04 | 2.76 / 2.76 | 1,498.1 / 1,498.1 | 0.15 | 3 |
+| 五类混合 | Keycloak | 100 | 标准 | 100.00 | 100.00 | 0.0 | 0.0 | 2.81 | 7.99 | 10.18 | 12.52 | 0.49 / 0.51 | 1,113.6 / 2,728.8 | 0.10 | 3 |
+| 五类混合 | Keycloak | 1,000 | 标准 | 1,000.00 | 1,000.00 | 0.0 | 0.0 | 1.70 | 4.71 | 5.87 | 7.90 | 1.58 / 1.66 | 1,144.7 / 1,875.5 | 1.12 | 3 |
+| 五类混合 | Keycloak | 3,000 | 标准 | 2,999.80 | 2,999.80 | 0.0 | 4.0 | 1.73 | 4.24 | 5.42 | 12.91 | 3.76 / 3.99 | 1,159.5 / 2,504.2 | 1.12 | 3 |
+| 五类混合 | Keycloak | 6,000 | 标准 | 4,952.27 | 4,952.27 | 0.0 | 20,954.5 | 1,515.69 | 1,985.18 | 3,418.00 | 3,660.15 | 7.87 / 8.36 | 3,936.8 / 6,674.3 | 21.82 | 4 |
+| 五类混合 | Keycloak | 12,000 | 标准 | 5,352.15 | 5,352.15 | 0.0 | 132,957.0 | 1,399.86 | 1,903.92 | 3,182.63 | 3,412.37 | 7.87 / 8.34 | 4,059.2 / 7,019.9 | 38.27 | 3 |
 
-The runner builds exact k6 v2.4.0 source `dd9395906d48437a8d7ab53e309afa47ad8d67e0`
-from a checksum-verified archive. Its [small JSON output patch](runner/k6-json-throughput.patch)
-reuses bounded encodings of immutable tag sets and writes the same complete
-sample envelope without repeated reflection. Retained samples preserve every
-timestamp, value, tag and metadata field; metadata and invalid-value cases use
-the stock encoder. The runner sets `K6_JSON_OMIT_UNUSED_HTTP_TIMINGS=1` to omit
-only `http_req_blocked`, `http_req_connecting`, `http_req_tls_handshaking`,
-`http_req_sending`, `http_req_waiting` and `http_req_receiving` from JSON output.
-The evaluator does not consume these six auxiliary timings. Native k6 summaries
-and thresholds still receive every metric; complete-operation cohorts/quantiles,
-window contracts, outcomes, errors, drops, HTTP totals/duration, network bytes
-and VUs remain exhaustive in the stream. Setting the flag to `0` restores full
-JSON output. This output setting is recorded in `k6-started.json`; runner image
-identity separates its recipes from previous unfiltered images.
-Upstream output/metrics tests and added envelope equivalence,
-invalid-value and bounded-cache tests run during the image build. Per-point
-provenance records the resulting k6 binary hash and runner image.
-Install that same binary package when invoking its Python tools on the host:
-`python -m pip install --only-binary=:all: orjson==3.13.0`.
-Streaming evidence retains the existing cohort, diagnostic-selection and
-five-second consumer-lag rules; forensic gzip output uses compression level 1.
+## 读表与可比性
 
-For a measured stream-consumer bottleneck, the targeted controller accepts
-`--stream-workers 2` through `8` (default `1`). It registers this setting as
-part of the recipe and requires enough allocated generator CPUs for the workers
-and dispatcher. The application image does not need rebuilding for this change.
-Every Point is still decoded and validated; metric sharding preserves exact
-cohorts, counts, outcomes, drops and histogram buckets. Native k6 complete-flow
-quantiles remain one population. Window contracts reach every shard; missing,
-divergent, malformed, failed or late evidence retains its existing invalid gate.
-Analyzer stats record each worker's owned-point count and the unchanged
-five-second consumer-lag signal.
+- **查询。** UserInfo 读取用户资料；内省读取令牌有效状态。机器令牌和用户令牌分别统计。Hydra 内省由私网管理端承接，调用者认证边界与另四家不同。
+- **签发与授权。** 机器签发包含客户端认证和实际签发。授权码在测前用真实用户会话及 S256 PKCE 准备，测量时每个授权码只兑换一次。已登录链路包含重定向、必要的授权确认和兑换，免交互与显式同意各自成组。Hydra 的外部身份和同意服务未计入共同端到端授权组。
+- **轮换。** 表中括号表示用户数 × 每用户独立令牌族数。成功后用返回的后继令牌继续该族。Rauthy 被测配置的后继令牌有约 240 秒生效等待；Kanidm 的重复消费行为与严格一次性兑换及即时轮换组不同。这些场景没有共同的安全和时序前提。
+- **混合。** 两类混合每三次安排一次机器签发、两次内省；五类混合的签发、内省、兑换、刷新、已登录授权分别占 30%、50%、10%、5%、5%。有效机器令牌集由 16 个客户端各签发 32 枚；授权码兑换使用 32 个用户。登录、造数通过各项目管理或协议接口完成，每家使用自己的数据库。逐业务项计数和延迟见每轮 JSON 的 `operations`。
+- **过载。** 成功 TPS = 测量期内计划到达、最终成功的业务数 ÷ 测量秒数，包含窗口结束后返回的成功。多 HTTP 步骤构成的一笔授权只算一次业务。未发出可能来自调度迟到、在途槽耗尽或前一个刷新未完成。只读成功请求的延迟会低估过载影响，应同时看成功、失败和未发出。特别是 Kanidm 混合过载时，成功样本可能全部来自内省。
+- **资源。** CNB Linux x86-64。四家对照项目的环境快照为 AMD EPYC 9K65、无 Swap；当前 NazoAuth 归档保留了核与 SMT 映射，未单独保留 CPU 型号快照。主服务没有硬内存上限，数据库、缓存、Goose 及采集器使用独立核。常规配置分别给 PostgreSQL、Valkey、Goose 分配 14、2、15 个逻辑 CPU。内存取测量窗口内采样到的进程 RSS；服务端总峰值按同时刻汇总，共享页可能重复计入。CPU 是平均占用核数，宿主 CPU PSI 是存在可运行任务等待 CPU 的时间占比。
+- **发压。** Goose 0.19.2，调度迟到 5 ms 放弃发出，HTTP 超时 5 秒，共享 HTTP 连接池，固定计划到达，无自动重试。标准配置为 8,192 在途槽、15 工作线程，宽配置为 32,768 槽、24 线程、独立日志写入及扩展源端口范围。只在相同配置内聚合。除兑换和五类混合为预热 5 秒、测量 20 秒外，其余为 10 秒和 36 秒。每个计划操作记录计划、实际发出与完成时间。P99.9 在低样本量窗口可能仅由少数样本决定。
+- **有效性。** 只纳入夹具校验成功、计数可对账、资源采样及亲和性合格的窗口。Goose 调度迟发超过计划数 0.1% 或存在发压端资源瓶颈时排除；服务端过载仍保留。宿主干扰结合 PSI、所分配核心的非测试负载和调度等待判断。高整机 CPU 利用率本身不构成排除依据。有效轮数表示测量质量，与产品延迟门槛分开计算。
 
-The dispatcher sends complete input blocks to workers. Each worker selects
-its existing metric partition with a bounded native-row regex cache; new
-metrics, window contracts and other JSON layouts use the routing decoder.
-This removes per-Point work from the dispatcher. A worker still decodes and
-validates every owned Point, in input order, with the same forensic selection.
-Available complete input blocks are dispatched immediately. The dispatcher
-does not wait to accumulate 64 KiB: low-rate sidecars must reach their consumers
-before a later iteration or EOF, under the same five-second lag gate.
+## 复现
 
-Forensic selection remains per metric/second. With multiple workers, each
-metric belongs to one shard; each shard has an equal share of the existing
-512 MiB logical diagnostic budget. Concatenated gzip members form the single
-diagnostic artifact. Ordering and truncation of this sampled forensic copy may
-change; it remains separate from exhaustive authoritative counters and never
-feeds the business verdict. Keep worker count frozen within a capacity interval.
-
-## CNB Docker-socket controller
-
-The normal host-bind entry in `tools/single_instance_scaling.py` calls Docker
-directly; state inspection does not copy output. When a CNB controller shares a
-Docker socket but cannot expose its own bind paths to that daemon, use the
-committed `tools/cnb_controller.py` entry with named output volumes:
-
-```sh
-SIS_CNB_EVIDENCE=/evidence SIS_WORKSPACE=/workspace python perf/tools/cnb_controller.py setup
-SIS_CNB_EVIDENCE=/evidence SIS_WORKSPACE=/workspace python perf/tools/cnb_controller.py s21
-```
-
-Prepare a fresh, task-owned project and its `scripts`, `pinbin`, `audit-tls`,
-`evidence` and `work` volumes before setup. Mount the complete selected Git source
-read-only at `/workspace`, writable evidence at `/evidence`, and the work volume
-at `/workspace/perf-results`. The controller image needs the existing runner
-Python dependencies, Docker/Compose, Git and a C compiler. The public
-`/evidence/requests/manifest.json` binds `project`, `source_sha`, `runner_image`,
-`app_image`, `helpers` (receiver), `cpus`, `harness_file_sha256`, and each
-`requests` entry's exact `path` and `sha256`. Requests retain the normal harness
-parameters and gates; the controller verifies their hashes and does not change
-rates, VUs, windows, CPU widths, pool size, audit or durability settings.
-
-Only explicit sampler readiness and terminal capture copy output. Running
-state/affinity checks never copy whole result directories. Terminal `logs` or
-removal resolves the registered name or full instance ID and captures each output
-once from that exact instance before removal. All terminal promotion passes
-through the same exact-ID ownership and stopped-state inspection in `sync_one`;
-the copy record retains that positive proof. A still-running instance is copied
-as partial and records a termination error while other collection and existing
-owned cleanup continue. The error prevents PASS even if the business metrics pass. Fault finalization verifies the existing ownership label, then
-boundedly stops/waits for remaining workloads and attempts their final output
-before the existing owned cleanup. One failed copy does not skip other copies
-or independent state capture; original failed verdicts and metrics are retained. Sampler metadata is copied before its bounded readiness check.
-Required copy failure prevents PASS, records `collector_copy_complete=false`,
-keeps any business metrics, and produces `INVALID` after owned cleanup. The
-existing exact-window, full-stream, terminal-summary and affinity gates remain
-in force; diagnostic event sampling does not replace them. The normal host-bind
-path and application code are unchanged.
-
-## Run
-
-Run the full matrix:
+离线重建只需 Python 3.10+。`--check --raw` 校验归档摘要并重算逐请求数据；在 Linux 上还会从采样文件重算 CPU、总峰值 RSS 和 PSI。从仓库根目录执行：
 
 ```sh
-make perf
+python3 perf/report.py --check --raw
+python3 perf/report.py --output /tmp/oauth-benchmark.md
 ```
 
-Equivalent direct command:
+在专用 CNB 的 Linux x86-64 环境重新发压需要 Docker、Git、Bash、Python 3、C 编译器及静态 libc、jq、OpenSSL、patch、flock 和 taskset。克隆时保留上表 NazoAuth 提交。以下命令依次构建锁定版本、部署服务、通过产品接口准备数据、运行三个窗口并生成该次报告：
 
 ```sh
-docker compose -f docker-compose.perf.yml up --build --abort-on-container-exit --exit-code-from perf
+bash perf/bench.sh setup
+bash perf/bench.sh run nazo userinfo 1000 3
+python3 perf/report.py --input perf/.work/windows --output /tmp/fresh.md
 ```
 
-Run one profile:
+`bash perf/bench.sh matrix` 按固定种子交错重放所选发压配置已经发表的业务、档位、轮数和刷新数据规模。宽配置使用新的独立 CNB，先以 `BENCH_NETWORK=wide bash perf/bench.sh setup` 部署，再以 `BENCH_PROFILE=journal-wide bash perf/bench.sh matrix` 运行。每个窗口必须有唯一输出路径。私有凭据和新结果保存在忽略提交的 `perf/.work/`。
 
-```sh
-PERF_PROFILE=oidc-mixed make perf
-```
-
-Run one scenario:
-
-```sh
-PERF_SCENARIO=token_client_credentials PERF_DURATION=30s PERF_VUS=16 make perf
-```
-
-For bounded capacity runs, set an exclusive `SIS_PROJECT`, `SIS_WORKSPACE`,
-`SIS_APP_SHA`, and `STOP_AT` as described below, then run:
-
-```sh
-make perf-capacity-smoke
-make perf-capacity CAPACITY_ARGS="--mode multi --scenarios cap_mixed --rates 2400 --pool-connections 32"
-```
-
-The current driver records the workload, binary, infrastructure, CPU assignment,
-and measurement windows. Pool comparisons use separate `--pool-connections`
-recipes. A shared old resume file cannot establish those identities.
-
-## Load Model
-
-The default model is intentionally closer to production traffic than a shared
-happy-path session:
-
-- Multi-user profiles seed a real user pool through `PERF_USER_COUNT`. Each k6
-  VU is bound to one user account for the duration of the scenario, with its own
-  login session, authorization request, code, refresh token, and DPoP proofs.
-- If `PERF_USER_COUNT` is lower than the configured concurrency, the runner
-  raises it so the default multi-user case does not collapse into accidental
-  account sharing.
-- Same-user contention is a separate profile. It deliberately sends concurrent
-  flows through one account to expose session, CSRF, refresh rotation, and
-  account-level locking behavior under stress.
-- `PERF_FLOW_VUS` defaults to `PERF_VUS`. It is only an explicit override for
-  long authorization-code style flows, not a hidden reduction in concurrency.
-
-## Profiles
-
-| Profile | Scenarios | Purpose |
-| --- | --- | --- |
-| `single-endpoint` | `token_client_credentials`, `mtls_client_credentials`, `par_signed_request_object` | Isolates endpoint throughput and authentication overhead. |
-| `oidc-mixed` | `refresh_token_rotation`, `introspect_opaque_refresh_token`, `authorize_par_session` | Exercises normal OIDC login, PAR, authorization-code exchange, refresh rotation, and opaque refresh-token introspection across many users. |
-| `oidc-same-user-contention` | `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Exercises concurrent operations from one account to reveal account/session contention risks. |
-| `fapi2-high-security` | `fapi2_par_jar_private_key_jwt_dpop`, `fapi2_logged_in_high_security` | Exercises PAR + signed JAR + `private_key_jwt` + DPoP-bound authorization-code and refresh paths. |
-| `capacity` | `token_only_client_credentials`, `oidc_cold_login_refresh`, `oidc_logged_in_authorization_code`, `oidc_refresh_only`, `fapi2_full_security`, `fapi2_logged_in_high_security` | Legacy fixed-arrival scenarios; use the current cap scenarios for windowed capacity evidence. |
-| `extended-capacity` | `mtls_client_credentials`, `par_signed_request_object`, `introspect_opaque_refresh_token`, `authorize_par_session`, `revoke_refresh_token`, `metadata_jwks`, `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Covers protocol and security surfaces that should not be mixed into the primary capacity curve. |
-
-## Capacity Curve Model
-
-Capacity measurements for mTLS issuance, signed PAR, logged-in FAPI, cold
-Argon2 login, and metadata/JWKS use the same scenario-clock cohort as `cap_*`.
-Their `cap_iter_ms` covers the complete operation, including signing and all
-HTTP steps. Any failed response check makes that operation unsuccessful even
-when a later step succeeds. Historical results retain their original accounting.
-`point_runner.stack_up_pinned` accepts optional `postgres_cpus` and
-`valkey_cpus` sets to separate those components from the generator's
-`infra_cpus`; application affinity is applied before the runtime starts.
-The runtime pinning helper applies affinity under each service process owner's
-UID, including non-root daemons below a root-owned init process. Preflight
-requires PID 1, its service descendants and every visible service thread to
-match the declared CPU set. Generator service threads are checked during the
-load wait loop; `generator-affinity.json` records the actual runner/k6 masks.
-`service-affinity.json` records the app, PostgreSQL and Valkey service trees
-during the existing main and sidecar wait loops, plus a final service snapshot
-after all runners finish. Samples retain PID/TID, UID, parent PID, process name, start ticks
-and allowed CPUs; they describe the sampled instants, not continuous coverage.
-The source-bound static pinset helper reads each snapshot in one process,
-without per-thread shell/awk children. It retries failed reads once and
-confirms a vanished task directory twice; unreadable still-present tasks,
-malformed rows or missing completion metadata make evidence incomplete and
-invalidate the point. Snapshot metadata retains read errors, confirmed exits
-and Docker-exec round-trip time so observation cost remains visible.
-A mismatch invalidates the point. Docker exec inspection and healthcheck roots
-are excluded from service-tree verification.
-
-`perf/tools/current_capacity.py` is the supported capacity runner. The old
-matrix/soak scripts depended on retired application collectors and were removed.
-`perf/tools/capacity_search.py` supplies its evidence evaluator; `pool_size_ab.py`
-retains offline `--reeval` for historical A/B records.
-
-Render old capacity records without running containers or changing their source:
-
-```sh
-python perf/capacity.py --input perf/results/data/capacity/latest.json --report-path perf/results/reports/capacity.md
-```
-
-Legacy records without a valid business measurement window are not capacity
-passes. Offline reports do not fill missing source SHA, CPU identity, duration,
-or matrix coverage from the current machine. `finalize_capacity_reports.py`
-reads recorded durations and marks absent provenance unavailable.
-
-## Metrics
-
-Each scenario writes:
-
-- k6 HTTP request count, RPS, error rate, p50/p95/p99 latency
-- Docker CPU and memory samples for NazoAuth, PostgreSQL, and Valkey
-- PostgreSQL `pg_stat_statements` calls, mean statement latency, and
-  statements per HTTP request
-- Task runtime-role PostgreSQL backend states and wait events (database view)
-- Valkey command, hit, miss, expiry, and key-count deltas
-
-New runs explicitly declare `blackbox-db-v1`. Application performance endpoints,
-pool acquire/wait counters and in-process audit counters are removed. Missing
-internal dimensions are `UNAVAILABLE`; process queue gates are `UNVERIFIED`.
-DB outbox drainage and receiver chain/ACK reconciliation are required; in-process
-queue state remains outside the observation contract. Historical records keep
-their original evidence contract and are not silently reclassified or pooled
-with new runs. See `perf/docs/blackbox-evidence-contract.md`.
-
-## Notes
-
-The compose file uses disposable perf volumes. It enables
-`pg_stat_statements` for database latency and per-request query accounting.
-The server profile remains `oauth2-baseline` so ordinary OIDC and FAPI-style
-client-level hardening can be measured in one reproducible environment. The
-FAPI scenario uses client-level PAR request-object enforcement,
-`private_key_jwt`, signed JAR, and DPoP-bound tokens. The mTLS endpoint scenario
-uses the RFC 9440 `Client-Cert` header carrying the fixture certificate on the
-isolated trusted perf network.
-
-Capacity runners write local reports and JSON checkpoints in ignored
-`perf/results/`. Publish results through CI artifacts or the associated issue/PR;
-do not commit run-specific output to the source repository.
-
-## Capacity result evaluation
-
-Bind externally retained results to their source SHA, deployment configuration,
-workload and measurement window before comparing or reproducing a point.
-
-`perf/tools/current_capacity.py` evaluates the main workload and each of the
-four mixed sidecars through `capacity_search.evaluate` with required stream
-evidence. A naturally finished sidecar with a terminal summary is not by itself
-a business pass. Each sidecar retains its own rate, scenario-specific latency
-rules (including the separate cold-login class) and measurement cohort; the
-existing common-window check must also cover the main measurement.
-Offline reassessment exposes `complete_operation_latency_ms` from each
-sidecar's native `cap_iter_ms` cohort. A sidecar without that cohort reports
-`null`, never zero or an HTTP-duration substitute. The existing metadata/JWKS
-sidecar retains its whole-scenario iteration accounting and request-latency
-gate; its HTTP quantiles are labeled separately from complete-operation
-quantiles. This reporting field does not alter any verdict.
-
-Invalid measurement or local preparation takes precedence over a service
-failure when combining business, sidecar, health and maintenance verdicts.
-Individual failures are retained, but an invalid point cannot establish a
-service capacity upper bound. Missing summaries are invalid evidence.
-`evaluate_point(point, record, point_directory, confirmation=...)` exposes the
-same verdict path for offline reassessment of retained artifacts without load;
-keep the original records and publish reassessment separately. Only affected
-points with insufficient evidence require new measurement.
-
-For retained point directories, run an offline reassessment first (no Docker,
-SSH, image build or new load is performed):
-
-```sh
-python perf/tools/current_capacity.py --reevaluate \
-  "$POINT_A/point.json" "$POINT_B/point.json" --output "$REASSESSMENT_JSON"
-```
-
-For new load, `--mode single|multi` and `--scenarios ...` restrict the search.
-`--rates ...` runs only the requested rates for exactly one mode/scenario;
-`--window` is their effective duration (default 180 seconds). Existing valid
-observations with the same recipe/rate and at least that duration are reused;
-`--repeat` explicitly requests a new observation. Mixed `--confirm --window 660`
-also checks mature maintenance and preserves the journal. It is unnecessary to
-repeat an already valid confirmation under an unchanged recipe.
-
-```sh
-python perf/tools/current_capacity.py --stop-at "$STOP_AT" \
-  --mode multi --scenarios cap_mixed --rates 2400 3000 --window 180 \
-  --vus "$CALIBRATED_VUS" --users "$FIXED_USERS" \
-  --pool-connections "$CALIBRATED_POOL"
-```
-
-CPU IDs come only from the process affinity. With fewer than four available
-logical CPUs, infrastructure shares the available set; this topology is recorded
-and must not be described as isolated infrastructure. Default main VUs scale at
-64 per allocated application CPU, users at 16 per CPU with a minimum of 64,
-and the pool at two connections per allocated PostgreSQL CPU. Calibrate these
-starting values against the deployment's memory and database connection limits.
-`--application-cpus` sets the multicore application count after measuring
-component costs. CPU IDs still come from visible affinity; PostgreSQL keeps
-its default count unless `--database-cpus` explicitly calibrates its budget;
-released application/database CPUs go to the generator. Database CPU tuning
-does not change the connection pool or PostgreSQL durability settings.
-The override requires disjoint application/database/Valkey/generator sets and
-at least one generator CPU. Changing it creates a separate recipe: remeasure
-both endpoints and report the actual application count.
-`--vus`, `--users` and `--pool-connections` independently override them; increasing
-VU capacity does not silently change user cardinality. `--sidecar-vus` accepts
-four positive counts in argon2/metadata/FAPI/refresh order, without changing
-sidecar rates or users. Default sidecar VUs scale upward with application CPUs.
-
-Recipe-specific `registered-config-<id>.json` and `search-state-<id>.json` preserve
-independent histories when images, affinity, pool, VUs, users or sidecar settings
-change. Do not combine bounds from different recipes. The old unqualified
-`search-state.json` is not imported automatically: reassess its archived points
-and retain valid published results, then request only missing new points.
-Historical reports remain tied to their original controller and configuration.
-
-P-256 performance fixtures encode `x`, `y`, and `d` as exactly 32 octets, including leading zero octets. Validate deterministic short-coordinate keys in the perf runner with `python -m unittest perf.tests.test_seed_jwk -v`; RSA integer encoding remains unchanged.
-
-## Preview and evidence interpretation
-
-The optional capacity preview binds `127.0.0.1` by default. Set
-`CAPACITY_PREVIEW_HOST` explicitly when a controlled remote-access boundary is
-available. Dashboard clients share a system snapshot refreshed at most once per
-five seconds after collection completes. Authentication and protocol failures
-remain visible in preview logs.
-
-Throughput gates use business operations in the measured window, preserving zero
-as a valid measured value. A missing business counter is unavailable evidence,
-not a reason to substitute HTTP request rate. Stability runs require adjacent,
-complete time buckets. Checkpoint correlation counts distinct observed write
-windows, not the number of buckets overlapped by a single checkpoint. Load budget
-elapsed time ends at the latest observed main or sidecar completion.
-
-The Rust `token_hotpath_perf` fixture reports cold-client group throughput:
-`wall_ms` includes thread, HTTP client, and connection setup. Warmup carries
-server and token state forward, but does not preserve worker connections.
-Per-operation latency ends after the complete response body and excludes worker
-construction. The JSONL scope fields identify the setup and timing boundaries
-of each measurement.
+逐轮原始统计和分项业务结果位于 [evidence/windows](evidence/windows/)。[逐操作采样包](evidence/samples/)保留当前 NazoAuth 有效窗口的到达账本及资源采样；四个对照项目保存到逐轮统计粒度，其逐请求时间戳无法从分位数还原。原生配置及发压校准见 [环境快照](evidence/environment/)。部署参数和镜像摘要见 [deploy.sh](deploy.sh) 与 [native-deploy.sh](native-deploy.sh)。[运行开关补丁](fixture/token-ip-quota.patch)使被测提交支持该配置，测试只关闭所列令牌入口 IP 配额。

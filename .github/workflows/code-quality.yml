@@ -465,21 +465,7 @@ jobs:
       - name: Compile Python scripts
         run: python -m compileall -q scripts perf
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "26.13.1"
-
-      - name: Verify performance measurement and acceptance regressions
+      - name: Verify performance publication and workflow routing
         run: |
-          node --version
-          python -m unittest \
-            tests.unit.test_ci_execution tests.unit.test_ci_inputs \
-            perf.tests.test_blackbox_contract \
-            perf.tests.test_capacity_window perf.tests.test_capacity_producer \
-            perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
-            perf.tests.test_service_affinity perf.tests.test_cnb_controller \
-            perf.tests.test_pool_size_ab perf.tests.test_issuance_maintenance \
-            perf.tests.test_evidence_contract perf.tests.test_audit_reconciliation \
-            perf.tests.test_audit_pending_schema \
-            perf.tests.test_current_capacity perf.tests.test_short_baseline \
-            perf.tests.test_checkpoint_measurement.WindowContractTest
+          python -m unittest tests.unit.test_ci_execution tests.unit.test_ci_inputs
+          python perf/report.py --check

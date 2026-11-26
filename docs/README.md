@@ -148,7 +148,7 @@ set can be scanned from one place.
 | Document | Role |
 | --- | --- |
 | [../perf/README.md](../perf/README.md) | Benchmark runner usage, load model, profiles, and metrics. |
-| [performance/README.md](performance/README.md) | Local performance measurement guide and result-artifact policy. |
+| [Native mdoc measurements](performance/mdoc.md) | Native mdoc fixture and issuance measurements. |
 
 ### Project
 
@@ -181,15 +181,13 @@ These files are text artifacts but are not general reader documentation.
 - Keep user-facing repository entry points at the repository root when tools or
   hosting expect them there: `README.md`, `README.zh-CN.md`, `SECURITY.md`, and
   `CHANGELOG.md`.
-- Keep benchmark runner instructions in `perf/README.md`; measurement contracts belong under `docs/performance/`; generated results stay
-  in ignored `perf/results/` or external artifacts.
+- Maintain the OAuth benchmark, reproducible runner, and published measurements under `perf/`.
 - Keep maintained protocol regression contracts under `docs/conformance/`; link
   formal certification to its public register and exact certified version.
 - Do not commit one-time task plans, finding ledgers, review transcripts, or
   completion/acceptance reports. Fold lasting behavior into its owning guide;
   keep run-specific evidence in CI artifacts or the associated issue/PR.
-- Keep user-facing release history in `CHANGELOG.md`. Store benchmark baselines
-  and raw results outside Git, bound to their source revision and test settings.
+- Keep user-facing release history in `CHANGELOG.md`. Keep private fixtures and unpublished measurements outside Git.
 - Update affected guides, translations, indexes, source references, and
   specification inventory when a change affects documented behavior,
   contracts, ownership, configuration, or source paths — including code

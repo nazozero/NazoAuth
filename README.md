@@ -215,7 +215,7 @@ and registration dates are listed in [OpenID Certified](#openid-certified).
 | [Passkeys](docs/features/passkeys.md) · [MFA](docs/features/mfa.md) | [Deployment and TLS](docs/operations/deployment.md) |
 | [Identity federation](docs/features/federation.md) | [High availability](docs/operations/ha-operations.md) |
 | [SCIM](docs/features/scim.md) | [Security model](docs/security/threat-model.md) |
-| [Protocol coverage](docs/protocol/rfc-compliance-matrix.md) | [Performance measurements](docs/performance/README.md) |
+| [Protocol coverage](docs/protocol/rfc-compliance-matrix.md) | [Performance measurements](perf/README.md) |
 
 Report vulnerabilities through [SECURITY.md](SECURITY.md). Pull requests for
 code, tests, and documentation are welcome without a CLA; see

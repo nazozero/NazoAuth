@@ -1,32 +1,17 @@
-FROM docker.io/library/golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS k6
+FROM rust:1.100.0-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS build
+WORKDIR /src/runner
+COPY perf/runner/Cargo.toml perf/runner/Cargo.lock ./
+COPY perf/runner/src src
+RUN cargo build --release --locked
+WORKDIR /src/pow
+COPY perf/fixture/pow/ ./
+RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target x86_64-unknown-linux-gnu
 
-RUN apk add --no-cache patch
-# Exact upstream v2.4.0 source; the patch changes JSON output encoding only.
-ADD --checksum=sha256:83a2a5c80cb6e08b0c7021a679e4fbe833655a58d0056ba6adf805c698fcb5a8 https://codeload.github.com/grafana/k6/tar.gz/dd9395906d48437a8d7ab53e309afa47ad8d67e0 /tmp/k6.tar.gz
-RUN mkdir /src && tar -xzf /tmp/k6.tar.gz -C /src --strip-components=1
-WORKDIR /src
-COPY perf/runner/k6-json-throughput.patch /tmp/k6-json-throughput.patch
-RUN patch -p1 < /tmp/k6-json-throughput.patch \
-    && gofmt -w internal/output/json/json.go internal/output/json/json_test.go \
-    && GOMAXPROCS=2 go test -v -p 2 -timeout 180s ./internal/output/json ./metrics \
-    && CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -ldflags="-s -w" -o /usr/bin/k6 .
+FROM python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS fixture
+RUN pip install --no-cache-dir cryptography==46.0.7 fido2==2.0.0 cffi==2.0.0 pycparser==2.23
+COPY --from=build /src/pow/target/x86_64-unknown-linux-gnu/release/goose-rauthy-pow /tmp/goose-rauthy-pow
+COPY perf/fixture/*.py /tmp/
 
-FROM docker.io/library/python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
-
-RUN apk add --no-cache ca-certificates docker-cli \
-    && pip install --no-cache-dir "psycopg[binary]==3.3.9" "redis==8.1.0" "argon2-cffi==25.1.0" "cryptography==50.0.2" "blake3==1.0.11" "orjson==3.13.0"
-
-COPY --from=k6 /usr/bin/k6 /usr/bin/k6
-COPY perf /perf
-
-# Keep acceptance samples and native summaries; omit six unused per-request
-# timing streams that otherwise compete with high-rate load generation.
-ENV K6_JSON_OMIT_UNUSED_HTTP_TIMINGS=1
-
-ARG SOURCE_SHA=unknown
-LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
-RUN printf "%s" "${SOURCE_SHA}" > /perf/.source-sha
-
-WORKDIR /perf
-
-CMD ["python", "/perf/runner.py"]
+FROM rust:1.100.0-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS runner
+COPY --from=build /src/runner/target/release/oauth-goose /oauth-goose
+ENTRYPOINT ["/oauth-goose"]
