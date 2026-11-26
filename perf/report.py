@@ -103,11 +103,60 @@ def table(header, rows):
     return "\n".join(lines + ["| " + " | ".join(map(str, row)) + " |" for row in rows])
 
 
+def overview(output):
+    # Bars use a common zero-based scale within each table and the printed values.
+    blocks = ["## 主要对照"]
+    for title, flow, rate, column, unit, exclude in (
+        ("UserInfo · 12,000 TPS · 成功吞吐", "用户资料", "12,000", 5, "TPS", ()),
+        ("UserInfo · 1,000 TPS · P99", "用户资料", "1,000", 10, "ms", ()),
+        ("机器令牌内省 · 3,000 TPS · P99", "机器令牌内省", "3,000", 10, "ms", ("Hydra",)),
+    ):
+        points = [r for r in output if r[0] == flow and r[2] == rate
+                  and r[3] == "标准" and r[1] not in exclude and r[column] != "—"]
+        if not points:
+            continue
+        maximum = max(float(r[column].replace(",", "")) for r in points)
+        chart = []
+        for r in points:
+            value = float(r[column].replace(",", ""))
+            count = math.floor(value / maximum * 24 + 0.5) if maximum else 0
+            bar = "`" + "█" * count + "`" if count else "—"
+            chart.append([r[1], r[column], bar, r[5], r[10], r[12], r[15]])
+        blocks.extend(["### " + title, table(["服务", unit, "相对长度", "成功 TPS", "P99 ms", "CPU 主／总", "有效轮数"], chart)])
+        if exclude:
+            blocks.append("Hydra 使用管理端内省入口，结果列于下方完整表。")
+    return blocks
+
+
+def section_tables(output):
+    sections = defaultdict(list)
+    for r in output:
+        sections[r[0]].append([
+            r[2], r[1], r[3], r[4] + " / " + r[5], r[6] + " / " + r[7],
+            " / ".join(r[8:12]), r[12], r[13], r[14], r[15],
+        ])
+    blocks = ["## 固定到达率结果"]
+    header = ["目标 TPS", "服务", "发压", "发出／成功 TPS", "失败／未发出",
+              "P50 / P95 / P99 / P99.9 ms", "CPU 主／总（核）",
+              "RSS 主／总（MiB）", "PSI %", "有效轮数"]
+    for label, rows in sections.items():
+        if label not in ("两类混合", "五类混合"):
+            blocks.extend(["### " + label, table(header, rows)])
+    mixed = [(label, rows) for label, rows in sections.items()
+             if label in ("两类混合", "五类混合")]
+    if mixed:
+        blocks.append("<details>\n<summary>混合负载补充数据</summary>")
+        for label, rows in mixed:
+            blocks.extend(["### " + label, table(header, rows)])
+        blocks.append("</details>")
+    return blocks
+
+
 def render(rows, published):
     cells = defaultdict(list)
     for row in rows: cells[group(row)].append(row)
     blocks = ["# OAuth / OIDC 单实例性能基准", INTRO] if published else ["# OAuth / OIDC 本次测量"]
-    blocks.append(f"共 **{len(rows)} 个有效窗口**。各列取同一配置逐轮指标的中位数。失败、未发出以次/轮计，偶数轮的中位数可能为半整数。延迟从计划到达到成功完成，包含调度等待。无成功响应的轮次保留在吞吐及计数中，该轮没有延迟分位数。")
+    blocks.append(f"共 **{len(rows)} 个有效窗口**。下表为同配置有效窗口的逐项中位数。TPS 为每秒成功业务操作数；失败和未发出为每轮次数。延迟从计划到达到成功完成，包含调度等待。CPU 为平均用核，RSS 为采样峰值（MiB）。主／总分别表示主服务及含活跃外部依赖的整个服务端。`—` 表示没有成功延迟样本。不同配置分别列出。")
     output = []
     for key, group_rows in sorted(cells.items(), key=lambda kv: (list(FLOWS).index(kv[0][0]),kv[0][1],kv[0][3],list(SERVICES).index(kv[0][2]),kv[0][6:])):
         flow,rate,peer,profile,warm,seconds,users,families = key
@@ -121,12 +170,14 @@ def render(rows, published):
         output.append([label, SERVICES[peer], format(rate,","), "宽" if profile=="journal-wide" else "标准",
                        formatted([a["sent"]/seconds for a in ops]),metric("successful_tps"),metric("failed",1),metric("not_sent",1),
                        *lat,cpu,mem,stat("host_cpu_psi_pct"),len(ops)])
-    blocks.extend(["## 固定到达率对照", table(["业务","服务","目标 TPS","发压","发出 TPS","成功 TPS","失败","未发出","P50 ms","P95 ms","P99 ms","P99.9 ms","CPU 主 / 总（核）","峰值 RSS 主 / 总（MiB）","CPU PSI %","轮数"],output)])
+    if published:
+        blocks.extend(overview(output))
+    blocks.extend(section_tables(output))
     if published: blocks.append(METHOD)
     return "\n\n".join(blocks)+"\n"
 
 
-INTRO = """在同一类 CNB 主机上，每次运行一个 OAuth 服务，将主服务绑定到 **8 个不同物理核心，各使用 1 个逻辑 CPU**。CPU 列同时展示主服务与含外部依赖的消耗。各家保留原生签名、客户端认证和持久化行为。四家在隔离网络内使用 HTTP/1.1，Kanidm 的 TLS 开销计入测量。
+INTRO = """每次运行一个 OAuth 服务，主服务绑定 **8 个不同物理核心，各使用 1 个逻辑 CPU**。数据库、缓存和发压端独立分配 CPU。Goose 0.19.2 以固定到达率发压。各服务使用原生认证、令牌格式和存储，Kanidm 使用 HTTPS/1.1，其余使用隔离网络内的 HTTP/1.1。
 
 | 服务 | 被测版本 | 机器令牌与认证 | 运行配置 |
 |---|---|---|---|
@@ -136,18 +187,16 @@ INTRO = """在同一类 CNB 主机上，每次运行一个 OAuth 服务，将主
 | Keycloak | 26.8.2 · 镜像修订 `26018f2a4c6155cfe2c28f078996390bf5191946` | RS256 JWT、Basic | PostgreSQL 池 32、JVM 堆 512 MiB–4 GiB，JVM 可见处理器参数 16，实际执行受 8 核亲和性约束 |
 | Ory Hydra | 26.2.0 · 镜像修订 `0b84568fffccf151dc5e6c7955fdfb738555bf4b` | RS256 JWT、Basic | PostgreSQL 池 32，私网隔离管理入口，以 `serve all --dev` 运行 |
 
-**同档观察。** 在 1,000 TPS 的 UserInfo 测试中，五家成功吞吐均接近目标。Kanidm 的 P99 最低（1.56 ms）；NazoAuth 主服务平均使用 0.11 核，计入依赖后为 0.49 核。相同档位的授权码兑换，Keycloak P99 为 5.59 ms，NazoAuth 为 11.55 ms，Rauthy 为 48.96 ms。Hydra 在 12,000 TPS 的 UserInfo 测试中实际成功约 3,145 TPS，表中同时保留未发出量。
+NazoAuth 使用表中源码提交及令牌入口 IP 配额补丁。本构建的独立机器令牌签发和混合负载尚无有效记录；这两项保留对照服务实测数据，不沿用 NazoAuth 历史构建成绩。"""
 
-**覆盖范围。** 当前 NazoAuth 在刷新、兑换、已登录授权、UserInfo 和两种令牌内省上有符合版本条件的记录。机器签发及混合负载缺少该构建的独立测量。空缺表示未测或业务边界不同。单轮点只代表该次观察；固定档最高值也不足以确定系统容量上限。"""
-
-METHOD = """## 读表与可比性
+METHOD = """## 测试方法
 
 - **查询。** UserInfo 读取用户资料；内省读取令牌有效状态。机器令牌和用户令牌分别统计。Hydra 内省由私网管理端承接，调用者认证边界与另四家不同。
 - **签发与授权。** 机器签发包含客户端认证和实际签发。授权码在测前用真实用户会话及 S256 PKCE 准备，测量时每个授权码只兑换一次。已登录链路包含重定向、必要的授权确认和兑换，免交互与显式同意各自成组。Hydra 的外部身份和同意服务未计入共同端到端授权组。
 - **轮换。** 表中括号表示用户数 × 每用户独立令牌族数。成功后用返回的后继令牌继续该族。Rauthy 被测配置的后继令牌有约 240 秒生效等待；Kanidm 的重复消费行为与严格一次性兑换及即时轮换组不同。这些场景没有共同的安全和时序前提。
 - **混合。** 两类混合每三次安排一次机器签发、两次内省；五类混合的签发、内省、兑换、刷新、已登录授权分别占 30%、50%、10%、5%、5%。有效机器令牌集由 16 个客户端各签发 32 枚；授权码兑换使用 32 个用户。登录、造数通过各项目管理或协议接口完成，每家使用自己的数据库。逐业务项计数和延迟见每轮 JSON 的 `operations`。
-- **过载。** 成功 TPS = 测量期内计划到达、最终成功的业务数 ÷ 测量秒数，包含窗口结束后返回的成功。多 HTTP 步骤构成的一笔授权只算一次业务。未发出可能来自调度迟到、在途槽耗尽或前一个刷新未完成。只读成功请求的延迟会低估过载影响，应同时看成功、失败和未发出。特别是 Kanidm 混合过载时，成功样本可能全部来自内省。
-- **资源。** CNB Linux x86-64。四家对照项目的环境快照为 AMD EPYC 9K65、无 Swap；当前 NazoAuth 归档保留了核与 SMT 映射，未单独保留 CPU 型号快照。主服务没有硬内存上限，数据库、缓存、Goose 及采集器使用独立核。常规配置分别给 PostgreSQL、Valkey、Goose 分配 14、2、15 个逻辑 CPU。内存取测量窗口内采样到的进程 RSS；服务端总峰值按同时刻汇总，共享页可能重复计入。CPU 是平均占用核数，宿主 CPU PSI 是存在可运行任务等待 CPU 的时间占比。
+- **过载。** 成功 TPS = 测量期内计划到达、最终成功的业务数 ÷ 测量秒数，包含窗口结束后返回的成功。多 HTTP 步骤构成的一笔授权只算一次业务。未发出可能来自调度迟到、在途槽耗尽或前一个刷新未完成。成功请求延迟与成功数、失败数、未发出数一起阅读。Kanidm 在部分混合档位的成功样本全部来自内省。
+- **资源。** CNB Linux x86-64。对照项目的 CPU 为 AMD EPYC 9K65、无 Swap；NazoAuth 归档记录了核与 SMT 映射。主服务无硬内存上限，数据库、缓存、Goose 及采集器使用独立核。常规配置分别给 PostgreSQL、Valkey、Goose 分配 14、2、15 个逻辑 CPU。内存取测量窗口内采样到的进程 RSS；服务端总峰值按同时刻汇总，共享页可能重复计入。CPU 是平均占用核数，宿主 CPU PSI 是存在可运行任务等待 CPU 的时间占比。
 - **发压。** Goose 0.19.2，调度迟到 5 ms 放弃发出，HTTP 超时 5 秒，共享 HTTP 连接池，固定计划到达，无自动重试。标准配置为 8,192 在途槽、15 工作线程，宽配置为 32,768 槽、24 线程、独立日志写入及扩展源端口范围。只在相同配置内聚合。除兑换和五类混合为预热 5 秒、测量 20 秒外，其余为 10 秒和 36 秒。每个计划操作记录计划、实际发出与完成时间。P99.9 在低样本量窗口可能仅由少数样本决定。
 - **有效性。** 只纳入夹具校验成功、计数可对账、资源采样及亲和性合格的窗口。Goose 调度迟发超过计划数 0.1% 或存在发压端资源瓶颈时排除；服务端过载仍保留。宿主干扰结合 PSI、所分配核心的非测试负载和调度等待判断。高整机 CPU 利用率本身不构成排除依据。有效轮数表示测量质量，与产品延迟门槛分开计算。
 
