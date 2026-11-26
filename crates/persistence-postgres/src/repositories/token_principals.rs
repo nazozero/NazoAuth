@@ -76,13 +76,6 @@ pub(super) async fn lock_and_recheck(
     user_id: Option<Uuid>,
     user_epoch: Option<i64>,
 ) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
-    #[derive(QueryableByName)]
-    struct Fence {
-        #[diesel(sql_type = sql_types::Text)]
-        outcome: String,
-        #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
-        client_type: Option<String>,
-    }
     let rows = PrincipalFence {
         tenant_id,
         client_id,
@@ -101,22 +94,36 @@ pub(super) async fn lock_and_recheck(
                 "invalid principal fence cardinality".into(),
             )
         })?;
-    match (row.outcome.as_str(), row.client_type) {
-        ("ok", Some(client_type)) => Ok(Ok(client_type)),
-        ("client_inactive", None) => Ok(Err(CommitTokenIssuanceResult::ClientInactive)),
-        ("subject_inactive", None) => Ok(Err(CommitTokenIssuanceResult::SubjectInactive)),
-        _ => Err(diesel::result::Error::DeserializationError(
-            "invalid principal fence outcome".into(),
-        )),
+    row.result()
+}
+
+#[derive(QueryableByName)]
+pub(super) struct Fence {
+    #[diesel(sql_type = sql_types::Text)]
+    outcome: String,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
+    client_type: Option<String>,
+}
+
+impl Fence {
+    pub(super) fn result(self) -> diesel::QueryResult<Result<String, CommitTokenIssuanceResult>> {
+        match (self.outcome.as_str(), self.client_type) {
+            ("ok", Some(client_type)) => Ok(Ok(client_type)),
+            ("client_inactive", None) => Ok(Err(CommitTokenIssuanceResult::ClientInactive)),
+            ("subject_inactive", None) => Ok(Err(CommitTokenIssuanceResult::SubjectInactive)),
+            _ => Err(diesel::result::Error::DeserializationError(
+                "invalid principal fence outcome".into(),
+            )),
+        }
     }
 }
 
-struct PrincipalFence {
-    tenant_id: Uuid,
-    client_id: Uuid,
-    client_epoch: i64,
-    user_id: Option<Uuid>,
-    user_epoch: Option<i64>,
+pub(super) struct PrincipalFence {
+    pub(super) tenant_id: Uuid,
+    pub(super) client_id: Uuid,
+    pub(super) client_epoch: i64,
+    pub(super) user_id: Option<Uuid>,
+    pub(super) user_epoch: Option<i64>,
 }
 impl diesel::query_builder::QueryId for PrincipalFence {
     type QueryId = PrincipalFence;

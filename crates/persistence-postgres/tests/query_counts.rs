@@ -155,6 +155,36 @@ async fn single_use_receipt_reuses_statement_without_reusing_authority_or_deadli
         committed.push((key, input));
     }
     let (key, winner) = &committed[0];
+    let mut stale = winner.clone();
+    stale.principal_state.client_epoch += 1;
+    assert_eq!(
+        repository.commit_token_issuance(stale).await.unwrap(),
+        CommitTokenIssuanceResult::ClientInactive,
+        "principal rejection precedes a duplicate receipt"
+    );
+    let stale_key = format!("single_use:stale-{}", Uuid::now_v7());
+    let mut stale_subject = winner.clone();
+    stale_subject.issuance_id = Uuid::now_v7();
+    stale_subject.access_token_jti = stale_subject.issuance_id.to_string();
+    stale_subject.principal_state.user_epoch = Some(i64::MAX);
+    stale_subject.mode = TokenIssuanceMode::SingleUse {
+        grant_key: stale_key.clone(),
+        grant_expires_at: Timestamp::now() + SignedDuration::from_mins(2),
+    };
+    assert_eq!(
+        repository
+            .commit_token_issuance(stale_subject)
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::SubjectInactive
+    );
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, first.client.id, &stale_key)
+            .await
+            .unwrap()
+            .is_none()
+    );
     let mut duplicate = winner.clone();
     duplicate.issuance_id = Uuid::now_v7();
     duplicate.access_token_jti = duplicate.issuance_id.to_string();
@@ -215,13 +245,13 @@ async fn single_use_receipt_reuses_statement_without_reusing_authority_or_deadli
         parameter_types_match: bool,
     }
     let mut connection = get_conn(&pool).await.unwrap();
-    let cache = sql_query("SELECT count(*) AS statements, coalesce(sum(generic_plans+custom_plans),0)::bigint AS executions, coalesce(bool_and(parameter_types=ARRAY['uuid'::regtype,'uuid'::regtype,'uuid'::regtype,'bytea'::regtype,'text'::regtype,'timestamptz'::regtype,'timestamptz'::regtype,'uuid'::regtype,'jsonb'::regtype,'timestamptz'::regtype]),false) AS parameter_types_match FROM pg_prepared_statements WHERE statement LIKE 'INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id,%'")
+    let cache = sql_query("SELECT count(*) AS statements, coalesce(sum(generic_plans+custom_plans),0)::bigint AS executions, coalesce(bool_and(parameter_types=ARRAY['uuid'::regtype,'uuid'::regtype,'bigint'::regtype,'uuid'::regtype,'bigint'::regtype,'uuid'::regtype,'uuid'::regtype,'uuid'::regtype,'bytea'::regtype,'text'::regtype,'timestamptz'::regtype,'timestamptz'::regtype,'uuid'::regtype,'jsonb'::regtype,'timestamptz'::regtype]),false) AS parameter_types_match FROM pg_prepared_statements WHERE statement LIKE 'WITH fence AS MATERIALIZED (%INSERT INTO oauth_token_issuances (%'")
         .get_result::<CacheState>(&mut connection).await.unwrap();
     assert_eq!(
         cache.statements, 1,
         "one receipt shape must survive changing authority and an expired rollback"
     );
-    assert_eq!(cache.executions, 7);
+    assert_eq!(cache.executions, 9);
     assert!(cache.parameter_types_match);
     drop(connection);
     cleanup_seed(&url, tenant, &first).await;

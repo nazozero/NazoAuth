@@ -603,15 +603,17 @@ fn refresh_reuse_audit_event(
     }
 }
 
-/// Result row of the single-use insert: `RETURNING` only exists for rows that
-/// were actually inserted, so a missing row means the grant key is used.
+/// The fence is returned even when the principal is inactive or a receipt already exists.
 #[derive(QueryableByName)]
 struct SingleUseInsertRow {
-    #[diesel(sql_type = sql_types::Bool)]
-    grant_valid: bool,
+    #[diesel(embed)]
+    fence: super::token_principals::Fence,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Bool>)]
+    grant_valid: Option<bool>,
 }
 
 struct SingleUseReceiptInsert<'a> {
+    fence: super::token_principals::PrincipalFence,
     input: &'a CommitTokenIssuance,
     digest: &'a [u8; 32],
     access_token_expires_at: jiff_diesel::Timestamp,
@@ -637,7 +639,9 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for SingleUseReceiptIn
         &'b self,
         mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
     ) -> diesel::QueryResult<()> {
-        out.push_sql("INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, refresh_token_family_id, principal_epoch_bound, receipt_contract_version, authorization_code_holder) VALUES (");
+        out.push_sql("WITH fence AS MATERIALIZED (");
+        self.fence.walk_ast(out.reborrow())?;
+        out.push_sql("), receipt AS (INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, refresh_token_family_id, principal_epoch_bound, receipt_contract_version, authorization_code_holder) SELECT ");
         out.push_bind_param::<sql_types::Uuid, _>(&self.input.issuance_id)?;
         out.push_sql(", ");
         out.push_bind_param::<sql_types::Uuid, _>(&self.input.tenant_id)?;
@@ -659,9 +663,9 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for SingleUseReceiptIn
         out.push_bind_param::<sql_types::Nullable<sql_types::Jsonb>, _>(
             &self.authorization_code_holder,
         )?;
-        out.push_sql(") ON CONFLICT (client_id, single_use_key_blake3) WHERE single_use_key_blake3 IS NOT NULL DO NOTHING RETURNING (clock_timestamp() < ");
+        out.push_sql(" FROM fence WHERE outcome = 'ok' ON CONFLICT (client_id, single_use_key_blake3) WHERE single_use_key_blake3 IS NOT NULL DO NOTHING RETURNING (clock_timestamp() < ");
         out.push_bind_param::<sql_types::Timestamptz, _>(&self.grant_expires_at)?;
-        out.push_sql(") AS grant_valid");
+        out.push_sql(") AS grant_valid) SELECT fence.*, receipt.grant_valid FROM fence LEFT JOIN receipt ON TRUE");
         Ok(())
     }
 }
@@ -790,15 +794,15 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         .connection()
                         .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
                             async |connection| {
-                                let client_type = match
-                                    super::token_principals::lock_and_recheck(connection, input.tenant_id, input.client_id, input.principal_state.client_epoch, input.user_id, input.principal_state.user_epoch)
-                                        .await?
-                                {
-                                    Ok(client_type) => client_type,
-                                    Err(result) => return Ok(result),
-                                };
-                                if let Some((digest, grant_expires_at, retain_until)) = single_use {
-                                    let inserted = SingleUseReceiptInsert {
+                                let client_type = if let Some((digest, grant_expires_at, retain_until)) = single_use {
+                                    let row = SingleUseReceiptInsert {
+                                        fence: super::token_principals::PrincipalFence {
+                                            tenant_id: input.tenant_id,
+                                            client_id: input.client_id,
+                                            client_epoch: input.principal_state.client_epoch,
+                                            user_id: input.user_id,
+                                            user_epoch: input.principal_state.user_epoch,
+                                        },
                                         input: &input,
                                         digest: &digest,
                                         access_token_expires_at: access_token_expires_at.to_diesel(),
@@ -811,18 +815,31 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         grant_expires_at: grant_expires_at.to_diesel(),
                                     }
                                     .get_result::<SingleUseInsertRow>(connection)
-                                    .await
-                                    .optional()?;
-                                    match inserted {
-                                        None => {
-                                            return Ok(CommitTokenIssuanceResult::AlreadyUsed);
-                                        }
-                                        Some(row) if !row.grant_valid => {
-                                            return Err(CommitTransactionError::GrantExpired);
-                                        }
-                                        Some(_) => {}
+                                    .await?;
+                                    let client_type = match row.fence.result()? {
+                                        Ok(client_type) => client_type,
+                                        Err(result) => return Ok(result),
+                                    };
+                                    match row.grant_valid {
+                                        None => return Ok(CommitTokenIssuanceResult::AlreadyUsed),
+                                        Some(false) => return Err(CommitTransactionError::GrantExpired),
+                                        Some(true) => client_type,
                                     }
-                                }
+                                } else {
+                                    match super::token_principals::lock_and_recheck(
+                                        connection,
+                                        input.tenant_id,
+                                        input.client_id,
+                                        input.principal_state.client_epoch,
+                                        input.user_id,
+                                        input.principal_state.user_epoch,
+                                    )
+                                    .await?
+                                    {
+                                        Ok(client_type) => client_type,
+                                        Err(result) => return Ok(result),
+                                    }
+                                };
                                 let mut retired_native_source = None;
                                 if let Some(refresh) = input.refresh_token.as_ref() {
                                     match TokenRepository::persist_refresh_token_on_connection(
