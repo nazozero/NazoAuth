@@ -286,7 +286,8 @@ async fn missing_authorization_code_state_does_not_revoke_committed_access_token
     issue.authorization_code_hash = Some(format!("missing-code-{}", Uuid::now_v7()));
 
     // The lower-level issuance path receives an already-validated redemption.
-    // A missing cache entry must not invalidate the committed access token.
+    // After the durable commit, code-state deletion is cleanup; a missing
+    // entry must not invalidate or revoke the committed access token.
     let response = issue_token_response_with_grant_for_test(
         &state,
         &client,

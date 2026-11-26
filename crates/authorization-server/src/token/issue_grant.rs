@@ -658,6 +658,13 @@ pub async fn issue_token_response(
         .await
     {
         Ok(CommitTokenIssuanceResult::Committed) => {
+            // Busy and Missing replays consult the durable receipt. Discard
+            // the consumed payload; a cleanup failure cannot undo issuance.
+            if let Some(code_hash) = issue.authorization_code_hash.as_deref()
+                && let Err(error) = token_service.finalize_authorization_code(code_hash).await
+            {
+                tracing::warn!(%error, "failed to discard committed authorization code preparation");
+            }
             return Ok(TokenEndpointSuccess::Issued {
                 body,
                 dpop_nonce: next_dpop_nonce,

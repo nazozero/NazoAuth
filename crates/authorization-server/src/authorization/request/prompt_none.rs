@@ -140,24 +140,21 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     }
     // Cleanup uses the admission snapshot, never a reread or reconstructed
     // version. The committed decision remains authoritative if cleanup fails.
-    let cleanup = async {
-        if let (Some(uri), Some(version)) = (
-            payload.pushed_request_uri.as_deref(),
-            pushed_request_version,
-        ) && let Err(error) = context
-            .service
-            .discard_pushed_authorization_request(uri, version)
-            .await
-        {
-            tracing::warn!(
-                ?error,
-                "failed to discard committed prompt-none preparation"
-            );
-        }
-    };
-    let response = async {
-        if requests_openid {
-            let bound = match facts.session_id {
+    if let (Some(uri), Some(version)) = (
+        payload.pushed_request_uri.as_deref(),
+        pushed_request_version,
+    ) && let Err(error) = context
+        .service
+        .discard_pushed_authorization_request(uri, version)
+        .await
+    {
+        tracing::warn!(
+            ?error,
+            "failed to discard committed prompt-none preparation"
+        );
+    }
+    if requests_openid {
+        let bound = match facts.session_id {
             Some(session_id) => context
                 .sessions
                 .bind_client(session_id, &payload.client_id)
@@ -172,38 +169,35 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 })?,
             None => false,
         };
-            if !bound {
-                return authorization_response_redirect_with_context(
-                    context,
-                    client,
-                    AuthorizationResponseRedirect {
-                        redirect_uri: &payload.redirect_uri,
-                        response_mode: payload.response_mode.as_deref(),
-                        code: None,
-                        error: Some("login_required"),
-                        state: payload.state.as_deref(),
-                        oidc_sid: None,
-                    },
-                )
-                .await;
-            }
+        if !bound {
+            return authorization_response_redirect_with_context(
+                context,
+                client,
+                AuthorizationResponseRedirect {
+                    redirect_uri: &payload.redirect_uri,
+                    response_mode: payload.response_mode.as_deref(),
+                    code: None,
+                    error: Some("login_required"),
+                    state: payload.state.as_deref(),
+                    oidc_sid: None,
+                },
+            )
+            .await;
         }
-        authorization_response_redirect_with_context(
-            context,
-            client,
-            AuthorizationResponseRedirect {
-                redirect_uri: &payload.redirect_uri,
-                response_mode: payload.response_mode.as_deref(),
-                code: Some(&code),
-                error: None,
-                state: payload.state.as_deref(),
-                oidc_sid: payload.oidc_sid.as_deref(),
-            },
-        )
-        .await
-    };
-    let ((), response) = futures_util::future::join(cleanup, response).await;
-    response
+    }
+    authorization_response_redirect_with_context(
+        context,
+        client,
+        AuthorizationResponseRedirect {
+            redirect_uri: &payload.redirect_uri,
+            response_mode: payload.response_mode.as_deref(),
+            code: Some(&code),
+            error: None,
+            state: payload.state.as_deref(),
+            oidc_sid: payload.oidc_sid.as_deref(),
+        },
+    )
+    .await
 }
 
 #[cfg(test)]

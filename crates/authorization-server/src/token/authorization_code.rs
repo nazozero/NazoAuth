@@ -587,8 +587,9 @@ pub async fn token_authorization_code_with_service(
                 ));
             }
             Ok(AuthorizationCodeConsumption::Busy) => {
-                // The durable receipt distinguishes an in-flight lease from
-                // a completed redemption until the original cache TTL expires.
+                // A leased entry can outlive its commit when the post-commit
+                // cleanup raced; the durable fence decides whether this is a
+                // completed redemption replay or a genuinely in-flight grant.
                 if let Some(redemption) = committed_single_use_redemption(
                     token_service,
                     client,
