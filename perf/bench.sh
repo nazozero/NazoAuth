@@ -82,8 +82,13 @@ one() {
     keycloak) ready "$kc" /realms/api-audit/.well-known/openid-configuration;;
     hydra) ready "$hy" /.well-known/openid-configuration;;
     rauthy|kanidm)
-      for i in {1..60}; do
+      local attempt
+      for attempt in {1..60}; do
         if docker exec "$prep" python3 /tmp/prepare-replay-profiles.py "$peer" >/dev/null 2>&1; then break; fi
+        if (( attempt == 60 )); then
+          echo "Failed to prepare $peer benchmark profile." >&2
+          return 1
+        fi
         sleep 1
       done;;
   esac
