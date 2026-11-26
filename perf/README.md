@@ -7,6 +7,13 @@ The [machine-token issuance replay](replays/machine-token-wal/README.md)
 compares application revisions against an unchanged PostgreSQL server and
 reconciles successful responses with audit records in flushed WAL.
 
+For the small CNB refresh and authorization replay, pass [the application
+environment file](replays/user-token-cnb/small-cnb.env) after the main
+environment file. This selects automatic pool sizing even when the main file
+has a fixed limit. Four available application CPUs select eight connections.
+Use the same binary and CPU allocation with `DATABASE_MAX_CONNECTIONS=32`
+for the control.
+
 Python benchmark tooling uses Python 3.15.2. The runner recipe pins exact
 package versions; coverage and E2E environments use the separate hash locks
 under `requirements/`. Redis clients

@@ -73,7 +73,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `ISSUER` | `PUBLIC_BASE_URL` | Optional issuer for the initial system binding. A directory binding replaces it for that tenant graph. |
 | `TRANSPORT_MODE` | implicit only for loopback HTTP | `loopback-http`, `direct-tls`, or `trusted-proxy`; required for non-loopback issuers. This is a process transport boundary, not a tenant selector. |
 | `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL connection string for the current `nazoauth` launcher |
-| `DATABASE_MAX_CONNECTIONS` | `32` | Maximum PostgreSQL pool size per NazoAuth process |
+| `DATABASE_MAX_CONNECTIONS` | `auto` | At startup, use twice the logical CPUs available to the NazoAuth process (4 CPUs give 8 connections). If CPU detection fails, the limit is 2. A positive integer sets the exact per-process pool limit. For a separately sized or shared PostgreSQL server, set an explicit limit from its available capacity and the number of application instances. Existing numeric settings continue to apply. |
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string; startup rejects an unmarked nonempty database rather than adopting historical keys |
 | `VALKEY_STATE_EPOCH` | none (required UUIDv7) | Deployment state boundary. Every transient business key is physically namespaced as `nazo:state:v1:<deployment>:<epoch>:`. Set a fresh UUIDv7 before a restored candidate starts; never reuse a prior epoch. |
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |

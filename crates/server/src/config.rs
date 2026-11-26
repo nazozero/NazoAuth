@@ -29,7 +29,7 @@ PUBLIC_BASE_URL: "http://127.0.0.1:8000"
 TRANSPORT_MODE: "loopback-http"
 "#;
 const INITIAL_CONFIG_SUFFIX: &str = r#"
-DATABASE_MAX_CONNECTIONS: 32
+DATABASE_MAX_CONNECTIONS: auto
 DATA_DIR: "runtime"
 RUST_LOG: "info"
 "#;
@@ -137,7 +137,6 @@ fn fresh_initial_config(default_database_url: &str) -> anyhow::Result<String> {
         "{INITIAL_CONFIG_PREFIX}DATABASE_URL: \"{default_database_url}\"{INITIAL_CONFIG_SUFFIX}{extension}{state_epoch}"
     ))
 }
-pub const DEFAULT_DATABASE_MAX_CONNECTIONS: usize = 32;
 const GENERATED_SECRET_BYTES: usize = 48;
 const GENERATED_SECRETS_DIR: &str = "secrets";
 pub(crate) const DEFAULT_DATA_DIR: &str = "runtime";
@@ -1140,7 +1139,15 @@ pub fn database_url(source: &ConfigSource) -> anyhow::Result<String> {
 }
 
 pub fn database_max_connections(source: &ConfigSource) -> anyhow::Result<usize> {
-    let value = source.parse("DATABASE_MAX_CONNECTIONS", DEFAULT_DATABASE_MAX_CONNECTIONS)?;
+    let value = match source.get("DATABASE_MAX_CONNECTIONS") {
+        None | Some("auto") => {
+            let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+            cpus.saturating_mul(2)
+        }
+        Some(raw) => raw
+            .parse::<usize>()
+            .context("DATABASE_MAX_CONNECTIONS must be auto or a positive integer")?,
+    };
     if value == 0 {
         bail!("DATABASE_MAX_CONNECTIONS must be greater than zero");
     }
