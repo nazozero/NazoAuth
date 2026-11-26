@@ -1,4 +1,4 @@
-use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
+use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
     AuthorizationDecisionCommit, AuthorizationDecisionCommitResult, AuthorizationDecisionKind,
@@ -73,62 +73,36 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                                     sql_query("SET LOCAL lock_timeout = '2s'")
                                         .execute(connection)
                                         .await?;
-                                    // Keep the canonical coverage policy in the
-                                    // core, evaluated against a locked live grant.
-                                    // Lock principals first, in token-commit order.
-                                    let client = sql_query(
-                                        "SELECT id FROM oauth_clients \
-                                         WHERE tenant_id = $1 AND client_id = $2 AND is_active \
-                                         FOR SHARE",
-                                    )
-                                    .bind::<sql_types::Uuid, _>(input.tenant_id)
-                                    .bind::<sql_types::Text, _>(&input.client_id)
-                                    .get_result::<DecisionPrincipalRow>(connection)
-                                    .await
-                                    .optional()?;
-                                    let Some(client) = client else {
+                                    // Read and lock one ordered snapshot: client -> user -> grant.
+                                    // The dependency between each CTE preserves that order, and
+                                    // coverage stays in the core. Keep the locks until the durable
+                                    // decision and its replay fence commit.
+                                    let admission = PromptNoneAdmission(&input)
+                                        .get_result::<DecisionGrantRow>(connection)
+                                        .await?;
+                                    if !admission.client_admitted {
                                         return Ok(AuthorizationDecisionCommitResult::ClientUnavailable);
-                                    };
-                                    let actor = sql_query(
-                                        "SELECT id FROM users \
-                                         WHERE tenant_id = $1 AND id = $2 AND is_active \
-                                           AND access_token_epoch = $3 FOR SHARE",
-                                    )
-                                    .bind::<sql_types::Uuid, _>(input.tenant_id)
-                                    .bind::<sql_types::Uuid, _>(input.user_id)
-                                    .bind::<sql_types::BigInt, _>(input.user_epoch)
-                                    .get_result::<DecisionPrincipalRow>(connection)
-                                    .await
-                                    .optional()?;
-                                    if actor.is_none() {
+                                    }
+                                    if !admission.actor_admitted {
                                         return Ok(AuthorizationDecisionCommitResult::SubjectUnavailable);
                                     }
-                                    let grant = sql_query(
-                                        "SELECT last_scopes AS scopes, \
-                                                last_resource_indicators AS resource_indicators, \
-                                                last_authorization_details AS authorization_details \
-                                         FROM user_client_grants \
-                                         WHERE tenant_id = $1 AND user_id = $2 AND client_id = $3 \
-                                         FOR SHARE",
-                                    )
-                                    .bind::<sql_types::Uuid, _>(input.tenant_id)
-                                    .bind::<sql_types::Uuid, _>(input.user_id)
-                                    .bind::<sql_types::Uuid, _>(client.id)
-                                    .get_result::<DecisionGrantRow>(connection)
-                                    .await
-                                    .optional()?;
-                                    if !grant.is_some_and(|grant| {
-                                        stored_grant_covers_requested_authorization(
-                                            &StoredAuthorizationGrant {
-                                                scopes: grant.scopes,
-                                                resource_indicators: grant.resource_indicators,
-                                                authorization_details: grant.authorization_details,
-                                            },
-                                            &input.scopes,
-                                            &input.resource_indicators,
-                                            &input.authorization_details,
-                                        )
-                                    }) {
+                                    let (Some(scopes), Some(resource_indicators), Some(authorization_details)) = (
+                                        admission.scopes,
+                                        admission.resource_indicators,
+                                        admission.authorization_details,
+                                    ) else {
+                                        return Ok(AuthorizationDecisionCommitResult::GrantUnavailable);
+                                    };
+                                    if !stored_grant_covers_requested_authorization(
+                                        &StoredAuthorizationGrant {
+                                            scopes,
+                                            resource_indicators,
+                                            authorization_details,
+                                        },
+                                        &input.scopes,
+                                        &input.resource_indicators,
+                                        &input.authorization_details,
+                                    ) {
                                         return Ok(AuthorizationDecisionCommitResult::GrantUnavailable);
                                     }
                                     execute_decision(connection, &input).await
@@ -232,19 +206,70 @@ impl DeviceGrantRepositoryPort for AuthorizationFlowRepository {
 }
 
 #[derive(QueryableByName)]
-struct DecisionPrincipalRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    id: Uuid,
+struct DecisionGrantRow {
+    #[diesel(sql_type = sql_types::Bool)]
+    client_admitted: bool,
+    #[diesel(sql_type = sql_types::Bool)]
+    actor_admitted: bool,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    scopes: Option<serde_json::Value>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    resource_indicators: Option<serde_json::Value>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
+    authorization_details: Option<serde_json::Value>,
 }
 
-#[derive(QueryableByName)]
-struct DecisionGrantRow {
-    #[diesel(sql_type = sql_types::Jsonb)]
-    scopes: serde_json::Value,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    resource_indicators: serde_json::Value,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    authorization_details: serde_json::Value,
+struct PromptNoneAdmission<'a>(&'a AuthorizationDecisionCommit);
+
+impl diesel::query_builder::QueryId for PromptNoneAdmission<'_> {
+    type QueryId = PromptNoneAdmission<'static>;
+    const HAS_STATIC_QUERY_ID: bool = true;
+}
+
+impl diesel::query_builder::Query for PromptNoneAdmission<'_> {
+    type SqlType = sql_types::Untyped;
+}
+
+impl diesel::query_dsl::RunQueryDslSupport for PromptNoneAdmission<'_> {}
+
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for PromptNoneAdmission<'_> {
+    fn walk_ast<'b>(
+        &'b self,
+        mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        let input = self.0;
+        out.push_sql(
+            "WITH client AS MATERIALIZED ( \
+               SELECT id FROM oauth_clients WHERE tenant_id = ",
+        );
+        out.push_bind_param::<sql_types::Uuid, _>(&input.tenant_id)?;
+        out.push_sql(" AND client_id = ");
+        out.push_bind_param::<sql_types::Text, _>(&input.client_id)?;
+        out.push_sql(
+            " AND is_active FOR SHARE \
+             ), actor AS MATERIALIZED ( \
+               SELECT u.id FROM users u CROSS JOIN client \
+               WHERE u.tenant_id = $1 AND u.id = ",
+        );
+        out.push_bind_param::<sql_types::Uuid, _>(&input.user_id)?;
+        out.push_sql(" AND u.is_active AND u.access_token_epoch = ");
+        out.push_bind_param::<sql_types::BigInt, _>(&input.user_epoch)?;
+        out.push_sql(
+            " FOR SHARE OF u \
+             ), prior_grant AS MATERIALIZED ( \
+               SELECT g.last_scopes AS scopes, \
+                      g.last_resource_indicators AS resource_indicators, \
+                      g.last_authorization_details AS authorization_details \
+               FROM user_client_grants g CROSS JOIN actor CROSS JOIN client \
+               WHERE g.tenant_id = $1 AND g.user_id = actor.id \
+                 AND g.client_id = client.id FOR SHARE OF g \
+             ) \
+             SELECT EXISTS (SELECT 1 FROM client) AS client_admitted, \
+                    EXISTS (SELECT 1 FROM actor) AS actor_admitted, prior_grant.* \
+             FROM (VALUES (1)) AS seed(dummy) LEFT JOIN prior_grant ON TRUE",
+        );
+        Ok(())
+    }
 }
 
 #[derive(QueryableByName)]

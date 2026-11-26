@@ -218,35 +218,38 @@ impl ServerAuthorizationDecisionOperations {
         // The durable decision owns reuse prevention. Discard only the
         // previewed preparation; failure leaves its original TTL intact and
         // cannot change the committed decision.
-        if let Err(error) = self
+        let cleanup = self
             .service
-            .discard_decision_material(&command.request_id, &preview)
-            .await
-        {
+            .discard_decision_material(&command.request_id, &preview);
+        let response = async {
+            let Some(code) = code else {
+                return self
+                    .response_location(payload, None, Some("access_denied"), None)
+                    .await;
+            };
+
+            if establishes_oidc_login
+                && !self
+                    .sessions
+                    .bind_client(&command.session_id, &payload.client_id)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "failed to bind logged-in RP to OP browser session");
+                        AuthorizationDecisionError::SessionLookupUnavailable
+                    })?
+            {
+                tracing::warn!("OP browser session disappeared while binding logged-in RP");
+                return Err(AuthorizationDecisionError::LoginRequired);
+            }
+
+            self.response_location(payload, Some(&code), None, payload.oidc_sid.as_deref())
+                .await
+        };
+        let (cleanup, response) = futures_util::future::join(cleanup, response).await;
+        if let Err(error) = cleanup {
             tracing::warn!(%error, "failed to discard committed authorization decision preparation");
         }
-        let Some(code) = code else {
-            return self
-                .response_location(payload, None, Some("access_denied"), None)
-                .await;
-        };
-
-        if establishes_oidc_login
-            && !self
-                .sessions
-                .bind_client(&command.session_id, &payload.client_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(%error, "failed to bind logged-in RP to OP browser session");
-                    AuthorizationDecisionError::SessionLookupUnavailable
-                })?
-        {
-            tracing::warn!("OP browser session disappeared while binding logged-in RP");
-            return Err(AuthorizationDecisionError::LoginRequired);
-        }
-
-        self.response_location(payload, Some(&code), None, payload.oidc_sid.as_deref())
-            .await
+        response
     }
 
     async fn response_location(
