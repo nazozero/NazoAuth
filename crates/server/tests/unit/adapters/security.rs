@@ -61,10 +61,11 @@ fn cancelled_password_callers_keep_capacity_until_the_blocking_workers_finish() 
     });
     ready.recv_timeout(Duration::from_secs(5)).unwrap();
 
-    let capacity = password_hash_concurrency_limit().available_permits();
-    assert!(capacity >= 3);
+    // Exercise each blocking adapter once in this isolated process.
+    let capacity = 3;
+    configure_password_hash_limits(capacity, default_password_hash_queue_timeout_ms()).unwrap();
     let password = Uuid::now_v7().to_string();
-    let encoded = hash_password(&password).unwrap();
+    let encoded = nazo_crypto::password::hash_argon2id(password.as_bytes(), 32, 1, 1).unwrap();
     runtime.block_on(async {
         for index in 0..capacity {
             let mut work: Pin<Box<dyn Future<Output = ()>>> = match index % 3 {
