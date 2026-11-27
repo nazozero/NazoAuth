@@ -7,8 +7,8 @@ export WORK=${BENCH_WORK:-$PERF/.work}
 case ${1:-} in
   verify) shift; exec python3 "$PERF/report.py" --check "$@";;
   report) shift; exec python3 "$PERF/report.py" "$@";;
-  setup|run|matrix|login|memory) ;;
-  *) echo 'Usage: bash perf/bench.sh {setup|matrix|login|memory PEER|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
+  setup|run|matrix|login|memory|pg-memory) ;;
+  *) echo 'Usage: bash perf/bench.sh {setup|matrix|login|memory PEER|pg-memory PEER SCENARIO TPS [restart|retain]|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
 esac
 mkdir -p "$WORK"
 cd "$WORK"
@@ -157,6 +157,50 @@ if [[ $1 == memory ]]; then
   stop_apps
   exit 0
 fi
+if [[ $1 == pg-memory || $1 == run ]]; then
+  scenario=${3:?scenario}; rate=${4:?TPS}
+  [[ $rate =~ ^[1-9][0-9]*$ ]] || exit 2
+  users=32; families=8
+  if [[ $scenario == refresh && $rate -ge 1000 ]]; then users=64; fi
+  if [[ $scenario == refresh && $rate -ge 3000 ]]; then users=128; families=10; fi
+fi
+if [[ $1 == pg-memory ]]; then
+  peer=${2:?peer}
+  case "$peer" in nazo) dbname=nazo_ready;; keycloak|hydra) dbname=${peer}_retest;; rauthy) dbname=rauthy;; *) exit 2;; esac
+  db=$pg; dbuser=postgres
+  if [[ $peer == rauthy ]]; then db=oidc-bench-rauthy-db; dbuser=rauthy; fi
+  case "$scenario" in userinfo|exchange|refresh|authorize|authorize-silent) ;; *) exit 2;; esac
+  [[ ${BENCH_PROFILE:-base} == base ]] || exit 2
+  mode=${5:-restart}
+  case "$mode" in restart|retain) ;; *) exit 2;; esac
+  stop_apps
+  if [[ $mode == restart ]]; then docker restart -t 30 "$db" >/dev/null; fi
+  for _ in {1..60}; do docker exec "$db" pg_isready -q -U "$dbuser" -d "$dbname" && break; sleep 1; done
+  docker exec "$db" pg_isready -q -U "$dbuser" -d "$dbname"
+  cc -static -O2 "$PERF/monitor/pg-maps.c" -o build/pg-maps
+  docker exec -u 0 "$db" mkdir -p /tmp/pg-maps
+  # Both memory probes use the process name excluded from service CPU accounting.
+  docker cp build/pg-maps "$db:/tmp/pg-maps/read-pss"
+  stats() {
+    docker exec "$db" psql -XAt -v ON_ERROR_STOP=1 -U "$dbuser" -d "$dbname" -c \
+      "SELECT json_build_object('hits',blks_hit,'reads',blks_read,'inserts',tup_inserted,'updates',tup_updated,'deletes',tup_deleted,'db_bytes',pg_database_size(datname),'shared_buffers',current_setting('shared_buffers')) FROM pg_stat_database WHERE datname=current_database()"
+  }
+  label=pgmaps-$(date -u +%Y%m%dT%H%M%S%N)
+  dest="$WORK/windows/$peer/$scenario/$label-$rate"
+  scratch=$(mktemp -d)
+  stats >"$scratch/before.json"
+  taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/pg-maps.py" "$db" >"$scratch/maps.jsonl" &
+  probe=$!
+  trap 'kill "$probe" 2>/dev/null || true; wait "$probe" 2>/dev/null || true' EXIT
+  one "$peer" "$scenario" "$rate" "$label" "$users" "$families" base
+  kill "$probe"; wait "$probe" || true; trap - EXIT
+  stats >"$scratch/after.json"
+  printf '%s\n' "$mode" >"$scratch/mode"
+  docker stop -t 8 "oidc-bench-$peer" >/dev/null
+  taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/pg-maps.py" "$db" --once >"$scratch/disconnected.json"
+  mv "$scratch" "$dest/pg-maps"
+  exit 0
+fi
 if [[ $1 == matrix ]]; then
   prefix=$(date -u +%Y%m%dT%H%M%SZ)
   python3 "$PERF/report.py" --plan >"$WORK/plan.tsv"
@@ -164,11 +208,8 @@ if [[ $1 == matrix ]]; then
     one "$peer" "$scenario" "$rate" "$prefix-$round" "$users" "$families" "$profile"
   done < "$WORK/plan.tsv"
 else
-  peer=${2:?peer}; scenario=${3:?scenario}; rate=${4:?target TPS}; rounds=${5:-3}
-  [[ $rate =~ ^[1-9][0-9]*$ && $rounds =~ ^[1-9][0-9]*$ ]] || exit 2
-  users=32; families=8
-  if [[ $scenario == refresh && $rate -ge 1000 ]]; then users=64; fi
-  if [[ $scenario == refresh && $rate -ge 3000 ]]; then users=128; families=10; fi
+  peer=${2:?peer}; rounds=${5:-3}
+  [[ $rounds =~ ^[1-9][0-9]*$ ]] || exit 2
   prefix=$(date -u +%Y%m%dT%H%M%SZ)
   for ((i=1;i<=rounds;i++)); do one "$peer" "$scenario" "$rate" "$prefix-$i" "$users" "$families" "${BENCH_PROFILE:-base}"; done
 fi

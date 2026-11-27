@@ -10,12 +10,16 @@ import sys
 import shutil
 import tarfile
 import tempfile
+import gzip
+import struct
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
 
 from monitor.summarize import summarize
 from monitor.memory_window import smaps_peaks
+from monitor.pg_window import peak as pg_peak, totals as pg_totals
 
 HERE = Path(__file__).resolve().parent
 SERVICES = {"nazo": "NazoAuth", "rauthy": "Rauthy", "kanidm": "Kanidm", "keycloak": "Keycloak", "hydra": "Hydra"}
@@ -95,6 +99,62 @@ def validate_ledgers(rows):
                 measured = summarize(ledger, row["rate"], row["warm_seconds"], row["seconds"])
             if measured["operations"] != row["operations"]:
                 raise ValueError(f"{sample.name}: operation ledger differs")
+
+
+def validate_memory_tails():
+    evidence = HERE / "evidence"
+    observations = [json.loads(s) for s in (evidence / "protocol-memory.jsonl").read_bytes().splitlines()]
+    with zipfile.ZipFile(evidence / "memory-success-latencies.zip") as vectors, tempfile.TemporaryDirectory() as tmp:
+        expected_entries = set()
+        for r in observations:
+            standard = evidence / "windows" / (r["window"] + ".json")
+            reference = evidence / "userinfo-reference" / (r["window"] + ".tar.gz")
+            if standard.is_file():
+                # validate_ledgers independently reconstructs the underlying performance window.
+                op = json.loads(standard.read_bytes())["operations"]["all"]
+            elif reference.is_file():
+                with tarfile.open(reference) as archive, archive.extractfile("arrivals.tsv") as src:
+                    path = Path(tmp) / "arrivals.tsv"
+                    with path.open("wb") as dest:
+                        shutil.copyfileobj(src, dest)
+                    op = summarize(path, r["target_tps"], 10, r["seconds"])["operations"]["all"]
+            else:
+                name = f"{r['peer']}-{r['start_ns']}.u64le"
+                expected_entries.add(name)
+                values = [v for (v,) in struct.iter_unpack("<Q", vectors.read(name))]
+                if len(values) != r["success"] or any(b < a for a,b in zip(values,values[1:])):
+                    raise ValueError(f"invalid duration series: {name}")
+                if any(values[(q*len(values)+99)//100-1] / 1e6 != r["successful_tail_ms"][str(q)] for q in (95,99)):
+                    raise ValueError(f"tail latency mismatch: {name}")
+                continue
+            if any(op[k] != r[k] for k in ("planned","sent","success","failed")) or any(
+                    op["offered_to_completion_success_ms"][q] != r["successful_tail_ms"][q] for q in ("95","99")):
+                raise ValueError(f"memory and arrival evidence differ: {r['window']}")
+        if expected_entries != set(vectors.namelist()):
+            raise ValueError("unexpected latency vector files")
+
+
+def validate_pg_ledgers():
+    evidence = HERE / "evidence"
+    with gzip.open(evidence / "postgres-maps.jsonl.gz", "rt") as stream, zipfile.ZipFile(
+            evidence / "pg-arrivals.zip") as archive, tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "arrivals.tsv"
+        seen = set()
+        for line in stream:
+            row = json.loads(line)
+            name = f"{row['peer']}-{row['start_ns']}.tsv"
+            if name in seen:
+                raise ValueError("duplicate PostgreSQL window")
+            seen.add(name)
+            with archive.open(name) as src, path.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+            op = summarize(path, row["rate"], row["warm_seconds"], row["seconds"])["operations"]["all"]
+            if (any(op[k] != row[k] for k in ("planned","sent","success","failed","http_requests","outcomes")) or
+                op["not_sent"] != row["unsent"]) or any(
+                    op["offered_to_completion_success_ms"][q] != row["successful_tail_ms"][q] for q in ("95","99")):
+                raise ValueError(f"PostgreSQL window ledger mismatch: {name}")
+        if seen != set(archive.namelist()):
+            raise ValueError("unexpected PostgreSQL ledger files")
 
 
 def formatted(values, digits=2):
@@ -179,6 +239,7 @@ def memory_table(observations):
     for (flow, rate, peer), group in sorted(cells.items(), key=lambda item: (
             list(FLOWS).index(item[0][0]), item[0][1], list(SERVICES).index(item[0][2]))):
         traffic = [formatted([r[k] / r["seconds"] for r in group]) for k in ("sent", "success")]
+        tail = [formatted([(r.get("successful_tail_ms") or {}).get(q) for r in group]) for q in ("95", "99")]
         components = []
         for role in ("app", "postgres", "valkey"):
             values = [formatted([r.get(f"role_peak_{kind}_mib", {}).get(role) for r in group], 1)
@@ -186,12 +247,63 @@ def memory_table(observations):
             components.append(" / ".join(values) if values != ["—", "—"] else "—")
         total = [formatted([r.get(f"server_peak_{kind}_mib") for r in group], 1) for kind in ("rss", "pss")]
         totals = [r["server_peak_pss_mib"] for r in group]
-        rows.append([FLOWS[flow], f"{rate:,}", SERVICES[peer], " / ".join(traffic), *components,
-                     " / ".join(total), f"{min(totals):,.1f}–{max(totals):,.1f}", len(group),
+        rows.append([FLOWS[flow], f"{rate:,}", SERVICES[peer], " / ".join(traffic), " / ".join(tail), *components,
+                     " / ".join(total), f"{min(totals):,.1f}–{max(totals):,.1f}",
+                     f"{len(group)} / {sum(r['performance_status'] in ('PASS', 'FAIL') for r in group)}",
                      sum("external_cpu_contention" in r["performance_invalid_reasons"] for r in group)])
-    return table(["业务", "目标 TPS", "服务", "实发 / 成功 TPS", "主服务 RSS / PSS", "PostgreSQL RSS / PSS",
-                  "Valkey RSS / PSS", "服务端 RSS / PSS", "总 PSS 范围", "轮数", "受宿主干扰轮数"], rows)
+    return table(["业务", "目标 TPS", "服务", "实发 / 成功 TPS", "观测 P95 / P99 ms", "主服务 RSS / PSS", "PostgreSQL RSS / PSS",
+                  "Valkey RSS / PSS", "服务端 RSS / PSS", "总 PSS 范围", "内存 / 性能有效轮数", "受宿主干扰轮数"], rows)
 
+
+def pg_tables():
+    with gzip.open(HERE / "evidence/postgres-maps.jsonl.gz", "rt", encoding="utf8") as stream:
+        records = [json.loads(line) for line in stream]
+    sequences = defaultdict(list)
+    for row in records:
+        if "sequence" in row:
+            sequences[row["sequence"]].append(row)
+    for block in sequences.values():
+        block.sort(key=lambda row: row["start_ns"])
+        if ([(r["stage"], r["scenario"], r["mode"]) for r in block] != [
+                ("1", "authorize", "restart"), ("2", "authorize", "retain"), ("3", "userinfo", "retain")] or
+            len({(r["samples"][0]["device"], r["samples"][0]["inode"]) for r in block}) != 1 or
+            any((r["samples"][0]["device"], r["samples"][0]["inode"]) !=
+                (r["disconnected"]["device"], r["disconnected"]["inode"]) for r in block)):
+            raise ValueError("inconsistent PostgreSQL repeat sequence")
+    groups = defaultdict(list)
+    for r in records:
+        groups[r["scenario"], r["peer"], r.get("stage", "cold")].append((r, pg_peak(r)))
+    cold, repeat, activity = [], [], []
+    for (flow, peer, stage), group in sorted(groups.items(), key=lambda kv: (
+            list(FLOWS).index(kv[0][0]), list(SERVICES).index(kv[0][1]), kv[0][2])):
+        records, peaks = zip(*group)
+        def field(i):
+            return formatted([p[i] / 1024 for p in peaks], 1)
+        tail = " / ".join(formatted([r["successful_tail_ms"][q] for r in records]) for q in ("95","99"))
+        footprint = field(1) + " / " + field(2)
+        if stage == "cold":
+            cold.append([FLOWS[flow], SERVICES[peer], formatted([r["success"]/r["seconds"] for r in records]),
+                         tail, formatted([p[0] for p in peaks], 0), footprint, field(3), field(5) + " / " + field(6),
+                         formatted([100*(p[5]-p[6])/(p[1]-p[2]) for p in peaks], 1),
+                         formatted([r["before"]["db_bytes"]/2**20 for r in records], 1),
+                         f"{len(group)} / {sum(r['performance_status'] != 'INVALID' for r in records)}"])
+            if peer == "nazo":
+                def changes(keys):
+                    return formatted([sum(r["after"][k] - r["before"][k] for k in keys) for r in records], 0)
+                activity.append([FLOWS[flow], changes(("hits",)), changes(("reads",)),
+                                 changes(("inserts",)), changes(("updates",)), changes(("deletes",))])
+        else:
+            after = [pg_totals(r["disconnected"]) for r in records]
+            idle = " / ".join(formatted([a[i]/1024 for a in after],1) for i in (1,2))
+            repeat.append([stage, FLOWS[flow], tail, footprint, field(3), idle,
+                           formatted([a[3]/1024 for a in after], 1), len(group)])
+    return [table(["业务", "服务", "成功 TPS", "观测 P95 / P99 ms", "PG 进程", "PG RSS / PSS",
+                   "PG 私有页", "主共享映射 RSS / PSS", "差额解释比例 %", "测前库大小", "观测 / 性能有效轮数"], cold),
+            "NazoAuth 的四条授权写链路均跑到约 1,000 成功 TPS。与 UserInfo 相比，它们在 RSS 峰值时有更多数据库进程，主共享映射被更多进程同时计入 RSS，私有页和 PSS 也有实际增加。下表是每轮准备夹具前至停压后的 PostgreSQL 统计增量中位数，包含夹具、预热和正式窗口。缓冲区读取计数可包含操作系统页缓存命中，无法由此推算物理磁盘读取量。",
+            table(["NazoAuth 业务", "缓冲区命中", "读入缓冲区的块", "插入行", "更新行", "删除行"], activity),
+            "同库重复试验使用同一个 NazoAuth 数据库，每组依次运行以下三步。组内只在第一步重启 PostgreSQL。每步结束后停止应用，再采集 PostgreSQL；三步的开始时间、共享映射标识和断连后读数均保存在附件。",
+            table(["顺序", "业务", "观测 P95 / P99 ms", "峰时 PG RSS / PSS", "峰时私有页", "断连后 PG RSS / PSS", "断连后私有页", "轮数"], sorted(repeat)),
+            "断连后的读数只统计仍在运行的 PostgreSQL 进程所映射的页。内核仍可保留文件缓存与共享内存对象；进程 PSS 的下降不能单独证明整机释放了等量内存。本试验观察短时负载和连接生命周期，无法判断长期泄漏。"]
 
 def section_tables(output):
     pss_sections = {r[0] for r in output if r[16] != "—"}
@@ -253,7 +365,13 @@ def render(rows, published):
         blocks.extend(["## 服务进程内存",
                        "单位为 MiB。每格为逐轮采样峰值的中位数。RSS 将各进程映射的共享页分别计入，PSS 按共享比例分摊。服务端合计取同批读数之和的峰值；单个组件的峰值可能出现在不同时刻。PostgreSQL 的多个后端可同时映射共享缓冲区，评估部署占用时应优先读服务端 PSS。横线表示无此依赖或缺少对应读数。Kanidm 的内嵌存储和 Rauthy 的内嵌缓存计入主服务。[Linux 内存统计](https://docs.kernel.org/filesystems/proc.html) · [PostgreSQL 共享缓冲区](https://www.postgresql.org/docs/18/runtime-config-resource.html#GUC-SHARED-BUFFERS)",
                        memory_table(map(json.loads, (HERE / "evidence/protocol-memory.jsonl").read_bytes().splitlines())),
-                       "每约 2 秒读取服务进程树的 Linux `smaps_rollup`。原始行依次为起止时间（Unix 纳秒）、各角色 PSS、已采集时的各角色 RSS（KiB）；角色顺序为主服务、适用的数据库及缓存。各角色同批采集，跨度最多 1 秒，每轮至少覆盖正式窗口的 65%。UserInfo 使用 32 个不同用户的真实令牌。NazoAuth 每轮重启主服务，UserInfo 与其他协议分别在重启 PostgreSQL 后开始，组内延续数据库状态。PostgreSQL 配置为 1 GiB 共享缓冲区、128 个最大连接，应用池为 32。内存观测列出实发与成功吞吐，包含宿主干扰轮次。“受宿主干扰轮数”是其中被核心调度与 PSI 核查标记的轮数。只有满足整套性能有效性标准的窗口才进入下方吞吐与延迟对照。[逐轮采样与业务计数](evidence/protocol-memory.jsonl)"])
+                       "每约 2 秒读取服务进程树的 Linux `smaps_rollup`。原始行依次为起止时间（Unix 纳秒）、各角色 PSS、已采集时的各角色 RSS（KiB）；角色顺序为主服务、适用的数据库及缓存。各角色同批采集，跨度最多 1 秒，每轮至少覆盖正式窗口的 65%。UserInfo 使用 32 个不同用户的真实令牌。NazoAuth 每轮重启主服务，UserInfo 与其他协议分别在重启 PostgreSQL 后开始，组内延续数据库状态。PostgreSQL 配置为 1 GiB 共享缓冲区、128 个最大连接，应用池为 32。本表的吞吐、P95/P99 和内存均来自同一组观测轮次；延迟按计划到达至成功完成计算，各轮分位数再取中位数。包含宿主干扰或发压迟到的观测仅供参考。“受宿主干扰轮数”是其中被核心调度与 PSI 核查标记的轮数。只有满足整套性能有效性标准的窗口才进入下方吞吐与延迟对照。[逐轮采样与业务计数](evidence/protocol-memory.jsonl) · [12,000 TPS 原始到达记录](evidence/userinfo-reference/) · [其余未归档窗口的成功耗时序列](evidence/memory-success-latencies.zip)"])
+    if published:
+        blocks.extend(["## PostgreSQL 驻留页核查",
+                       "固定目标 1,000 TPS。下表下表各轮在发压前重启数据库进程，保留该服务已有的业务数据和操作系统页缓存。每约 2 秒从 PostgreSQL 各 PID 的 smaps 读取一次页统计。每轮选 PG 合计 RSS 最高的完整采样，取该时刻的 PSS、私有页（Private_Clean + Private_Dirty）、进程数及主共享映射。一个采样批次最多 1 秒。表中为各轮中位数，内存单位 MiB。兑换预热 5 秒、测量 20 秒，其余预热 10 秒、测量 36 秒。P95/P99 取当轮成功业务的计划到达至完成耗时。最后一列分别给出内存采样有效、同时满足正式性能观测条件的轮数。",
+                       "主共享映射取 postmaster 最大的可写共享映射，按设备号与 inode 在所有数据库进程中匹配。差额解释比例 =（该映射 RSS − PSS）/（全部 PG RSS − PSS）。该映射包含 PostgreSQL 主共享内存。采样可以识别同一对象被重复计数的部分，无法据此分辨对象中每页的数据库用途。[Linux 内存统计](https://docs.kernel.org/filesystems/proc.html) · [PostgreSQL 共享内存](https://www.postgresql.org/docs/18/runtime-config-resource.html)",
+                       *pg_tables(),
+                       "Keycloak 静默授权的三轮都完成了计划请求，宿主 CPU PSI 为 18.05%–22.51%，该行延迟仅供参考。Hydra 的兑换与轮换未达到 1,000 成功 TPS，表中保留实得吞吐。各项目测前数据库的物理大小也有差异，跨项目的内存差值同时受数据规模和实现方式影响。Hydra 的外部同意流程与共同授权链路边界不同；Kanidm 使用内嵌存储。静默授权使用已登录会话和 `prompt=none`；成功流程为授权与兑换两个 HTTP 请求。NazoAuth 显式同意多一次提交决定，共三个请求。Keycloak 当前基准客户端关闭了同意页面，因此显式同意缺少等价对照。[逐 PID 原始采样与数据库统计](evidence/postgres-maps.jsonl.gz) · [诊断轮 Goose 账本](evidence/pg-arrivals.zip)"])
     blocks.extend(section_tables(output))
     if published: blocks.append(METHOD)
     return "\n\n".join(blocks)+"\n"
@@ -269,7 +387,7 @@ INTRO = """每次运行一个 OAuth 服务，主服务绑定 **8 个不同物理
 | Keycloak | 26.8.2 · 镜像修订 `26018f2a4c6155cfe2c28f078996390bf5191946` | RS256 JWT、Basic | PostgreSQL 池 32、JVM 堆 512 MiB–4 GiB，JVM 可见处理器参数 16，实际执行受 8 核亲和性约束 |
 | Ory Hydra | 26.2.0 · 镜像修订 `0b84568fffccf151dc5e6c7955fdfb738555bf4b` | RS256 JWT、Basic | PostgreSQL 池 32，私网隔离管理入口，以 `serve all --dev` 运行 |
 
-NazoAuth 独立机器令牌签发和混合负载尚无该构建的有效记录。UserInfo 的 12,000 TPS 档取得四轮内存读数，四轮均受宿主调度干扰，因此该档只列内存观测。"""
+NazoAuth 独立机器令牌签发和混合负载尚无该构建的有效记录。UserInfo 的 12,000 TPS 档列出实发、成功吞吐和观测 P95/P99；用于正式性能对照的轮数按宿主与发压核查单独统计。"""
 
 METHOD = """## 测试方法
 
@@ -297,12 +415,13 @@ python3 perf/report.py --output /tmp/oauth-benchmark.md
 bash perf/bench.sh setup
 bash perf/bench.sh login
 bash perf/bench.sh run nazo userinfo 1000 3
+bash perf/bench.sh pg-memory nazo exchange 1000
 python3 perf/report.py --input perf/.work/windows --output /tmp/fresh.md
 ```
 
 `bash perf/bench.sh matrix` 依据部署的 NazoAuth 版本，按固定种子交错重放所选发压配置已经发表的业务、档位、轮数和刷新数据规模。宽配置使用新的独立 CNB，先以 `BENCH_NETWORK=wide bash perf/bench.sh setup` 部署，再以 `BENCH_PROFILE=journal-wide bash perf/bench.sh matrix` 运行。每个窗口必须有唯一输出路径。私有凭据和新结果保存在忽略提交的 `perf/.work/`。
 
-[登录逐次耗时和内存读数](evidence/login/)及[NazoAuth 构建信息](evidence/environment/nazo-build.json)可用于复算本次测量。用 `bash perf/bench.sh memory nazo` 运行 UserInfo 五个档位。替换末尾服务名可测对照服务。其他 NazoAuth 链路使用 `bash perf/bench.sh run nazo SCENARIO TPS 3`，支持 `machine-introspect`、`user-introspect`、`exchange`、`refresh`、`authorize-silent` 和 `authorize`。每轮 `memory.json` 保存进程树采样与业务计数；`python3 perf/report.py --memory-input perf/.work/windows` 可重建内存表。逐轮原始统计和分项业务结果位于 [evidence/windows](evidence/windows/)。[逐操作采样包](evidence/samples/)保留当前 NazoAuth 有效窗口的到达账本及资源采样；四个对照项目保存到逐轮统计粒度，其逐请求时间戳无法从分位数还原。原生配置及发压校准见 [环境快照](evidence/environment/)。部署参数和镜像摘要见 [deploy.sh](deploy.sh) 与 [native-deploy.sh](native-deploy.sh)。[运行开关补丁](fixture/token-ip-quota.patch)使被测提交支持该配置，测试只关闭所列令牌入口 IP 配额。"""
+[登录逐次耗时和内存读数](evidence/login/)及[NazoAuth 构建信息](evidence/environment/nazo-build.json)可用于复算本次测量。用 `bash perf/bench.sh memory nazo` 运行 UserInfo 五个档位。替换末尾服务名可测对照服务。其他 NazoAuth 链路使用 `bash perf/bench.sh run nazo SCENARIO TPS 3`，支持 `machine-introspect`、`user-introspect`、`exchange`、`refresh`、`authorize-silent` 和 `authorize`。`pg-memory` 每次测一轮；末尾加 `retain` 会沿用已运行的 PostgreSQL。重复组依次执行 `pg-memory nazo authorize 1000`、`pg-memory nazo authorize 1000 retain` 和 `pg-memory nazo userinfo 1000 retain`。原始 smaps 行的 PID 后依次为总 RSS、PSS、私有页、共享页、主共享映射 RSS 与 PSS（KiB）。可用 `python3 perf/monitor/pg_window.py 窗口目录` 导出本轮原始证据。每轮 `memory.json` 保存进程树采样与业务计数；`python3 perf/report.py --memory-input perf/.work/windows` 可重建内存表。逐轮原始统计和分项业务结果位于 [evidence/windows](evidence/windows/)。[逐操作采样包](evidence/samples/)保留当前 NazoAuth 有效窗口的到达账本及资源采样；四个对照项目的正式性能表保留逐轮统计。另附内存诊断的成功耗时序列，以及 PostgreSQL 专项全部逐请求账本。原生配置及发压校准见 [环境快照](evidence/environment/)。部署参数和镜像摘要见 [deploy.sh](deploy.sh) 与 [native-deploy.sh](native-deploy.sh)。[运行开关补丁](fixture/token-ip-quota.patch)使被测提交支持该配置，测试只关闭所列令牌入口 IP 配额。"""
 
 
 def main():
@@ -346,6 +465,8 @@ def main():
     if args.raw:
         if args.input:parser.error("--raw verifies published sample bundles")
         validate_ledgers(rows)
+        validate_memory_tails()
+        validate_pg_ledgers()
     if args.plan:
         plan=[]
         for r in rows:

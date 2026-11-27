@@ -31,7 +31,7 @@ def smaps_peaks(peer, start, seconds, samples):
                 server_peak_pss_mib=max(sum(p[2:width]) for p in points) / 1024, pss_samples=len(points))
 
 
-def memory_window(path):
+def protocol_window(path):
     row = json.loads((path / "summary.json").read_bytes())
     proof = json.loads((path / "proof.json").read_bytes())
     state = json.loads((path / "app-state.json").read_bytes())
@@ -58,6 +58,12 @@ def memory_window(path):
         raise ValueError("incomplete workload or service state")
     epoch = int(re.search(r"^epoch_ns=(\d+)", (path / "window").read_text(), re.M)[1])
     start_ns = epoch + row["warm_seconds"] * 10**9
+    return row, proof, ops, start_ns
+
+
+def memory_window(path):
+    row, _, ops, start_ns = protocol_window(path)
+    scenario = path.parent.name
     start = start_ns // 10**6
     end = start + row["seconds"] * 1000
     samples = [list(map(int, line.split())) for line in (path / "pss.tsv").read_text().splitlines()]
@@ -75,6 +81,7 @@ def memory_window(path):
         if len(timestamps) < 4:
             raise ValueError(f"missing {role} affinity samples")
     return dict(start_ns=start_ns, smaps_kib=samples, scenario=scenario,
+                successful_tail_ms={q: ops["offered_to_completion_success_ms"][q] for q in ("95", "99")},
                 product_revision=row.get("product_revision"),
                 peer=row["peer"], target_tps=row["rate"], window=path.name, seconds=row["seconds"],
                 planned=ops["planned"], sent=ops["sent"], success=ops["success"], failed=ops["failed"],
