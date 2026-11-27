@@ -289,7 +289,7 @@ cannot share compiled workspace artifacts. Release checks consume successful gov
 | Documentation or specification inventory only | Source/reference, Python and workflow-policy checks; reuse successful unchanged Rust, fuzz and image checks. Without reusable evidence, execute the selected checks. |
 | Rust, dependencies, toolchain, fixtures or migrations | Workspace formatting, Clippy and PostgreSQL/Valkey tests; CodeQL and service security checks. Operator fuzzing runs when its parser, crypto, manifest, corpus or workflow inputs change. |
 | Every PR or main push | CodeQL analysis, WASM production dependency/feature checks and portable runtime contracts; compiled artifacts use the separate WASM cache. |
-| Performance runner or its workflow | Build the Goose runner and smoke-test its executable. The Python gate verifies that the published report matches the retained measurements. Use `make perf-verify` to also recalculate available per-request records. |
+| Performance runner or its workflow | Build the Goose runner and smoke-test its executable. The Python gate verifies that the English and Chinese reports match the retained measurements. Use `make perf-verify` to also recalculate available per-request records. |
 | Main after merge | Reuse ordinary PR tests only with identical proven inputs; retain main CodeQL/security roles and run missing or expired checks. |
 | Release | Require successful governed main CI, then build, scan and verify the release artifacts. Do not dispatch another complete functional CI run. |
 | Weekly or manual checks | Execute selected checks even with matching prior inputs; coverage uses its own instrumented build. |
