@@ -48,6 +48,7 @@ case "$flow" in
 esac
 scratch=$(mktemp -d)
 cleanup() {
+  if [[ -n ${pss_pid:-} ]]; then kill "$pss_pid" 2>/dev/null || true; wait "$pss_pid" 2>/dev/null || true; fi
   if [[ -n ${host:-} ]]; then kill "$host" 2>/dev/null || true; wait "$host" 2>/dev/null || true; fi
   if [[ -n ${driver:-} ]]; then kill "$driver" 2>/dev/null || true; wait "$driver" 2>/dev/null || true; fi
   docker exec "$gen" rm -f /tmp/goose8-request.json /tmp/goose8-window.tsv >/dev/null 2>&1 || true
@@ -78,7 +79,9 @@ check_code_expiry
 docker exec "$gen" sha256sum "$bin" >"$dest/driver.sha256"
 cpus=$BENCH_APP_CPUS
 run_driver() {
-  docker exec -e BENCH_GO_PROFILE -e BENCH_ARRIVAL_PHASES "$gen" /affinity "$BENCH_GEN_CPUS" env TOKIO_WORKER_THREADS="${BENCH_GO_WORKERS:-15}" BENCH_CA_PEM=/tmp/goose-kanidm-root.pem \
+  local tls=()
+  if [[ $peer == kanidm ]]; then tls=(BENCH_CA_PEM=/tmp/goose-kanidm-root.pem); fi
+  docker exec -e BENCH_GO_PROFILE -e BENCH_ARRIVAL_PHASES "$gen" /affinity "$BENCH_GEN_CPUS" env TOKIO_WORKER_THREADS="${BENCH_GO_WORKERS:-15}" "${tls[@]}" \
     "$bin" "$rate" "$warm" "$seconds" "${BENCH_SLOTS:-8192}" /tmp/goose8-request.json /tmp/goose8-window.tsv \
     >"$dest/driver.stdout" 2>"$dest/window"
 }
@@ -109,13 +112,19 @@ monitor() {
   pids+=("$!")
 }
 pids=()
-monitor "$app" "$cpus" '' app
+app_comm=
+if [[ $peer == nazo ]]; then app_comm=nazoauth; fi
+monitor "$app" "$cpus" "$app_comm" app
 monitor "$gen" "$BENCH_GEN_CPUS" oauth-goose generator
 case "$peer" in
-  nazo) monitor oidc-bench-postgres "$BENCH_PG_CPUS" '' postgres; monitor oidc-bench-valkey "$BENCH_VK_CPUS" '' valkey;;
+  nazo) monitor oidc-bench-postgres "$BENCH_PG_CPUS" postgres postgres; monitor oidc-bench-valkey "$BENCH_VK_CPUS" valkey-server valkey;;
   keycloak|hydra) monitor oidc-bench-postgres "$BENCH_PG_CPUS" '' postgres;;
   rauthy) monitor oidc-bench-rauthy-db "$BENCH_PG_CPUS" '' postgres;;
 esac
+if [[ $peer == nazo && $flow == userinfo ]]; then
+  taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/pss.py" >"$dest/pss.tsv" &
+  pss_pid=$!
+fi
 taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/host.py" >"$dest/pressure.jsonl" &
 host=$!
 status=0

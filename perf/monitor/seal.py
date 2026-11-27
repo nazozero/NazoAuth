@@ -122,6 +122,17 @@ for role, row in resources.items():
     if coverage:
         row.update(cpu_seconds=cpu_seconds, cpu_sample_seconds=coverage,
                    mean_cpu_cores=cpu_seconds / coverage, peak_interval_cpu_cores=peak)
+if (path / "pss.tsv").is_file():
+    points = []
+    for line in (path / "pss.tsv").read_text().splitlines():
+        begin, finish, app, pg, vk = map(int, line.split())
+        if start * 10**6 <= begin <= finish < end * 10**6 and finish - begin <= 10**9:
+            points.append((begin, app, pg, vk))
+    if not points or len(points) < seconds // 4 or (points[-1][0] - points[0][0]) / 1e9 < seconds * .65:
+        reasons.append("pss_sampling")
+    else:
+        data["app_peak_pss_mib"] = max(app for _, app, _, _ in points) / 1024
+        data["server_peak_pss_mib"] = max(app + pg + vk for _, app, pg, vk in points) / 1024
 server_roles = sorted(required - {"generator"})
 total_rss = []
 if all(role in memory_roles for role in server_roles):
@@ -204,4 +215,6 @@ data.update(
     tps_per_app_core=a["successful_tps"]/cpu if cpu else None,
     cpu_microseconds_per_success=cpu_time*1e6/a["success"] if cpu_time is not None and a["success"] else None,
 )
+if peer == "nazo" and os.environ.get("BENCH_NAZO_REVISION"):
+    data["product_revision"] = os.environ["BENCH_NAZO_REVISION"]
 print(json.dumps(data, indent=2))

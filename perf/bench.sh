@@ -7,8 +7,8 @@ export WORK=${BENCH_WORK:-$PERF/.work}
 case ${1:-} in
   verify) shift; exec python3 "$PERF/report.py" --check "$@";;
   report) shift; exec python3 "$PERF/report.py" "$@";;
-  setup|run|matrix) ;;
-  *) echo 'Usage: bash perf/bench.sh {setup|matrix|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
+  setup|run|matrix|login) ;;
+  *) echo 'Usage: bash perf/bench.sh {setup|matrix|login|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
 esac
 mkdir -p "$WORK"
 cd "$WORK"
@@ -26,13 +26,14 @@ if [[ $1 == setup ]]; then
   source masks
   cc -static -O2 "$PERF/monitor/affinity.c" -o build/affinity
   cc -static -O2 "$PERF/monitor/sampler.c" -o build/sample-cpu
-  sha=af4b849c63e1e8a68b5d7564f3513a54f991a5fc
+  sha=${BENCH_NAZO_REVISION:-$(jq -r .git "$PERF/evidence/environment/nazo-login-userinfo-build.json")}
   builder=rust@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe
   patch="$PERF/fixture/token-ip-quota.patch"
   echo "a8f192f123f6558f0a1663ef0302b1eb9c56743e71f726fbe4fd5e4f01d21443  $patch" | sha256sum -c -
   # git archive excludes the benchmark workspace and any local product edits.
   src=$(mktemp -d "$WORK/build/product.XXXXXX")
-  git -C "$repo" archive "$sha" | tar xf - -C "$src"
+  sha=$(git -C "$repo" rev-parse --verify "$sha^{commit}")
+  git -C "$repo" archive "$sha" -- . ':!perf/evidence' | tar xf - -C "$src"
   (cd "$src" && patch --silent -p1 < "$patch")
   docker build --target fixture -f "$PERF/runner/Containerfile" -t "$fixture_image" "$repo"
   docker build -f "$PERF/runner/Containerfile" -t oidc-bench-goose-image "$repo"
@@ -45,9 +46,14 @@ if [[ $1 == setup ]]; then
   tar cf - -C "$src" . | docker exec -i -w /build "$build_id" tar xf -
   docker exec -w /build "$build_id" cargo build --locked --release -p nazo-server --bin nazoauth
   docker cp "$build_id:/build/target/release/nazoauth" out/nazoauth
+  if docker container inspect oidc-bench-nazo >/dev/null 2>&1; then
+    docker stop -t 8 oidc-bench-nazo >/dev/null
+    docker cp out/nazoauth oidc-bench-nazo:/usr/local/bin/nazoauth
+  fi
   infra
   printf '%s\n' "${BENCH_NETWORK:-base}" >private/network-profile
   bootstrap_nazo
+  echo "$sha" >private/nazo-revision
   bootstrap_keycloak
   bootstrap_hydra
   source "$PERF/native-deploy.sh"
@@ -55,6 +61,17 @@ if [[ $1 == setup ]]; then
 fi
 source masks
 source private/secrets.env
+if [[ -f private/nazo-revision ]]; then
+  BENCH_NAZO_REVISION=$(cat private/nazo-revision)
+else
+  BENCH_NAZO_REVISION=$(jq -r .git "$PERF/evidence/environment/nazo-build.json")
+fi
+export BENCH_NAZO_REVISION
+if [[ $1 == login ]]; then
+  stop_apps
+  docker start "$vk" oidc-bench-nazo >/dev/null
+  exec bash "$PERF/login.sh"
+fi
 expected_network=base
 if [[ ${BENCH_PROFILE:-base} == journal-wide ]]; then expected_network=wide; fi
 [[ $(cat private/network-profile) == "$expected_network" ]] || { echo "Expected a $expected_network deployment." >&2; exit 2; }
