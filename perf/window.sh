@@ -13,7 +13,7 @@ taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/quiet.py" >"$dest/pre.jso
 warm=${BENCH_WARM_SECONDS:-10}
 bin=/oauth-goose
 sample_memory=false
-if [[ $flow == userinfo || ($peer == nazo && $flow =~ ^(introspect|authorize|refresh|exchange)$) ]]; then
+if [[ ${BENCH_SAMPLE_PSS:-1} == 1 && $flow =~ ^(userinfo|introspect|authorize|refresh|exchange)$ ]]; then
   sample_memory=true
   containers=("$app")
   case "$peer" in
@@ -35,13 +35,14 @@ case "$flow" in
         docker exec "$fx" cp "/tmp/goose8-fixtures/$op.json" "/tmp/goose-mixed-$op.json"
       done
     fi
-    docker exec -e BENCH_SILENT -e BENCH_REFRESH_MAX_FAMILIES -e BENCH_RATE="$rate" "$fx" /affinity "$BENCH_GEN_CPUS" python3 /tmp/protocol_fixtures.py \
+    docker exec -e BENCH_CONSENT -e BENCH_SILENT -e BENCH_REFRESH_MAX_FAMILIES -e BENCH_RATE="$rate" "$fx" /affinity "$BENCH_GEN_CPUS" python3 /tmp/protocol_fixtures.py \
       "$peer" "$flow" "$((rate*(seconds+warm)))" "${BENCH_PROTOCOL_USERS:-32}" "$req" >"$dest/proof.json"
     ;;
   *)
     # Validate the live token cohort before timing.
     if [[ $flow == introspect && ${BENCH_TOKEN_SUBJECT:-client} == user ]]; then
-      docker exec "$fx" /affinity "$BENCH_GEN_CPUS" python3 /tmp/user_introspection.py >"$dest/proof.json"
+      docker exec "$fx" /affinity "$BENCH_CONTROL_CPU" python3 /tmp/cnb-clients.py "$peer" >/dev/null
+      docker exec "$fx" /affinity "$BENCH_GEN_CPUS" python3 /tmp/user_introspection.py "$peer" >"$dest/proof.json"
     else
     docker exec "$fx" /affinity "$BENCH_CONTROL_CPU" python3 /tmp/cnb-clients.py "$peer" >/dev/null
     count=1
@@ -88,6 +89,11 @@ PY_EXPIRY
 }
 check_code_expiry
 docker exec "$gen" sha256sum "$bin" >"$dest/driver.sha256"
+if [[ -f private/driver-sha256 ]]; then
+  [[ $(cut -d ' ' -f 1 "$dest/driver.sha256") == "$(cat private/driver-sha256)" ]] || {
+    echo "Goose binary differs from the deployed benchmark build." >&2; exit 1;
+  }
+fi
 cpus=$BENCH_APP_CPUS
 run_driver() {
   local tls=()

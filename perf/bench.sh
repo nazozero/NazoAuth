@@ -52,12 +52,22 @@ if [[ $1 == setup ]]; then
     docker cp out/nazoauth oidc-bench-nazo:/usr/local/bin/nazoauth
   fi
   infra
+  # infra can reuse named containers with existing API-provisioned credentials.
+  # Install the exact runner and fixture adapters from this checkout on every setup.
+  docker run --rm --entrypoint cat oidc-bench-goose-image /oauth-goose >build/oauth-goose
+  chmod 0755 build/oauth-goose
+  docker cp build/oauth-goose oidc-bench-goose:/oauth-goose
+  sha256sum build/oauth-goose | cut -d ' ' -f 1 >private/driver-sha256
+  for adapter in "$PERF"/fixture/*.py; do docker cp "$adapter" "$prep:/tmp/"; done
   printf '%s\n' "${BENCH_NETWORK:-base}" >private/network-profile
   bootstrap_nazo
   echo "$sha" >private/nazo-revision
   bootstrap_keycloak
   bootstrap_hydra
   source "$PERF/native-deploy.sh"
+  for service in oidc-bench-nazo "$kc" "$hy" oidc-bench-rauthy oidc-bench-kanidm "$pg" oidc-bench-rauthy-db "$vk" oidc-bench-goose; do
+    docker cp build/sample-cpu "$service:/sample-cpu"
+  done
   exit 0
 fi
 source masks
@@ -77,17 +87,19 @@ if [[ ${BENCH_PROFILE:-base} == journal-wide ]]; then expected_network=wide; fi
 one() {
   local peer=$1 op=$2 rate=$3 round=$4 users=$5 families=$6
   export SCENARIO=$op BENCH_GO_PROFILE=$7 BENCH_PROTOCOL_USERS=$users BENCH_REFRESH_MAX_FAMILIES=$families
-  export BENCH_GO_WORKERS=15 BENCH_SLOTS=8192 BENCH_SILENT=0 BENCH_TOKEN_SUBJECT=client BENCH_WARM_SECONDS=10
+  export BENCH_GO_WORKERS=15 BENCH_SLOTS=8192 BENCH_SILENT=0 BENCH_CONSENT=0 BENCH_TOKEN_SUBJECT=client BENCH_WARM_SECONDS=10
   local seconds=36
   case "$op" in
-    authorize-silent) op=authorize; export BENCH_SILENT=1;;
+    mixed-core-consent) [[ $peer == keycloak || $peer == nazo ]] || return 2; op=mixed-core; export BENCH_CONSENT=1 BENCH_WARM_SECONDS=5; seconds=20;;
+    authorize-consent) [[ $peer == keycloak || $peer == nazo ]] || return 2; op=authorize; export BENCH_CONSENT=1;;
+    authorize-silent) [[ $peer == keycloak || $peer == nazo || $peer == kanidm ]] || { echo "No verified prompt=none adapter for $peer." >&2; return 2; }; op=authorize; export BENCH_SILENT=1;;
     user-introspect) op=introspect; export BENCH_TOKEN_SUBJECT=user;;
     machine-introspect) op=introspect;;
     exchange|mixed-core) export BENCH_WARM_SECONDS=5; seconds=20;;
     machine|introspect|refresh|authorize|userinfo|mixed) ;;
     *) echo "Unknown scenario: $op" >&2; return 2;;
   esac
-  case "$peer:$op" in hydra:authorize|hydra:mixed*|rauthy:refresh|rauthy:mixed-core|kanidm:refresh|kanidm:exchange|kanidm:mixed-core) echo "Outside the common protocol group: $peer/$op" >&2; return 2;; esac
+  case "$peer:$op" in hydra:authorize|hydra:mixed-core|rauthy:refresh|rauthy:mixed-core|kanidm:refresh|kanidm:exchange|kanidm:mixed-core) echo "Outside the common protocol group: $peer/$op" >&2; return 2;; esac
   case "$peer" in nazo|keycloak|hydra|rauthy|kanidm) ;; *) return 2;; esac
   if [[ $peer == nazo && -z ${BENCH_NAZO_REVISION:-} ]]; then
     echo "Missing NazoAuth build revision in this deployment." >&2; return 2
@@ -169,7 +181,7 @@ if [[ $1 == pg-memory ]]; then
   case "$peer" in nazo) dbname=nazo_ready;; keycloak|hydra) dbname=${peer}_retest;; rauthy) dbname=rauthy;; *) exit 2;; esac
   db=$pg; dbuser=postgres
   if [[ $peer == rauthy ]]; then db=oidc-bench-rauthy-db; dbuser=rauthy; fi
-  case "$scenario" in userinfo|exchange|refresh|authorize|authorize-silent) ;; *) exit 2;; esac
+  case "$scenario" in userinfo|exchange|refresh|authorize|authorize-silent|authorize-consent) ;; *) exit 2;; esac
   [[ ${BENCH_PROFILE:-base} == base ]] || exit 2
   mode=${5:-restart}
   case "$mode" in restart|retain) ;; *) exit 2;; esac
@@ -204,8 +216,8 @@ fi
 if [[ $1 == matrix ]]; then
   prefix=$(date -u +%Y%m%dT%H%M%SZ)
   python3 "$PERF/report.py" --plan >"$WORK/plan.tsv"
-  while IFS=$'\t' read -r peer scenario rate round users families profile; do
-    one "$peer" "$scenario" "$rate" "$prefix-$round" "$users" "$families" "$profile"
+  while IFS=$'\t' read -r peer scenario rate round users families profile pss; do
+    BENCH_SAMPLE_PSS=$pss one "$peer" "$scenario" "$rate" "$prefix-$round" "$users" "$families" "$profile"
   done < "$WORK/plan.tsv"
 else
   peer=${2:?peer}; rounds=${5:-3}

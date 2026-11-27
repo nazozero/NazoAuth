@@ -1,0 +1,84 @@
+[
+  {
+    "timestamp_utc": "2026-11-27T10:26:08.685225",
+    "database_bytes": 3136173759,
+    "relations": [
+      {
+        "name": "security_audit_events",
+        "estimated_live_rows": 3055107,
+        "heap_bytes": 2573238272,
+        "index_bytes": 321675264,
+        "total_bytes": 2895650816
+      },
+      {
+        "name": "oauth_token_issuances",
+        "estimated_live_rows": 46191,
+        "heap_bytes": 14278656,
+        "index_bytes": 65404928,
+        "total_bytes": 79724544
+      },
+      {
+        "name": "oauth_refresh_families",
+        "estimated_live_rows": 1370,
+        "heap_bytes": 4464640,
+        "index_bytes": 71680000,
+        "total_bytes": 76185600
+      },
+      {
+        "name": "oauth_refresh_spent_tokens",
+        "estimated_live_rows": 62583,
+        "heap_bytes": 23633920,
+        "index_bytes": 35332096,
+        "total_bytes": 59006976
+      },
+      {
+        "name": "user_client_grants",
+        "estimated_live_rows": 128,
+        "heap_bytes": 1073152,
+        "index_bytes": 10625024,
+        "total_bytes": 11739136
+      }
+    ]
+  },
+  {
+    "timestamp_utc": "2026-11-27T10:26:08.687829",
+    "database_bytes": 976205503,
+    "relations": [
+      {
+        "name": "security_audit_events",
+        "estimated_live_rows": 872682,
+        "heap_bytes": 741056512,
+        "index_bytes": 92626944,
+        "total_bytes": 833921024
+      },
+      {
+        "name": "oauth_token_issuances",
+        "estimated_live_rows": 71214,
+        "heap_bytes": 47751168,
+        "index_bytes": 41099264,
+        "total_bytes": 88899584
+      },
+      {
+        "name": "oauth_refresh_spent_tokens",
+        "estimated_live_rows": 38061,
+        "heap_bytes": 9428992,
+        "index_bytes": 9297920,
+        "total_bytes": 18767872
+      },
+      {
+        "name": "oauth_refresh_families",
+        "estimated_live_rows": 640,
+        "heap_bytes": 1499136,
+        "index_bytes": 14262272,
+        "total_bytes": 15802368
+      },
+      {
+        "name": "user_client_grants",
+        "estimated_live_rows": 64,
+        "heap_bytes": 753664,
+        "index_bytes": 4358144,
+        "total_bytes": 5152768
+      }
+    ]
+  }
+]

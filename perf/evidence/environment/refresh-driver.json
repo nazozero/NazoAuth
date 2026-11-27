@@ -1,0 +1,76 @@
+{
+  "archived_scheduler_sha256": "73a9a45d914e6e1d5fe9207b1da1862d7052fcf193415652357a2db14ac1f589",
+  "scenario_selection": {
+    "mixed-core": "oauth-goose-mixed",
+    "refresh": "oauth-goose-mixed"
+  },
+  "historical_mixed_source_sha256": "ca245aed34701422987c133bdecca7b398773498ce041b51a7e12057109948d5",
+  "historical_mixed_binary_sha256": "4da1b185eba7d98c042644e87ae8593eff3d410e93aa50a8ff9e4da7643ac7ea",
+  "legacy_buffered_binary_sha256": "357a8ea751112a6606d14cfe4feea95ef50bafcc52646b216d01b4a9383309fb",
+  "single_family_protocol_control": [
+    {
+      "binary_sha256": "357a8ea751112a6606d14cfe4feea95ef50bafcc52646b216d01b4a9383309fb",
+      "rate": 1,
+      "families": 1,
+      "slots": 4,
+      "operations": [
+        {
+          "slot": "0",
+          "status": "200",
+          "outcome": "ok",
+          "http_requests": "1"
+        },
+        {
+          "slot": "1",
+          "status": "400",
+          "outcome": "http_error",
+          "http_requests": "1"
+        },
+        {
+          "slot": "2",
+          "status": "400",
+          "outcome": "http_error",
+          "http_requests": "1"
+        },
+        {
+          "slot": "3",
+          "status": "400",
+          "outcome": "http_error",
+          "http_requests": "1"
+        }
+      ]
+    },
+    {
+      "binary_sha256": "ee4a059ea4453e1e0aaf5d1260fc6f7f6f6991851a2c9750ff9ff6aff3d800ec",
+      "rate": 1,
+      "families": 1,
+      "slots": 4,
+      "operations": [
+        {
+          "slot": "0",
+          "status": "200",
+          "outcome": "ok",
+          "http_requests": "1"
+        },
+        {
+          "slot": "1",
+          "status": "200",
+          "outcome": "ok",
+          "http_requests": "1"
+        },
+        {
+          "slot": "2",
+          "status": "200",
+          "outcome": "ok",
+          "http_requests": "1"
+        },
+        {
+          "slot": "3",
+          "status": "200",
+          "outcome": "ok",
+          "http_requests": "1"
+        }
+      ]
+    }
+  ]
+}

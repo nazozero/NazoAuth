@@ -1,0 +1,292 @@
+{
+  "rate": 1000,
+  "warm_seconds": 10,
+  "seconds": 36,
+  "operations": {
+    "all": {
+      "planned": 36000,
+      "sent": 35999,
+      "not_sent": 1,
+      "completed_by_cutoff": 30999,
+      "in_flight_at_cutoff": 5000,
+      "success": 19,
+      "failed": 35980,
+      "successful_tps": 0.5277777777777778,
+      "attainment": 0.0005277777777777777,
+      "outcomes": {
+        "ok": 19,
+        "timeout": 35980,
+        "scheduler_late": 1
+      },
+      "http_status_counts": {
+        "200": 19,
+        "0": 35980
+      },
+      "http_requests": 35999,
+      "http_rps": 999.9722222222222,
+      "scheduling_ms": {
+        "50": 0.521421,
+        "95": 1.030055,
+        "99": 1.072776,
+        "99.9": 1.092868,
+        "100": 3.013894
+      },
+      "response_all_ms": {
+        "50": 5001.053285,
+        "95": 5001.81558,
+        "99": 5001.991446,
+        "99.9": 5002.061136,
+        "100": 5002.81869
+      },
+      "response_success_ms": {
+        "50": 15.568086,
+        "95": 5000.731231,
+        "99": 5000.731231,
+        "99.9": 5000.731231,
+        "100": 5000.731231
+      },
+      "offered_to_completion_success_ms": {
+        "50": 15.826795,
+        "95": 5001.79075,
+        "99": 5001.79075,
+        "99.9": 5001.79075,
+        "100": 5001.79075
+      },
+      "in_flight_at_second_boundaries": [
+        999,
+        1998,
+        2998,
+        3998,
+        4998,
+        5000,
+        5000,
+        4999,
+        4998,
+        4997,
+        4997,
+        4997,
+        4998,
+        5000,
+        5000,
+        5001,
+        5000,
+        5000,
+        4998,
+        4997,
+        4997,
+        4997,
+        4998,
+        4998,
+        4997,
+        4997,
+        4998,
+        4998,
+        4998,
+        5000,
+        5000,
+        5000,
+        5000,
+        5001,
+        5000,
+        5000
+      ]
+    },
+    "machine": {
+      "planned": 36000,
+      "sent": 35999,
+      "not_sent": 1,
+      "completed_by_cutoff": 30999,
+      "in_flight_at_cutoff": 5000,
+      "success": 19,
+      "failed": 35980,
+      "successful_tps": 0.5277777777777778,
+      "attainment": 0.0005277777777777777,
+      "outcomes": {
+        "ok": 19,
+        "timeout": 35980,
+        "scheduler_late": 1
+      },
+      "http_status_counts": {
+        "200": 19,
+        "0": 35980
+      },
+      "http_requests": 35999,
+      "http_rps": 999.9722222222222,
+      "scheduling_ms": {
+        "50": 0.521421,
+        "95": 1.030055,
+        "99": 1.072776,
+        "99.9": 1.092868,
+        "100": 3.013894
+      },
+      "response_all_ms": {
+        "50": 5001.053285,
+        "95": 5001.81558,
+        "99": 5001.991446,
+        "99.9": 5002.061136,
+        "100": 5002.81869
+      },
+      "response_success_ms": {
+        "50": 15.568086,
+        "95": 5000.731231,
+        "99": 5000.731231,
+        "99.9": 5000.731231,
+        "100": 5000.731231
+      },
+      "offered_to_completion_success_ms": {
+        "50": 15.826795,
+        "95": 5001.79075,
+        "99": 5001.79075,
+        "99.9": 5001.79075,
+        "100": 5001.79075
+      },
+      "in_flight_at_second_boundaries": [
+        999,
+        1998,
+        2998,
+        3998,
+        4998,
+        5000,
+        5000,
+        4999,
+        4998,
+        4997,
+        4997,
+        4997,
+        4998,
+        5000,
+        5000,
+        5001,
+        5000,
+        5000,
+        4998,
+        4997,
+        4997,
+        4997,
+        4998,
+        4998,
+        4997,
+        4997,
+        4998,
+        4998,
+        4998,
+        5000,
+        5000,
+        5000,
+        5000,
+        5001,
+        5000,
+        5000
+      ]
+    }
+  },
+  "app_crashed": false,
+  "app_oom": false,
+  "peer": "hydra",
+  "flow": "machine",
+  "status": "FAIL",
+  "generator_slots": 8192,
+  "generator_profile": "base",
+  "generator_workers": 15,
+  "postgres_profile": "base",
+  "generator_sha256": "357a8ea751112a6606d14cfe4feea95ef50bafcc52646b216d01b4a9383309fb",
+  "invalid_reasons": [],
+  "slo_failing_operations": [
+    "all",
+    "machine"
+  ],
+  "resources": {
+    "app": {
+      "thread_observations": 494,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 729.56,
+      "mean_cpu_cores": 5.542558998278638,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 242567306,
+      "network_tx_bytes": 100070334,
+      "network_sample_seconds": 34.015,
+      "mean_rss_sum_mib": 708.6994357638889,
+      "peak_rss_sum_mib": 729.55859375,
+      "cpu_seconds": 199.53212393803096,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 6.426786606696652
+    },
+    "generator": {
+      "thread_observations": 3684,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 315.48,
+      "mean_cpu_cores": 0.19047555555555554,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 27600639,
+      "network_tx_bytes": 21614462,
+      "network_sample_seconds": 34.016,
+      "mean_rss_sum_mib": 301.39995659722223,
+      "peak_rss_sum_mib": 315.48046875,
+      "cpu_seconds": 6.857119999999999,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 0.21489255372313842
+    },
+    "postgres": {
+      "thread_observations": 696,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 61.15,
+      "mean_cpu_cores": 0.11160265827312671,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 71602376,
+      "network_tx_bytes": 220974698,
+      "network_sample_seconds": 34.019,
+      "mean_rss_sum_mib": 475.9201388888889,
+      "peak_rss_sum_mib": 792.8125,
+      "cpu_seconds": 4.017695697832561,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 0.16483516483516483
+    }
+  },
+  "host_cpu_psi_pct": 2.17,
+  "shared_cgroup": {
+    "peak_memory_bytes": 4545130496,
+    "peak_rss_bytes": 1219956736,
+    "peak_cache_bytes": 3216445440,
+    "cpu_throttled_events": 0,
+    "cpu_throttled_ns": 0,
+    "block_read_bytes": 0,
+    "block_write_bytes": 1761280,
+    "sample_seconds": 34.015
+  },
+  "host_cpu_psi_seconds": 34,
+  "host_pressure_pct": {
+    "io_some": 0.21202352941176472,
+    "io_full": 0.16926470588235293,
+    "memory_some": 0.00019705882352941177,
+    "memory_full": 3.823529411764706e-05
+  },
+  "host_cpu_utilization_pct": 13.516038236703432,
+  "app_cpu_wait_task_equivalent": 0.4526218313529412,
+  "other_cpu_wait_task_equivalent": 1.423680111764706,
+  "app_cpu_seconds": 199.53212393803096,
+  "server_total_cpu_cores": 5.654161656551765,
+  "server_peak_rss_sum_mib": 1489.5390625,
+  "tps_per_app_core": 0.09522276225506858,
+  "cpu_microseconds_per_success": 10501690.733580576,
+  "role_placement": {
+    "app": {
+      "background_cores": 2.065497161044892,
+      "physical_core_scheduler_wait": 0.48499584111764704,
+      "clear": true
+    },
+    "postgres": {
+      "background_cores": 2.8019726795504027,
+      "physical_core_scheduler_wait": 0.06680807567647058,
+      "clear": true
+    },
+    "generator": {
+      "background_cores": 1.4204410508267975,
+      "physical_core_scheduler_wait": 0.08271219738235294,
+      "clear": true
+    }
+  },
+  "role_placement_clear": true,
+  "assigned_background_cores": 2.065497161044892,
+  "id": "f-hydra-machine-20261127T090251Z-3-1000",
+  "scenario": "machine"
+}

@@ -1,0 +1,288 @@
+{
+  "rate": 3000,
+  "warm_seconds": 5,
+  "seconds": 20,
+  "operations": {
+    "all": {
+      "planned": 60000,
+      "sent": 59998,
+      "not_sent": 2,
+      "completed_by_cutoff": 59988,
+      "in_flight_at_cutoff": 10,
+      "success": 59998,
+      "failed": 0,
+      "successful_tps": 2999.9,
+      "attainment": 0.9999666666666667,
+      "outcomes": {
+        "ok": 59998,
+        "scheduler_late": 2
+      },
+      "http_status_counts": {
+        "200": 59998
+      },
+      "http_requests": 59998,
+      "http_rps": 2999.9,
+      "scheduling_ms": {
+        "50": 0.572803,
+        "95": 1.35474,
+        "99": 1.757467,
+        "99.9": 2.969766,
+        "100": 4.134678
+      },
+      "response_all_ms": {
+        "50": 4.245536,
+        "95": 14.627885,
+        "99": 33.342298,
+        "99.9": 51.592272,
+        "100": 68.984234
+      },
+      "response_success_ms": {
+        "50": 4.245536,
+        "95": 14.627885,
+        "99": 33.342298,
+        "99.9": 51.592272,
+        "100": 68.984234
+      },
+      "offered_to_completion_success_ms": {
+        "50": 4.901126,
+        "95": 15.336848,
+        "99": 34.16518,
+        "99.9": 52.384973,
+        "100": 69.882378
+      },
+      "in_flight_at_second_boundaries": [
+        12,
+        12,
+        9,
+        9,
+        13,
+        21,
+        11,
+        34,
+        10,
+        22,
+        35,
+        15,
+        35,
+        12,
+        106,
+        49,
+        9,
+        38,
+        10,
+        10
+      ]
+    },
+    "exchange": {
+      "planned": 60000,
+      "sent": 59998,
+      "not_sent": 2,
+      "completed_by_cutoff": 59988,
+      "in_flight_at_cutoff": 10,
+      "success": 59998,
+      "failed": 0,
+      "successful_tps": 2999.9,
+      "attainment": 0.9999666666666667,
+      "outcomes": {
+        "ok": 59998,
+        "scheduler_late": 2
+      },
+      "http_status_counts": {
+        "200": 59998
+      },
+      "http_requests": 59998,
+      "http_rps": 2999.9,
+      "scheduling_ms": {
+        "50": 0.572803,
+        "95": 1.35474,
+        "99": 1.757467,
+        "99.9": 2.969766,
+        "100": 4.134678
+      },
+      "response_all_ms": {
+        "50": 4.245536,
+        "95": 14.627885,
+        "99": 33.342298,
+        "99.9": 51.592272,
+        "100": 68.984234
+      },
+      "response_success_ms": {
+        "50": 4.245536,
+        "95": 14.627885,
+        "99": 33.342298,
+        "99.9": 51.592272,
+        "100": 68.984234
+      },
+      "offered_to_completion_success_ms": {
+        "50": 4.901126,
+        "95": 15.336848,
+        "99": 34.16518,
+        "99.9": 52.384973,
+        "100": 69.882378
+      },
+      "in_flight_at_second_boundaries": [
+        12,
+        12,
+        9,
+        9,
+        13,
+        21,
+        11,
+        34,
+        10,
+        22,
+        35,
+        15,
+        35,
+        12,
+        106,
+        49,
+        9,
+        38,
+        10,
+        10
+      ]
+    }
+  },
+  "role_peak_rss_mib": {
+    "app": 42.38671875,
+    "postgres": 7087.0625,
+    "valkey": 88.6953125
+  },
+  "server_peak_rss_mib": 7218.13671875,
+  "role_peak_pss_mib": {
+    "app": 40.9228515625,
+    "postgres": 789.6162109375,
+    "valkey": 88.69140625
+  },
+  "app_peak_pss_mib": 40.9228515625,
+  "server_peak_pss_mib": 919.22265625,
+  "pss_samples": 8,
+  "app_crashed": false,
+  "app_oom": false,
+  "peer": "nazo",
+  "flow": "exchange",
+  "status": "PASS",
+  "generator_slots": 8192,
+  "generator_profile": "base",
+  "generator_workers": 15,
+  "postgres_profile": "base",
+  "generator_sha256": "357a8ea751112a6606d14cfe4feea95ef50bafcc52646b216d01b4a9383309fb",
+  "invalid_reasons": [],
+  "slo_failing_operations": [],
+  "resources": {
+    "app": {
+      "thread_observations": 290,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 40.71,
+      "mean_cpu_cores": 2.635690904547726,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 269050955,
+      "network_tx_bytes": 333197458,
+      "network_sample_seconds": 18.004,
+      "mean_rss_sum_mib": 38.9234375,
+      "peak_rss_sum_mib": 40.71484375,
+      "cpu_seconds": 52.71381809095452,
+      "cpu_sample_seconds": 20,
+      "peak_interval_cpu_cores": 2.8885557221389306
+    },
+    "generator": {
+      "thread_observations": 990,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 121.93,
+      "mean_cpu_cores": 0.14491234386999596,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 156854901,
+      "network_tx_bytes": 31890126,
+      "network_sample_seconds": 18.006,
+      "mean_rss_sum_mib": 119.93046875,
+      "peak_rss_sum_mib": 121.93359375,
+      "cpu_seconds": 2.7647826086956524,
+      "cpu_sample_seconds": 19.078999999999997,
+      "peak_interval_cpu_cores": 0.15992003998001
+    },
+    "postgres": {
+      "thread_observations": 616,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 404.71,
+      "mean_cpu_cores": 3.0438973013493262,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 107308183,
+      "network_tx_bytes": 162152381,
+      "network_sample_seconds": 18.008,
+      "mean_rss_sum_mib": 6227.3140625,
+      "peak_rss_sum_mib": 7492.44921875,
+      "cpu_seconds": 60.87794602698652,
+      "cpu_sample_seconds": 20,
+      "peak_interval_cpu_cores": 3.2433783108445775
+    },
+    "valkey": {
+      "thread_observations": 105,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 88.68,
+      "mean_cpu_cores": 0.08771159445277361,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 69039232,
+      "network_tx_bytes": 75042514,
+      "network_sample_seconds": 18.005,
+      "mean_rss_sum_mib": 88.658203125,
+      "peak_rss_sum_mib": 88.68359375,
+      "cpu_seconds": 1.754231889055472,
+      "cpu_sample_seconds": 19.999999999999996,
+      "peak_interval_cpu_cores": 0.095
+    }
+  },
+  "host_cpu_psi_pct": 0.9,
+  "shared_cgroup": {
+    "peak_memory_bytes": 7230779392,
+    "peak_rss_bytes": 535658496,
+    "peak_cache_bytes": 6541783040,
+    "cpu_throttled_events": 0,
+    "cpu_throttled_ns": 0,
+    "block_read_bytes": 0,
+    "block_write_bytes": 817676288,
+    "sample_seconds": 18.004
+  },
+  "host_cpu_psi_seconds": 18,
+  "host_pressure_pct": {
+    "io_some": 1.5736777777777777,
+    "io_full": 1.2519444444444443,
+    "memory_some": 5.555555555555556e-05,
+    "memory_full": 5.555555555555556e-05
+  },
+  "host_cpu_utilization_pct": 11.231566198408565,
+  "app_cpu_wait_task_equivalent": 0.27990813416666666,
+  "other_cpu_wait_task_equivalent": 1.377651642,
+  "app_cpu_seconds": 52.71381809095452,
+  "server_total_cpu_cores": 5.767299800349826,
+  "server_peak_rss_sum_mib": 7621.83984375,
+  "tps_per_app_core": 1138.1835384505266,
+  "cpu_microseconds_per_success": 878.5929212799514,
+  "product_revision": "33984220ed1f48228e4b0f4ed8c345c2f63feb3b",
+  "role_placement": {
+    "app": {
+      "background_cores": 1.331590601952274,
+      "physical_core_scheduler_wait": 0.28700270344444445,
+      "clear": true
+    },
+    "postgres": {
+      "background_cores": 0.9205971384284517,
+      "physical_core_scheduler_wait": 0.18497096172222222,
+      "clear": true
+    },
+    "valkey": {
+      "background_cores": 0.044979587269448604,
+      "physical_core_scheduler_wait": 0.0013384677222222222,
+      "clear": true
+    },
+    "generator": {
+      "background_cores": 1.146411360630004,
+      "physical_core_scheduler_wait": 0.06914785327777778,
+      "clear": true
+    }
+  },
+  "role_placement_clear": true,
+  "assigned_background_cores": 1.331590601952274,
+  "id": "f-nazo-exchange-20261127T091154Z-2-3000",
+  "scenario": "exchange"
+}

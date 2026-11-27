@@ -9,8 +9,9 @@ import random
 import secrets
 import sys
 from tempfile import TemporaryDirectory
+from threading import BoundedSemaphore
 import time
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from api import Api
 from cryptography.hazmat.primitives import hashes
@@ -20,6 +21,7 @@ from html.parser import HTMLParser
 os.umask(0o077)
 ROOT = Path("/tmp")
 ISSUER = "http://localhost:8080"
+LOGIN_SLOTS = BoundedSemaphore(2)  # Password setup runs outside the timed OAuth workload.
 REALM = "/realms/api-audit/protocol/openid-connect"
 CONFIG = {
     "nazo": ("oidc-bench-nazo", "/authorize", "/token", "nazo.json"),
@@ -97,7 +99,7 @@ def query_param(url, key):
 
 
 def own_path(address):
-    url = urlsplit(address)
+    url = urlsplit(urljoin(ISSUER + "/", address))
     assert f"{url.scheme}://{url.netloc}" == ISSUER
     return url.path + ("?" + url.query if url.query else "")
 
@@ -110,13 +112,56 @@ def callback_code(address, callback, state):
     return query_param(address, "code")
 
 
+def keycloak_client(redirect, *, consent=False):
+    """Provision separate benchmark clients for explicit consent and audience-restricted introspection."""
+    api = Api("oidc-bench-keycloak")
+    bootstrap = json.loads((ROOT / "peer-bootstrap.json").read_bytes())
+    token, _, _ = api.form("POST", "/realms/master/protocol/openid-connect/token", {
+        "grant_type": "client_credentials", "client_id": bootstrap["client_id"], "client_secret": bootstrap["secret"],
+    })
+    headers = {"Authorization": "Bearer " + token["access_token"]}
+    path = "/admin/realms/api-audit/clients"
+    name = "goose-consent" if consent else "goose-user-introspection"
+    clients, _, _ = api.call("GET", path + "?clientId=" + name, headers=headers)
+    settings = {"clientId": name, "protocol": "openid-connect", "consentRequired": consent,
+                "publicClient": False, "standardFlowEnabled": True, "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": False, "redirectUris": [redirect], "clientAuthenticatorType": "client-secret"}
+    pkce = {"pkce.code.challenge.method": "S256"}
+    if not clients:
+        _, location, _ = api.call("POST", path, dict(settings, attributes=pkce), expected=(201,), headers=headers)
+        detail = path + "/" + location.rstrip("/").rsplit("/", 1)[-1]
+    else:
+        existing = next(c for c in clients if c["clientId"] == name)
+        detail = path + "/" + existing["id"]
+        attrs = existing.get("attributes") or {}
+        if any(existing.get(k) != v for k, v in settings.items()) or attrs.get("pkce.code.challenge.method") != "S256":
+            api.call("PUT", detail, dict(existing, **settings, attributes=attrs | pkce), expected=(204,), headers=headers)
+    if not consent:
+        mapper = detail + "/protocol-mappers/models"
+        current, _, _ = api.call("GET", mapper, headers=headers)
+        if not any(m["name"] == "introspection audience" for m in current):
+            api.call("POST", mapper, {"name": "introspection audience", "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper", "config": {"included.client.audience": name,
+                "access.token.claim": "true", "introspection.token.claim": "true", "id.token.claim": "false"}},
+                expected=(201,), headers=headers)
+    secret, _, _ = api.call("GET", detail + "/client-secret", headers=headers)
+    return name, secret["value"]
+
+
 class KeycloakForm(HTMLParser):
-    action = None
+    def __init__(self):
+        super().__init__()
+        self.action = None
+        self.login = False
+        self.fields = {}
 
     def handle_starttag(self, tag, attrs):
-        fields = dict(attrs)
-        if tag == "form" and fields.get("id") == "kc-form-login":
-            self.action = fields.get("action")
+        attributes = dict(attrs)
+        if tag == "form" and attributes.get("method", "").upper() == "POST":
+            self.action = attributes.get("action")
+            self.login = attributes.get("id") == "kc-form-login"
+        if tag in ("input", "button") and attributes.get("name") in ("code", "accept"):
+            self.fields[attributes["name"]] = attributes.get("value", "")
 
 
 class Browser:
@@ -127,7 +172,8 @@ class Browser:
         self.token = Api(self.host)
         self.admin = Api(self.host, 8081) if peer == "hydra" else None
         if peer == "nazo":
-            self.public.login(account)
+            with LOGIN_SLOTS:
+                self.public.login(account)
 
     def query(self, scope):
         verifier, state = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
@@ -135,6 +181,8 @@ class Browser:
         fields = {"response_type": "code", "client_id": self.client, "redirect_uri": self.redirect,
                   "scope": scope, "state": state, "nonce": self.last_nonce,
                   "code_challenge_method": "S256", "code_challenge": b64(hashlib.sha256(verifier.encode()).digest())}
+        if self.peer == "keycloak" and self.client == "goose-consent":
+            fields["prompt"] = "consent"
         return self.authorize_path + "?" + urlencode(fields), verifier, state
 
     def authorization(self, scope, allow_login=False):
@@ -145,20 +193,26 @@ class Browser:
                 "request_id": query_param(location, "request_id"), "decision": "approve",
                 "csrf_token": self.public.cookies["nazo_oauth_csrf"],
             }, expected=(302, 303))
-        if self.peer == "keycloak" and not (location and location.startswith(self.redirect + "?")):
-            for _ in range(4):
-                if status == 200 or not location or not location.startswith(ISSUER + "/"):
+        if self.peer == "keycloak":
+            consent = False
+            for _ in range(10):
+                if location and location.startswith(self.redirect + "?"):
                     break
-                _, location, status = self.public.call("GET", own_path(location), expected=(200, 302, 303))
-            if status == 200:
-                if not allow_login:
-                    raise RuntimeError("authenticated authorization demanded a new login")
+                if status != 200:
+                    _, location, status = self.public.call("GET", own_path(location), expected=(200, 302, 303))
+                    continue
                 form = KeycloakForm()
                 form.feed(self.public.last_body.decode())
-                assert form.action
-                _, location, _ = self.public.form("POST", own_path(form.action), {
-                    "username": self.account["email"], "password": self.account["password"],
-                }, expected=(302, 303))
+                if form.login and allow_login:
+                    values = {"username": self.account["email"], "password": self.account["password"]}
+                elif form.fields.keys() == {"code", "accept"} and self.client == "goose-consent":
+                    values = form.fields
+                    consent = True
+                else:
+                    raise RuntimeError("unexpected Keycloak interactive authorization step")
+                _, location, status = self.public.form("POST", own_path(form.action), values, expected=(200, 302, 303))
+            if self.client == "goose-consent" and not consent:
+                raise RuntimeError("explicit consent was skipped")
         if self.peer == "hydra":
             challenge = query_param(location, "login_challenge")
             login, _, _ = self.admin.call("PUT", "/admin/oauth2/auth/requests/login/accept?" + urlencode({
@@ -189,6 +243,7 @@ class Browser:
                     "headers": [("Host", "localhost:8080"), ("Cookie", cookie)] +
                                ([("X-CSRF-Token", self.public.cookies["nazo_oauth_csrf"])] if self.peer == "nazo" else []),
                     "authorize": {"peer": self.peer, "redirect": self.redirect, "state": state,
+                                  "keycloak_consent": self.peer == "keycloak" and self.client == "goose-consent",
                                   "token_url": f"http://{self.host}:8080{self.token_path}",
                                   "token_fields": list(dict(auth, code_verifier=verifier, redirect_uri=self.redirect,
                                                             grant_type="authorization_code").items()),
@@ -204,7 +259,7 @@ def exchange_fields(auth, redirect, code, verifier):
     return dict(auth, grant_type="authorization_code", redirect_uri=redirect, code=code, code_verifier=verifier)
 
 
-def prepare(peer, flow, total, users_count, target, rate=None):
+def browser_config(peer):
     if peer in CONFIG:
         _, _, _, name = CONFIG[peer]
         config = json.loads((ROOT / name).read_bytes())
@@ -213,9 +268,17 @@ def prepare(peer, flow, total, users_count, target, rate=None):
         from native_protocol import NativeBrowser, native_config
         config = native_config(peer)
         factory = NativeBrowser
+    return config, factory
+
+
+def prepare(peer, flow, total, users_count, target, rate=None):
+    config, factory = browser_config(peer)
     assert len(config["users"]) >= users_count
     client = config["clients"]["oidc"]
-    auth = {"client_id": client, "client_secret": config["client_secrets"][client]}
+    secret = config["client_secrets"][client]
+    if peer == "keycloak" and os.environ.get("BENCH_CONSENT") == "1":
+        client, secret = keycloak_client(config["redirect_uri"], consent=True)
+    auth = {"client_id": client, "client_secret": secret}
     offline_grant = flow == "refresh" and peer in ("nazo", "hydra", "keycloak")
     scope = "openid profile offline_access" if offline_grant else "openid profile"
     if peer == "hydra" and flow == "authorize":
@@ -225,6 +288,8 @@ def prepare(peer, flow, total, users_count, target, rate=None):
     code, verifier = probe.authorization(scope, allow_login=True)
     grant, _, _ = probe.exchange(exchange_fields(auth, probe.redirect, code, verifier))
     proof = dict(scope=scope, access_ttl=grant["expires_in"], **verify_grant(probe, grant))
+    if flow == "authorize" and client == "goose-consent" and peer == "keycloak":
+        proof["explicit_consent_verified"] = True
     code_ttl = 600 if peer == "hydra" else 60
     preparation_budget = min(120, code_ttl - (4 if rate else 28))
     expires = time.monotonic() + preparation_budget if flow == "exchange" else None

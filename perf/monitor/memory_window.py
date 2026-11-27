@@ -72,7 +72,7 @@ def memory_window(path):
         timestamps = set()
         for line in (path / (role + ".cpu.tsv")).read_text().splitlines():
             at, _, name, _, _, threads, mismatched, _ = line.split("\t")
-            if not start <= int(at) < end or name in ("read-pss", "sample-cpu") or name.startswith("runc:"):
+            if not start <= int(at) < end or name in ("read-pss", "sample-cpu", "affinity") or name.startswith("runc:"):
                 continue
             if int(mismatched):
                 raise ValueError(f"{role}/{name} affinity mismatch")

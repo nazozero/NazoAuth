@@ -3,6 +3,7 @@ import hashlib
 import hmac
 from http.client import HTTPConnection, HTTPSConnection
 import json
+import os
 import re
 import secrets
 import ssl
@@ -280,6 +281,8 @@ class NativeBrowser:
         token_url = self.base + self.token_path
         if flow == "authorize":
             method, path, body, fields, verifier = self.authorization_request(scope)
+            if self.peer == "kanidm" and os.environ.get("BENCH_SILENT") == "1":
+                path += "&prompt=none"
             headers = list(self.session_headers.items())
             if body is not None:
                 headers = [("Content-Type", "application/json"), ("X-CSRF-Token", self.client_http.csrf),

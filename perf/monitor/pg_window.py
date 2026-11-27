@@ -40,7 +40,7 @@ def read_window(path):
     row = dict(peer=summary["peer"], scenario=path.parent.name, rate=summary["rate"], seconds=summary["seconds"],
                warm_seconds=summary["warm_seconds"],
                proof={k: proof[k] for k in ("users", "fixtures", "scope", "id_token_verified",
-                      "access_token_userinfo_verified", "fixture_contract", "families_per_user") if k in proof},
+                      "access_token_userinfo_verified", "explicit_consent_verified", "fixture_contract", "families_per_user") if k in proof},
                start_ns=start_ns, mode=mode_file.read_text().strip() if mode_file.exists() else "restart",
                before=json.loads((directory/"before.json").read_bytes()), after=json.loads((directory/"after.json").read_bytes()),
                planned=o["planned"], sent=o["sent"], success=o["success"], failed=o["failed"], unsent=o["not_sent"],
@@ -53,6 +53,9 @@ def read_window(path):
     if disconnected.exists():
         row["disconnected"] = json.loads(disconnected.read_bytes())
         totals(row["disconnected"])
+    if row["peer"] == "keycloak" and row["scenario"] == "authorize-consent":
+        if not proof.get("explicit_consent_verified") or row["http_requests"] < 3 * row["success"]:
+            raise ValueError("missing explicit consent or exchange")
     if row["peer"] in ("nazo", "keycloak") and row["scenario"] in ("authorize-silent","authorize") and not row["failed"]:
         calls = 3 if row["peer"] == "nazo" and row["scenario"] == "authorize" else 2
         if row["http_requests"] != calls * row["success"]:

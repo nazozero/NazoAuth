@@ -38,6 +38,8 @@ struct Authorization {
     token_url: String,
     token_fields: Vec<(String, String)>,
     csrf: String,
+    #[serde(default)]
+    keycloak_consent: bool,
 }
 
 struct Observation {
@@ -178,6 +180,113 @@ fn form_builder(
     builder
 }
 
+fn consent_form(html: &str) -> Option<(String, String, String)> {
+    let dom = tl::parse(html, tl::ParserOptions::default()).ok()?;
+    let mut action = None;
+    let mut code = None;
+    let mut accept = None;
+    for tag in dom.nodes().iter().filter_map(tl::Node::as_tag) {
+        let attr = |key| tag.attributes().get(key).flatten().map(|s| s.as_utf8_str());
+        match tag.name().as_bytes() {
+            b"form" if attr("method")?.eq_ignore_ascii_case("post") => {
+                if let Some(target) = attr("action") {
+                    action = Some(target.replace("&amp;", "&"));
+                }
+            }
+            b"input" | b"button" => match attr("name").as_deref() {
+                Some("code") => code = attr("value").map(|s| s.into_owned()),
+                Some("accept") => accept = Some(attr("value").unwrap_or_default().into_owned()),
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    Some((action?, code?, accept?))
+}
+
+async fn keycloak_consent(
+    user: &mut GooseUser,
+    fixture: &Request,
+    mut response: reqwest::Response,
+    calls: &mut usize,
+) -> Result<reqwest::Response, &'static str> {
+    let service = Url::parse(&fixture.url).map_err(|_| "client_error")?;
+    let host = fixture
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("host"))
+        .ok_or("client_error")?
+        .1
+        .as_str();
+    let issuer =
+        Url::parse(&format!("{}://{host}", service.scheme())).map_err(|_| "client_error")?;
+    let mut cookies = std::collections::BTreeMap::<String, String>::new();
+    let update = |values: &mut std::collections::BTreeMap<String, String>, pair: &str| {
+        if let Some((key, value)) = pair.trim().split_once('=') {
+            if value.is_empty() {
+                values.remove(key);
+            } else {
+                values.insert(key.into(), value.into());
+            }
+        }
+    };
+    if let Some((_, value)) = fixture
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("cookie"))
+    {
+        for cookie in value.split(';') {
+            update(&mut cookies, cookie);
+        }
+    }
+    for _ in 0..5 {
+        for value in response.headers().get_all("set-cookie") {
+            if let Ok(field) = value.to_str() {
+                update(&mut cookies, field.split(';').next().unwrap_or(""));
+            }
+        }
+        let (action, code) = if response.status().is_redirection() {
+            let location = location(&response, &issuer)?;
+            response.bytes().await.map_err(|_| "transport_error")?;
+            (location, None)
+        } else if response.status().as_u16() == 200 {
+            let body = response.text().await.map_err(|_| "transport_error")?;
+            let (action, code, accept) = consent_form(&body).ok_or("protocol_error")?;
+            (
+                issuer.join(&action).map_err(|_| "protocol_error")?,
+                Some((code, accept)),
+            )
+        } else {
+            return Err("protocol_error");
+        };
+        if action.origin() != issuer.origin() || !action.path().starts_with("/realms/api-audit/") {
+            return Err("protocol_error");
+        }
+        let mut endpoint = service.clone();
+        endpoint.set_path(action.path());
+        endpoint.set_query(action.query());
+        let submitted = code.is_some();
+        let req = if let Some((code, accept)) = code {
+            user.client
+                .post(endpoint)
+                .form(&[("code", code.as_str()), ("accept", accept.as_str())])
+        } else {
+            user.client.get(endpoint)
+        };
+        let cookie = cookies
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        *calls += 1;
+        response = send(user, req.header("Host", host).header("Cookie", cookie)).await?;
+        if submitted {
+            return Ok(response);
+        }
+    }
+    Err("protocol_error")
+}
+
 async fn authorize(
     user: &mut GooseUser,
     fixture: &Request,
@@ -187,6 +296,11 @@ async fn authorize(
 ) -> Result<reqwest::Response, &'static str> {
     let origin = Url::parse(&fixture.url).map_err(|_| "client_error")?;
     let callback = Url::parse(&flow.redirect).map_err(|_| "client_error")?;
+    let first = if flow.keycloak_consent {
+        keycloak_consent(user, fixture, first, calls).await?
+    } else {
+        first
+    };
     let mut redirect = location(&first, &origin)?;
     let _ = first.bytes().await;
     if flow.peer == "nazo" && redirect.origin() != callback.origin() {
@@ -368,7 +482,8 @@ async fn main() -> Result<(), Error> {
     for fixture in &fixtures {
         let _: Method = fixture.method.parse()?;
         let url = Url::parse(&fixture.url)?;
-        if url.origin() != origin.origin()
+        if url.scheme() != origin.scheme()
+            || url.host_str() != origin.host_str()
             || !matches!(
                 fixture.operation.as_str(),
                 "control"
@@ -380,7 +495,9 @@ async fn main() -> Result<(), Error> {
                     | "userinfo"
             )
         {
-            return Err("each phase needs one origin and recognized operations".into());
+            return Err(
+                "each phase needs one service host and transport and recognized operations".into(),
+            );
         }
         if fixture.operation == "refresh"
             && (fixture.previous_refresh.is_none() || fixture.refresh_form.is_none())

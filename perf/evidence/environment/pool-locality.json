@@ -1,0 +1,10 @@
+{
+  "product_revision": "33984220ed1f48228e4b0f4ed8c345c2f63feb3b",
+  "pool_max_connections": 32,
+  "build_command": "cargo build --locked --release -p nazo-server --bin nazoauth",
+  "application_sha256": {
+    "fifo": "de0da34cacf05e7b71f456993ecef2c7bbb3fd63887a82f4721a76559f14209a",
+    "lifo": "a5e4e52e8445d3fd804c88fe19f522c88aee6237d78b8eb84cbea773ea2e6f6a"
+  },
+  "candidate_patch_sha256": "0c24efb2736fe64330aceb04a1e6ad2154d5625dc64081e9ea76b06a15de4180"
+}
