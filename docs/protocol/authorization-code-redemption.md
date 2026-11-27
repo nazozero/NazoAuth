@@ -22,8 +22,8 @@ Public-client empty evidence is rejected. A wrong or absent original proof canno
 revoke another holder's access token or refresh family; the code stays consumed.
 An extra valid optional proof does not erase the original requirements.
 
-Pending parameter errors do not consume the code. The existing state-store begin
-lease is retained for this repair, including Native SSO's preparation behavior.
+Pending parameter errors do not consume the code. The state store leases a
+pending code while redemption is in progress.
 Busy, Failed, Missing and cached Consumed states all consult the durable receipt.
 A committed lease expires at its original deadline. Replays consult the same
 durable receipt before and after cache expiry.
@@ -32,9 +32,9 @@ it consults the receipt after fresh holder validation without beginning another
 redemption. Wrong/missing proofs never revoke, and expiry is never bypassed to
 issue again. The receipt's original mask also selects the already verified
 certificate facts even if current client policy has disabled mTLS binding;
-current flags do not erase original possession requirements. Thus
+current flags do not erase original possession requirements.
 
-cache markers alone cannot authorize revocation or a second issuance. An unknown
+Cache markers alone cannot authorize revocation or a second issuance. An unknown
 receipt read fails closed and does not fall back to historical lookup.
 
 The receipt retains the original access-token acceptance horizon plus skew and

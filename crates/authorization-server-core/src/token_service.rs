@@ -953,15 +953,6 @@ where
             .await
     }
 
-    /// Drops the short-lived code entry after the issuance commit. The
-    /// committed issuance row is the authoritative consumed state; replay
-    /// evidence is served by `single_use_redemption`, not by a state-store
-    /// marker, so a delete failure only leaves an entry that ages out with
-    /// the code TTL — callers log it rather than failing the redemption.
-    pub async fn finalize_authorization_code(&self, code_hash: &str) -> Result<(), TokenPortError> {
-        self.state.delete_authorization_code(code_hash).await
-    }
-
     /// Replay evidence for a single-use grant: the committed issuance row
     /// behind the verified redemption binding.
     pub async fn single_use_redemption(

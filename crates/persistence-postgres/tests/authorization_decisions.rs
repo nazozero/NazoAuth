@@ -233,7 +233,7 @@ async fn verify_runtime_privileges(url: &str, connection: &mut AsyncPgConnection
     )).await.unwrap();
     let configured_timeout = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM pg_proc \
-         WHERE oid = 'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)'::regprocedure \
+         WHERE oid = 'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb,bigint)'::regprocedure \
            AND 'lock_timeout=2s' = ANY(proconfig)",
     )
     .get_result::<CountRow>(connection)
@@ -252,7 +252,7 @@ async fn verify_runtime_privileges(url: &str, connection: &mut AsyncPgConnection
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count FROM pg_roles WHERE rolname = $1 \
              AND has_function_privilege(oid, \
-             'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)', 'EXECUTE')",
+             'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb,bigint)', 'EXECUTE')",
         ).bind::<sql_types::Text, _>(role).get_result::<CountRow>(connection).await.unwrap();
         assert_eq!(
             row.count, expected,
@@ -265,7 +265,7 @@ async fn verify_runtime_privileges(url: &str, connection: &mut AsyncPgConnection
     let boundaries = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM pg_roles WHERE rolname = $1 \
          AND has_function_privilege(oid, \
-         'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)', 'EXECUTE') \
+         'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb,bigint)', 'EXECUTE') \
          AND has_function_privilege(oid, 'public.nazo_cleanup_authorization_decisions()', 'EXECUTE') \
          AND NOT has_table_privilege(oid, 'public.security_audit_events', 'SELECT,INSERT,UPDATE,DELETE')",
     ).bind::<sql_types::Text, _>(&runtime).get_result::<CountRow>(connection).await.unwrap();
@@ -1024,7 +1024,7 @@ async fn decision_rechecks_session_epoch_after_waiting_for_the_account_lock() {
 }
 
 #[tokio::test]
-async fn decision_epoch_upgrade_preserves_old_callers_without_inheriting_new_grants() {
+async fn decision_epoch_upgrade_removes_unfenced_entrypoint_and_preserves_callers() {
     let Some(base_url) = database_url() else {
         return;
     };
@@ -1046,7 +1046,12 @@ async fn decision_epoch_upgrade_preserves_old_callers_without_inheriting_new_gra
     let url = isolated.to_string();
     nazo_postgres::run_pending_migrations(&url).await.unwrap();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    let actor = fixture(&mut connection).await;
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261127000100_authorization_epoch_entrypoint/down.sql"
+        ))
+        .await
+        .unwrap();
     connection
         .batch_execute(include_str!(
             "../../../migrations/20261125000100_authorization_decision_epoch/down.sql"
@@ -1075,39 +1080,52 @@ async fn decision_epoch_upgrade_preserves_old_callers_without_inheriting_new_gra
         .bind::<sql_types::Text, _>(old).bind::<sql_types::Text, _>(new)
         .get_result::<CountRow>(&mut connection).await.unwrap();
     assert_eq!(same_owner.count, 1);
-    // A running older service retains the exact fourteen-argument interface.
-    let mut legacy = decision(&actor, Kind::Deny);
-    legacy.audit_fields["request_id_hash"] =
-        json!(blake3::hash(legacy.request_id.as_bytes()).to_hex().as_str());
     connection
-        .batch_execute(&format!("SET ROLE {allowed}"))
+        .batch_execute(include_str!(
+            "../../../migrations/20261127000100_authorization_epoch_entrypoint/up.sql"
+        ))
         .await
         .unwrap();
-    #[derive(QueryableByName)]
-    struct LegacyOutcome {
-        #[diesel(sql_type = sql_types::Text)]
-        outcome: String,
+    let retired =
+        sql_query("SELECT count(*)::bigint AS count FROM pg_proc WHERE oid=to_regprocedure($1)")
+            .bind::<sql_types::Text, _>(old)
+            .get_result::<CountRow>(&mut connection)
+            .await
+            .unwrap();
+    assert_eq!(
+        retired.count, 0,
+        "an epoch cannot be inferred for an old caller"
+    );
+    for (role, expected) in [(&allowed, 1), (&unrelated, 0)] {
+        let status = sql_query("SELECT count(*)::bigint AS count FROM pg_roles WHERE rolname=$1 AND has_function_privilege(oid,$2,'EXECUTE')")
+            .bind::<sql_types::Text, _>(role)
+            .bind::<sql_types::Text, _>(new)
+            .get_result::<CountRow>(&mut connection).await.unwrap();
+        assert_eq!(status.count, expected, "{role}: {new}");
     }
-    let rows = sql_query("SELECT public.nazo_commit_authorization_decision($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS outcome")
-        .bind::<sql_types::Uuid, _>(legacy.tenant_id)
-        .bind::<sql_types::Uuid, _>(legacy.user_id)
-        .bind::<sql_types::Text, _>(&legacy.client_id)
-        .bind::<sql_types::Text, _>(&legacy.request_id)
-        .bind::<sql_types::Nullable<sql_types::Text>, _>(&legacy.pushed_request_uri)
-        .bind::<sql_types::Timestamptz, _>(jiff_diesel::Timestamp::from(legacy.valid_until))
-        .bind::<sql_types::Timestamptz, _>(jiff_diesel::Timestamp::from(legacy.retain_until))
-        .bind::<sql_types::Text, _>(legacy.decision.as_str())
-        .bind::<sql_types::Uuid, _>(legacy.event_id)
-        .bind::<sql_types::Timestamptz, _>(jiff_diesel::Timestamp::from(legacy.occurred_at))
-        .bind::<sql_types::Jsonb, _>(&legacy.audit_fields)
-        .bind::<sql_types::Jsonb, _>(json!(legacy.scopes))
-        .bind::<sql_types::Jsonb, _>(json!(legacy.resource_indicators))
-        .bind::<sql_types::Jsonb, _>(&legacy.authorization_details)
-        .load::<LegacyOutcome>(&mut connection).await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].outcome, "committed");
-    connection.batch_execute("RESET ROLE").await.unwrap();
-    assert_eq!(fact_count(&mut connection, legacy.event_id).await, 1);
+    // Rollback must not inherit an unrelated role's default EXECUTE grant.
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261127000100_authorization_epoch_entrypoint/down.sql"
+        ))
+        .await
+        .unwrap();
+    let restored = sql_query("SELECT count(*)::bigint AS count FROM pg_proc old_fn JOIN pg_proc new_fn ON new_fn.proowner=old_fn.proowner WHERE old_fn.oid=$1::regprocedure AND new_fn.oid=$2::regprocedure AND has_function_privilege($3,old_fn.oid,'EXECUTE') AND NOT has_function_privilege($4,old_fn.oid,'EXECUTE')")
+        .bind::<sql_types::Text, _>(old)
+        .bind::<sql_types::Text, _>(new)
+        .bind::<sql_types::Text, _>(&allowed)
+        .bind::<sql_types::Text, _>(&unrelated)
+        .get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(
+        restored.count, 1,
+        "rollback must preserve the owner and exact callers"
+    );
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261127000100_authorization_epoch_entrypoint/up.sql"
+        ))
+        .await
+        .unwrap();
     connection.batch_execute(&format!("ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM {unrelated}; DROP OWNED BY {allowed}; DROP OWNED BY {unrelated}")).await.unwrap();
     drop(connection);
     coordinator

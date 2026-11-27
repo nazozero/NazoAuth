@@ -24,6 +24,14 @@ struct UserinfoRegistration {
     security_policy: nazo_auth::ClientSecurityPolicy,
 }
 
+#[derive(Deserialize)]
+struct UserinfoRow {
+    user_id: Uuid,
+    claims: String,
+    client_active: Option<i64>,
+    client_registration: Option<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Member {
     id: Uuid,
@@ -318,9 +326,9 @@ impl TokenRepositoryPort for D1Provider {
             // D1 stores reusable subject bindings; no issuance ownership row is
             // needed for its tokens. All current authority and response facts
             // come from this one statement snapshot.
-            let Some(row) = self.database.query::<Value>(
-                "SELECT u.id AS userinfo_user_id,u.claims AS userinfo_claims, \
-                 c.active AS userinfo_client_active,c.registration AS userinfo_client_registration \
+            let Some(row) = self.database.query::<UserinfoRow>(
+                "SELECT u.id AS user_id,u.claims, \
+                 c.active AS client_active,c.registration AS client_registration \
                  FROM nazo_users u LEFT JOIN nazo_clients c ON c.tenant_id=u.tenant_id AND c.client_id=?4 \
                  WHERE u.tenant_id=?1 AND u.id=COALESCE(?2,(SELECT user_id FROM nazo_subjects WHERE tenant_id=?1 AND subject=?3)) AND u.active=1 \
                  AND NOT EXISTS(SELECT 1 FROM nazo_revocations WHERE tenant_id=?1 AND jti_hash=?5) \
@@ -331,36 +339,15 @@ impl TokenRepositoryPort for D1Provider {
             ).await?.into_iter().next() else {
                 return Ok(None);
             };
-            let user_id = row
-                .get("userinfo_user_id")
-                .and_then(Value::as_str)
-                .and_then(|id| Uuid::parse_str(id).ok())
-                .ok_or(TokenPortError::CorruptData)?;
-            let claims = row
-                .get("userinfo_claims")
-                .and_then(Value::as_str)
-                .ok_or(TokenPortError::CorruptData)?;
             let subject: nazo_identity::SubjectClaims =
-                serde_json::from_str(claims).map_err(|_| TokenPortError::CorruptData)?;
-            if subject.subject.as_uuid() != user_id {
+                serde_json::from_str(&row.claims).map_err(|_| TokenPortError::CorruptData)?;
+            if subject.subject.as_uuid() != row.user_id {
                 return Err(TokenPortError::CorruptData);
             }
-            let client = if row
-                .get("userinfo_client_active")
-                .is_some_and(Value::is_null)
-            {
-                None
-            } else {
-                let active = row
-                    .get("userinfo_client_active")
-                    .and_then(Value::as_i64)
-                    .ok_or(TokenPortError::CorruptData)?;
-                let registration = row
-                    .get("userinfo_client_registration")
-                    .and_then(Value::as_str)
-                    .ok_or(TokenPortError::CorruptData)?;
+            let client = if let Some(registration) = row.client_registration {
+                let active = row.client_active.ok_or(TokenPortError::CorruptData)?;
                 let registration: UserinfoRegistration =
-                    serde_json::from_str(registration).map_err(|_| TokenPortError::CorruptData)?;
+                    serde_json::from_str(&registration).map_err(|_| TokenPortError::CorruptData)?;
                 if registration.client_id != verified_claims.client_id {
                     return Err(TokenPortError::CorruptData);
                 }
@@ -377,6 +364,8 @@ impl TokenRepositoryPort for D1Provider {
                     jwks: registration.jwks,
                     require_fapi2: registration.security_policy.requires_fapi2_security(),
                 })
+            } else {
+                None
             };
             Ok(Some(UserinfoSnapshot { subject, client }))
         })

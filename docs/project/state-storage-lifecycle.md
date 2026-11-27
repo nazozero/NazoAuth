@@ -89,6 +89,53 @@ operation/key identities without unused timestamps. Revocations use
 `(tenant_id, access_token_jti_blake3)` as the primary key, with tenant/client
 binding, first revocation time and monotonic retention through verifier skew.
 
+## PostgreSQL index ownership
+
+Primary keys identify durable facts. Unique indexes also enforce tenant-bound
+references, one-use grants, request identity and active-resource ownership.
+Their purpose remains even when ordinary queries do not scan them.
+
+Client references use the unique `(id, tenant_id)` constraint. A second unique
+index on the same pair in reverse order adds no constraint; the retained
+`(tenant_id, id, client_id)` index serves its lookup prefix. The reverse-pair
+index is removed without changing those references.
+
+Lookup indexes follow the predicates of their repository and maintenance
+queries. A composite B-tree also serves its leading columns; the schema does
+not keep a separate single-column index for the same access path. PostgreSQL
+explains these rules in [multicolumn indexes](https://www.postgresql.org/docs/18/indexes-multicolumn.html).
+
+| Lookup or operation | Retained index |
+| --- | --- |
+| Token JTI revocation and tenant membership | `access_token_revocations_pkey` on `(tenant_id, access_token_jti_blake3)` |
+| Access requests by status or requester | `ix_client_access_requests_status_created_at`, `ix_client_access_requests_user_created_at` |
+| Clients within a tenant | `ux_oauth_clients_tenant_client_id` and tenant-bound reference indexes |
+| Realms and organizations within a tenant | `ux_realms_tenant_slug_lower`, `ux_organizations_tenant_slug_lower` |
+| Authorization grants by tenant, user and client | `uq_user_client_grants_tenant_user_client` |
+| A user's authorized applications, newest first | `ix_user_client_grants_user_last_authorized` |
+| Accounts by tenant, creation time and stable page key | `ix_users_tenant_created_at_id`, scanned in either direction |
+| Desired module state; instance reconciliation | `runtime_module_desired_states_pkey`, `runtime_module_instance_states_pkey` |
+| VCI nonce/deferred claim and dataset validity | Nonce primary key, deferred transaction hash, and `(tenant_id, subject_id, credential_configuration_id)` primary key; expiry is checked on that row |
+| SCIM credential authentication and event subscriptions | `uq_scim_tokens_token_hash` and `scim_tokens_pkey` |
+| TOTP enrollment and verification | `ux_user_totp_credentials_tenant_user`; key rotation uses `ix_totp_key_rewrap` |
+| Module event history | `idx_runtime_module_state_events_occurred_at`; actor references retain `idx_runtime_module_state_events_actor_time` |
+| Pending audit delivery, in order | `idx_security_audit_events_pending_order` |
+| Authorization request/PAR replay fences | `idx_authorization_decision_request`, `idx_authorization_decision_par` |
+| Acknowledged authorization receipts past retention | `idx_authorization_decision_reclaim` |
+| Token receipts, refresh families/spent members, VCI/VP workflows and device/MFA approval expiry | Each table's deadline index, consumed by `security_state.rs` and its SQL cleanup functions |
+
+Runtime desired/instance updates do not maintain timestamp or state-search
+indexes: their reads use the same primary-key identities as their writes.
+This permits [heap-only updates](https://www.postgresql.org/docs/18/storage-hot.html)
+when an updated row fits on the same page and no indexed column changes.
+
+Index scan counters alone do not establish redundancy. An empty partial index
+can enforce uniqueness on the next insert; an audit delivery index can remain
+idle until a receiver is configured. Check its predicate, constraints, foreign
+key references and maintenance consumer before removing it. Measure live rows,
+dead tuples and relation sizes separately: a relation can retain reusable pages
+after rows are deleted, so its disk size is not a count of live credentials.
+
 ## Transient authorization wire changes
 
 Authorization-code payloads are stored as opaque JSON bytes. Lua changes only
@@ -98,7 +145,10 @@ claims, preserving JSON integers, decimals and nested arrays.
 Session keys use `oauth:session:v2:` and require the login authorization epoch.
 Upgrading from the unversioned session namespace requires a fresh login; old
 records expire under their existing TTL and are never reinterpreted with a
-fabricated epoch. Drain old server instances before switching traffic. Pending
+fabricated epoch. PostgreSQL accepts authorization decisions only through the
+epoch-bearing function; the older signature that read a new epoch from the
+account is removed. Drain old server instances before applying this migration
+and switching traffic. Pending
 authorization transactions from the earlier code-payload format must expire or
 restart during this rollout; do not run mixed writers against the same state.
 

@@ -376,7 +376,6 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_reject_security_audit_event_mutation(), \
                          public.nazo_security_audit_chain_head_for_update(), \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
-                         public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
                          public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB, BIGINT), \
                          public.nazo_cleanup_authorization_decisions(), \
                          public.nazo_stage_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
@@ -397,7 +396,6 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
-                         public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
                          public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB, BIGINT), \
                          public.nazo_cleanup_authorization_decisions(), \
                          public.nazo_lock_token_principals(UUID, UUID, BIGINT, UUID, BIGINT), \

@@ -675,7 +675,21 @@ local snapshot.
 
 ### Resource token presentation
 
-UserInfo verifies the access token and its audience, tenant, user subject type and `openid` scope before loading its authority and response snapshot. Its repository port receives the verified claims and reads JTI revocation, current principal activity and epochs, subject ownership, profile and client response facts in one fresh snapshot. Tokens with principal epochs require both epochs to match; legacy tokens retain individual JTI revocation and the adapter's existing ownership resolution. PostgreSQL can resolve a legacy subject from a retained issuance when no active reusable binding exists. UserInfo reads only the client activity, UserInfo JOSE metadata, JWKS source and validated security policy; unrelated registration and issuance metadata does not gate this protected-resource response. Its signed response audience comes from the verified client ID used by the snapshot lookup. The prepared request owns these facts, so response execution performs no second authority read. DPoP replay consumption and mTLS confirmation follow the valid snapshot; no claims are released before sender constraints pass.
+UserInfo performs three steps:
+
+1. Verify the access token, audience, tenant, user subject type and `openid` scope.
+2. Read JTI revocation, current principal activity and epochs, subject ownership,
+   profile and client response policy in one database snapshot. Both principal
+   epochs must match when the token carries them.
+3. Check DPoP replay and mTLS binding, then return the permitted claims. Response
+   execution uses the prepared snapshot without another authority read.
+
+The client projection contains activity, UserInfo JOSE metadata, the JWKS source
+and validated security policy. Unrelated registration and issuance metadata does
+not gate this response. A signed response uses the verified client ID as its
+audience. Legacy tokens retain individual JTI revocation and the adapter's
+ownership lookup; PostgreSQL can resolve their subject from a retained issuance
+when no active reusable subject binding exists.
 
 The neutral HTTP extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
 

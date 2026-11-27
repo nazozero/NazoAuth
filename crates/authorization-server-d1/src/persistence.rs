@@ -525,7 +525,20 @@ impl D1Provider {
         {
             return Err(AuthorizationPortError::CorruptData);
         }
-        let Some(client) = self.client_row(&input.client_id).await? else {
+        #[derive(Deserialize)]
+        struct ClientIdentity {
+            id: Uuid,
+        }
+        let Some(client) = self
+            .database
+            .query::<ClientIdentity>(
+                "SELECT id FROM nazo_clients WHERE tenant_id=?1 AND client_id=?2",
+                vec![json!(self.tenant_id), json!(input.client_id)],
+            )
+            .await?
+            .into_iter()
+            .next()
+        else {
             return Ok(Result::ClientUnavailable);
         };
         let grant_revision = if input.decision == AuthorizationDecisionKind::PromptNone {

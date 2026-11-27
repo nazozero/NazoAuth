@@ -11,4 +11,3 @@ Containerfile text eol=lf
 
 # Unified diff context lines retain a leading space, including blank context.
 perf/fixture/token-ip-quota.patch text eol=lf -whitespace
-perf/fixture/pool-locality.patch text eol=lf -whitespace
