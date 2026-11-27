@@ -44,7 +44,6 @@ uuid = { workspace = true, features = ["v7", "serde"] }
 
 [dev-dependencies]
 aes-gcm.workspace = true
-argon2.workspace = true
 ed25519-dalek.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 jsonwebtoken.workspace = true

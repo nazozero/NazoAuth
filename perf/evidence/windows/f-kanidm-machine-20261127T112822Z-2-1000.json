@@ -1,0 +1,278 @@
+{
+  "rate": 1000,
+  "warm_seconds": 10,
+  "seconds": 36,
+  "operations": {
+    "all": {
+      "planned": 36000,
+      "sent": 35999,
+      "not_sent": 1,
+      "completed_by_cutoff": 33740,
+      "in_flight_at_cutoff": 2259,
+      "success": 240,
+      "failed": 35759,
+      "successful_tps": 6.666666666666667,
+      "attainment": 0.006666666666666667,
+      "outcomes": {
+        "transport_error": 4205,
+        "timeout": 31482,
+        "http_error": 72,
+        "ok": 240,
+        "scheduler_late": 1
+      },
+      "http_status_counts": {
+        "0": 35687,
+        "400": 72,
+        "200": 240
+      },
+      "http_requests": 35999,
+      "http_rps": 999.9722222222222,
+      "scheduling_ms": {
+        "50": 0.650891,
+        "95": 1.348433,
+        "99": 1.459207,
+        "99.9": 1.508939,
+        "100": 2.236541
+      },
+      "response_all_ms": {
+        "50": 5000.818665,
+        "95": 5001.683575,
+        "99": 5001.92294,
+        "99.9": 5002.031487,
+        "100": 5002.275042
+      },
+      "response_success_ms": {
+        "50": 4817.055477,
+        "95": 4999.61883,
+        "99": 5000.600669,
+        "99.9": 5000.817504,
+        "100": 5000.817504
+      },
+      "offered_to_completion_success_ms": {
+        "50": 4817.542919,
+        "95": 5000.030021,
+        "99": 5001.509925,
+        "99.9": 5002.092663,
+        "100": 5002.092663
+      },
+      "in_flight_at_second_boundaries": [
+        999,
+        1999,
+        2999,
+        3569,
+        4568,
+        4570,
+        4570,
+        4221,
+        4652,
+        4652,
+        4652,
+        4133,
+        4483,
+        4483,
+        4483,
+        4319,
+        4838,
+        4838,
+        4838,
+        4838,
+        5000,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        4943,
+        4065,
+        3152,
+        2259
+      ]
+    },
+    "machine": {
+      "planned": 36000,
+      "sent": 35999,
+      "not_sent": 1,
+      "completed_by_cutoff": 33740,
+      "in_flight_at_cutoff": 2259,
+      "success": 240,
+      "failed": 35759,
+      "successful_tps": 6.666666666666667,
+      "attainment": 0.006666666666666667,
+      "outcomes": {
+        "transport_error": 4205,
+        "timeout": 31482,
+        "http_error": 72,
+        "ok": 240,
+        "scheduler_late": 1
+      },
+      "http_status_counts": {
+        "0": 35687,
+        "400": 72,
+        "200": 240
+      },
+      "http_requests": 35999,
+      "http_rps": 999.9722222222222,
+      "scheduling_ms": {
+        "50": 0.650891,
+        "95": 1.348433,
+        "99": 1.459207,
+        "99.9": 1.508939,
+        "100": 2.236541
+      },
+      "response_all_ms": {
+        "50": 5000.818665,
+        "95": 5001.683575,
+        "99": 5001.92294,
+        "99.9": 5002.031487,
+        "100": 5002.275042
+      },
+      "response_success_ms": {
+        "50": 4817.055477,
+        "95": 4999.61883,
+        "99": 5000.600669,
+        "99.9": 5000.817504,
+        "100": 5000.817504
+      },
+      "offered_to_completion_success_ms": {
+        "50": 4817.542919,
+        "95": 5000.030021,
+        "99": 5001.509925,
+        "99.9": 5002.092663,
+        "100": 5002.092663
+      },
+      "in_flight_at_second_boundaries": [
+        999,
+        1999,
+        2999,
+        3569,
+        4568,
+        4570,
+        4570,
+        4221,
+        4652,
+        4652,
+        4652,
+        4133,
+        4483,
+        4483,
+        4483,
+        4319,
+        4838,
+        4838,
+        4838,
+        4838,
+        5000,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        5001,
+        4943,
+        4065,
+        3152,
+        2259
+      ]
+    }
+  },
+  "app_crashed": false,
+  "app_oom": false,
+  "peer": "kanidm",
+  "flow": "machine",
+  "status": "FAIL",
+  "generator_slots": 8192,
+  "generator_profile": "base",
+  "generator_workers": 15,
+  "postgres_profile": "base",
+  "generator_sha256": "357a8ea751112a6606d14cfe4feea95ef50bafcc52646b216d01b4a9383309fb",
+  "invalid_reasons": [],
+  "slo_failing_operations": [
+    "all",
+    "machine"
+  ],
+  "resources": {
+    "app": {
+      "thread_observations": 234,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 556.22,
+      "mean_cpu_cores": 0.740219416055861,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 45951445,
+      "network_tx_bytes": 41278527,
+      "network_sample_seconds": 34.009,
+      "mean_rss_sum_mib": 491.04839409722223,
+      "peak_rss_sum_mib": 556.22265625,
+      "cpu_seconds": 26.647898978010993,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 0.8495752123938031
+    },
+    "generator": {
+      "thread_observations": 2996,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 416.28,
+      "mean_cpu_cores": 1.0985039367121994,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 41278550,
+      "network_tx_bytes": 45951187,
+      "network_sample_seconds": 34.01,
+      "mean_rss_sum_mib": 349.8396267361111,
+      "peak_rss_sum_mib": 416.28125,
+      "cpu_seconds": 39.54614172163918,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 2.155
+    }
+  },
+  "host_cpu_psi_pct": 1.1,
+  "shared_cgroup": {
+    "peak_memory_bytes": 9420161024,
+    "peak_rss_bytes": 1130233856,
+    "peak_cache_bytes": 8149606400,
+    "cpu_throttled_events": 0,
+    "cpu_throttled_ns": 0,
+    "block_read_bytes": 0,
+    "block_write_bytes": 1807941632,
+    "sample_seconds": 34.009
+  },
+  "host_cpu_psi_seconds": 34,
+  "host_pressure_pct": {
+    "io_some": 2.3367529411764707,
+    "io_full": 2.085629411764706,
+    "memory_some": 0.5896588235294118,
+    "memory_full": 0.09778235294117647
+  },
+  "host_cpu_utilization_pct": 9.16006758147978,
+  "app_cpu_wait_task_equivalent": 0.009340804088235295,
+  "other_cpu_wait_task_equivalent": 0.9917412020000003,
+  "app_cpu_seconds": 26.647898978010993,
+  "server_total_cpu_cores": 0.740219416055861,
+  "server_peak_rss_sum_mib": 556.22265625,
+  "tps_per_app_core": 9.006338555922943,
+  "cpu_microseconds_per_success": 111032.91240837914,
+  "role_placement": {
+    "app": {
+      "background_cores": 0.5700575522382566,
+      "physical_core_scheduler_wait": 0.009824668470588235,
+      "clear": true
+    },
+    "generator": {
+      "background_cores": 0.09784356317015352,
+      "physical_core_scheduler_wait": 0.0037114421470588236,
+      "clear": true
+    }
+  },
+  "role_placement_clear": true,
+  "assigned_background_cores": 0.5700575522382566,
+  "id": "f-kanidm-machine-20261127T112822Z-2-1000",
+  "scenario": "machine"
+}

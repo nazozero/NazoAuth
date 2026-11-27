@@ -422,18 +422,12 @@ impl nazo_auth::AuthorizationRepositoryPort for D1Provider {
         Box::pin(async move {
             self.client_row(client_id)
                 .await?
-                .map(|row| {
+                .map(|mut row| {
                     let client_epoch = row.epoch;
-                    let secret_salt = row
-                        .secret_digest
-                        .as_deref()
-                        .filter(|_| row.active != 0)
-                        .and_then(|digest| digest.strip_prefix("client-secret-v1:"))
-                        .and_then(|value| value.split_once(':'))
-                        .map(|(salt, _)| salt.to_owned());
+                    let secret_digest = row.secret_digest.take().filter(|_| row.active != 0);
                     Ok(nazo_auth::ClientAuthenticationSnapshot {
                         client_epoch,
-                        secret_salt,
+                        secret_digest,
                         client: row.into_domain()?,
                     })
                 })
@@ -460,15 +454,6 @@ impl nazo_auth::AuthorizationRepositoryPort for D1Provider {
                     AuthorizationPortError::Unexpected
                 }
             })
-        })
-    }
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        Box::pin(async move {
-            Ok(self.database.query::<Flag>("SELECT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND active=1 AND secret_digest=?3) AS value", vec![json!(self.tenant_id),json!(client_id),json!(candidate_digest)]).await?.first().is_some_and(|row| row.value != 0))
         })
     }
     fn grant<'a>(
@@ -523,6 +508,7 @@ impl D1Provider {
         self.require_tenant(input.tenant_id)?;
         if input.tenant_id.is_nil()
             || input.user_id.is_nil()
+            || input.user_epoch < 0
             || input.event_id.is_nil()
             || input.request_id.is_empty()
             || input.request_id.len() > 512
@@ -539,7 +525,20 @@ impl D1Provider {
         {
             return Err(AuthorizationPortError::CorruptData);
         }
-        let Some(client) = self.client_row(&input.client_id).await? else {
+        #[derive(Deserialize)]
+        struct ClientIdentity {
+            id: Uuid,
+        }
+        let Some(client) = self
+            .database
+            .query::<ClientIdentity>(
+                "SELECT id FROM nazo_clients WHERE tenant_id=?1 AND client_id=?2",
+                vec![json!(self.tenant_id), json!(input.client_id)],
+            )
+            .await?
+            .into_iter()
+            .next()
+        else {
             return Ok(Result::ClientUnavailable);
         };
         let grant_revision = if input.decision == AuthorizationDecisionKind::PromptNone {
@@ -636,9 +635,10 @@ impl D1Provider {
             json!(audit_payload),
             json!(input.occurred_at.as_microsecond()),
             json!(approve),
+            json!(input.user_epoch),
         ];
         let admission = format!(
-            "EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?3 AND active=1) AND EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND active=1) AND ?4>{NOW} AND (?5 IS NULL OR EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3 AND revision=?5)) AND NOT EXISTS(SELECT 1 FROM nazo_decisions WHERE tenant_id=?1 AND (request_hash=?6 OR (?7 IS NOT NULL AND par_hash=?7)))"
+            "EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?3 AND active=1) AND EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?1 AND id=?2 AND active=1 AND epoch=?12) AND ?4>{NOW} AND (?5 IS NULL OR EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3 AND revision=?5)) AND NOT EXISTS(SELECT 1 FROM nazo_decisions WHERE tenant_id=?1 AND (request_hash=?6 OR (?7 IS NOT NULL AND par_hash=?7)))"
         );
         // A reused event must hit UNIQUE and roll back, even when current
         // admission fails; only this batch's insert may authorize the writes.
@@ -671,7 +671,7 @@ impl D1Provider {
                 AND NOT EXISTS(SELECT 1 FROM nazo_grant_history_unknown WHERE tenant_id=?1 AND user_id=?2 AND client_id=?3 AND last_authorization_unknown<>0))))
             THEN 1 ELSE json('authorization decision effects were not accepted') END",
             vec![json!(self.tenant_id),json!(input.user_id),json!(client.id),json!(event),json!(request_hash),json!(par_hash),json!(input.retain_until.as_microsecond()),json!(grant_revision),json!(audit_payload),json!(input.occurred_at.as_microsecond()),json!(approve),json!(encode(&input.scopes)?),json!(encode(&input.resource_indicators)?),json!(encode(&input.authorization_details)?)]));
-        batch.push(Statement::new(format!("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?3 AND event_id=?1 AND event_type='authorization_decision') THEN 'committed' WHEN ?2<={NOW} THEN 'expired' WHEN NOT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?3 AND id=?4 AND active=1) OR NOT EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?3 AND id=?5 AND active=1) THEN 'client' WHEN ?6 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?3 AND user_id=?5 AND client_id=?4 AND revision=?6) THEN 'grant' ELSE 'conflict' END AS outcome"),vec![json!(event),json!(input.valid_until.as_microsecond()),json!(self.tenant_id),json!(client.id),json!(input.user_id),json!(grant_revision)]));
+        batch.push(Statement::new(format!("SELECT CASE WHEN EXISTS(SELECT 1 FROM nazo_audit WHERE tenant_id=?3 AND event_id=?1 AND event_type='authorization_decision') THEN 'committed' WHEN ?2<={NOW} THEN 'expired' WHEN NOT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?3 AND id=?4 AND active=1) THEN 'client' WHEN NOT EXISTS(SELECT 1 FROM nazo_users WHERE tenant_id=?3 AND id=?5 AND active=1 AND epoch=?7) THEN 'subject' WHEN ?6 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM nazo_grants WHERE tenant_id=?3 AND user_id=?5 AND client_id=?4 AND revision=?6) THEN 'grant' ELSE 'conflict' END AS outcome"),vec![json!(event),json!(input.valid_until.as_microsecond()),json!(self.tenant_id),json!(client.id),json!(input.user_id),json!(grant_revision),json!(input.user_epoch)]));
         let result = self.database.batch(batch).await?;
         match result
             .last()
@@ -682,6 +682,7 @@ impl D1Provider {
             Some("committed") => Ok(Result::Committed),
             Some("expired") => Ok(Result::Expired),
             Some("client") => Ok(Result::ClientUnavailable),
+            Some("subject") => Ok(Result::SubjectUnavailable),
             Some("grant") => Ok(Result::GrantUnavailable),
             Some("conflict") => Ok(Result::Conflict),
             _ => Err(AuthorizationPortError::CorruptData),

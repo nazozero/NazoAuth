@@ -4,7 +4,6 @@ use pre_authorized::PreAuthorizedFixture as _;
 #[path = "support/credential_response.rs"]
 mod credential_response;
 
-use argon2::{Argon2, PasswordHasher};
 #[path = "support/password.rs"]
 mod password;
 
@@ -1980,10 +1979,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     let pre_authorized_hash = blake3::hash(pre_authorized_code.as_bytes())
         .to_hex()
         .to_string();
-    let tx_code_hash = Argon2::default()
-        .hash_password_with_salt(b"2468", b"0123456789abcdef")
-        .unwrap()
-        .to_string();
+    let tx_code = rand::random_range(1000..=9999).to_string();
+    let tx_code_hash =
+        nazo_crypto::password::hash_argon2id(tx_code.as_bytes(), 19_456, 2, 1).unwrap();
     let pre_authorized_offer = StoredCredentialOffer {
         id: Uuid::now_v7(),
         tenant_id,
@@ -2029,7 +2027,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         .consume_offer_with_access(
             tenant_id,
             &pre_authorized_hash,
-            Some("2468"),
+            Some(&tx_code),
             "boundary-wallet",
             Timestamp::now(),
         )
@@ -2042,7 +2040,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .consume_offer_with_access(
                 tenant_id,
                 &pre_authorized_hash,
-                Some("2468"),
+                Some(&tx_code),
                 "boundary-wallet",
                 Timestamp::now(),
             )

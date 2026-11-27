@@ -486,8 +486,7 @@ pub async fn token_authorization_code_with_service(
             return Err(sender_constraint_multiple_error());
         }
     };
-    let dpop_jkt = sender.dpop_jkt;
-    let mtls_x5t_s256 = sender.mtls_x5t_s256;
+    let (dpop_jkt, mtls_x5t_s256) = sender.into_parts();
     let code_identity = authorization_code_identity(&code_hash);
     let holder = FreshCodeHolderFacts {
         client_authentication: if client.client_type == "confidential"
@@ -588,9 +587,8 @@ pub async fn token_authorization_code_with_service(
                 ));
             }
             Ok(AuthorizationCodeConsumption::Busy) => {
-                // A leased entry can outlive its commit when the post-commit
-                // cleanup raced; the durable fence decides whether this is a
-                // completed redemption replay or a genuinely in-flight grant.
+                // The durable receipt distinguishes an in-flight lease from
+                // a completed redemption until the original cache TTL expires.
                 if let Some(redemption) = committed_single_use_redemption(
                     token_service,
                     client,

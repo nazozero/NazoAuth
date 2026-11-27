@@ -22,6 +22,7 @@ pub struct WorkerConfiguration {
     pub modules: Vec<ModuleId>,
     #[serde(default)]
     pub machine_only: bool,
+    pub audit_client_credentials_issuance: Option<bool>,
     #[serde(default)]
     pub passkey_only: bool,
     #[serde(default)]
@@ -202,6 +203,9 @@ impl WorkerConfiguration {
         let mut settings =
             nazoauth::config::Configuration::new(self.tenant, &self.issuer, client_secret_pepper)?;
         settings.protocol.deployment_profile = profile;
+        if let Some(enabled) = self.audit_client_credentials_issuance {
+            settings.protocol.audit_client_credentials_issuance = enabled;
+        }
         settings.protocol.backchannel_logout_supported = !self.services.outbound_origins.is_empty();
         ensure!(
             !self.services.mtls || self.ingress == Ingress::DirectCloudflare,

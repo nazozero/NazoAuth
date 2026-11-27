@@ -249,15 +249,12 @@ impl OAuthClientRepository {
             .collect())
     }
 
-    /// Loads the client row together with the salt derived from its stored
-    /// secret verifier so authentication needs no second metadata read. The
-    /// salt stays `None` for inactive clients and for verifiers that do not
-    /// use the versioned salted format.
+    /// Reads client policy, secret verifier and epoch in the same snapshot.
     pub async fn authentication_snapshot(
         &self,
         tenant_id: Uuid,
         client_id: &str,
-    ) -> Result<Option<(OAuthClient, Option<String>, i64)>, RepositoryError> {
+    ) -> Result<Option<nazo_auth::ClientAuthenticationSnapshot>, RepositoryError> {
         let client_id = client_id.to_owned();
         self.pool
             .read(move |connection| {
@@ -267,7 +264,10 @@ impl OAuthClientRepository {
                         .filter(oauth_clients::client_id.eq(client_id))
                         .select((
                             OAuthClientRecord::as_select(),
-                            (ClientSecretSalt, oauth_clients::access_token_epoch),
+                            (
+                                oauth_clients::client_secret_hash,
+                                oauth_clients::access_token_epoch,
+                            ),
                         ))
                         .first::<(OAuthClientRecord, (Option<String>, i64))>(connection)
                         .await
@@ -277,10 +277,13 @@ impl OAuthClientRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?
             .map_err(map_error)?
-            .map(|(record, (secret_salt, epoch))| {
-                record
-                    .into_domain()
-                    .map(|client| (client, secret_salt, epoch))
+            .map(|(record, (secret_digest, client_epoch))| {
+                let client = record.into_domain()?;
+                Ok(nazo_auth::ClientAuthenticationSnapshot {
+                    secret_digest: secret_digest.filter(|_| client.is_active),
+                    client,
+                    client_epoch,
+                })
             })
             .transpose()
     }

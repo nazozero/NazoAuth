@@ -60,7 +60,7 @@ pub struct Ports {
     pub assertion_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
     pub ciba_request_replay: Mutex<Option<Result<bool, AuthorizationPortError>>>,
     pub ciba_replay_delay_ms: AtomicU64,
-    pub client_secret: Mutex<Option<(String, String)>>,
+    pub client_secret: Mutex<Option<String>>,
     pub par_rate: Mutex<Option<Result<u64, AuthorizationPortError>>>,
     pub par_write: Mutex<Option<Result<(), AuthorizationPortError>>>,
     pub stored_par: Mutex<Vec<(String, PushedAuthorizationRequest, u64)>>,
@@ -169,37 +169,15 @@ impl AuthorizationRepositoryPort for Ports {
     ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientAuthenticationSnapshot>> {
         self.record("client");
         let client = self.client.clone();
-        let salt = self
-            .client_secret
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|secret| secret.0.clone());
+        let secret_digest = self.client_secret.lock().unwrap().clone();
         Box::pin(async move {
             client.map(|client| {
                 client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
                     client_epoch: 0,
                     client,
-                    secret_salt: salt,
+                    secret_digest,
                 })
             })
-        })
-    }
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        _client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        self.record("secret_digest");
-        Box::pin(async move {
-            Ok(self
-                .client_secret
-                .lock()
-                .unwrap()
-                .as_ref()
-                .expect("secret lookup must be configured")
-                .1
-                == candidate_digest)
         })
     }
 }

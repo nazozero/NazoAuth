@@ -146,6 +146,7 @@ fn current_session_profile_reads_real_account_and_tenant_user_grant_count() {
                 .commit_decision(AuthorizationDecisionCommit {
                     tenant_id: TENANT,
                     user_id: USER,
+                    user_epoch: 0,
                     client_id: "client".into(),
                     request_id: Uuid::new_v4().to_string(),
                     pushed_request_uri: None,

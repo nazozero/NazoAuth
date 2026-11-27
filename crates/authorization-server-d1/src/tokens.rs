@@ -2,17 +2,35 @@ use crate::{
     D1Provider,
     db::{DbError, Statement},
     persistence::{Flag, NOW, digest, encode, timestamp},
-    rows::ClientRow,
 };
 use jiff::Timestamp;
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, PreparedTokenSubject, RefreshToken,
     RefreshTokenCommit, RefreshTokenSnapshot, SingleUseRedemption, TokenFuture, TokenPortError,
-    TokenPrincipalState, TokenRepositoryPort, UserinfoSnapshot, UserinfoSubjectRef,
+    TokenPrincipalState, TokenRepositoryPort, UserinfoClient, UserinfoSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+#[derive(Deserialize)]
+struct UserinfoRegistration {
+    client_id: String,
+    userinfo_signed_response_alg: Option<String>,
+    userinfo_encrypted_response_alg: Option<String>,
+    userinfo_encrypted_response_enc: Option<String>,
+    jwks_uri: Option<String>,
+    jwks: Option<std::sync::Arc<Value>>,
+    security_policy: nazo_auth::ClientSecurityPolicy,
+}
+
+#[derive(Deserialize)]
+struct UserinfoRow {
+    user_id: Uuid,
+    claims: String,
+    client_active: Option<i64>,
+    client_registration: Option<String>,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Member {
@@ -215,6 +233,22 @@ impl D1Provider {
     }
 }
 impl TokenRepositoryPort for D1Provider {
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        Box::pin(async move {
+            self.require_tenant(tenant_id)?;
+            let row = self.database.query::<Flag>(
+                "SELECT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND active=1 AND epoch=?3) AS value",
+                vec![json!(tenant_id), json!(client_id), json!(epoch)],
+            ).await?;
+            Ok(row.first().ok_or(TokenPortError::CorruptData)?.value != 0)
+        })
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -270,51 +304,69 @@ impl TokenRepositoryPort for D1Provider {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a nazo_auth::Claims,
     ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
         Box::pin(async move {
             self.require_tenant(tenant_id)?;
-            let (user, subject) = match subject {
-                UserinfoSubjectRef::UserId(id) => (Some(id), None),
-                UserinfoSubjectRef::AccessToken { subject, .. } => (None, Some(subject)),
+            if Uuid::parse_str(&verified_claims.tenant_id).ok() != Some(tenant_id)
+                || verified_claims.subject_type != "user"
+            {
+                return Ok(None);
+            }
+            let legacy = match (verified_claims.client_epoch, verified_claims.user_epoch) {
+                (None, None) => true,
+                (Some(client), Some(user)) if client >= 0 && user >= 0 => false,
+                _ => return Ok(None),
             };
-            // Both projections are read in one D1 transaction. Missing client and missing subject remain distinct.
-            let mut result=self.database.batch(vec![Statement::new("SELECT id,claims FROM nazo_users WHERE tenant_id=?1 AND id=COALESCE(?2,(SELECT user_id FROM nazo_subjects WHERE tenant_id=?1 AND subject=?3)) AND active=1",vec![json!(self.tenant_id),json!(user),json!(subject)]),Statement::new("SELECT * FROM nazo_clients WHERE tenant_id=?1 AND client_id=?2",vec![json!(self.tenant_id),json!(client_id)])]).await?.into_iter();
-            let Some(row) = result
-                .next()
-                .ok_or(TokenPortError::CorruptData)?
-                .rows
-                .into_iter()
-                .next()
-            else {
+            let user = match verified_claims.user_id.as_deref().map(Uuid::parse_str) {
+                Some(Ok(user)) => Some(user),
+                Some(Err(_)) if !legacy => return Ok(None),
+                _ => None,
+            };
+            // D1 stores reusable subject bindings; no issuance ownership row is
+            // needed for its tokens. All current authority and response facts
+            // come from this one statement snapshot.
+            let Some(row) = self.database.query::<UserinfoRow>(
+                "SELECT u.id AS user_id,u.claims, \
+                 c.active AS client_active,c.registration AS client_registration \
+                 FROM nazo_users u LEFT JOIN nazo_clients c ON c.tenant_id=u.tenant_id AND c.client_id=?4 \
+                 WHERE u.tenant_id=?1 AND u.id=COALESCE(?2,(SELECT user_id FROM nazo_subjects WHERE tenant_id=?1 AND subject=?3)) AND u.active=1 \
+                 AND NOT EXISTS(SELECT 1 FROM nazo_revocations WHERE tenant_id=?1 AND jti_hash=?5) \
+                 AND (?6 OR (c.active=1 AND c.epoch=?7 AND u.epoch=?8))",
+                vec![json!(self.tenant_id),json!(user),json!(verified_claims.sub),
+                    json!(verified_claims.client_id),json!(digest(&verified_claims.jti)),
+                    json!(legacy),json!(verified_claims.client_epoch),json!(verified_claims.user_epoch)],
+            ).await?.into_iter().next() else {
                 return Ok(None);
             };
-            #[derive(Deserialize)]
-            struct SubjectRow {
-                id: Uuid,
-                claims: String,
-            }
-            let row: SubjectRow =
-                serde_json::from_value(row).map_err(|_| TokenPortError::CorruptData)?;
             let subject: nazo_identity::SubjectClaims =
                 serde_json::from_str(&row.claims).map_err(|_| TokenPortError::CorruptData)?;
-            if subject.subject.as_uuid() != row.id {
+            if subject.subject.as_uuid() != row.user_id {
                 return Err(TokenPortError::CorruptData);
             }
-            let client = result
-                .next()
-                .ok_or(TokenPortError::CorruptData)?
-                .rows
-                .into_iter()
-                .next()
-                .map(|row| {
-                    serde_json::from_value::<ClientRow>(row)
-                        .map_err(|_| TokenPortError::CorruptData)?
-                        .into_domain()
-                        .map_err(TokenPortError::from)
+            let client = if let Some(registration) = row.client_registration {
+                let active = row.client_active.ok_or(TokenPortError::CorruptData)?;
+                let registration: UserinfoRegistration =
+                    serde_json::from_str(&registration).map_err(|_| TokenPortError::CorruptData)?;
+                if registration.client_id != verified_claims.client_id {
+                    return Err(TokenPortError::CorruptData);
+                }
+                registration
+                    .security_policy
+                    .validate()
+                    .map_err(|_| TokenPortError::CorruptData)?;
+                Some(UserinfoClient {
+                    is_active: active != 0,
+                    signed_response_alg: registration.userinfo_signed_response_alg,
+                    encrypted_response_alg: registration.userinfo_encrypted_response_alg,
+                    encrypted_response_enc: registration.userinfo_encrypted_response_enc,
+                    jwks_uri: registration.jwks_uri,
+                    jwks: registration.jwks,
+                    require_fapi2: registration.security_policy.requires_fapi2_security(),
                 })
-                .transpose()?;
+            } else {
+                None
+            };
             Ok(Some(UserinfoSnapshot { subject, client }))
         })
     }

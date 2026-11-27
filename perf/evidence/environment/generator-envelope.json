@@ -1,0 +1,174 @@
+{
+  "http": {
+    "highest_confirmed": 48000,
+    "qualified_capacity_target": 24000,
+    "observations": {
+      "12000": [
+        {
+          "round": "round-0",
+          "passed": true,
+          "scheduler_p99_ms": 2.232761,
+          "achieved": 0.9998083333333333,
+          "send_count": 155977,
+          "reference_count": 155977,
+          "generator_cores": 0.6,
+          "host_cpu_psi_pct": 0.24
+        },
+        {
+          "round": "round-1",
+          "passed": true,
+          "scheduler_p99_ms": 2.120187,
+          "achieved": 0.9998083333333333,
+          "send_count": 155977,
+          "reference_count": 155977,
+          "generator_cores": 0.54,
+          "host_cpu_psi_pct": 0.13
+        },
+        {
+          "round": "round-2",
+          "passed": true,
+          "scheduler_p99_ms": 1.886746,
+          "achieved": 0.9999666666666667,
+          "send_count": 155996,
+          "reference_count": 155996,
+          "generator_cores": 0.43,
+          "host_cpu_psi_pct": 0.05
+        }
+      ],
+      "24000": [
+        {
+          "round": "round-0",
+          "passed": true,
+          "scheduler_p99_ms": 1.333211,
+          "achieved": 0.9999458333333333,
+          "send_count": 311987,
+          "reference_count": 311987,
+          "generator_cores": 1.2,
+          "host_cpu_psi_pct": 0.3
+        },
+        {
+          "round": "round-1",
+          "passed": true,
+          "scheduler_p99_ms": 2.274116,
+          "achieved": 0.9998541666666667,
+          "send_count": 310213,
+          "reference_count": 310213,
+          "generator_cores": 1.18,
+          "host_cpu_psi_pct": 0.15
+        },
+        {
+          "round": "round-2",
+          "passed": true,
+          "scheduler_p99_ms": 2.240564,
+          "achieved": 0.99995,
+          "send_count": 311133,
+          "reference_count": 311133,
+          "generator_cores": 1.18,
+          "host_cpu_psi_pct": 0.17
+        }
+      ],
+      "48000": [
+        {
+          "round": "round-0",
+          "passed": true,
+          "scheduler_p99_ms": 2.309205,
+          "achieved": 0.9998270833333334,
+          "send_count": 619132,
+          "reference_count": 619132,
+          "generator_cores": 2.31,
+          "host_cpu_psi_pct": 0.43
+        },
+        {
+          "round": "round-1",
+          "passed": true,
+          "scheduler_p99_ms": 2.290637,
+          "achieved": 0.9998708333333334,
+          "send_count": 618942,
+          "reference_count": 618942,
+          "generator_cores": 2.24,
+          "host_cpu_psi_pct": 0.41
+        },
+        {
+          "round": "round-2",
+          "passed": true,
+          "scheduler_p99_ms": 2.312589,
+          "achieved": 0.9996,
+          "send_count": 618415,
+          "reference_count": 618415,
+          "generator_cores": 2.24,
+          "host_cpu_psi_pct": 0.38
+        }
+      ]
+    }
+  },
+  "tls": {
+    "highest_confirmed": 24000,
+    "qualified_capacity_target": 12000,
+    "observations": {
+      "12000": [
+        {
+          "round": "round-0",
+          "passed": true,
+          "scheduler_p99_ms": 1.239422,
+          "achieved": 1.0,
+          "send_count": 155764,
+          "reference_count": 155764,
+          "generator_cores": 0.54,
+          "host_cpu_psi_pct": 0.43
+        },
+        {
+          "round": "round-1",
+          "passed": true,
+          "scheduler_p99_ms": 2.207587,
+          "achieved": 0.9999333333333333,
+          "send_count": 155322,
+          "reference_count": 155322,
+          "generator_cores": 0.58,
+          "host_cpu_psi_pct": 0.09
+        },
+        {
+          "round": "round-2",
+          "passed": true,
+          "scheduler_p99_ms": 1.208024,
+          "achieved": 0.99995,
+          "send_count": 155522,
+          "reference_count": 155522,
+          "generator_cores": 0.53,
+          "host_cpu_psi_pct": 0.12
+        }
+      ],
+      "24000": [
+        {
+          "round": "round-0",
+          "passed": true,
+          "scheduler_p99_ms": 2.370857,
+          "achieved": 0.9998083333333333,
+          "send_count": 308911,
+          "reference_count": 308911,
+          "generator_cores": 1.19,
+          "host_cpu_psi_pct": 0.4
+        },
+        {
+          "round": "round-1",
+          "passed": true,
+          "scheduler_p99_ms": 2.390085,
+          "achieved": 0.999875,
+          "send_count": 306955,
+          "reference_count": 306955,
+          "generator_cores": 1.11,
+          "host_cpu_psi_pct": 0.28
+        },
+        {
+          "round": "round-2",
+          "passed": true,
+          "scheduler_p99_ms": 1.457377,
+          "achieved": 0.9999791666666666,
+          "send_count": 309850,
+          "reference_count": 309850,
+          "generator_cores": 1.11,
+          "host_cpu_psi_pct": 0.13
+        }
+      ]
+    }
+  }
+}

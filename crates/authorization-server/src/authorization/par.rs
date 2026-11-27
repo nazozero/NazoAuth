@@ -47,7 +47,7 @@ pub struct PreparedParClient<'a> {
     client_id: String,
     decrypted_request_object: Option<DecryptedRequestObject>,
     client: ClientRow,
-    secret_salt: Option<String>,
+    secret_digest: Option<String>,
     credentials: PresentedClientCredentials,
 }
 pub struct ParRequestFacts<'a> {
@@ -213,13 +213,13 @@ impl<'a> PreparedParParameters<'a> {
         if has_basic && credentials.method != "client_secret_basic" {
             return Err(OAuthEndpointError::invalid_client("客户端认证失败.", true));
         }
-        let (client, secret_salt) = match context
+        let (client, secret_digest) = match context
             .service
             .client_authentication_snapshot(&client_id)
             .await
         {
             Ok(Some(snapshot)) if snapshot.client.is_active => {
-                (snapshot.client, snapshot.secret_salt)
+                (snapshot.client, snapshot.secret_digest)
             }
             Ok(_) => {
                 return Err(OAuthEndpointError::invalid_client(
@@ -242,7 +242,7 @@ impl<'a> PreparedParParameters<'a> {
             client_id,
             decrypted_request_object,
             client,
-            secret_salt,
+            secret_digest,
             credentials,
         })
     }
@@ -259,7 +259,7 @@ impl PreparedParClient<'_> {
             client_id,
             decrypted_request_object,
             mut client,
-            secret_salt,
+            secret_digest,
             credentials,
         } = self;
         let context = &context;
@@ -353,7 +353,7 @@ impl PreparedParClient<'_> {
                 &mut client,
                 &credentials,
                 nazo_auth::ClientAuthenticationContext::AllowPublicNone,
-                secret_salt.as_deref(),
+                secret_digest.as_deref(),
             )
             .await
             {

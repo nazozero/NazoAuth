@@ -395,6 +395,6 @@ async fn token_signing_and_userinfo_execute_through_semantic_ports() {
         revoked
             .prepare(AccessTokenAuthScheme::Bearer, issued.token)
             .await,
-        Err(UserinfoError::RevokedAccessToken),
+        Err(UserinfoError::InvalidAccessToken),
     ));
 }

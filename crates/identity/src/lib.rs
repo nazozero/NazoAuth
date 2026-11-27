@@ -74,8 +74,8 @@ pub use registration::{
     RegistrationServiceConfig, SendVerificationCodeError, SendVerificationCodeOutcome,
 };
 pub use session::{
-    CurrentSession, SessionId, SessionResolution, SessionRotation, SessionRotationOutcome,
-    SessionService, SessionSnapshot, SessionUpdateOutcome, SessionVersion,
+    AuthorizationSessionEvidence, CurrentSession, SessionId, SessionResolution, SessionRotation,
+    SessionRotationOutcome, SessionService, SessionSnapshot, SessionUpdateOutcome, SessionVersion,
 };
 pub use tenancy::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OrganizationId, RealmId,

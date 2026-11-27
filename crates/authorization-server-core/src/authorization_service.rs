@@ -68,6 +68,8 @@ impl AuthorizationDecisionKind {
 pub struct AuthorizationDecisionCommit {
     pub tenant_id: Uuid,
     pub user_id: Uuid,
+    /// Browser authentication generation, checked under the commit's account fence.
+    pub user_epoch: i64,
     pub client_id: String,
     pub request_id: String,
     pub pushed_request_uri: Option<String>,
@@ -88,6 +90,7 @@ pub enum AuthorizationDecisionCommitResult {
     Conflict,
     Expired,
     ClientUnavailable,
+    SubjectUnavailable,
     GrantUnavailable,
 }
 
@@ -311,15 +314,14 @@ pub enum AuthorizationRateDimension {
     TokenManagement,
 }
 
-/// Client metadata together with the salt derived from its stored secret
-/// verifier. Authentication loads both in one read; `secret_salt` is absent
-/// when the client has no usable secret verifier or is inactive.
-#[derive(Clone, Debug)]
+/// Tenant-scoped client metadata and stored secret verifier observed in one read.
+#[derive(Clone)]
 pub struct ClientAuthenticationSnapshot {
     /// Version observed with the authenticated client; issuance rechecks it under lock.
     pub client_epoch: i64,
     pub client: OAuthClient,
-    pub secret_salt: Option<String>,
+    /// Absent for inactive clients or clients without a secret.
+    pub secret_digest: Option<String>,
 }
 
 pub trait AuthorizationRepositoryPort: Send + Sync {
@@ -355,11 +357,6 @@ pub trait AuthorizationRepositoryPort: Send + Sync {
         user_id: Uuid,
         client_id: Uuid,
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>>;
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool>;
 }
 
 pub trait AuthorizationStateStorePort: Send + Sync {
@@ -741,16 +738,6 @@ where
         self.repository.mtls_trust_anchor_bundle(client_id).await
     }
 
-    pub async fn client_secret_digest_matches(
-        &self,
-        client_id: Uuid,
-        candidate: &str,
-    ) -> Result<bool, AuthorizationPortError> {
-        self.repository
-            .client_secret_digest_matches(client_id, candidate)
-            .await
-    }
-
     pub async fn grant_covers(
         &self,
         user_id: Uuid,
@@ -777,7 +764,9 @@ where
         mut input: AuthorizationDecisionCommit,
         code: Option<PreparedAuthorizationCode>,
     ) -> Result<AuthorizationDecisionCommitResult, AuthorizationPortError> {
-        if (input.decision == AuthorizationDecisionKind::Deny) != code.is_none() {
+        if input.user_epoch < 0
+            || (input.decision == AuthorizationDecisionKind::Deny) != code.is_none()
+        {
             return Err(AuthorizationPortError::CorruptData);
         }
         if let Some(code) = code.as_ref() {

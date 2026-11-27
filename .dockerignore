@@ -30,3 +30,6 @@ deploy/cloudflare/
 *.swo
 Thumbs.db
 Desktop.ini
+
+perf/.work/
+perf/evidence/

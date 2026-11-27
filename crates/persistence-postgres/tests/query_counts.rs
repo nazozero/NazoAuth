@@ -35,7 +35,7 @@ use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
     OAuthClient, RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
-    TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef, ValidatedClientRegistration,
+    TokenRepositoryPort, TokenRevocation, ValidatedClientRegistration,
 };
 use nazo_digital_credentials::CredentialFormat;
 use nazo_identity::{AccessRequestStatus, TenantContext, TenantId, UserId};
@@ -53,6 +53,210 @@ use uuid::Uuid;
 
 /// Serializes DB-active fixture mutations in this file.
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[tokio::test]
+async fn single_use_receipt_reuses_statement_without_reusing_authority_or_deadlines() {
+    let _serial = SERIAL.lock().await;
+    let url = database_url().expect("isolated PostgreSQL required");
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let first = seed_principal(&url, tenant).await;
+    let second = seed_principal(&url, tenant).await;
+    let pool = create_pool(&url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
+    let mut committed = Vec::new();
+    for (index, seed) in [&first, &second, &second, &first].into_iter().enumerate() {
+        let mut input = refresh_issuance(new_refresh_token(
+            seed,
+            tenant_id,
+            Uuid::now_v7(),
+            format!("receipt-cache-{}", Uuid::now_v7()),
+            None,
+            None,
+        ))
+        .await;
+        let namespace = if index % 2 == 0 {
+            "authorization_code:v2"
+        } else {
+            "single_use"
+        };
+        let key = format!("{namespace}:cache-{}", Uuid::now_v7());
+        let deadline = Timestamp::from_second(Timestamp::now().as_second()).unwrap()
+            + SignedDuration::from_secs(90 + index as i64 * 600);
+        let holder = if index % 2 == 0 {
+            Some(
+                nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
+                    nazo_auth::AuthorizationCodeClientAuthentication::Authenticated,
+                    Some(format!("verified-pkce-{index}")),
+                    Some(format!("verified-dpop-{index}")),
+                    None,
+                    None,
+                )
+                .unwrap(),
+            )
+        } else {
+            input.refresh_token = None;
+            None
+        };
+        input.mode = match holder.clone() {
+            Some(holder) => TokenIssuanceMode::AuthorizationCode {
+                code_identity: key.clone(),
+                grant_expires_at: deadline,
+                holder,
+            },
+            None => TokenIssuanceMode::SingleUse {
+                grant_key: key.clone(),
+                grant_expires_at: deadline,
+            },
+        };
+        assert_eq!(
+            repository
+                .commit_token_issuance(input.clone())
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        let receipt = repository
+            .single_use_redemption(tenant_id, seed.client.id, &key)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(receipt.access_token_jti, input.access_token_jti);
+        assert_eq!(
+            receipt.access_token_expires_at.as_second(),
+            input.access_token_expires_at
+        );
+        assert_eq!(receipt.authorization_code_holder, holder);
+        assert_eq!(
+            receipt.refresh_token_family_id,
+            input
+                .refresh_token
+                .as_ref()
+                .map(nazo_auth::RefreshTokenCommit::family_id)
+        );
+        #[derive(diesel::QueryableByName)]
+        struct ReceiptState {
+            #[diesel(sql_type = sql_types::Timestamptz)]
+            #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+            retain_until: Timestamp,
+            #[diesel(sql_type = sql_types::Bool)]
+            epoch_bound_without_legacy_owner: bool,
+        }
+        let mut connection = get_conn(&pool).await.unwrap();
+        let stored = sql_query("SELECT retain_until, principal_epoch_bound AND user_id IS NULL AND receipt_contract_version=2 AS epoch_bound_without_legacy_owner FROM oauth_token_issuances WHERE tenant_id=$1 AND issuance_id=$2")
+            .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(input.issuance_id)
+            .get_result::<ReceiptState>(&mut connection).await.unwrap();
+        let acceptance = Timestamp::from_second(input.access_token_expires_at).unwrap()
+            + SignedDuration::from_secs(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+        assert_eq!(stored.retain_until, acceptance.max(deadline));
+        assert!(stored.epoch_bound_without_legacy_owner);
+        drop(connection);
+        committed.push((key, input));
+    }
+    let (key, winner) = &committed[0];
+    let mut stale = winner.clone();
+    stale.principal_state.client_epoch += 1;
+    assert_eq!(
+        repository.commit_token_issuance(stale).await.unwrap(),
+        CommitTokenIssuanceResult::ClientInactive,
+        "principal rejection precedes a duplicate receipt"
+    );
+    let stale_key = format!("single_use:stale-{}", Uuid::now_v7());
+    let mut stale_subject = winner.clone();
+    stale_subject.issuance_id = Uuid::now_v7();
+    stale_subject.access_token_jti = stale_subject.issuance_id.to_string();
+    stale_subject.principal_state.user_epoch = Some(i64::MAX);
+    stale_subject.mode = TokenIssuanceMode::SingleUse {
+        grant_key: stale_key.clone(),
+        grant_expires_at: Timestamp::now() + SignedDuration::from_mins(2),
+    };
+    assert_eq!(
+        repository
+            .commit_token_issuance(stale_subject)
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::SubjectInactive
+    );
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, first.client.id, &stale_key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut duplicate = winner.clone();
+    duplicate.issuance_id = Uuid::now_v7();
+    duplicate.access_token_jti = duplicate.issuance_id.to_string();
+    duplicate.refresh_token = None;
+    assert_eq!(
+        repository.commit_token_issuance(duplicate).await.unwrap(),
+        CommitTokenIssuanceResult::AlreadyUsed
+    );
+    assert_eq!(
+        repository
+            .single_use_redemption(tenant_id, first.client.id, key)
+            .await
+            .unwrap()
+            .unwrap()
+            .access_token_jti,
+        winner.access_token_jti
+    );
+
+    let mut expired = winner.clone();
+    expired.issuance_id = Uuid::now_v7();
+    expired.access_token_jti = expired.issuance_id.to_string();
+    expired.refresh_token = None;
+    let expired_key = format!("receipt-cache-expired-{}", Uuid::now_v7());
+    expired.mode = TokenIssuanceMode::SingleUse {
+        grant_key: expired_key.clone(),
+        grant_expires_at: Timestamp::now() - SignedDuration::from_secs(1),
+    };
+    assert_eq!(
+        repository
+            .commit_token_issuance(expired.clone())
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::GrantExpired
+    );
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, first.client.id, &expired_key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    expired.mode = TokenIssuanceMode::SingleUse {
+        grant_key: expired_key,
+        grant_expires_at: Timestamp::now() + SignedDuration::from_mins(2),
+    };
+    assert_eq!(
+        repository.commit_token_issuance(expired).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+
+    #[derive(diesel::QueryableByName)]
+    struct CacheState {
+        #[diesel(sql_type = sql_types::BigInt)]
+        statements: i64,
+        #[diesel(sql_type = sql_types::BigInt)]
+        executions: i64,
+        #[diesel(sql_type = sql_types::Bool)]
+        parameter_types_match: bool,
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    let cache = sql_query("SELECT count(*) AS statements, coalesce(sum(generic_plans+custom_plans),0)::bigint AS executions, coalesce(bool_and(parameter_types=ARRAY['uuid'::regtype,'uuid'::regtype,'bigint'::regtype,'uuid'::regtype,'bigint'::regtype,'uuid'::regtype,'uuid'::regtype,'uuid'::regtype,'bytea'::regtype,'text'::regtype,'timestamptz'::regtype,'timestamptz'::regtype,'uuid'::regtype,'jsonb'::regtype,'timestamptz'::regtype]),false) AS parameter_types_match FROM pg_prepared_statements WHERE statement LIKE 'WITH fence AS MATERIALIZED (%INSERT INTO oauth_token_issuances (%'")
+        .get_result::<CacheState>(&mut connection).await.unwrap();
+    assert_eq!(
+        cache.statements, 1,
+        "one receipt shape must survive changing authority and an expired rollback"
+    );
+    assert_eq!(cache.executions, 9);
+    assert!(cache.parameter_types_match);
+    drop(connection);
+    cleanup_seed(&url, tenant, &first).await;
+    cleanup_seed(&url, tenant, &second).await;
+}
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -837,9 +1041,7 @@ async fn rv09_revoke_issued_tokens_short_circuits_without_a_family() {
 // CA-01: authentication snapshot
 // ---------------------------------------------------------------------------
 
-/// CA-01: `authentication_snapshot` reads the client row and derives the
-/// secret salt in one SELECT — the salt split happens in SQL, not in a second
-/// round trip.
+/// CA-01: the client row, secret verifier and epoch come from one SELECT.
 #[tokio::test]
 async fn ca01_authentication_snapshot_is_single_combined_read() {
     let _serial = SERIAL.lock().await;
@@ -861,19 +1063,16 @@ async fn ca01_authentication_snapshot_is_single_combined_read() {
     )
     .await;
 
-    let (client, salt, epoch) = result
+    let snapshot = result
         .expect("snapshot query should succeed")
         .expect("the seeded client must produce a snapshot");
-    assert_eq!(client.client_id, seed.client.client_id);
+    assert_eq!(snapshot.client.client_id, seed.client.client_id);
     assert_eq!(
-        salt.as_deref(),
-        Some(format!("qc-salt-{}", seed.client.id).as_str()),
-        "the salt must be derived inside the same SELECT"
+        snapshot.secret_digest.as_deref(),
+        Some(format!("client-secret-v1:qc-salt-{}:qc-digest", seed.client.id).as_str())
     );
-    assert_eq!(epoch, 0, "the client version is part of the same snapshot");
-    // 1 data statement: SELECT oauth_clients row plus
-    // split_part(client_secret_hash, ':', 2) as a computed column. No
-    // transaction is opened for a read-only snapshot.
+    assert_eq!(snapshot.client_epoch, 0);
+    // A single read with no explicit transaction.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_clean(delta);
@@ -1445,11 +1644,22 @@ async fn oidc_subject_preparation_reads_claims_epoch_and_binding_once() {
 // UI-01: userinfo snapshot
 // ---------------------------------------------------------------------------
 
-/// UI-01: `userinfo_snapshot` joins the subject row to the client row in a
-/// single SELECT for both subject reference kinds — direct user id, and
-/// non-public subject resolved through its reusable identity binding.
+fn userinfo_claims(tenant: Uuid, seed: &Seed, jti: &str) -> nazo_auth::Claims {
+    serde_json::from_value(json!({
+        "iss": "https://issuer.example", "sub": seed.user_id, "tenant_id": tenant,
+        "user_id": seed.user_id, "subject_type": "user", "client_id": seed.client.client_id,
+        "client_epoch": 0, "user_epoch": 0, "aud": "resource://default",
+        "scope": "openid profile", "token_use": "access", "jti": jti,
+        "iat": Timestamp::now().as_second(), "nbf": Timestamp::now().as_second(),
+        "exp": Timestamp::now().as_second() + 300, "cnf": null
+    }))
+    .unwrap()
+}
+
+/// Revocation, epochs, ownership, profile and client are one SELECT for direct,
+/// pairwise and legacy receipt subjects. No second checkout or transaction is needed.
 #[tokio::test]
-async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
+async fn ui01_userinfo_snapshot_is_single_read_for_all_subject_kinds() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1461,62 +1671,511 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
     let tenant_id = tenant.tenant_id.as_uuid();
     let seed = seed_principal(&database_url, tenant).await;
     let jti = format!("qc-userinfo-jti-{}", Uuid::now_v7());
+    let bound_subject = format!("qc-userinfo-pairwise-{}", Uuid::now_v7());
     {
         let mut connection = connect(&database_url).await;
         seed_token_issuance(&mut connection, tenant, &seed, &jti).await;
-        sql_query("INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, 'legacy-pairwise', $2) ON CONFLICT (tenant_id, subject) DO UPDATE SET user_id = EXCLUDED.user_id")
-            .bind::<diesel::sql_types::Uuid, _>(tenant_id)
-            .bind::<diesel::sql_types::Uuid, _>(seed.user_id)
-            .execute(&mut connection).await.expect("stable subject binding should seed");
+        sql_query(
+            "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+        )
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(&bound_subject)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
     }
     let (pool, counter) = instrumented_pool(&database_url).await;
     let repository = TokenIssuanceRepository::new(pool);
-
-    // Direct UserId reference.
-    let (result, delta) = measure(
-        &counter,
-        repository.userinfo_snapshot(
-            tenant_id,
-            UserinfoSubjectRef::UserId(seed.user_id),
-            seed.client.client_id.as_str(),
-        ),
-    )
-    .await;
-    let snapshot = result
-        .expect("user-id snapshot should load")
-        .expect("the seeded user must produce a snapshot");
-    assert_eq!(snapshot.subject.subject.as_uuid(), seed.user_id);
-    assert!(snapshot.client.is_some());
-    // 1 data statement: SELECT users LEFT JOIN oauth_clients ON
-    // (tenant_id, client_id) — subject and client metadata are read together.
-    assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-
-    // A stable subject binding resolves in the same SELECT via an inner join.
-    let (result, delta) = measure(
-        &counter,
-        repository.userinfo_snapshot(
-            tenant_id,
-            UserinfoSubjectRef::AccessToken {
-                subject: "legacy-pairwise",
-                jti: jti.as_str(),
-            },
-            seed.client.client_id.as_str(),
-        ),
-    )
-    .await;
-    let snapshot = result
-        .expect("jti snapshot should load")
-        .expect("the seeded issuance must produce a snapshot");
-    assert_eq!(snapshot.subject.subject.as_uuid(), seed.user_id);
-    assert!(snapshot.client.is_some());
-    // 1 data statement: SELECT users INNER JOIN oauth_subject_bindings
-    // LEFT JOIN oauth_clients — still one round trip.
-    assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
-    assert_clean(delta);
+    let direct = userinfo_claims(tenant_id, &seed, &jti);
+    let pairwise = nazo_auth::Claims {
+        sub: bound_subject,
+        user_id: None,
+        ..direct.clone()
+    };
+    let legacy = nazo_auth::Claims {
+        client_epoch: None,
+        user_epoch: None,
+        ..direct.clone()
+    };
+    let legacy_pairwise = nazo_auth::Claims {
+        client_epoch: None,
+        user_epoch: None,
+        ..pairwise.clone()
+    };
+    let legacy_receipt = nazo_auth::Claims {
+        sub: "unbound-legacy-subject".into(),
+        ..legacy_pairwise.clone()
+    };
+    let legacy_malformed_id = nazo_auth::Claims {
+        user_id: Some("old-unparseable-id".into()),
+        ..legacy_pairwise.clone()
+    };
+    let cache_baseline = counter.snapshot();
+    for claims in [
+        direct,
+        pairwise,
+        legacy,
+        legacy_pairwise,
+        legacy_receipt.clone(),
+        legacy_malformed_id,
+    ] {
+        let (result, delta) =
+            measure(&counter, repository.userinfo_snapshot(tenant_id, &claims)).await;
+        let snapshot = result
+            .unwrap()
+            .expect("the seeded authority must produce a snapshot");
+        assert_eq!(snapshot.subject.subject.as_uuid(), seed.user_id);
+        let client = snapshot.client.unwrap();
+        assert!(client.is_active);
+        assert!(client.signed_response_alg.is_none());
+        assert!(client.encrypted_response_alg.is_none());
+        assert!(client.encrypted_response_enc.is_none());
+        assert!(client.jwks_uri.is_none());
+        assert!(client.jwks.is_none());
+        assert!(!client.require_fapi2);
+        assert_eq!(delta.data_queries, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+    assert_eq!(
+        counter.since(cache_baseline).cache_queries,
+        1,
+        "all ownership kinds share one fixed prepared statement"
+    );
+    let mut connection = connect(&database_url).await;
+    sql_query("UPDATE oauth_token_issuances SET access_token_expires_at=CURRENT_TIMESTAMP - INTERVAL '1 hour' WHERE tenant_id=$1 AND access_token_jti=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Text, _>(&jti)
+        .execute(&mut connection).await.unwrap();
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &legacy_receipt)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(connection);
     cleanup_seed(&database_url, tenant, &seed).await;
+}
+
+#[tokio::test]
+async fn userinfo_snapshot_rechecks_current_authority_and_bound_parameters() {
+    #[derive(diesel::QueryableByName)]
+    struct Epoch {
+        #[diesel(sql_type = sql_types::BigInt)]
+        epoch: i64,
+    }
+    let _serial = SERIAL.lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let seed = seed_principal(&url, tenant).await;
+    let other = seed_principal(&url, tenant).await;
+    let jti = format!("qc-userinfo-state-{}", Uuid::now_v7());
+    let subject = format!("qc-userinfo-state-subject-{}", Uuid::now_v7());
+    let claims = userinfo_claims(tenant_id, &seed, &jti);
+    let (pool, counter) = instrumented_pool(&url).await;
+    let repository = TokenIssuanceRepository::new(pool);
+    let mut connection = connect(&url).await;
+    seed_token_issuance(&mut connection, tenant, &seed, &jti).await;
+    sql_query("UPDATE oauth_clients SET userinfo_signed_response_alg='ES256' WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(other.client.id)
+        .execute(&mut connection).await.unwrap();
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Text, _>(&subject)
+    .bind::<sql_types::Uuid, _>(seed.user_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let pairwise = nazo_auth::Claims {
+        sub: subject.clone(),
+        user_id: None,
+        ..claims.clone()
+    };
+    let legacy = nazo_auth::Claims {
+        client_epoch: None,
+        user_epoch: None,
+        ..pairwise.clone()
+    };
+    // Reuse the same prepared query with changed owners, clients, nullable ids and epochs.
+    for value in [
+        &claims,
+        &userinfo_claims(tenant_id, &other, "another-jti"),
+        &pairwise,
+        &legacy,
+        &claims,
+    ] {
+        let (result, delta) =
+            measure(&counter, repository.userinfo_snapshot(tenant_id, value)).await;
+        let result = result.unwrap().unwrap();
+        assert_eq!(
+            result.client.unwrap().signed_response_alg.as_deref(),
+            (value.client_id == other.client.client_id).then_some("ES256")
+        );
+        assert_eq!(
+            result.subject.subject.as_uuid().to_string(),
+            value
+                .user_id
+                .as_deref()
+                .unwrap_or(&seed.user_id.to_string())
+        );
+        assert_eq!(delta.data_queries, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+    for invalid in [
+        nazo_auth::Claims {
+            client_epoch: Some(1),
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            user_epoch: Some(1),
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            client_epoch: None,
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            user_epoch: None,
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            client_epoch: Some(-1),
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            user_epoch: Some(-1),
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            user_id: Some("not-a-uuid".into()),
+            ..pairwise.clone()
+        },
+        nazo_auth::Claims {
+            user_id: Some(Uuid::now_v7().to_string()),
+            ..pairwise.clone()
+        },
+        nazo_auth::Claims {
+            client_id: "missing-client".into(),
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            subject_type: "client".into(),
+            ..claims.clone()
+        },
+        nazo_auth::Claims {
+            sub: "missing-binding".into(),
+            ..pairwise.clone()
+        },
+        nazo_auth::Claims {
+            tenant_id: Uuid::now_v7().to_string(),
+            ..claims.clone()
+        },
+    ] {
+        assert!(
+            repository
+                .userinfo_snapshot(tenant_id, &invalid)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    let inactive_binding = format!("qc-inactive-binding-{}", Uuid::now_v7());
+    sql_query("UPDATE users SET is_active=false WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(other.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id) VALUES($1,$2,$3)")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(&inactive_binding)
+        .bind::<sql_types::Uuid, _>(other.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let inactive_modern = nazo_auth::Claims {
+        sub: inactive_binding.clone(),
+        ..pairwise.clone()
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &inactive_modern)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let inactive_legacy = nazo_auth::Claims {
+        sub: inactive_binding,
+        ..legacy.clone()
+    };
+    assert_eq!(
+        repository
+            .userinfo_snapshot(tenant_id, &inactive_legacy)
+            .await
+            .unwrap()
+            .unwrap()
+            .subject
+            .subject
+            .as_uuid(),
+        seed.user_id,
+        "legacy receipt fallback applies when a reusable binding has no active owner"
+    );
+    let foreign = Uuid::now_v7();
+    let foreign_claims = nazo_auth::Claims {
+        tenant_id: foreign.to_string(),
+        ..claims.clone()
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(foreign, &foreign_claims)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let absent_client = nazo_auth::Claims {
+        client_id: "missing-client".into(),
+        ..legacy.clone()
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &absent_client)
+            .await
+            .unwrap()
+            .unwrap()
+            .client
+            .is_none()
+    );
+
+    sql_query(r#"UPDATE oauth_clients SET userinfo_signed_response_alg='ES256', security_policy=jsonb_set(security_policy,'{assurance}','"fapi2"'::jsonb) WHERE tenant_id=$1 AND id=$2"#)
+        .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Uuid, _>(seed.client.id)
+        .execute(&mut connection).await.unwrap();
+    let updated_policy = repository
+        .userinfo_snapshot(tenant_id, &claims)
+        .await
+        .unwrap()
+        .unwrap()
+        .client
+        .unwrap();
+    assert_eq!(updated_policy.signed_response_alg.as_deref(), Some("ES256"));
+    assert!(updated_policy.require_fapi2);
+    sql_query("UPDATE users SET display_name='fresh-profile' WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .userinfo_snapshot(tenant_id, &claims)
+            .await
+            .unwrap()
+            .unwrap()
+            .subject
+            .name
+            .as_deref(),
+        Some("fresh-profile")
+    );
+    sql_query("UPDATE users SET access_token_epoch=1 WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &claims)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let current = nazo_auth::Claims {
+        user_epoch: Some(1),
+        ..claims.clone()
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &legacy)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    sql_query("UPDATE oauth_clients SET access_token_epoch=1 WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let current = nazo_auth::Claims {
+        client_epoch: Some(1),
+        ..current
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    sql_query("INSERT INTO access_token_revocations (tenant_id, access_token_jti_blake3, client_id, expires_at) VALUES ($1,$2,$3,CURRENT_TIMESTAMP + INTERVAL '1 hour')")
+        .bind::<sql_types::Uuid, _>(tenant_id).bind::<sql_types::Text, _>(blake3_hex(&jti))
+        .bind::<sql_types::Uuid, _>(seed.client.id).execute(&mut connection).await.unwrap();
+    for revoked in [&current, &legacy] {
+        assert!(
+            repository
+                .userinfo_snapshot(tenant_id, revoked)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    sql_query(
+        "DELETE FROM access_token_revocations WHERE tenant_id=$1 AND access_token_jti_blake3=$2",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Text, _>(blake3_hex(&jti))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sql_query("DELETE FROM oauth_subject_bindings WHERE tenant_id=$1 AND subject=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(&subject)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let current_pairwise = nazo_auth::Claims {
+        user_id: None,
+        sub: subject,
+        ..current.clone()
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current_pairwise)
+            .await
+            .unwrap()
+            .is_none(),
+        "modern ownership cannot fall back to a receipt"
+    );
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &legacy)
+            .await
+            .unwrap()
+            .is_some(),
+        "legacy ownership retains its receipt fallback"
+    );
+    sql_query("UPDATE oauth_clients SET is_active=false WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !repository
+            .userinfo_snapshot(tenant_id, &legacy)
+            .await
+            .unwrap()
+            .unwrap()
+            .client
+            .unwrap()
+            .is_active
+    );
+    let client_epoch = sql_query("UPDATE oauth_clients SET is_active=true WHERE tenant_id=$1 AND id=$2 RETURNING access_token_epoch AS epoch")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.client.id)
+        .get_result::<Epoch>(&mut connection)
+        .await
+        .unwrap().epoch;
+    assert_ne!(Some(client_epoch), current.client_epoch);
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_none(),
+        "reactivation must not revive the old client epoch"
+    );
+    let current = nazo_auth::Claims {
+        client_epoch: Some(client_epoch),
+        ..current
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    sql_query("UPDATE users SET is_active=false WHERE tenant_id=$1 AND id=$2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &legacy)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let user_epoch = sql_query("UPDATE users SET is_active=true WHERE tenant_id=$1 AND id=$2 RETURNING access_token_epoch AS epoch")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(seed.user_id)
+        .get_result::<Epoch>(&mut connection)
+        .await
+        .unwrap().epoch;
+    assert_ne!(Some(user_epoch), current.user_epoch);
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_none(),
+        "reactivation must not revive the old user epoch"
+    );
+    let current = nazo_auth::Claims {
+        user_epoch: Some(user_epoch),
+        ..current
+    };
+    assert!(
+        repository
+            .userinfo_snapshot(tenant_id, &current)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    drop(connection);
+    cleanup_seed(&url, tenant, &seed).await;
+    cleanup_seed(&url, tenant, &other).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -2403,7 +3062,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
             .await
             .unwrap()
             .unwrap()
-            .2;
+            .client_epoch;
         let source = repo
             .refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true)
             .await
@@ -2473,6 +3132,318 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
         assert_eq!(count.count, 0);
     }
     cleanup_seed(&url, tenant, &seed).await;
+}
+
+#[tokio::test]
+async fn access_token_state_reads_current_security_facts_with_adaptive_plans() {
+    use nazo_resource_server::{AccessTokenRevocationLookup, RevocationLookupKey};
+
+    let _serial = SERIAL.lock().await;
+    let url = database_url().expect("isolated PostgreSQL required");
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let tenant_text = tenant_id.to_string();
+    let foreign_tenant = Uuid::now_v7().to_string();
+    let first = seed_principal(&url, tenant).await;
+    let second = seed_principal(&url, tenant).await;
+    let user_text = first.user_id.to_string();
+    let private_subject = format!("revocation-cache-{}", Uuid::now_v7());
+    let jti = format!("revocation-cache-jti-{}", Uuid::now_v7());
+    let other_jti = format!("revocation-cache-jti-{}", Uuid::now_v7());
+    let mut writer = connect(&url).await;
+    sql_query(
+        "INSERT INTO oauth_subject_bindings (tenant_id, subject, user_id) VALUES ($1, $2, $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Text, _>(&private_subject)
+    .bind::<sql_types::Uuid, _>(first.user_id)
+    .execute(&mut writer)
+    .await
+    .unwrap();
+
+    let (pool, counter) = instrumented_pool(&url).await;
+    #[derive(diesel::QueryableByName)]
+    struct ConnectionState {
+        #[diesel(sql_type = sql_types::Integer)]
+        backend_pid: i32,
+        #[diesel(sql_type = sql_types::BigInt)]
+        statements: i64,
+    }
+    let state_query = "SELECT pg_backend_pid() AS backend_pid, (SELECT count(*) FROM pg_prepared_statements WHERE statement LIKE 'SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = %') AS statements";
+    let mut connection = get_conn(&pool).await.unwrap();
+    let initial = sql_query(state_query)
+        .get_result::<ConnectionState>(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let tokens = TokenRepository::new(pool.clone());
+    let user = RevocationLookupKey {
+        tenant_id: &tenant_text,
+        jti: &jti,
+        client_id: &first.client.client_id,
+        subject: &user_text,
+        user_id: Some(&user_text),
+        subject_type: Some("user"),
+        client_epoch: Some(0),
+        user_epoch: Some(0),
+    };
+    macro_rules! check {
+        ($key:expr, $revoked:expr) => {
+            check!($key, $revoked, 1)
+        };
+        ($key:expr, $revoked:expr, $queries:expr) => {{
+            let (result, delta) = measure(&counter, tokens.is_revoked($key)).await;
+            assert_eq!(result.unwrap(), $revoked);
+            assert_eq!(delta.data_queries, $queries);
+            assert_no_transaction(delta);
+            assert_clean(delta);
+        }};
+    }
+    // Alternate principal kinds and tenants on the same physical connection.
+    // Each statement must bind the current execution's values independently.
+    for _ in 0..3 {
+        check!(user, false);
+        check!(
+            RevocationLookupKey {
+                subject: &private_subject,
+                user_id: None,
+                ..user
+            },
+            false
+        );
+        check!(
+            RevocationLookupKey {
+                client_id: &second.client.client_id,
+                subject: &second.client.client_id,
+                subject_type: Some("client"),
+                user_id: None,
+                user_epoch: None,
+                ..user
+            },
+            false
+        );
+        check!(
+            RevocationLookupKey {
+                tenant_id: &foreign_tenant,
+                ..user
+            },
+            true
+        );
+        check!(
+            RevocationLookupKey {
+                client_epoch: Some(1),
+                ..user
+            },
+            true
+        );
+        check!(
+            RevocationLookupKey {
+                user_epoch: Some(1),
+                ..user
+            },
+            true
+        );
+        check!(
+            RevocationLookupKey {
+                subject_type: None,
+                ..user
+            },
+            true,
+            0
+        );
+    }
+    // Nullable principal fields are security predicates, not optional hints.
+    // Subject-specific reads must reject contradictory user facts before SQL.
+    check!(
+        RevocationLookupKey {
+            subject_type: Some("client"),
+            user_epoch: None,
+            ..user
+        },
+        true,
+        0
+    );
+    check!(
+        RevocationLookupKey {
+            subject_type: Some("client"),
+            user_id: None,
+            ..user
+        },
+        true,
+        0
+    );
+    check!(
+        RevocationLookupKey {
+            user_epoch: None,
+            ..user
+        },
+        true,
+        0
+    );
+    check!(
+        RevocationLookupKey {
+            user_id: Some("invalid-uuid"),
+            ..user
+        },
+        true,
+        0
+    );
+    check!(
+        RevocationLookupKey {
+            user_epoch: Some(-1),
+            ..user
+        },
+        true,
+        0
+    );
+    check!(
+        RevocationLookupKey {
+            client_epoch: Some(-1),
+            ..user
+        },
+        true,
+        0
+    );
+    check!(
+        RevocationLookupKey {
+            subject_type: Some("unsupported"),
+            ..user
+        },
+        true,
+        0
+    );
+    sql_query("DELETE FROM oauth_subject_bindings WHERE tenant_id = $1 AND subject = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(&private_subject)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    check!(
+        RevocationLookupKey {
+            subject: &private_subject,
+            user_id: None,
+            ..user
+        },
+        true
+    );
+    seed_access_revocation(&mut writer, tenant, &first, &jti).await;
+    check!(user, true);
+    let current_user = RevocationLookupKey {
+        jti: &other_jti,
+        ..user
+    };
+    check!(current_user, false);
+    sql_query("UPDATE users SET access_token_epoch = access_token_epoch + 1 WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.user_id)
+        .execute(&mut writer).await.unwrap();
+    check!(current_user, true);
+    let current_user = RevocationLookupKey {
+        user_epoch: Some(1),
+        ..current_user
+    };
+    check!(current_user, false);
+    sql_query("UPDATE users SET is_active = FALSE WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.user_id)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    check!(current_user, true);
+    let machine = RevocationLookupKey {
+        subject_type: Some("client"),
+        user_id: None,
+        user_epoch: None,
+        subject: &first.client.client_id,
+        ..current_user
+    };
+    check!(machine, false);
+    check!(
+        RevocationLookupKey {
+            jti: &jti,
+            ..machine
+        },
+        true
+    );
+    check!(
+        RevocationLookupKey {
+            tenant_id: &foreign_tenant,
+            ..machine
+        },
+        true
+    );
+    check!(
+        RevocationLookupKey {
+            client_id: "missing-client",
+            ..machine
+        },
+        true
+    );
+    check!(
+        RevocationLookupKey {
+            user_id: Some("invalid-uuid"),
+            ..machine
+        },
+        true,
+        0
+    );
+    check!(machine, false);
+    sql_query("UPDATE oauth_clients SET access_token_epoch = access_token_epoch + 1 WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.client.id)
+        .execute(&mut writer).await.unwrap();
+    check!(machine, true);
+    let machine = RevocationLookupKey {
+        client_epoch: Some(1),
+        ..machine
+    };
+    check!(machine, false);
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE tenant_id = $1 AND id = $2")
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Uuid, _>(first.client.id)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    check!(machine, true);
+
+    // Legacy tokens without a client epoch retain the original JTI-only rule,
+    // even when the supplied client is currently inactive.
+    let legacy = RevocationLookupKey {
+        client_epoch: None,
+        user_id: Some("legacy-not-a-uuid"),
+        ..machine
+    };
+    check!(legacy, false);
+    check!(
+        RevocationLookupKey {
+            jti: &jti,
+            ..legacy
+        },
+        true
+    );
+    check!(
+        RevocationLookupKey {
+            user_epoch: Some(0),
+            ..legacy
+        },
+        true,
+        0
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    let final_state = sql_query(state_query)
+        .get_result::<ConnectionState>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(final_state.backend_pid, initial.backend_pid);
+    assert_eq!(
+        final_state.statements, 0,
+        "authority reads must not freeze a generic empty-table plan"
+    );
+    drop(connection);
+    cleanup_seed(&url, tenant, &first).await;
+    cleanup_seed(&url, tenant, &second).await;
 }
 
 #[tokio::test]

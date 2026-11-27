@@ -1140,8 +1140,9 @@ async fn replace_registration_returns_the_committed_row() {
             .authentication_snapshot(client.tenant_id, &client.client_id)
             .await
             .unwrap()
-            .and_then(|(_, salt, _)| salt),
-        Some("dc01-salt".to_owned())
+            .and_then(|snapshot| snapshot.secret_digest)
+            .as_deref(),
+        Some(rotated_secret)
     );
     let state = client_credential_state(&pool, client.id).await;
     assert_eq!(

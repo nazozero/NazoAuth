@@ -94,6 +94,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
                     "gzip=",
                     "libpcre2-8-0=",
                     "libsqlite3-0=",
+                    "libzstd1=",
                     "perl-base=",
                 ):
                     self.assertIn(pinned, packages)
@@ -659,7 +660,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn("perf/*", INPUTS["perf"])
         self.assertIn("scope: perf", source)
         self.assertIn("perf/runner/Containerfile", source)
-        self.assertIn("performance dependencies import successfully", source)
+        self.assertIn('docker run --rm "${{ matrix.image }}" --version', source)
 
     def test_proptest_regression_corpus_is_versioned(self) -> None:
         corpus = ROOT / "proptest-regressions" / "support"

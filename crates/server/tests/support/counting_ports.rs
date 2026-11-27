@@ -135,6 +135,16 @@ impl CountingTokenRepository {
 }
 
 impl TokenRepositoryPort for CountingTokenRepository {
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        self.inner
+            .machine_client_active(tenant_id, client_id, epoch)
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -200,11 +210,10 @@ impl TokenRepositoryPort for CountingTokenRepository {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: nazo_auth::UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a nazo_auth::Claims,
     ) -> TokenFuture<'a, Option<nazo_auth::UserinfoSnapshot>> {
         self.userinfo_snapshot_calls.fetch_add(1, Ordering::SeqCst);
-        self.inner.userinfo_snapshot(tenant_id, subject, client_id)
+        self.inner.userinfo_snapshot(tenant_id, verified_claims)
     }
 
     fn refresh_token<'a>(
@@ -335,14 +344,11 @@ impl TokenRepositoryPort for CountingTokenRepository {
 }
 
 /// Delegating `AuthorizationRepositoryPort` that counts the client-data reads
-/// on the secret-authentication path: the combined
-/// `client_authentication_snapshot` (client + salt in one query) and the
-/// retained `client_secret_digest_matches` check.
+/// on the secret-authentication path.
 #[derive(Clone)]
 pub(crate) struct CountingAuthorizationRepository {
     inner: Arc<dyn AuthorizationRepositoryPort>,
     pub(crate) snapshot_calls: Arc<AtomicUsize>,
-    pub(crate) digest_calls: Arc<AtomicUsize>,
     pub(crate) client_by_id_calls: Arc<AtomicUsize>,
 }
 
@@ -351,17 +357,12 @@ impl CountingAuthorizationRepository {
         Self {
             inner,
             snapshot_calls: Arc::new(AtomicUsize::new(0)),
-            digest_calls: Arc::new(AtomicUsize::new(0)),
             client_by_id_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub(crate) fn snapshot_count(&self) -> usize {
         self.snapshot_calls.load(Ordering::SeqCst)
-    }
-
-    pub(crate) fn digest_count(&self) -> usize {
-        self.digest_calls.load(Ordering::SeqCst)
     }
 
     pub(crate) fn client_by_id_count(&self) -> usize {
@@ -410,15 +411,5 @@ impl AuthorizationRepositoryPort for CountingAuthorizationRepository {
         input: nazo_auth::AuthorizationDecisionCommit,
     ) -> AuthorizationFuture<'_, nazo_auth::AuthorizationDecisionCommitResult> {
         self.inner.commit_decision(input)
-    }
-
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        self.digest_calls.fetch_add(1, Ordering::SeqCst);
-        self.inner
-            .client_secret_digest_matches(client_id, candidate_digest)
     }
 }

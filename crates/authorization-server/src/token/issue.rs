@@ -42,6 +42,7 @@ pub struct TokenIssuanceConfig {
     pub rate_limit_window_seconds: u64,
     pub token_rate_limit_max_requests: u64,
     pub auth_code_ttl_seconds: u64,
+    pub audit_client_credentials_issuance: bool,
     pub access_token_ttl_seconds: i64,
     pub id_token_ttl_seconds: i64,
     pub refresh_token_ttl_seconds: i64,
@@ -206,6 +207,80 @@ fn refreshed_id_token_essential_claims_satisfied(
             };
             actual.is_some_and(|actual| request.matches_value(&actual))
         })
+}
+
+pub(super) struct SignedAccessResponse {
+    pub body: Value,
+    pub scope: String,
+    pub jti: String,
+    pub expires_at: i64,
+    pub dpop_nonce: Option<String>,
+}
+
+pub(super) async fn sign_access_response(
+    context: &TokenIssuanceContext<'_>,
+    service: &ServerTokenService,
+    input: nazo_auth::AccessTokenSignInput<'_>,
+    authorization_code_hash: Option<&str>,
+) -> Result<SignedAccessResponse, OAuthEndpointError> {
+    let dpop = matches!(
+        input.sender_constraint,
+        nazo_auth::AppliedSenderConstraint::Dpop(_)
+    );
+    let dpop_nonce = if dpop && context.config.dpop_nonce_policy == DpopNoncePolicy::Required {
+        match issue_authorization_server_dpop_nonce(context.authorization).await {
+            Ok(nonce) => Some(nonce),
+            Err(error) => {
+                mark_failed_authorization_code_if_needed(
+                    service,
+                    authorization_code_hash,
+                    "dpop_next_nonce_failed",
+                    context.config.auth_code_ttl_seconds(),
+                )
+                .await;
+                return Err(OAuthEndpointError::Dpop {
+                    error,
+                    context: DpopErrorContext::TokenEndpoint,
+                });
+            }
+        }
+    } else {
+        None
+    };
+    let ttl = input.ttl_seconds;
+    let scope = input.scopes.join(" ");
+    let issued = match service.sign_access_token(input).await {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::warn!(%error, "failed to sign access token");
+            mark_failed_authorization_code_if_needed(
+                service,
+                authorization_code_hash,
+                "access_token_signing_failed",
+                context.config.auth_code_ttl_seconds(),
+            )
+            .await;
+            return Err(OAuthEndpointError::token(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "令牌签发失败.",
+                false,
+            ));
+        }
+    };
+    let body = json!({
+        "token_type": if dpop { "DPoP" } else { "Bearer" },
+        "expires_in": ttl,
+        "scope": scope,
+        "access_token": issued.token,
+    });
+    Ok(SignedAccessResponse {
+        body,
+        scope,
+        jti: issued.jti,
+        expires_at: issued.expires_at,
+        dpop_nonce,
+    })
 }
 
 pub use issue_grant::issue_token_response;

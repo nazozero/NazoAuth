@@ -3,7 +3,7 @@
 use crate::{
     D1Provider,
     db::{DbError, Statement},
-    persistence::{NOW, encode, validate_client_capabilities},
+    persistence::{Flag, NOW, encode, validate_client_capabilities},
     rows::ClientRow,
 };
 use nazo_auth::{
@@ -124,13 +124,11 @@ impl DynamicRegistrationClientStore for D1Provider {
     ) -> DynamicRegistrationFuture<'a, bool> {
         Box::pin(async move {
             self.require_tenant(tenant_id)?;
-            nazo_auth::AuthorizationRepositoryPort::client_secret_digest_matches(
-                self,
-                client_id,
-                candidate_digest,
-            )
-            .await
-            .map_err(|_| Error::Unavailable)
+            let rows = self.database.query::<Flag>(
+                "SELECT EXISTS(SELECT 1 FROM nazo_clients WHERE tenant_id=?1 AND id=?2 AND active=1 AND secret_digest=?3) AS value",
+                vec![json!(self.tenant_id), json!(client_id), json!(candidate_digest)],
+            ).await?;
+            Ok(rows.first().is_some_and(|row| row.value != 0))
         })
     }
 

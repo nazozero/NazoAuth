@@ -7,10 +7,9 @@ use crate::contracts::userinfo::{
     PreparedUserinfo, UserinfoDpopError, UserinfoError, UserinfoFuture, UserinfoOperations,
     UserinfoPreparationFuture, UserinfoRepresentation, UserinfoRequestFacts, UserinfoSuccess,
 };
-use nazo_auth::{Claims, DpopStateStorePort, OAuthClient, token_audience_contains};
+use nazo_auth::{Claims, DpopStateStorePort, UserinfoClient, token_audience_contains};
 use nazo_key_management::{KeyManager, signing_algorithm_from_name};
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 use crate::crypto::{access_token_tenant_id, blake3_hex};
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
@@ -100,23 +99,44 @@ impl ServerUserinfoOperations {
         }
         let tenant_id =
             access_token_tenant_id(&claims).ok_or(UserinfoError::InvalidTenantBoundary)?;
-        let revoked = self
-            .token_service
-            .access_token_revoked(tenant_id, &claims)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to check userinfo token revocation");
-                UserinfoError::QueryUnavailable
-            })?;
-        if revoked {
-            return Err(UserinfoError::RevokedAccessToken);
-        }
+        let snapshot = if claims.subject_type == "user"
+            && claims
+                .scope
+                .split_whitespace()
+                .any(|scope| scope == "openid")
+        {
+            Some(
+                self.token_service
+                    .userinfo_snapshot(tenant_id, &claims)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "failed to load userinfo authority and response facts");
+                        UserinfoError::QueryUnavailable
+                    })?
+                    .ok_or(UserinfoError::InvalidAccessToken)?,
+            )
+        } else {
+            // Authentication failures precede insufficient_scope. These tokens
+            // need current revocation authority, but no UserInfo response facts.
+            let revoked = self
+                .token_service
+                .access_token_revoked(tenant_id, &claims)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to check userinfo token revocation");
+                    UserinfoError::QueryUnavailable
+                })?;
+            if revoked {
+                return Err(UserinfoError::RevokedAccessToken);
+            }
+            None
+        };
 
         Ok(PreparedUserinfo {
             scheme,
             token,
             claims,
-            tenant_id,
+            snapshot,
         })
     }
 
@@ -129,55 +149,14 @@ impl ServerUserinfoOperations {
             scheme,
             token,
             claims,
-            tenant_id,
+            snapshot,
         } = prepared;
         let dpop_nonce = self
             .validate_sender_constraint(facts, scheme, &token, &claims)
             .await?;
-        if !claims
-            .scope
-            .split_whitespace()
-            .any(|scope| scope == "openid")
-            || claims.subject_type != "user"
-        {
-            return Err(UserinfoError::InsufficientScope);
-        }
-
+        let snapshot = snapshot.ok_or(UserinfoError::InsufficientScope)?;
         let scopes = parse_scope(&claims.scope);
-        // A directly carried user UUID uses the ordinary subject read; a
-        // pairwise subject resolves through its stable binding (with legacy
-        // issuance fallback). The users join proves the subject is active. The subject read and the client read
-        // are one combined snapshot query.
-        let (subject_ref, missing_subject) = match claims
-            .user_id
-            .as_deref()
-            .and_then(|value| Uuid::parse_str(value).ok())
-        {
-            Some(user_id) => (
-                nazo_auth::UserinfoSubjectRef::UserId(user_id),
-                UserinfoError::InactiveSubject,
-            ),
-            None => (
-                nazo_auth::UserinfoSubjectRef::AccessToken {
-                    subject: &claims.sub,
-                    jti: &claims.jti,
-                },
-                UserinfoError::InvalidSubject,
-            ),
-        };
-        let snapshot = self
-            .token_service
-            .userinfo_snapshot(tenant_id, subject_ref, &claims.client_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to load userinfo snapshot");
-                UserinfoError::QueryUnavailable
-            })?
-            .ok_or(missing_subject)?;
         let subject_claims = snapshot.subject;
-        if nazo_identity::TenantId::new(tenant_id).is_err() {
-            return Err(UserinfoError::InactiveSubject);
-        }
         let mut client = match snapshot.client {
             Some(client) if client.is_active => client,
             _ => return Err(UserinfoError::ClientUnavailable),
@@ -188,10 +167,11 @@ impl ServerUserinfoOperations {
             &claims.sub,
             &claims.userinfo_claim_requests,
         );
-        let response_encryption_configured = client.userinfo_encrypted_response_alg.is_some()
-            || client.userinfo_encrypted_response_enc.is_some();
+        let response_encryption_configured =
+            client.encrypted_response_alg.is_some() || client.encrypted_response_enc.is_some();
         refresh_client_jwks_for_encryption(
-            &mut client,
+            client.jwks_uri.as_deref(),
+            &mut client.jwks,
             self.handles.remote_client_documents.as_ref(),
             response_encryption_configured,
         )
@@ -201,12 +181,12 @@ impl ServerUserinfoOperations {
             UserinfoError::ResponseProtectionFailed
         })?;
         let representation = self
-            .protect_response(&client, Value::Object(response_claims))
+            .protect_response(&client, &claims.client_id, Value::Object(response_claims))
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
-                    client_id_hash = %blake3_hex(&client.client_id),
+                    client_id_hash = %blake3_hex(&claims.client_id),
                     "failed to protect userinfo response"
                 );
                 UserinfoError::ResponseProtectionFailed
@@ -260,18 +240,18 @@ impl ServerUserinfoOperations {
 
     async fn protect_response(
         &self,
-        client: &OAuthClient,
+        client: &UserinfoClient,
+        client_id: &str,
         mut claims: Value,
     ) -> anyhow::Result<UserinfoRepresentation> {
-        if client.userinfo_signed_response_alg.is_some() {
+        if client.signed_response_alg.is_some() {
             nazo_auth::jwt_response_signing_algorithm(
-                client.userinfo_signed_response_alg.as_deref(),
-                self.handles.config.require_fapi2
-                    || client.security_policy.requires_fapi2_security(),
+                client.signed_response_alg.as_deref(),
+                self.handles.config.require_fapi2 || client.require_fapi2,
             )
             .map_err(anyhow::Error::msg)?;
         }
-        let signing_alg = match client.userinfo_signed_response_alg.as_deref() {
+        let signing_alg = match client.signed_response_alg.as_deref() {
             Some(value) => Some(
                 signing_algorithm_from_name(value)
                     .ok_or_else(|| anyhow::anyhow!("unsupported UserInfo signing algorithm"))?,
@@ -280,8 +260,8 @@ impl ServerUserinfoOperations {
         };
         let encryption_key = client_jwe_key(
             client.jwks.as_deref(),
-            client.userinfo_encrypted_response_alg.as_deref(),
-            client.userinfo_encrypted_response_enc.as_deref(),
+            client.encrypted_response_alg.as_deref(),
+            client.encrypted_response_enc.as_deref(),
             "userinfo",
         )?;
         if signing_alg.is_none() && encryption_key.is_none() {
@@ -293,7 +273,7 @@ impl ServerUserinfoOperations {
                 .as_object_mut()
                 .ok_or_else(|| anyhow::anyhow!("UserInfo claims must be a JSON object"))?;
             object.insert("iss".to_owned(), json!(self.handles.issuer()));
-            object.insert("aud".to_owned(), json!(client.client_id));
+            object.insert("aud".to_owned(), json!(client_id));
             let signed = self
                 .handles
                 .sign_response_jwt(

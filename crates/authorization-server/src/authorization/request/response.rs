@@ -86,7 +86,8 @@ pub(crate) async fn authorization_response_redirect_with_context(
         let response_encryption_configured = client.authorization_encrypted_response_alg.is_some()
             || client.authorization_encrypted_response_enc.is_some();
         if let Err(error) = refresh_client_jwks_for_encryption(
-            client,
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
             context.remote_client_documents,
             response_encryption_configured,
         )

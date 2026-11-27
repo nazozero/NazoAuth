@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export PERF=$(cd "$(dirname "$0")" && pwd)
+repo=$(dirname "$PERF")
+export WORK=${BENCH_WORK:-$PERF/.work}
+case ${1:-} in
+  verify) shift; exec python3 "$PERF/report.py" --check "$@";;
+  report) shift; exec python3 "$PERF/report.py" "$@";;
+  setup|run|matrix|login|memory|pg-memory) ;;
+  *) echo 'Usage: bash perf/bench.sh {setup|matrix|login|memory PEER|pg-memory PEER SCENARIO TPS [restart|retain]|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
+esac
+mkdir -p "$WORK"
+cd "$WORK"
+export WORK=$PWD
+exec 9>"$WORK/bench.lock"
+flock -n 9 || { echo 'Another benchmark is active in this workspace.' >&2; exit 1; }
+source "$PERF/deploy.sh"
+if [[ $1 == setup ]]; then
+  test "$(uname -m)" = x86_64
+  test "$(wc -l < /proc/swaps)" -eq 1 || { echo 'Disable swap on the dedicated benchmark host.' >&2; exit 1; }
+  mkdir -p build private out results
+  python3 "$PERF/monitor/topology.py" >masks.new
+  if [[ -f masks ]]; then cmp masks.new masks; fi
+  mv masks.new masks
+  source masks
+  cc -static -O2 "$PERF/monitor/affinity.c" -o build/affinity
+  cc -static -O2 "$PERF/monitor/sampler.c" -o build/sample-cpu
+  cc -static -O2 "$PERF/monitor/pss.c" -o build/read-pss
+  sha=${BENCH_NAZO_REVISION:-$(jq -r .git "$PERF/evidence/environment/nazo-build.json")}
+  builder=rust@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe
+  patch="$PERF/fixture/token-ip-quota.patch"
+  echo "a8f192f123f6558f0a1663ef0302b1eb9c56743e71f726fbe4fd5e4f01d21443  $patch" | sha256sum -c -
+  # git archive excludes the benchmark workspace and any local product edits.
+  src=$(mktemp -d "$WORK/build/product.XXXXXX")
+  sha=$(git -C "$repo" rev-parse --verify "$sha^{commit}")
+  git -C "$repo" archive "$sha" -- . ':!perf/evidence' | tar xf - -C "$src"
+  (cd "$src" && patch --silent -p1 < "$patch")
+  docker build --target fixture -f "$PERF/runner/Containerfile" -t "$fixture_image" "$repo"
+  docker build -f "$PERF/runner/Containerfile" -t oidc-bench-goose-image "$repo"
+  docker build -f "$PERF/fixture/app.Containerfile" -t "$app_image" "$PERF/fixture"
+  # Transfer via Docker's API so the Docker daemon need not share the CNB workspace mount.
+  build_id=$(docker create --entrypoint sleep "$builder" infinity)
+  trap 'docker rm -f "$build_id" >/dev/null' EXIT
+  docker start "$build_id" >/dev/null
+  docker exec "$build_id" mkdir -p /build
+  tar cf - -C "$src" . | docker exec -i -w /build "$build_id" tar xf -
+  docker exec -w /build "$build_id" cargo build --locked --release -p nazo-server --bin nazoauth
+  docker cp "$build_id:/build/target/release/nazoauth" out/nazoauth
+  if docker container inspect oidc-bench-nazo >/dev/null 2>&1; then
+    docker stop -t 8 oidc-bench-nazo >/dev/null
+    docker cp out/nazoauth oidc-bench-nazo:/usr/local/bin/nazoauth
+  fi
+  infra
+  # infra can reuse named containers with existing API-provisioned credentials.
+  # Install the exact runner and fixture adapters from this checkout on every setup.
+  docker run --rm --entrypoint cat oidc-bench-goose-image /oauth-goose >build/oauth-goose
+  chmod 0755 build/oauth-goose
+  docker cp build/oauth-goose oidc-bench-goose:/oauth-goose
+  sha256sum build/oauth-goose | cut -d ' ' -f 1 >private/driver-sha256
+  for adapter in "$PERF"/fixture/*.py; do docker cp "$adapter" "$prep:/tmp/"; done
+  printf '%s\n' "${BENCH_NETWORK:-base}" >private/network-profile
+  bootstrap_nazo
+  echo "$sha" >private/nazo-revision
+  bootstrap_keycloak
+  bootstrap_hydra
+  source "$PERF/native-deploy.sh"
+  for service in oidc-bench-nazo "$kc" "$hy" oidc-bench-rauthy oidc-bench-kanidm "$pg" oidc-bench-rauthy-db "$vk" oidc-bench-goose; do
+    docker cp build/sample-cpu "$service:/sample-cpu"
+  done
+  exit 0
+fi
+source masks
+source private/secrets.env
+if [[ -f private/nazo-revision ]]; then
+  BENCH_NAZO_REVISION=$(cat private/nazo-revision)
+fi
+export BENCH_NAZO_REVISION
+if [[ $1 == login ]]; then
+  stop_apps
+  docker start "$vk" oidc-bench-nazo >/dev/null
+  exec bash "$PERF/login.sh"
+fi
+expected_network=base
+if [[ ${BENCH_PROFILE:-base} == journal-wide ]]; then expected_network=wide; fi
+[[ $(cat private/network-profile) == "$expected_network" ]] || { echo "Expected a $expected_network deployment." >&2; exit 2; }
+one() {
+  local peer=$1 op=$2 rate=$3 round=$4 users=$5 families=$6
+  export SCENARIO=$op BENCH_GO_PROFILE=$7 BENCH_PROTOCOL_USERS=$users BENCH_REFRESH_MAX_FAMILIES=$families
+  export BENCH_GO_WORKERS=15 BENCH_SLOTS=8192 BENCH_SILENT=0 BENCH_CONSENT=0 BENCH_TOKEN_SUBJECT=client BENCH_WARM_SECONDS=10
+  local seconds=36
+  case "$op" in
+    mixed-core-consent) [[ $peer == keycloak || $peer == nazo ]] || return 2; op=mixed-core; export BENCH_CONSENT=1 BENCH_WARM_SECONDS=5; seconds=20;;
+    authorize-consent) [[ $peer == keycloak || $peer == nazo ]] || return 2; op=authorize; export BENCH_CONSENT=1;;
+    authorize-silent) [[ $peer == keycloak || $peer == nazo || $peer == kanidm || $peer == rauthy ]] || { echo "No verified prompt=none adapter for $peer." >&2; return 2; }; op=authorize; export BENCH_SILENT=1;;
+    user-introspect) op=introspect; export BENCH_TOKEN_SUBJECT=user;;
+    machine-introspect) op=introspect;;
+    exchange|mixed-core) export BENCH_WARM_SECONDS=5; seconds=20;;
+    machine|introspect|refresh|authorize|userinfo|mixed) ;;
+    *) echo "Unknown scenario: $op" >&2; return 2;;
+  esac
+  case "$peer:$op" in hydra:authorize|hydra:mixed-core|rauthy:refresh|rauthy:mixed-core|kanidm:refresh|kanidm:exchange|kanidm:mixed-core) echo "Outside the common protocol group: $peer/$op" >&2; return 2;; esac
+  case "$peer" in nazo|keycloak|hydra|rauthy|kanidm) ;; *) return 2;; esac
+  if [[ $peer == nazo && -z ${BENCH_NAZO_REVISION:-} ]]; then
+    echo "Missing NazoAuth build revision in this deployment." >&2; return 2
+  fi
+  stop_apps
+  if [[ $peer == rauthy ]]; then
+    docker start oidc-bench-rauthy-db >/dev/null
+  elif [[ $(docker inspect -f '{{.State.Running}}' oidc-bench-rauthy-db 2>/dev/null) == true ]]; then
+    docker stop oidc-bench-rauthy-db >/dev/null
+  fi
+  if [[ $peer == nazo ]]; then docker start "$vk" >/dev/null; else docker stop "$vk" >/dev/null; fi
+  docker start "oidc-bench-$peer" >/dev/null
+  case "$peer" in
+    nazo) ready oidc-bench-nazo /health;;
+    keycloak) ready "$kc" /realms/api-audit/.well-known/openid-configuration;;
+    hydra) ready "$hy" /.well-known/openid-configuration;;
+    rauthy|kanidm)
+      local attempt
+      for attempt in {1..60}; do
+        if docker exec "$prep" python3 /tmp/prepare-replay-profiles.py "$peer" >/dev/null 2>&1; then break; fi
+        if (( attempt == 60 )); then
+          echo "Failed to prepare $peer benchmark profile." >&2
+          return 1
+        fi
+        sleep 1
+      done;;
+  esac
+  if [[ $BENCH_GO_PROFILE == journal-wide ]]; then
+    export BENCH_SLOTS=32768 BENCH_GO_WORKERS=24
+    docker exec oidc-bench-goose sh -ec 'test "$(cat /proc/sys/net/ipv4/ip_local_port_range | xargs)" = "1024 65535" && test "$(cat /proc/sys/net/ipv4/tcp_tw_reuse)" = 1' || { echo 'Wide profile requires BENCH_NETWORK=wide at setup in a fresh deployment.' >&2; return 1; }
+  fi
+  bash "$PERF/window.sh" "$peer" "$op" "$rate" "$round" "$seconds"
+}
+if [[ $1 == memory ]]; then
+  peer=${2:?peer}
+  case "$peer" in rauthy) db=oidc-bench-rauthy-db;; keycloak|hydra|nazo) db=$pg;; kanidm) db=;; *) exit 2;; esac
+  [[ ${BENCH_PROFILE:-base} == base ]] || exit 2
+  stop_apps
+  if [[ $db != "$pg" && $(docker inspect -f '{{.State.Running}}' "$pg") == true ]]; then
+    docker stop -t 30 "$pg" >/dev/null
+    trap 'docker start "$pg" >/dev/null' EXIT
+  fi
+  if [[ -n $db ]]; then
+    docker restart -t 30 "$db" >/dev/null
+    for _ in {1..60}; do docker exec "$db" pg_isready -q && break; sleep 1; done
+    docker exec "$db" pg_isready -q
+  fi
+  if [[ $peer == nazo ]]; then docker restart -t 8 "$vk" >/dev/null; fi
+  prefix="pssblock-$(date -u +%Y%m%dT%H%M%SZ)"
+  for round in 1 2 3; do
+    case $round in
+      1) rates=(1000 12000 100 6000 3000);;
+      2) rates=(6000 100 3000 12000 1000);;
+      3) rates=(3000 1000 6000 100 12000);;
+    esac
+    for rate in "${rates[@]}"; do
+      echo "$peer $rate round $round"
+      for attempt in 1 2 3; do
+        label="$prefix-$round-$attempt"
+        result="$WORK/windows/$peer/userinfo/$label-$rate/memory.json"
+        one "$peer" userinfo "$rate" "$label" 32 8 base
+        if [[ -s $result ]]; then break; fi
+      done
+      test -s "$result"
+    done
+  done
+  stop_apps
+  exit 0
+fi
+if [[ $1 == pg-memory || $1 == run ]]; then
+  scenario=${3:?scenario}; rate=${4:?TPS}
+  [[ $rate =~ ^[1-9][0-9]*$ ]] || exit 2
+  users=32; families=8
+  if [[ $scenario == refresh && $rate -ge 1000 ]]; then users=64; fi
+  if [[ $scenario == refresh && $rate -ge 3000 ]]; then users=128; families=10; fi
+fi
+if [[ $1 == pg-memory ]]; then
+  peer=${2:?peer}
+  case "$peer" in nazo) dbname=nazo_ready;; keycloak|hydra) dbname=${peer}_retest;; rauthy) dbname=rauthy;; *) exit 2;; esac
+  db=$pg; dbuser=postgres
+  if [[ $peer == rauthy ]]; then db=oidc-bench-rauthy-db; dbuser=rauthy; fi
+  case "$scenario" in userinfo|exchange|refresh|authorize|authorize-silent|authorize-consent) ;; *) exit 2;; esac
+  [[ ${BENCH_PROFILE:-base} == base ]] || exit 2
+  mode=${5:-restart}
+  case "$mode" in restart|retain) ;; *) exit 2;; esac
+  stop_apps
+  if [[ $mode == restart ]]; then docker restart -t 30 "$db" >/dev/null; fi
+  for _ in {1..60}; do docker exec "$db" pg_isready -q -U "$dbuser" -d "$dbname" && break; sleep 1; done
+  docker exec "$db" pg_isready -q -U "$dbuser" -d "$dbname"
+  cc -static -O2 "$PERF/monitor/pg-maps.c" -o build/pg-maps
+  docker exec -u 0 "$db" mkdir -p /tmp/pg-maps
+  # Both memory probes use the process name excluded from service CPU accounting.
+  docker cp build/pg-maps "$db:/tmp/pg-maps/read-pss"
+  stats() {
+    docker exec "$db" psql -XAt -v ON_ERROR_STOP=1 -U "$dbuser" -d "$dbname" -c \
+      "SELECT json_build_object('hits',blks_hit,'reads',blks_read,'inserts',tup_inserted,'updates',tup_updated,'deletes',tup_deleted,'db_bytes',pg_database_size(datname),'shared_buffers',current_setting('shared_buffers')) FROM pg_stat_database WHERE datname=current_database()"
+  }
+  label=pgmaps-$(date -u +%Y%m%dT%H%M%S%N)
+  dest="$WORK/windows/$peer/$scenario/$label-$rate"
+  scratch=$(mktemp -d)
+  stats >"$scratch/before.json"
+  taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/pg-maps.py" "$db" >"$scratch/maps.jsonl" &
+  probe=$!
+  trap 'kill "$probe" 2>/dev/null || true; wait "$probe" 2>/dev/null || true' EXIT
+  one "$peer" "$scenario" "$rate" "$label" "$users" "$families" base
+  kill "$probe"; wait "$probe" || true; trap - EXIT
+  stats >"$scratch/after.json"
+  printf '%s\n' "$mode" >"$scratch/mode"
+  docker stop -t 8 "oidc-bench-$peer" >/dev/null
+  taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/pg-maps.py" "$db" --once >"$scratch/disconnected.json"
+  mv "$scratch" "$dest/pg-maps"
+  exit 0
+fi
+if [[ $1 == matrix ]]; then
+  prefix=$(date -u +%Y%m%dT%H%M%SZ)
+  python3 "$PERF/report.py" --plan >"$WORK/plan.tsv"
+  while IFS=$'\t' read -r peer scenario rate round users families profile pss; do
+    BENCH_SAMPLE_PSS=$pss one "$peer" "$scenario" "$rate" "$prefix-$round" "$users" "$families" "$profile"
+  done < "$WORK/plan.tsv"
+else
+  peer=${2:?peer}; rounds=${5:-3}
+  [[ $rounds =~ ^[1-9][0-9]*$ ]] || exit 2
+  prefix=$(date -u +%Y%m%dT%H%M%SZ)
+  for ((i=1;i<=rounds;i++)); do one "$peer" "$scenario" "$rate" "$prefix-$i" "$users" "$families" "${BENCH_PROFILE:-base}"; done
+fi

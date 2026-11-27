@@ -1,0 +1,1 @@
+{"quota": 1, "unique_signed_tokens": 3, "active_introspection_checks": 3, "invalid_credentials_rejected": 3, "revocation_status": 200, "inactive_after_revocation": true, "other_token_still_active": true}

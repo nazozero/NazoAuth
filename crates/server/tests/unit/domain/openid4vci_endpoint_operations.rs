@@ -355,6 +355,16 @@ struct SubjectStateOutage {
 }
 
 impl TokenRepositoryPort for SubjectStateOutage {
+    fn machine_client_active(
+        &self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        epoch: i64,
+    ) -> nazo_auth::TokenFuture<'_, bool> {
+        self.inner
+            .machine_client_active(tenant_id, client_id, epoch)
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -385,10 +395,9 @@ impl TokenRepositoryPort for SubjectStateOutage {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: nazo_auth::UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a nazo_auth::Claims,
     ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::UserinfoSnapshot>> {
-        self.inner.userinfo_snapshot(tenant_id, subject, client_id)
+        self.inner.userinfo_snapshot(tenant_id, verified_claims)
     }
 
     fn refresh_token<'a>(

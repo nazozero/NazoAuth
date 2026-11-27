@@ -541,6 +541,7 @@ pub(crate) async fn authorize_request_with_context(
         )
         .await;
     }
+    let user_epoch = session.user.authorization_epoch;
     let payload = ConsentPayload {
         request_id: request_id.clone(),
         user_id: session.user.id(),
@@ -610,6 +611,7 @@ pub(crate) async fn authorize_request_with_context(
             &mut client,
             facts,
             payload,
+            user_epoch,
             pending_pushed_request_expires_at,
             pending_pushed_request_version.as_deref(),
         )

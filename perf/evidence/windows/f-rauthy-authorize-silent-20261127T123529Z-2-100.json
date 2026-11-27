@@ -1,0 +1,295 @@
+{
+  "rate": 100,
+  "warm_seconds": 10,
+  "seconds": 36,
+  "operations": {
+    "all": {
+      "planned": 3600,
+      "sent": 3600,
+      "not_sent": 0,
+      "completed_by_cutoff": 3600,
+      "in_flight_at_cutoff": 0,
+      "success": 3600,
+      "failed": 0,
+      "successful_tps": 100,
+      "attainment": 1,
+      "outcomes": {
+        "ok": 3600
+      },
+      "http_status_counts": {
+        "200": 3600
+      },
+      "http_requests": 10800,
+      "http_rps": 300,
+      "scheduling_ms": {
+        "50": 0.822176,
+        "95": 1.600351,
+        "99": 1.689116,
+        "99.9": 1.708336,
+        "100": 2.00691
+      },
+      "response_all_ms": {
+        "50": 8.50765,
+        "95": 19.005056,
+        "99": 28.026504,
+        "99.9": 47.97939,
+        "100": 71.902852
+      },
+      "response_success_ms": {
+        "50": 8.50765,
+        "95": 19.005056,
+        "99": 28.026504,
+        "99.9": 47.97939,
+        "100": 71.902852
+      },
+      "offered_to_completion_success_ms": {
+        "50": 9.385659,
+        "95": 19.985512,
+        "99": 28.691831,
+        "99.9": 49.627731,
+        "100": 72.421335
+      },
+      "in_flight_at_second_boundaries": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    "authorize": {
+      "planned": 3600,
+      "sent": 3600,
+      "not_sent": 0,
+      "completed_by_cutoff": 3600,
+      "in_flight_at_cutoff": 0,
+      "success": 3600,
+      "failed": 0,
+      "successful_tps": 100,
+      "attainment": 1,
+      "outcomes": {
+        "ok": 3600
+      },
+      "http_status_counts": {
+        "200": 3600
+      },
+      "http_requests": 10800,
+      "http_rps": 300,
+      "scheduling_ms": {
+        "50": 0.822176,
+        "95": 1.600351,
+        "99": 1.689116,
+        "99.9": 1.708336,
+        "100": 2.00691
+      },
+      "response_all_ms": {
+        "50": 8.50765,
+        "95": 19.005056,
+        "99": 28.026504,
+        "99.9": 47.97939,
+        "100": 71.902852
+      },
+      "response_success_ms": {
+        "50": 8.50765,
+        "95": 19.005056,
+        "99": 28.026504,
+        "99.9": 47.97939,
+        "100": 71.902852
+      },
+      "offered_to_completion_success_ms": {
+        "50": 9.385659,
+        "95": 19.985512,
+        "99": 28.691831,
+        "99.9": 49.627731,
+        "100": 72.421335
+      },
+      "in_flight_at_second_boundaries": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ]
+    }
+  },
+  "role_peak_rss_mib": {
+    "app": 97.37890625,
+    "postgres": 1050.05859375
+  },
+  "server_peak_rss_mib": 1141.47265625,
+  "role_peak_pss_mib": {
+    "app": 93.375,
+    "postgres": 164.251953125
+  },
+  "app_peak_pss_mib": 93.375,
+  "server_peak_pss_mib": 252.904296875,
+  "pss_samples": 18,
+  "app_crashed": false,
+  "app_oom": false,
+  "peer": "rauthy",
+  "flow": "authorize",
+  "status": "PASS",
+  "generator_slots": 8192,
+  "generator_profile": "base",
+  "generator_workers": 15,
+  "postgres_profile": "base",
+  "generator_sha256": "3c8733d9bdb3b8dca39a64282366cafabd77d388059334a2b4581c99ea060c9a",
+  "invalid_reasons": [],
+  "slo_failing_operations": [],
+  "resources": {
+    "app": {
+      "thread_observations": 789,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 89.96,
+      "mean_cpu_cores": 0.37553950358154264,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 10769606,
+      "network_tx_bytes": 31135970,
+      "network_sample_seconds": 34.01,
+      "mean_rss_sum_mib": 86.21766493055556,
+      "peak_rss_sum_mib": 89.9609375,
+      "cpu_seconds": 13.519422128935535,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 0.39480259870064965
+    },
+    "generator": {
+      "thread_observations": 387,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 37.98,
+      "mean_cpu_cores": 0.030870356979062787,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 24291563,
+      "network_tx_bytes": 7037822,
+      "network_sample_seconds": 34.01,
+      "mean_rss_sum_mib": 37.65711805555556,
+      "peak_rss_sum_mib": 37.9765625,
+      "cpu_seconds": 1.0533583208395807,
+      "cpu_sample_seconds": 34.12200000000001,
+      "peak_interval_cpu_cores": 0.035
+    },
+    "postgres": {
+      "thread_observations": 520,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 76.44,
+      "mean_cpu_cores": 0.08306877123938032,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 6840674,
+      "network_tx_bytes": 3730806,
+      "network_sample_seconds": 34.01,
+      "mean_rss_sum_mib": 912.8678385416666,
+      "peak_rss_sum_mib": 1036.84375,
+      "cpu_seconds": 2.9904757646176914,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 0.10994502748625687
+    }
+  },
+  "host_cpu_psi_pct": 1.07,
+  "shared_cgroup": {
+    "peak_memory_bytes": 13784276992,
+    "peak_rss_bytes": 274284544,
+    "peak_cache_bytes": 13337559040,
+    "cpu_throttled_events": 0,
+    "cpu_throttled_ns": 0,
+    "block_read_bytes": 0,
+    "block_write_bytes": 296267776,
+    "sample_seconds": 34.01
+  },
+  "host_cpu_psi_seconds": 33.999,
+  "host_pressure_pct": {
+    "io_some": 0.5055413394511603,
+    "io_full": 0.48595841054148653,
+    "memory_some": 0.00015882820082943616,
+    "memory_full": 9.412041530633254e-05
+  },
+  "host_cpu_utilization_pct": 9.831263291123145,
+  "app_cpu_wait_task_equivalent": 0.015558774581605341,
+  "other_cpu_wait_task_equivalent": 0.7856554549545572,
+  "app_cpu_seconds": 13.519422128935535,
+  "server_total_cpu_cores": 0.458608274820923,
+  "server_peak_rss_sum_mib": 1121.09765625,
+  "tps_per_app_core": 266.2835708262221,
+  "cpu_microseconds_per_success": 3755.395035815426,
+  "role_placement": {
+    "app": {
+      "background_cores": 0.3821294510641823,
+      "physical_core_scheduler_wait": 0.01671254978087591,
+      "clear": true
+    },
+    "postgres": {
+      "background_cores": 0.7812339528113271,
+      "physical_core_scheduler_wait": 0.019579904526603725,
+      "clear": true
+    },
+    "generator": {
+      "background_cores": 0.3217561602714446,
+      "physical_core_scheduler_wait": 0.04684179249389688,
+      "clear": true
+    }
+  },
+  "role_placement_clear": true,
+  "assigned_background_cores": 0.3821294510641823,
+  "id": "f-rauthy-authorize-silent-20261127T123529Z-2-100",
+  "scenario": "authorize-silent"
+}

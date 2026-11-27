@@ -7,7 +7,7 @@ use crate::services::ServerAuthorizationService;
 use crate::services::ServerTokenService;
 use http::StatusCode;
 use nazo_auth::{
-    ClientProfile, ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
+    ClientProfile, ProtocolErrorCode, SecurityProfile,
     validate_token_request_profile as validate_auth_token_request_profile,
 };
 
@@ -104,15 +104,10 @@ pub fn validate_token_request_profile(
     } else {
         SecurityProfile::Baseline
     };
-    let sender_constraint = match (
+    let sender_constraint = nazo_auth::sender_constraint_policy(
         client.require_dpop_bound_tokens,
         client.require_mtls_bound_tokens,
-    ) {
-        (false, false) => SenderConstraintPolicy::BearerAllowed,
-        (true, false) => SenderConstraintPolicy::DpopRequired,
-        (false, true) => SenderConstraintPolicy::MtlsRequired,
-        (true, true) => SenderConstraintPolicy::DpopOrMtls,
-    };
+    );
     validate_auth_token_request_profile(
         profile,
         ClientProfile {
