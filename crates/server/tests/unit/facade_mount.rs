@@ -201,27 +201,38 @@ async fn separate_mounts_keep_their_own_tenant_data_and_discovery() {
 
 #[actix_web::test]
 async fn discovery_paths_match_raw_identifiers_and_preserve_other_host_resources() {
-    for (resource_path, host_alias, rewritten_alias) in [
-        ("/api%61", "/apia", "/api%2561"),
-        ("/api%2Fone", "/api/one", "/api%2fone"),
-        ("/api*", "/api-anything", "/api%2A"),
+    for (resource_path, aliases) in [
+        ("/api%61", ["/apia", "/api%2561"]),
+        ("/api%2Fone", ["/api/one", "/api%2fone"]),
+        ("/api*", ["/api-anything", "/api%2A"]),
     ] {
         let facade = application("/testauth", Some(resource_path)).await;
         let metadata = format!("/.well-known/oauth-protected-resource{resource_path}");
-        let host_alias = format!("/.well-known/oauth-protected-resource{host_alias}");
+        if resource_path == "/api%61" {
+            assert!(
+                nazo_http_actix::mount(
+                    facade.clone(),
+                    &["/.well-known/oauth-protected-resource/apia"],
+                )
+                .is_err()
+            );
+        }
         let app = awtest::init_service(
             App::new()
+                .route(
+                    "/.well-known/host-before",
+                    web::get().to(|| async { HttpResponse::Ok().body("host metadata before") }),
+                )
                 .configure(
-                    nazo_http_actix::mount(facade.clone(), &[&host_alias, "/.well-known/host"])
-                        .unwrap(),
+                    nazo_http_actix::mount(
+                        facade.clone(),
+                        &["/.well-known/host-before", "/.well-known/host-after"],
+                    )
+                    .unwrap(),
                 )
                 .route(
-                    &host_alias,
-                    web::get().to(|| async { HttpResponse::Ok().body("host alias") }),
-                )
-                .route(
-                    "/.well-known/host",
-                    web::get().to(|| async { HttpResponse::Ok().body("host metadata") }),
+                    "/.well-known/host-after",
+                    web::get().to(|| async { HttpResponse::Ok().body("host metadata after") }),
                 ),
         )
         .await;
@@ -244,8 +255,8 @@ async fn discovery_paths_match_raw_identifiers_and_preserve_other_host_resources
         );
 
         for (path, body) in [
-            (host_alias.as_str(), "host alias"),
-            ("/.well-known/host", "host metadata"),
+            ("/.well-known/host-before", "host metadata before"),
+            ("/.well-known/host-after", "host metadata after"),
         ] {
             let response =
                 awtest::call_service(&app, awtest::TestRequest::get().uri(path).to_request()).await;
@@ -253,10 +264,11 @@ async fn discovery_paths_match_raw_identifiers_and_preserve_other_host_resources
             assert!(!response.headers().contains_key("content-security-policy"));
             assert_eq!(awtest::read_body(response).await.as_ref(), body.as_bytes());
         }
-        for path in [
-            format!("/.well-known/oauth-protected-resource{rewritten_alias}"),
-            "/%2ewell-known/oauth-authorization-server/testauth".to_owned(),
-        ] {
+        for path in aliases
+            .map(|alias| format!("/.well-known/oauth-protected-resource{alias}"))
+            .into_iter()
+            .chain(["/%2ewell-known/oauth-authorization-server/testauth".to_owned()])
+        {
             let response =
                 awtest::call_service(&app, awtest::TestRequest::get().uri(&path).to_request())
                     .await;

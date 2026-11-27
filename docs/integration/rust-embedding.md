@@ -290,7 +290,8 @@ which cover their descendants; discovery reservations retain their raw escapes.
 An opaque framework router cannot expose registrations
 it has already accepted, so the host must declare all of its namespaces. A
 conflict with the authentication prefix or a required discovery path is an
-error. At `/`, unrelated explicitly registered host handlers retain precedence.
+error, including aliases that overlap after the existing routing escape
+normalization. At `/`, unrelated explicitly registered host handlers retain precedence.
 When composing multiple mounts, include the other mount's `path()` and
 `discovery_paths()` in those reservations; checking only its prefix cannot
 detect a shared protected-resource discovery URL.

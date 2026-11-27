@@ -179,6 +179,30 @@ fn host_namespaces_and_required_discovery_cannot_overlap() {
 }
 
 #[test]
+fn host_reservations_reject_decoded_aliases_without_decoding_separators() {
+    let root = Mount::new(&configuration("/"), "/").unwrap();
+    for reserved in ["/%74oken", "/auth/%6De", "/admin/%63lients/custom"] {
+        assert!(root.check_conflicts(&[reserved]).is_err(), "{reserved}");
+    }
+    let mut settings = configuration("/testauth");
+    let mount = Mount::new(&settings, "/testauth").unwrap();
+    assert!(mount.check_conflicts(&["/%74estauth"]).is_err());
+    mount.check_conflicts(&["/testauth%2Ftoken"]).unwrap();
+    for (resource, alias) in [("/api%61", "/apia"), ("/api*", "/api%2A")] {
+        settings.protocol.protected_resource_identifier =
+            format!("https://issuer.example{resource}");
+        let mount = Mount::new(&settings, "/testauth").unwrap();
+        let reserved = format!("/.well-known/oauth-protected-resource{alias}");
+        assert!(mount.check_conflicts(&[&reserved]).is_err(), "{reserved}");
+    }
+    settings.protocol.protected_resource_identifier = "https://issuer.example/api%2Fone".into();
+    Mount::new(&settings, "/testauth")
+        .unwrap()
+        .check_conflicts(&["/.well-known/oauth-protected-resource/api/one"])
+        .unwrap();
+}
+
+#[test]
 fn resource_path_is_exact_including_trailing_slash() {
     let mut settings = configuration("/auth");
     settings.protocol.protected_resource_identifier = "https://issuer.example/api/".into();

@@ -347,7 +347,7 @@ fn logout_confirmation_response(
     }
     document.push_str(concat!(
         "<button id=\"nazo-logout-confirm\" type=\"submit\">Sign out</button>",
-        "<a id=\"nazo-logout-cancel\" href=\"./\">Cancel</a>",
+        "<a id=\"nazo-logout-cancel\" href=\"/\">Cancel</a>",
         "</form></main></body></html>"
     ));
     crate::http::finish(

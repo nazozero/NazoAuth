@@ -144,10 +144,13 @@ impl Mount {
             let ui = self
                 .relative_path(reserved)
                 .is_some_and(|path| in_scope(path, "/ui"));
+            // Framework routers can match decoded path aliases before our raw
+            // guards run. Reserve the same escape-normalized namespace too.
+            let normalized = crate::routes::routing_path(reserved);
             let discovery_conflict = self
                 .discovery
                 .iter()
-                .any(|entry| overlaps(reserved, &entry.path));
+                .any(|entry| overlaps(&normalized, &crate::routes::routing_path(&entry.path)));
             if ui && !discovery_conflict {
                 continue;
             }
@@ -157,10 +160,10 @@ impl Mount {
                         return false;
                     }
                     let literal = route.path.split('{').next().expect("route literal");
-                    overlaps(reserved, literal.trim_end_matches('/'))
+                    overlaps(&normalized, literal.trim_end_matches('/'))
                 })
             } else {
-                overlaps(reserved, &self.prefix)
+                overlaps(&normalized, &self.prefix)
             };
             ensure!(
                 !discovery_conflict && !ordinary_conflict,

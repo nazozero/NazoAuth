@@ -474,7 +474,7 @@ fn logout_confirmation_posts_to_the_unmodified_mounted_path() {
         assert_eq!(response.status(), StatusCode::OK);
         let body = std::str::from_utf8(response.body()).unwrap();
         assert!(body.contains("action=\"/tenant/auth/logout\""));
-        assert!(body.contains("id=\"nazo-logout-cancel\" href=\"./\""));
+        assert!(body.contains("id=\"nazo-logout-cancel\" href=\"/\""));
         assert!(body.contains("name=\"state\" value=\"a/b\""));
         assert_eq!(request.uri(), "/tenant/auth/logout?state=a%2Fb");
     });
