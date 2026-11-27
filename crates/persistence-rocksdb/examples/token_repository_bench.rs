@@ -344,7 +344,7 @@ async fn main() -> Result<()> {
     }
     let barrier = Arc::new(Barrier::new(options.concurrency + 1));
     let mut workers = tokio::task::JoinSet::new();
-    for (worker, fixture) in fixtures.into_iter().enumerate() {
+    for (worker, fixture) in fixtures.iter().cloned().enumerate() {
         let barrier = barrier.clone();
         let concurrency = options.concurrency;
         let flows = options.flows;

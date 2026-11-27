@@ -1,7 +1,3 @@
-use nazo_identity::{
-    OrganizationId, RealmId, TenantBoundaryDefinition, TenantContext, TenantDirectoryBinding,
-    TenantId, TenantProvisioningRequest,
-};
 use nazo_persistence::{
     TenantDirectoryStore,
     directory_control::{
@@ -12,36 +8,9 @@ use nazo_persistence::{
 use nazo_rocksdb::RocksDb;
 use uuid::Uuid;
 
-fn provisioning(host: &str) -> TenantProvisioningRequest {
-    let tenant = TenantContext {
-        tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),
-        realm_id: RealmId::new(Uuid::now_v7()).unwrap(),
-        organization_id: OrganizationId::new(Uuid::now_v7()).unwrap(),
-    };
-    TenantProvisioningRequest {
-        tenant: TenantBoundaryDefinition {
-            id: tenant.tenant_id,
-            slug: "tenant".into(),
-            display_name: "Tenant".into(),
-        },
-        realm: TenantBoundaryDefinition {
-            id: tenant.realm_id,
-            slug: "realm".into(),
-            display_name: "Realm".into(),
-        },
-        organization: TenantBoundaryDefinition {
-            id: tenant.organization_id,
-            slug: "organization".into(),
-            display_name: "Organization".into(),
-        },
-        binding: TenantDirectoryBinding {
-            tenant,
-            runtime_revision: 1,
-            issuer: format!("https://{host}"),
-            external_host: host.into(),
-        },
-    }
-}
+#[path = "support/tenancy.rs"]
+mod tenancy;
+use tenancy::provisioning;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn directory_revision_collision_and_receipt_survive_reopen() {

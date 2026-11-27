@@ -47,7 +47,7 @@ use uuid::Uuid;
 pub struct RocksDb {
     pub(crate) db: Arc<TransactionDB>,
     pub(crate) tenant_id: Uuid,
-    pub(crate) totp_keys: Option<MfaTotpKeyRing>,
+    pub(crate) totp_keys: Option<Arc<MfaTotpKeyRing>>,
 }
 
 impl RocksDb {

@@ -341,3 +341,85 @@ async fn scim_event_acknowledgements_are_receiver_scoped_and_bind_the_audience()
         1
     );
 }
+
+#[tokio::test]
+async fn scim_poll_preserves_the_exact_credential_creation_boundary() {
+    let database = database::Database::new();
+    let db = database.store();
+    let tenant = initialize(db).await.tenant_id.as_uuid();
+    let credential = ScimTokenCredential {
+        id: Uuid::now_v7(),
+        tenant_id: tenant,
+        scopes: vec!["scim:events".into()],
+        event_audience: Some("receiver".into()),
+    };
+    db.provision_scim_credential(&credential, &"a".repeat(64), None)
+        .await
+        .unwrap();
+    let created_at = Timestamp::from_microsecond(Timestamp::now().as_microsecond()).unwrap()
+        + SignedDuration::from_nanos(500);
+    let expiry = created_at + SignedDuration::from_secs(600);
+    let tx = db.transaction();
+    let token_key = key(TOKEN, tenant, credential.id.as_bytes());
+    let mut stored: Credential = read_tx(&tx, &token_key, true).unwrap().unwrap();
+    stored.created_at = created_at;
+    put(&tx, &token_key, &stored).unwrap();
+    let mut ids = Vec::new();
+    for offset in [-1, 0, 1] {
+        let event = StoredEvent::create_notice(
+            tenant,
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            created_at + SignedDuration::from_nanos(offset),
+        );
+        assert_eq!(
+            event.occurred_at.as_microsecond(),
+            created_at.as_microsecond()
+        );
+        put_expiring(
+            &tx,
+            &key(EVENT, tenant, event.id.as_bytes()),
+            &event,
+            expiry,
+        )
+        .unwrap();
+        put_expiring(&tx, &event_order(&event), &event.id, expiry).unwrap();
+        ids.push(event.id);
+    }
+    tx.commit().unwrap();
+    let receiver = EventReceiver {
+        token_id: credential.id,
+        tenant_id: tenant,
+        audience: "receiver".into(),
+    };
+    let mut request = ValidatedPollRequest {
+        max_events: 10,
+        return_immediately: true,
+        ack: vec![],
+        set_errors: Default::default(),
+    };
+    let page = db
+        .apply_dispositions_and_poll(&receiver, &request)
+        .await
+        .unwrap();
+    assert_eq!(page.events.len(), 2);
+    assert!(
+        page.events
+            .iter()
+            .all(|event| event.occurred_at >= created_at)
+    );
+    request.ack = ids.clone();
+    assert!(
+        db.apply_dispositions_and_poll(&receiver, &request)
+            .await
+            .unwrap()
+            .events
+            .is_empty()
+    );
+    assert!(
+        db.db
+            .get_pinned(disposition_key(tenant, credential.id, ids[0]))
+            .unwrap()
+            .is_none()
+    );
+}

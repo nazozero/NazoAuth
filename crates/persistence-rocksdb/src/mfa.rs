@@ -257,7 +257,7 @@ fn set_enabled(
 impl RocksDb {
     #[must_use]
     pub fn with_totp_key_ring(mut self, keys: Option<MfaTotpKeyRing>) -> Self {
-        self.totp_keys = keys;
+        self.totp_keys = keys.map(std::sync::Arc::new);
         self
     }
     pub async fn activate_totp_key(&self) -> Result<(), RepositoryError> {

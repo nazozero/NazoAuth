@@ -22,11 +22,23 @@ const REALM_OWNER: u8 = 0x62;
 const ORGANIZATION_OWNER: u8 = 0x63;
 const ROUTING: u8 = 0x64;
 const OUTCOME: u8 = 0x65;
+const TENANT_SLUG: u8 = 0x6d;
+const REALM_SLUG: u8 = 0x6e;
+const ORGANIZATION_SLUG: u8 = 0x6f;
 
 #[derive(Serialize, Deserialize)]
 struct TenantRecord {
     binding: Option<TenantDirectoryBinding>,
     active: bool,
+    slug: String,
+    display_name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OwnedBoundary {
+    tenant_id: Uuid,
+    slug: String,
+    display_name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -70,18 +82,117 @@ fn validate_binding(binding: &TenantDirectoryBinding) -> Result<(), RepositoryEr
     Ok(())
 }
 
+fn validate_boundary(slug: &str, display_name: &str) -> Result<(), RepositoryError> {
+    if slug.trim().is_empty() || slug.chars().count() > 120 || display_name.chars().count() > 200 {
+        return Err(RepositoryError::Unexpected(
+            "tenant boundary metadata violates storage limits".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn bind_slug(
+    tx: &Transaction<'_, TransactionDB>,
+    table: u8,
+    scope: Uuid,
+    slug: &str,
+    id: Uuid,
+) -> Result<(), RepositoryError> {
+    let storage_key = key(table, scope, slug.to_lowercase().as_bytes());
+    if read_tx::<Uuid>(tx, &storage_key, true)?.is_some_and(|owner| owner != id) {
+        return Err(RepositoryError::Unexpected(
+            "tenant boundary slug already exists".into(),
+        ));
+    }
+    put(tx, &storage_key, &id)
+}
+
+fn ensure_tenant(
+    tx: &Transaction<'_, TransactionDB>,
+    id: Uuid,
+    slug: &str,
+    display_name: &str,
+) -> Result<(), RepositoryError> {
+    validate_boundary(slug, display_name)?;
+    let storage_key = key(TENANT, id, &[]);
+    if let Some(existing) = read_tx::<TenantRecord>(tx, &storage_key, true)? {
+        return if existing.active {
+            Ok(())
+        } else {
+            Err(RepositoryError::Consistency(
+                "provisioned tenant boundary is inactive".into(),
+            ))
+        };
+    }
+    bind_slug(tx, TENANT_SLUG, Uuid::nil(), slug, id)?;
+    put(
+        tx,
+        &storage_key,
+        &TenantRecord {
+            binding: None,
+            active: true,
+            slug: slug.into(),
+            display_name: display_name.into(),
+        },
+    )
+}
+
 fn bind_owner(
     tx: &Transaction<'_, TransactionDB>,
     table: u8,
     id: Uuid,
     tenant: Uuid,
+    slug: &str,
+    display_name: &str,
 ) -> Result<(), RepositoryError> {
+    validate_boundary(slug, display_name)?;
     let storage_key = key(table, Uuid::nil(), id.as_bytes());
-    match read_tx::<Uuid>(tx, &storage_key, true)? {
-        Some(owner) if owner != tenant => Err(RepositoryError::Conflict),
-        Some(_) => Ok(()),
-        None => put(tx, &storage_key, &tenant),
+    if let Some(existing) = read_tx::<OwnedBoundary>(tx, &storage_key, true)? {
+        return if existing.tenant_id == tenant {
+            Ok(())
+        } else {
+            Err(RepositoryError::Consistency(
+                "boundary belongs to another tenant".into(),
+            ))
+        };
     }
+    let slug_table = match table {
+        REALM_OWNER => REALM_SLUG,
+        ORGANIZATION_OWNER => ORGANIZATION_SLUG,
+        _ => unreachable!(),
+    };
+    bind_slug(tx, slug_table, tenant, slug, id)?;
+    put(
+        tx,
+        &storage_key,
+        &OwnedBoundary {
+            tenant_id: tenant,
+            slug: slug.into(),
+            display_name: display_name.into(),
+        },
+    )
+}
+
+fn ensure_default_boundaries(tx: &Transaction<'_, TransactionDB>) -> Result<(), RepositoryError> {
+    let context = TenantContext::default_system();
+    let tenant = context.tenant_id.as_uuid();
+    ensure_tenant(tx, tenant, "default", "Default tenant")?;
+    bind_owner(
+        tx,
+        REALM_OWNER,
+        context.realm_id.as_uuid(),
+        tenant,
+        "default",
+        "Default realm",
+    )?;
+    bind_owner(
+        tx,
+        ORGANIZATION_OWNER,
+        context.organization_id.as_uuid(),
+        tenant,
+        "default",
+        "Default organization",
+    )
 }
 
 fn bind_route(
@@ -105,39 +216,37 @@ fn insert_binding(
     validate_binding(binding)?;
     let tenant = binding.tenant.tenant_id.as_uuid();
     let storage_key = key(TENANT, tenant, &[]);
-    let existing = read_tx::<TenantRecord>(tx, &storage_key, true)?;
-    if let Some(existing) = &existing {
-        if !existing.active
-            || existing
-                .binding
-                .as_ref()
-                .is_some_and(|value| value != binding)
+    let mut existing =
+        read_tx::<TenantRecord>(tx, &storage_key, true)?.ok_or(RepositoryError::NotFound)?;
+    if !existing.active
+        || existing
+            .binding
+            .as_ref()
+            .is_some_and(|value| value != binding)
+    {
+        return Err(RepositoryError::Consistency(
+            "tenant binding already exists or is inactive".into(),
+        ));
+    }
+    if existing.binding.as_ref() == Some(binding) {
+        crate::runtime::ensure_defaults_in_tx(tx, tenant)?;
+        return Ok(revision);
+    }
+    for (table, id) in [
+        (REALM_OWNER, binding.tenant.realm_id.as_uuid()),
+        (ORGANIZATION_OWNER, binding.tenant.organization_id.as_uuid()),
+    ] {
+        if !read_tx::<OwnedBoundary>(tx, &key(table, Uuid::nil(), id.as_bytes()), false)?
+            .is_some_and(|owner| owner.tenant_id == tenant)
         {
             return Err(RepositoryError::Consistency(
-                "tenant binding already exists or is inactive".into(),
+                "tenant boundary is missing or belongs to another tenant".into(),
             ));
         }
-        if existing.binding.as_ref() == Some(binding) {
-            crate::runtime::ensure_defaults_in_tx(tx, tenant)?;
-            return Ok(revision);
-        }
     }
-    bind_owner(tx, REALM_OWNER, binding.tenant.realm_id.as_uuid(), tenant)?;
-    bind_owner(
-        tx,
-        ORGANIZATION_OWNER,
-        binding.tenant.organization_id.as_uuid(),
-        tenant,
-    )?;
     bind_route(tx, &binding.external_host, tenant)?;
-    put(
-        tx,
-        &storage_key,
-        &TenantRecord {
-            binding: Some(binding.clone()),
-            active: true,
-        },
-    )?;
+    existing.binding = Some(binding.clone());
+    put(tx, &storage_key, &existing)?;
     crate::runtime::ensure_defaults_in_tx(tx, tenant)?;
     let revision = revision
         .checked_add(1)
@@ -175,6 +284,7 @@ impl RocksDb {
                 tx.commit().map_err(map_error)?;
                 return Ok(false);
             }
+            ensure_default_boundaries(&tx)?;
             insert_binding(&tx, &binding, revision)?;
             tx.commit().map_err(map_error)?;
             Ok(true)
@@ -309,6 +419,27 @@ fn apply_mutation(
                 "provisioning boundaries do not match binding".into(),
             ));
         }
+        if revision == 0 {
+            ensure_default_boundaries(tx)?;
+        }
+        let tenant_id = tenant.id.as_uuid();
+        ensure_tenant(tx, tenant_id, &tenant.slug, &tenant.display_name)?;
+        bind_owner(
+            tx,
+            REALM_OWNER,
+            realm.id.as_uuid(),
+            tenant_id,
+            &realm.slug,
+            &realm.display_name,
+        )?;
+        bind_owner(
+            tx,
+            ORGANIZATION_OWNER,
+            organization.id.as_uuid(),
+            tenant_id,
+            &organization.slug,
+            &organization.display_name,
+        )?;
         insert_binding(tx, binding, revision)?
     } else {
         let storage_key = key(TENANT, tenant.as_uuid(), &[]);
@@ -486,3 +617,7 @@ impl TenantDirectoryControlPort for RocksDb {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/tenancy.rs"]
+mod tests;

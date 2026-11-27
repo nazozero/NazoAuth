@@ -68,7 +68,9 @@ impl SecurityStateMaintenancePort for RocksDb {
                                 .and_then(|bytes| bytes.try_into().ok())
                                 .ok_or_else(|| corrupt("invalid expiry index"))?;
                             let expires = (u64::from_be_bytes(encoded) ^ (1 << 63)) as i64;
-                            if expires > now {
+                            // Index precision is microseconds; leave the current
+                            // bucket until every nanosecond deadline has elapsed.
+                            if expires >= now {
                                 break;
                             }
                             if candidates.len() == BATCH {

@@ -591,7 +591,10 @@ impl EventStorePort for RocksDb {
                                 .map_err(map_error)?
                             && crate::db::expiration(&event)? > now.as_microsecond()
                         {
-                            events.push(decode::<StoredEvent>(&event)?);
+                            let event = decode::<StoredEvent>(&event)?;
+                            if event.occurred_at >= credential.created_at {
+                                events.push(event);
+                            }
                         }
                     }
                     iter.next();
