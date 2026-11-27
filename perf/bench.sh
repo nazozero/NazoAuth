@@ -27,7 +27,7 @@ if [[ $1 == setup ]]; then
   cc -static -O2 "$PERF/monitor/affinity.c" -o build/affinity
   cc -static -O2 "$PERF/monitor/sampler.c" -o build/sample-cpu
   cc -static -O2 "$PERF/monitor/pss.c" -o build/read-pss
-  sha=${BENCH_NAZO_REVISION:-$(jq -r .git "$PERF/evidence/environment/nazo-login-userinfo-build.json")}
+  sha=${BENCH_NAZO_REVISION:-$(jq -r .git "$PERF/evidence/environment/nazo-build.json")}
   builder=rust@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe
   patch="$PERF/fixture/token-ip-quota.patch"
   echo "a8f192f123f6558f0a1663ef0302b1eb9c56743e71f726fbe4fd5e4f01d21443  $patch" | sha256sum -c -
@@ -64,8 +64,6 @@ source masks
 source private/secrets.env
 if [[ -f private/nazo-revision ]]; then
   BENCH_NAZO_REVISION=$(cat private/nazo-revision)
-else
-  BENCH_NAZO_REVISION=$(jq -r .git "$PERF/evidence/environment/nazo-build.json")
 fi
 export BENCH_NAZO_REVISION
 if [[ $1 == login ]]; then
@@ -91,6 +89,9 @@ one() {
   esac
   case "$peer:$op" in hydra:authorize|hydra:mixed*|rauthy:refresh|rauthy:mixed-core|kanidm:refresh|kanidm:exchange|kanidm:mixed-core) echo "Outside the common protocol group: $peer/$op" >&2; return 2;; esac
   case "$peer" in nazo|keycloak|hydra|rauthy|kanidm) ;; *) return 2;; esac
+  if [[ $peer == nazo && -z ${BENCH_NAZO_REVISION:-} ]]; then
+    echo "Missing NazoAuth build revision in this deployment." >&2; return 2
+  fi
   stop_apps
   if [[ $peer == rauthy ]]; then
     docker start oidc-bench-rauthy-db >/dev/null

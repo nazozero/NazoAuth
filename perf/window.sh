@@ -12,17 +12,19 @@ umask 077
 taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/quiet.py" >"$dest/pre.json"
 warm=${BENCH_WARM_SECONDS:-10}
 bin=/oauth-goose
+sample_memory=false
+if [[ $flow == userinfo || ($peer == nazo && $flow =~ ^(introspect|authorize|refresh|exchange)$) ]]; then
+  sample_memory=true
+  containers=("$app")
+  case "$peer" in
+    nazo) containers+=(oidc-bench-postgres oidc-bench-valkey);;
+    rauthy) containers+=(oidc-bench-rauthy-db);;
+    keycloak|hydra) containers+=(oidc-bench-postgres);;
+  esac
+  for service in "${containers[@]}"; do docker cp "$WORK/build/read-pss" "$service:/read-pss"; done
+fi
 case "$flow" in
   exchange|refresh|authorize|userinfo|mixed-core)
-    if [[ $flow == userinfo ]]; then
-      containers=("$app")
-      case "$peer" in
-        nazo) containers+=(oidc-bench-postgres oidc-bench-valkey);;
-        rauthy) containers+=(oidc-bench-rauthy-db);;
-        keycloak|hydra) containers+=(oidc-bench-postgres);;
-      esac
-      for service in "${containers[@]}"; do docker cp "$WORK/build/read-pss" "$service:/read-pss"; done
-    fi
     req=/tmp/goose-protocol-private.json
     if [[ $flow == mixed-core ]]; then
       docker exec "$fx" /affinity "$BENCH_CONTROL_CPU" python3 /tmp/cnb-clients.py "$peer" >/dev/null
@@ -130,7 +132,7 @@ case "$peer" in
   keycloak|hydra) monitor oidc-bench-postgres "$BENCH_PG_CPUS" '' postgres;;
   rauthy) monitor oidc-bench-rauthy-db "$BENCH_PG_CPUS" '' postgres;;
 esac
-if [[ $flow == userinfo ]]; then
+if $sample_memory; then
   taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/pss.py" "$peer" >"$dest/pss.tsv" &
   pss_pid=$!
 fi
@@ -160,7 +162,7 @@ jq -c '[.status,.operations.all.successful_tps,.operations.all.failed,.operation
 
 taskset -c "$BENCH_CONTROL_CPU" python3 "$PERF/monitor/quiet.py" >"$dest/post.json"
 python3 "$PERF/monitor/placement.py" "$dest"
-if [[ $flow == userinfo ]]; then
+if $sample_memory; then
   if python3 "$PERF/monitor/memory_window.py" "$dest" >"$dest/memory.json.tmp"; then
     mv "$dest/memory.json.tmp" "$dest/memory.json"
   else

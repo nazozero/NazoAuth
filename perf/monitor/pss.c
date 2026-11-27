@@ -24,7 +24,7 @@ int main(void) {
     DIR *procs = opendir("/proc");
     if (!procs) return 1;
     struct dirent *entry;
-    long total = 0;
+    long total_pss = 0, total_rss = 0;
     while ((entry = readdir(procs))) {
         char *end;
         int pid = (int)strtol(entry->d_name, &end, 10);
@@ -36,16 +36,18 @@ int main(void) {
         snprintf(path, sizeof(path), "/proc/%d/smaps_rollup", pid);
         FILE *f = fopen(path, "r");
         if (!f) return 1;
-        long kib = -1;
+        long pss = -1, rss = -1;
         while (fgets(line, sizeof(line), f)) {
-            if (sscanf(line, "Pss: %ld kB", &kib) == 1) break;
+            if (sscanf(line, "Rss: %ld kB", &rss) == 1) continue;
+            if (sscanf(line, "Pss: %ld kB", &pss) == 1 && rss >= 0) break;
         }
         fclose(f);
-        if (kib < 0) return 1;
-        total += kib;
+        if (pss < 0 || rss < pss) return 1;
+        total_pss += pss;
+        total_rss += rss;
     }
     closedir(procs);
-    if (total <= 0) return 1;
-    printf("%ld\n", total);
+    if (total_pss <= 0) return 1;
+    printf("%ld %ld\n", total_pss, total_rss);
     return 0;
 }

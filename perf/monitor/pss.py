@@ -18,7 +18,8 @@ def sample(container):
         "docker", "exec", "--privileged", "-u", "0", container, "/affinity",
         os.environ["BENCH_CONTROL_CPU"], "/read-pss",
     ], stderr=subprocess.DEVNULL)
-    return int(output)
+    pss, rss = map(int, output.split())
+    return pss, rss
 
 
 with ThreadPoolExecutor(max_workers=len(roles)) as pool:
@@ -29,5 +30,6 @@ with ThreadPoolExecutor(max_workers=len(roles)) as pool:
         except (subprocess.CalledProcessError, ValueError):
             pass  # No partial batches (for example a process exited during collection).
         else:
-            print(begin, time.time_ns(), *values, sep="\t", flush=True)
+            pss, rss = zip(*values)
+            print(begin, time.time_ns(), *pss, *rss, sep="\t", flush=True)
         time.sleep(2)

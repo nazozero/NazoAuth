@@ -10,7 +10,7 @@ import sys
 from observe import sample_resources, sample_cgroup_roles, sample_host_pressure
 from host_utilization import cpu_metrics
 from summarize import summarize
-from memory_window import pss_peaks
+from memory_window import smaps_peaks
 
 path = Path(sys.argv[1])
 peer, flow = sys.argv[2:4]
@@ -126,7 +126,7 @@ for role, row in resources.items():
 if (path / "pss.tsv").is_file():
     samples = (list(map(int, line.split())) for line in (path / "pss.tsv").read_text().splitlines())
     try:
-        data.update(pss_peaks(peer, int(metadata["epoch_ns"]) + warm * 10**9, seconds, samples))
+        data.update(smaps_peaks(peer, int(metadata["epoch_ns"]) + warm * 10**9, seconds, samples))
     except ValueError:
         reasons.append("pss_sampling")
 server_roles = sorted(required - {"generator"})
@@ -211,6 +211,11 @@ data.update(
     tps_per_app_core=a["successful_tps"]/cpu if cpu else None,
     cpu_microseconds_per_success=cpu_time*1e6/a["success"] if cpu_time is not None and a["success"] else None,
 )
+if flow == "refresh" and (path / "proof.json").is_file():
+    proof = json.loads((path / "proof.json").read_bytes())
+    if proof.get("fixture_contract") == "rotating-family-pool":
+        data["refresh_fixture"] = {key: proof[key] for key in
+                                   ("fixture_contract", "users", "families_per_user", "fixtures")}
 if peer == "nazo" and os.environ.get("BENCH_NAZO_REVISION"):
     data["product_revision"] = os.environ["BENCH_NAZO_REVISION"]
 print(json.dumps(data, indent=2))
