@@ -609,6 +609,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Download every attested platform binary
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -644,9 +647,10 @@ jobs:
           allowed_names="$(mktemp)"
           find target/release-binaries -maxdepth 1 -type f -printf '%f\n' \
             | sort > "$allowed_names"
-          printf '%s\n' "$protocol_asset" "$crypto_asset" >> "$allowed_names"
+          test -s LICENSE && test -s NOTICE
+          printf '%s\n' "$protocol_asset" "$crypto_asset" LICENSE NOTICE >> "$allowed_names"
           sort -u -o "$allowed_names" "$allowed_names"
-          test "$(wc -l < "$allowed_names")" -eq 10
+          test "$(wc -l < "$allowed_names")" -eq 12
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
@@ -660,7 +664,7 @@ jobs:
             }
           done < "$remote_names"
           existing="$(mktemp -d)"
-          for asset in target/release-binaries/* "target/release-protocol/$protocol_asset" "target/release-protocol/$crypto_asset"; do
+          for asset in target/release-binaries/* "target/release-protocol/$protocol_asset" "target/release-protocol/$crypto_asset" LICENSE NOTICE; do
             name="$(basename "$asset")"
             if grep -Fxq "$name" "$remote_names"; then
               gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
@@ -676,5 +680,5 @@ jobs:
           done
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --json assets --jq '.assets[].name' > "$remote_names"
-          test "$(wc -l < "$remote_names")" -eq 10
+          test "$(wc -l < "$remote_names")" -eq 12
           diff -u "$allowed_names" <(sort "$remote_names")

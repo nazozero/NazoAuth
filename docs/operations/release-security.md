@@ -52,7 +52,7 @@ cd target/registry-workspace
 cargo publish --workspace --locked --registry crates-io --allow-dirty --dry-run
 ```
 
-The script checks out the current commit, copies the project license into each
+The script checks out the current commit, copies LICENSE and NOTICE into each
 distribution package, and adds matching registry versions to local dependencies
 in the checkout's root manifest. These generated files account for
 `--allow-dirty`. Members with `publish.workspace = true` ship with the
@@ -99,8 +99,9 @@ The `release-security` workflow runs for `v*` tags and manual dispatch:
 - retains SBOMs, OCI archives, predicates, and Sigstore bundles as internal CI
   evidence
 - publishes exactly 8 platform-suffixed server executable files plus the exact
-  versioned `nazo-operator-protocol` and `nazo-crypto` crates as persistent GitHub Release assets;
-  JSON, tar, bundle, script, checksum, and SBOM files are not Release assets
+  versioned `nazo-operator-protocol` and `nazo-crypto` crates, and the tagged
+  LICENSE and NOTICE files as persistent GitHub Release assets; JSON, tar,
+  bundle, script, checksum, and SBOM files are not Release assets
 - resumes partial publication only when every existing Release asset is
   byte-identical, and never overwrites a mismatching tag or asset
 - emits standard provenance attestations in addition to the custom manifest

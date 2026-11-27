@@ -7,14 +7,11 @@ pull request directly; no contributor license agreement (CLA), copyright
 assignment, or Developer Certificate of Origin (DCO) sign-off is required.
 
 By submitting a contribution for inclusion in this repository, you license it
-under the same [AGPL-3.0-or-later](LICENSE) terms as the project and confirm that
-you have the right to do so. You retain copyright in your work. Preserve
-applicable third-party licenses and attribution notices.
-
-Accepting a contribution under the AGPL does not give maintainers permission
-to relicense it under proprietary terms. Any additional permission for
-[commercial licensing](COMMERCIAL-LICENSE.md) is separate and optional; it is
-not a condition for accepting community contributions.
+under the [Apache License 2.0](LICENSE) and confirm that you have the right to
+do so. You retain copyright in your work. Preserve applicable third-party
+licenses and attribution notices. Contributions accepted under earlier terms
+retain those terms unless their copyright holders separately authorize
+relicensing.
 
 Dependency updates remain subject to the dependencies' licenses and the
 repository's supply-chain policy.

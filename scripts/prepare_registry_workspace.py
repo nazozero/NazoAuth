@@ -21,7 +21,8 @@ def prepare_manifests(destination: Path) -> None:
         if package.get("publish") != {"workspace": True}:
             raise ValueError(f"{path}: set publish.workspace = true or publish = false")
         registry_packages.add(package["name"])
-        shutil.copyfile(destination / "LICENSE", path.parent / "LICENSE")
+        for name in ("LICENSE", "NOTICE"):
+            shutil.copyfile(destination / name, path.parent / name)
 
     requirements = [
         f'{name}.version = "={version}"'

@@ -51,6 +51,8 @@ RUN apt-get update \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nazoauth \
     && rm -rf /var/lib/apt/lists/*
 
+COPY LICENSE NOTICE /usr/share/doc/nazoauth/
+
 WORKDIR /app
 
 FROM runtime-base AS runtime
