@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -30,7 +31,6 @@ futures-util.workspace = true
 hex.workspace = true
 http.workspace = true
 jiff.workspace = true
-nazoauth.workspace = true
 nazo-auth.workspace = true
 nazo-crypto = { workspace = true, features = ["password", "x509"] }
 nazo-digital-credentials.workspace = true
@@ -42,14 +42,15 @@ nazo-oauth-server-d1.workspace = true
 nazo-openid4vci.workspace = true
 nazo-runtime-modules.workspace = true
 nazo-scim-events.workspace = true
+nazoauth.workspace = true
 pem.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["v4"] }
-zeroize.workspace = true
 x509-parser.workspace = true
+zeroize.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 http-body-util.workspace = true

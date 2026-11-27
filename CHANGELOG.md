@@ -5,6 +5,13 @@ rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 Release dates use UTC+8.
 
+## 0.4.1 - Unreleased
+
+- Prepare the framework-neutral `nazoauth` library and its internal dependencies
+  for crates.io. Hosts can select deployment control when embedding the Actix
+  adapter.
+- Use the published mdoc and Passkey libraries and refresh the Cargo lockfiles.
+
 ## 0.4.0 - 2026-11-22
 
 ### OIDC Relying Party

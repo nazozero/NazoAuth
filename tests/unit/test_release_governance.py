@@ -518,6 +518,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
         package_job = release.split("  operator-protocol-package:", 1)[1].split(
             "  platform-binaries:", 1
         )[0]
+        self.assertIn("python3 scripts/prepare_registry_workspace.py", package_job)
+        self.assertIn('--manifest-path "$RUNNER_TEMP/registry-workspace/Cargo.toml"', package_job)
         self.assertIn(
             "cargo package --locked --package nazo-crypto --package nazo-operator-protocol", package_job
         )

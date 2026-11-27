@@ -575,9 +575,7 @@ def check_aggregate_package_boundary(read_manifest) -> None:
 
 
 def check_workspace_package_metadata(read_manifest) -> None:
-    workspace_manifest = read_manifest(ROOT / "Cargo.toml")
-    for member in workspace_manifest["workspace"]["members"]:
-        manifest_path = ROOT / member / "Cargo.toml"
+    for manifest_path in package_manifests():
         package = read_manifest(manifest_path)["package"]
         for field in ("version", "edition", "license", "repository"):
             if package.get(field) != {"workspace": True}:

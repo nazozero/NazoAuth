@@ -26,6 +26,34 @@ GitHub Actions、容器/Compose 输入、锁定的 Python 输入、精确 Rust s
 
 ## Tag 发布门禁
 
+在根 `Cargo.toml` 的 `[workspace.package].version` 设置版本号，再刷新记录本地包的两份锁文件。
+
+```sh
+cargo update --workspace
+cargo update --workspace --manifest-path fuzz/Cargo.toml
+```
+
+内部依赖只声明本地路径。两份锁文件一并提交。
+
+### Rust 库分发
+
+在待发布提交上准备一个新目录，演练 crates.io 上传。Cargo 会编译打包后的源码，
+并按注册表版本解析这些包之间的依赖。
+
+```sh
+python3 scripts/prepare_registry_workspace.py target/registry-workspace
+cd target/registry-workspace
+cargo publish --workspace --locked --registry crates-io --allow-dirty --dry-run
+```
+
+脚本检出当前提交，把项目许可证复制进各个分发包，并在新工作区的根清单中写入内部依赖
+对应的注册表版本。`--allow-dirty` 用于包含这些生成的文件。声明
+`publish.workspace = true` 的成员随 `nazoauth` 一起分发，声明 `publish = false`
+的宿主和适配器仅在本地使用。正式上传时，在同一目录使用有权发布这些包的凭据，
+执行上述 Cargo 命令并去掉 `--dry-run`。
+
+### GitHub 发布
+
 `release-security` 工作流由 `v*` tag 或手动调度触发：
 
 - tag 触发只接受精确稳定版 `vMAJOR.MINOR.PATCH`；去掉 `v` 后的版本必须等于

@@ -1,10 +1,12 @@
 [package]
 name = "nazo-crypto"
+description = "Cryptographic primitives and key operations for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [features]
 default = []
@@ -48,13 +50,13 @@ ed25519-dalek = { workspace = true, optional = true }
 p256 = { workspace = true, optional = true }
 pkcs8 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, features = ["oid"], optional = true }
-rustls-pki-types = { workspace = true, optional = true }
 thiserror.workspace = true
-x509-parser = { workspace = true, optional = true }
 webpki = { workspace = true, optional = true }
+x509-parser = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
@@ -65,30 +67,30 @@ webpki = { workspace = true, optional = true, features = ["aws-lc-rs"] }
 x509-parser = { workspace = true, optional = true, features = ["verify-aws"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-futures-channel = { workspace = true, optional = true }
-js-sys = { version = "0.3.107", optional = true }
-wasm-bindgen = { version = "0.2.130", optional = true }
 aes-kw = { version = "0.3.1", optional = true, features = ["zeroize"] }
+futures-channel = { workspace = true, optional = true }
 getrandom = { version = "0.4.3", features = ["wasm_js"] }
+js-sys = { version = "0.3.107", optional = true }
 jsonwebtoken = { workspace = true, optional = true, features = ["rust_crypto"] }
-ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc"], optional = true }
-p384 = { version = "0.14.0", features = ["ecdsa"], optional = true }
-p521 = { version = "0.14.0", features = ["ecdsa"], optional = true }
-rsa = { version = "0.10.0", features = ["pkcs1v15", "encoding"], optional = true }
+ml-dsa = { workspace = true, optional = true }
+p384 = { workspace = true, optional = true }
+p521 = { workspace = true, optional = true }
+rsa = { workspace = true, optional = true }
 sha1 = { workspace = true, features = ["oid"], optional = true }
+wasm-bindgen = { version = "0.2.130", optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 aws-lc-rs.workspace = true
 der.workspace = true
+ml-dsa.workspace = true
+p384.workspace = true
+p521.workspace = true
 rcgen.workspace = true
+rsa.workspace = true
 rustls.workspace = true
-x509-cert.workspace = true
-ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc"] }
-p384 = { version = "0.14.0", features = ["ecdsa"] }
-p521 = { version = "0.14.0", features = ["ecdsa"] }
-rsa = { version = "0.10.0", features = ["pkcs1v15", "encoding"] }
 sha1 = { workspace = true, features = ["oid"] }
 sha2 = { workspace = true, features = ["oid"] }
+x509-cert.workspace = true
 
 [lints]
 workspace = true

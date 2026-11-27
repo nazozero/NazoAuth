@@ -31,9 +31,9 @@ checksum = "87a0cf66fd1eb2fb7b822cb78370d82303750809bc6ba855f3f58e517d3238db"
 
 [[package]]
 name = "cc"
-version = "1.11.2"
+version = "1.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
+checksum = "02f0e023adb368345ce0ca6cdfc0f24a06554468d0e8503e14a0841de79bfa69"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -255,7 +255,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "nazo-crypto"
-version = "0.3.9"
+version = "0.4.1"
 dependencies = [
  "ed25519-dalek",
  "getrandom",
@@ -264,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-operator-protocol"
-version = "0.3.9"
+version = "0.4.1"
 dependencies = [
  "base64",
  "hex",

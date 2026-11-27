@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [dependencies]
 bytes.workspace = true
@@ -12,8 +13,8 @@ http.workspace = true
 http-body-util.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-nazoauth.workspace = true
 futures-util.workspace = true
+nazoauth.workspace = true
 wasm-streams.workspace = true
 web-sys = { workspace = true, features = ["ReadableStream", "ReadableWritablePair"] }
 worker = { workspace = true, features = ["http"] }

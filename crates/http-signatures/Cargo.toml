@@ -1,10 +1,12 @@
 [package]
 name = "nazo-http-signatures"
+description = "HTTP Message Signatures and content digest verification for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 base64.workspace = true
@@ -17,8 +19,8 @@ thiserror.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-jsonwebtoken.workspace = true
 ed25519-dalek.workspace = true
+jsonwebtoken.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 proptest.workspace = true
 

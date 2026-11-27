@@ -1,10 +1,12 @@
 [package]
 name = "nazoauth"
+description = "Framework-neutral OAuth 2.0 and OpenID Connect server library for Rust hosts"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [features]
 default = ["deployment-control"]
@@ -20,17 +22,18 @@ arc-swap.workspace = true
 base64.workspace = true
 blake3.workspace = true
 bytes.workspace = true
-jiff.workspace = true
 cookie = { workspace = true, features = ["percent-encode"] }
 encoding_rs.workspace = true
 futures-util.workspace = true
-http.workspace = true
-hmac.workspace = true
 hex.workspace = true
-mime.workspace = true
+hmac.workspace = true
+http.workspace = true
+jiff.workspace = true
 matchit.workspace = true
+mime.workspace = true
 multer.workspace = true
 nazo-auth.workspace = true
+nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509", "aead"] }
 nazo-digital-credentials.workspace = true
 nazo-http-signatures.workspace = true
 nazo-identity.workspace = true
@@ -39,12 +42,13 @@ nazo-oauth-server.workspace = true
 nazo-openid4vci.workspace = true
 nazo-openid4vp.workspace = true
 nazo-operator-protocol.workspace = true
+nazo-passkey.workspace = true
 nazo-persistence.workspace = true
 nazo-resource-server.workspace = true
 nazo-runtime-modules.workspace = true
 nazo-scim-events.workspace = true
-nazo-passkey.workspace = true
 rand.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_urlencoded.workspace = true
 sha2.workspace = true
@@ -54,14 +58,12 @@ urlencoding.workspace = true
 uuid.workspace = true
 web-time.workspace = true
 zeroize.workspace = true
-nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509", "aead"] }
-serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-nazo-key-management = { workspace = true, features = ["test-support"] }
-rcgen.workspace = true
-proptest.workspace = true
 futures-executor.workspace = true
+nazo-key-management = { workspace = true, features = ["test-support"] }
+proptest.workspace = true
+rcgen.workspace = true
 
 [lints]
 workspace = true

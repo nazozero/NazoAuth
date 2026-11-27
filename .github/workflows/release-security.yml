@@ -111,7 +111,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo package --locked --package nazo-crypto --package nazo-operator-protocol
+          python3 scripts/prepare_registry_workspace.py "$RUNNER_TEMP/registry-workspace"
+          cargo package --locked --package nazo-crypto --package nazo-operator-protocol \
+            --manifest-path "$RUNNER_TEMP/registry-workspace/Cargo.toml" \
+            --target-dir "$GITHUB_WORKSPACE/target" --allow-dirty
           mkdir -p target/release-protocol
           version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "nazo-operator-protocol") | .version')"
           for name in nazo-crypto nazo-operator-protocol; do

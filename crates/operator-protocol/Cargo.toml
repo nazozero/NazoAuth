@@ -1,14 +1,16 @@
 [package]
 name = "nazo-operator-protocol"
+description = "Signed operator requests, receipts and recovery contracts for NazoAuth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
-hex.workspace = true
 base64.workspace = true
+hex.workspace = true
 hkdf.workspace = true
 nazo-crypto = { workspace = true, features = ["ed25519"] }
 serde = { workspace = true, features = ["derive"] }
