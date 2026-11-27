@@ -541,7 +541,9 @@ class ReleaseGovernanceTests(unittest.TestCase):
             'protocol_asset="nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"',
             publish,
         )
-        self.assertIn('test "$(wc -l < "$allowed_names")" -eq 10', publish)
+        self.assertIn('test "$(wc -l < "$allowed_names")" -eq 12', publish)
+        self.assertIn('"$crypto_asset" LICENSE NOTICE >> "$allowed_names"', publish)
+        self.assertIn('"target/release-protocol/$crypto_asset" LICENSE NOTICE; do', publish)
         self.assertIn(
             'diff -u "$allowed_names" <(sort "$remote_names")', publish
         )

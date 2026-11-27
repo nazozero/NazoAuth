@@ -46,7 +46,7 @@ cd target/registry-workspace
 cargo publish --workspace --locked --registry crates-io --allow-dirty --dry-run
 ```
 
-脚本检出当前提交，把项目许可证复制进各个分发包，并在新工作区的根清单中写入内部依赖
+脚本检出当前提交，把 LICENSE 和 NOTICE 复制进各个分发包，并在新工作区的根清单中写入内部依赖
 对应的注册表版本。`--allow-dirty` 用于包含这些生成的文件。声明
 `publish.workspace = true` 的成员随 `nazoauth` 一起分发，声明 `publish = false`
 的宿主和适配器仅在本地使用。正式上传时，在同一目录使用有权发布这些包的凭据，
@@ -80,9 +80,9 @@ cargo publish --workspace --locked --registry crates-io --allow-dirty --dry-run
 - 从 Rust 协议源码读取 operator protocol 版本，控制端校验发布格式和协议版本
 - 签名 OCI index；重跑时仅当现有 tag 指向精确的已扫描 digest 才接受，否则拒绝
 - 将 SBOM、OCI archive、predicate 和 Sigstore bundle 保存为内部 CI 证据
-- GitHub Release 持久制品严格只包含 8 个带平台后缀的 server 可执行文件和精确
-  版本的 `nazo-operator-protocol` 和 `nazo-crypto` crate；JSON、tar、bundle、脚本、checksum 和 SBOM
-  不属于 Release 制品
+- GitHub Release 持久制品严格只包含 8 个带平台后缀的 server 可执行文件、精确
+  版本的 `nazo-operator-protocol` 和 `nazo-crypto` crate，以及对应 tag 的 LICENSE 和 NOTICE；
+  JSON、tar、bundle、脚本、checksum 和 SBOM 不属于 Release 制品
 - 只在每个既有 Release 制品逐字节一致时恢复部分发布，绝不覆盖 digest 不同的
   tag 或制品
 - 除自定义 manifest predicate 外，还生成标准 provenance attestation

@@ -80,7 +80,7 @@ set can be scanned from one place.
 | [operations/avatar-direct-upload.md](operations/avatar-direct-upload.md) | Avatar direct-upload storage and migration boundary. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
 | [operations/release-security.zh-CN.md](operations/release-security.zh-CN.md) | Chinese release security guide. |
-| [operations/platform-support.md](operations/platform-support.md) | Native binary targets, OCI architectures, dependency boundaries, and binary-only Release assets. |
+| [operations/platform-support.md](operations/platform-support.md) | Native binary targets, OCI architectures, dependency boundaries, and Release assets. |
 | [operations/platform-support.zh-CN.md](operations/platform-support.zh-CN.md) | Chinese platform support guide. |
 | [operations/release-boundary.md](operations/release-boundary.md) | Production artifact and conformance-tool separation boundary. |
 | [operations/release-boundary.zh-CN.md](operations/release-boundary.zh-CN.md) | Chinese production artifact and conformance-tool separation boundary. |

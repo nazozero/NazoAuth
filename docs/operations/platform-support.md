@@ -58,10 +58,9 @@ when another web server hosts the UI or no UI is required.
 ## Server and Protocol GitHub Releases
 
 Persistent GitHub Release assets contain exactly the 8 platform-suffixed server
-executables in the table and the matching
-`nazo-operator-protocol-<version>.crate`. The crate is produced once from the
-unique protocol source, package-verified, digest-checked, and given standard
-build provenance before publication. Manifests, signatures, checksum files,
+executables in the table, the matching `nazo-operator-protocol-<version>.crate`
+and `nazo-crypto-<version>.crate`, and the tagged LICENSE and NOTICE files.
+The crates are produced from the workspace and package-verified before publication. Manifests, signatures, checksum files,
 SBOMs, OCI archives, bootstrap scripts, and other JSON or tar files are not
 Release assets. Supply-chain evidence remains in GitHub Actions, GitHub artifact
 attestations, Sigstore, and the signed GHCR image.
