@@ -4,7 +4,7 @@
   <p>
     <a href="https://github.com/nazozero/NazoAuth/actions/workflows/code-quality.yml"><img src="https://github.com/nazozero/NazoAuth/actions/workflows/code-quality.yml/badge.svg?branch=main" alt="Code quality"></a>
     <a href="https://github.com/nazozero/NazoAuth/releases"><img src="https://img.shields.io/github/v/release/nazozero/NazoAuth?label=release" alt="Latest release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-2563eb" alt="AGPL-3.0-or-later"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-2563eb" alt="Apache-2.0"></a>
   </p>
   <p>
     <a href="docs/operations/one-click-update.md">Deploy</a> ·
@@ -221,7 +221,9 @@ Report vulnerabilities through [SECURITY.md](SECURITY.md). Pull requests for
 code, tests, and documentation are welcome without a CLA; see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Licensed under [AGPL-3.0-or-later](LICENSE), which permits commercial use,
-including paid distribution and services, when its conditions are met.
-[Separate commercial terms](COMMERCIAL-LICENSE.md) require a written agreement
-and are limited to material for which the licensors have the necessary rights.
+Licensed under the [Apache License 2.0](LICENSE). Commercial use, proprietary
+modifications and redistribution are permitted under its terms. Preserve
+applicable copyright and attribution notices; see [NOTICE](NOTICE).
+The [trademark policy](TRADEMARK.md) addresses use of the project's name and
+logo without restricting software use or requiring visible branding.
+Earlier releases retain their original license terms.

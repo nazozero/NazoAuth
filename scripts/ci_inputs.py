@@ -29,7 +29,7 @@ INPUTS = {
     # Image construction, HTTP fixtures and source-policy checks are one contract.
     "security": RUST + ("scripts/*", "deploy/*", "Containerfile", "Dockerfile",
                         ".dockerignore", "compose*.yml", ".env.yaml.example", "deny.toml",
-                        ".github/e2e-*", "perf/env.yaml", "LICENSE*"),
+                        ".github/e2e-*", "perf/env.yaml", "LICENSE*", "NOTICE"),
     "fuzz": ("Cargo.*", "rust-toolchain*", ".cargo/*", "crates/crypto/*",
              "crates/operator-protocol/*", "fuzz/*"),
     "perf": ("perf/*", ".dockerignore"),

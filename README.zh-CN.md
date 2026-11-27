@@ -4,7 +4,7 @@
   <p>
     <a href="https://github.com/nazozero/NazoAuth/actions/workflows/code-quality.yml"><img src="https://github.com/nazozero/NazoAuth/actions/workflows/code-quality.yml/badge.svg?branch=main" alt="代码质量"></a>
     <a href="https://github.com/nazozero/NazoAuth/releases"><img src="https://img.shields.io/github/v/release/nazozero/NazoAuth?label=release" alt="发布版本"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-2563eb" alt="AGPL-3.0-or-later"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-2563eb" alt="Apache-2.0"></a>
   </p>
   <p>
     <a href="docs/operations/one-click-update.zh-CN.md">部署</a> ·
@@ -195,5 +195,7 @@ cargo test --workspace --all-features --locked
 
 漏洞报告见 [SECURITY.md](SECURITY.md)。欢迎直接通过 Pull Request 贡献代码、测试和文档，无需 CLA；详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-项目使用 [AGPL-3.0-or-later](LICENSE) 许可证，遵守其条款即可商业使用，包括收费分发和提供服务。
-[商业许可](COMMERCIAL-LICENSE.md)须另行签署书面协议，且仅覆盖许可方拥有所需权利的内容。
+项目使用 [Apache License 2.0](LICENSE) 许可证，允许商业使用、闭源修改和再分发。
+请依照许可证保留适用的版权及归属声明，见 [NOTICE](NOTICE)。
+[商标使用政策](TRADEMARK.md)规范项目名称和标识的使用，不限制软件使用，也不强制界面展示品牌。
+历史发行版本保留其原有许可条款。

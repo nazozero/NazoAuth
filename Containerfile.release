@@ -24,6 +24,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY target/release-container/${TARGETARCH}/nazoauth /usr/local/bin/nazoauth
+COPY LICENSE NOTICE /usr/share/doc/nazoauth/
 
 WORKDIR /app
 USER 10001:10001

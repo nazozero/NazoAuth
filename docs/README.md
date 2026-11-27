@@ -56,7 +56,9 @@ set can be scanned from one place.
 | [../SECURITY.md](../SECURITY.md) | Vulnerability reporting and supported security policy. |
 | [../CHANGELOG.md](../CHANGELOG.md) | Release and notable-change history. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution, licensing, and documentation maintenance rules. |
-| [../COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md) | Commercial licensing terms and contact. |
+| [../LICENSE](../LICENSE) | Apache License 2.0. |
+| [../NOTICE](../NOTICE) | Project copyright and attribution notices. |
+| [../TRADEMARK.md](../TRADEMARK.md) | Project name and logo usage. |
 
 ### Operations
 
