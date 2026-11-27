@@ -40,6 +40,7 @@ struct Authorization {
     csrf: String,
     #[serde(default)]
     keycloak_consent: bool,
+    rauthy_refresh_body: Option<String>,
 }
 
 struct Observation {
@@ -287,6 +288,15 @@ async fn keycloak_consent(
     Err("protocol_error")
 }
 
+fn rauthy_refresh_csrf(html: &str) -> Option<String> {
+    if !html.contains(r#"<template id="tpl_login_action">Refresh</template>"#) {
+        return None;
+    }
+    let (_, tail) = html.split_once(r#"<template id="tpl_csrf_token">"#)?;
+    let (csrf, _) = tail.split_once("</template>")?;
+    (!csrf.is_empty()).then(|| csrf.to_owned())
+}
+
 async fn authorize(
     user: &mut GooseUser,
     fixture: &Request,
@@ -298,6 +308,31 @@ async fn authorize(
     let callback = Url::parse(&flow.redirect).map_err(|_| "client_error")?;
     let first = if flow.keycloak_consent {
         keycloak_consent(user, fixture, first, calls).await?
+    } else if let Some(body) = &flow.rauthy_refresh_body {
+        if first.status().as_u16() != 200 {
+            return Err("protocol_error");
+        }
+        let html = first.text().await.map_err(|_| "transport_error")?;
+        let csrf = rauthy_refresh_csrf(&html).ok_or("protocol_error")?;
+        let url = origin
+            .join("/auth/v1/oidc/authorize/refresh")
+            .map_err(|_| "client_error")?;
+        let mut request = user.client.post(url).body(body.clone());
+        for (name, value) in &fixture.headers {
+            request = request.header(name, value);
+        }
+        *calls += 1;
+        let response = send(
+            user,
+            request
+                .header("Content-Type", "application/json")
+                .header("X-CSRF-Token", csrf),
+        )
+        .await?;
+        if response.status().as_u16() != 202 {
+            return Err("protocol_error");
+        }
+        response
     } else {
         first
     };

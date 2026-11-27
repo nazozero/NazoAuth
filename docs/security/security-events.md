@@ -184,6 +184,17 @@ The setting applies only to
 successful `client_credentials` issuance. Hash chaining, batch signing and
 external delivery run independently in the [anchor worker](audit-anchor.md).
 
+| Operation | Durable fact | Why it is kept |
+|---|---|---|
+| Successful UserInfo or token introspection | No issuance event | The operation reads current identity or token state. It does not issue a token. |
+| Successful machine grant | One issuance event when `AUDIT_CLIENT_CREDENTIALS_ISSUANCE=true` | Provides per-token history to deployments that require it. Token validation is independent of this history. |
+| Authorization decision | One decision row with the request identity and any PAR URI | Records the decision even if the client never exchanges the code. The same row prevents a second commit. After export acknowledgement, the database retains the consumption fields until their business deadline. |
+| Authorization-code exchange | A single-use receipt and one issuance event | The receipt prevents another exchange. The event carries the issued token identity and granted scope to the audit consumer. Export and receipt expiry have independent lifetimes. |
+| Successful refresh rotation | Updated family state, a spent-token proof and one issuance event | The first two power subsequent refresh and reuse detection. The event records the issuance and its rotation source together. |
+| Detected refresh reuse | The family security transition and its reuse event | The transition governs future requests. The event explains the security action to the audit consumer. |
+
+The event table has five indexes. Its primary key identifies an event across append, export and acknowledgement. Separate tenant-scoped unique indexes guard request IDs and non-null PAR URIs. The pending index orders unacknowledged rows by their recorded occurrence time. Callers supply event identity and occurrence time separately. The event ID breaks ties, and acknowledged decision rows drop out of the index even while their consumption fields remain. The expiry index serves bounded reclamation of acknowledged decisions. Only the primary key and pending index receive entries for an ordinary issuance event. With external delivery disabled, pending records occupy local storage until delivery resumes. The export setting does not change a grant's audit policy. The [ledger acknowledgement test](../../crates/persistence-postgres/tests/audit_ledger.rs) and the [decision retention test](../../crates/persistence-postgres/tests/authorization_decisions.rs) exercise both lifetimes against PostgreSQL.
+
 The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
 writes `tenant_directory_{operation}` with category `tenant_directory`; the
 [tenant resource executor](../../crates/persistence-postgres/src/tenant_resource_executor.rs)

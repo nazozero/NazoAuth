@@ -288,8 +288,15 @@ class NativeBrowser:
                 headers = [("Content-Type", "application/json"), ("X-CSRF-Token", self.client_http.csrf),
                            ("User-Agent", BENCH_USER_AGENT),
                            ("Cookie", "; ".join(f"{k}={v}" for k, v in self.client_http.cookies.items()))]
+            extra = {}
+            if self.peer == "rauthy" and os.environ.get("BENCH_SILENT") == "1":
+                extra["rauthy_refresh_body"] = json.dumps(body)
+                query = dict(fields, response_type="code", prompt="none", scope=" ".join(fields["scopes"]))
+                del query["scopes"]
+                method, path, body = "GET", "/auth/v1/oidc/authorize?" + urlencode(query), None
+                headers = [(k, v) for k, v in headers if k in ("User-Agent", "Cookie")]
             return dict(method=method, url=self.base + path, headers=headers, body=json.dumps(body) if body else "",
-                        operation=flow, authorize=dict(peer=self.peer, redirect=self.redirect,
+                        operation=flow, authorize=dict(**extra, peer=self.peer, redirect=self.redirect,
                         state=fields["state"], token_url=token_url, csrf="", token_fields=list(dict(
                         auth, code_verifier=verifier, redirect_uri=self.redirect, grant_type="authorization_code").items())))
         code, verifier = self.authorization(scope)

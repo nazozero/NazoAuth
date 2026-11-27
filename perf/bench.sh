@@ -92,7 +92,7 @@ one() {
   case "$op" in
     mixed-core-consent) [[ $peer == keycloak || $peer == nazo ]] || return 2; op=mixed-core; export BENCH_CONSENT=1 BENCH_WARM_SECONDS=5; seconds=20;;
     authorize-consent) [[ $peer == keycloak || $peer == nazo ]] || return 2; op=authorize; export BENCH_CONSENT=1;;
-    authorize-silent) [[ $peer == keycloak || $peer == nazo || $peer == kanidm ]] || { echo "No verified prompt=none adapter for $peer." >&2; return 2; }; op=authorize; export BENCH_SILENT=1;;
+    authorize-silent) [[ $peer == keycloak || $peer == nazo || $peer == kanidm || $peer == rauthy ]] || { echo "No verified prompt=none adapter for $peer." >&2; return 2; }; op=authorize; export BENCH_SILENT=1;;
     user-introspect) op=introspect; export BENCH_TOKEN_SUBJECT=user;;
     machine-introspect) op=introspect;;
     exchange|mixed-core) export BENCH_WARM_SECONDS=5; seconds=20;;

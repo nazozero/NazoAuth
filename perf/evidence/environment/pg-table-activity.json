@@ -1,0 +1,3454 @@
+[
+  {
+    "after": {
+      "at_ns": 1795780976348782000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207904470,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          71720,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4104,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          32508,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1295,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          187510425,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12058439,
+          806,
+          1830,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          73502839,
+          130917,
+          16564,
+          1366924,
+          15288
+        ],
+        "oauth_refresh_spent_tokens": [
+          104984189,
+          55516,
+          1351640,
+          0,
+          1269976
+        ],
+        "oauth_subject_bindings": [
+          2754302,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          36277805,
+          270220,
+          1364264,
+          0,
+          1338473
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24345,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          81225,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          48735,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          48732,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          48735,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          64984,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12600,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1797,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1797,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          135995,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          52711,
+          201,
+          16,
+          916,
+          0
+        ],
+        "runtime_module_state_events": [
+          9810,
+          388,
+          951,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4110,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          26412,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          42916929,
+          1614518,
+          4108244,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1043,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10063,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1443,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4157495,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          49418375,
+          13513,
+          128,
+          1231241,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4107,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1065,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          94042550,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "before": {
+      "at_ns": 1795780956345947000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207904470,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          71684,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4104,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          32508,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1295,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          187351579,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12058439,
+          806,
+          1830,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          73502839,
+          130917,
+          16564,
+          1366924,
+          15288
+        ],
+        "oauth_refresh_spent_tokens": [
+          104984189,
+          55516,
+          1351640,
+          0,
+          1269976
+        ],
+        "oauth_subject_bindings": [
+          2714598,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          35944903,
+          270038,
+          1344407,
+          0,
+          1338473
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24345,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          81225,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          48735,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          48732,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          48735,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          64984,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12600,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1797,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1797,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          135867,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          52682,
+          201,
+          16,
+          916,
+          0
+        ],
+        "runtime_module_state_events": [
+          9810,
+          388,
+          951,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4110,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          26412,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          42702833,
+          1614518,
+          4088387,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1043,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10051,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1443,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4097924,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          49418375,
+          13513,
+          128,
+          1231241,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4107,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1065,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          93943356,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "columns": [
+      "hits",
+      "reads",
+      "inserts",
+      "updates",
+      "deletes"
+    ],
+    "end_ns": 1795780976302575457,
+    "scenario": "exchange",
+    "start_ns": 1795780956302575457,
+    "window": "f-nazo-exchange-20261127T120214Z-1-1000"
+  },
+  {
+    "after": {
+      "at_ns": 1795781037976188000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207904481,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          71845,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4110,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          32512,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1301,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          187761050,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12338865,
+          806,
+          1895,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          75264931,
+          133755,
+          17077,
+          1413303,
+          15288
+        ],
+        "oauth_refresh_spent_tokens": [
+          107811127,
+          55619,
+          1397506,
+          0,
+          1283074
+        ],
+        "oauth_subject_bindings": [
+          2757224,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          36301295,
+          270229,
+          1365400,
+          0,
+          1338506
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24348,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          81235,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          48741,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          48738,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          48741,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          64992,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12610,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1803,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1803,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          136465,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          52900,
+          201,
+          16,
+          920,
+          0
+        ],
+        "runtime_module_state_events": [
+          9854,
+          388,
+          955,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4116,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          26418,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          43316561,
+          1637495,
+          4156337,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1048,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10100,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1450,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4162684,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          49437843,
+          13513,
+          128,
+          1231754,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4113,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1070,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          94282218,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "before": {
+      "at_ns": 1795781001978748000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207904481,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          71782,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4110,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          32512,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1301,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          187582149,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12124052,
+          806,
+          1895,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          73910575,
+          130917,
+          17077,
+          1377536,
+          15288
+        ],
+        "oauth_refresh_spent_tokens": [
+          105247995,
+          55516,
+          1361739,
+          0,
+          1269976
+        ],
+        "oauth_subject_bindings": [
+          2757016,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          36298307,
+          270229,
+          1365400,
+          0,
+          1338506
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24348,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          81235,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          48741,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          48738,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          48741,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          64992,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12610,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1803,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1803,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          136233,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          52826,
+          201,
+          16,
+          920,
+          0
+        ],
+        "runtime_module_state_events": [
+          9854,
+          388,
+          955,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4116,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          26418,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          43020187,
+          1614518,
+          4120570,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1048,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10081,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1450,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4162684,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          49434912,
+          13513,
+          128,
+          1231754,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4113,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1070,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          94103307,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "columns": [
+      "hits",
+      "reads",
+      "inserts",
+      "updates",
+      "deletes"
+    ],
+    "end_ns": 1795781037932505018,
+    "scenario": "refresh",
+    "start_ns": 1795781001932505018,
+    "window": "f-nazo-refresh-20261127T120304Z-1-1000"
+  },
+  {
+    "after": {
+      "at_ns": 1795781102007835000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207905266,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          73002,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4116,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          33032,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1307,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          188490582,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12422415,
+          806,
+          1895,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          75616619,
+          136593,
+          17077,
+          1413949,
+          15801
+        ],
+        "oauth_refresh_spent_tokens": [
+          108298630,
+          55722,
+          1398152,
+          0,
+          1316552
+        ],
+        "oauth_subject_bindings": [
+          2847838,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          37072814,
+          270672,
+          1410695,
+          0,
+          1338539
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24738,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          82535,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          49521,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          49518,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          49521,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          66032,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12930,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1809,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1809,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          136945,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          53104,
+          201,
+          16,
+          924,
+          0
+        ],
+        "runtime_module_state_events": [
+          9898,
+          388,
+          959,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4122,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          27198,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          44376666,
+          1660567,
+          4247652,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1053,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10138,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1457,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4298646,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          49621888,
+          13513,
+          128,
+          1231787,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4119,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1075,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          94874830,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "before": {
+      "at_ns": 1795781066009475000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207905266,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          72939,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4116,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          33032,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1307,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          187919728,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12422415,
+          806,
+          1895,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          75596231,
+          133755,
+          17077,
+          1413949,
+          15801
+        ],
+        "oauth_refresh_spent_tokens": [
+          108281999,
+          55619,
+          1398152,
+          0,
+          1316552
+        ],
+        "oauth_subject_bindings": [
+          2776516,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          36469971,
+          270317,
+          1375025,
+          0,
+          1338539
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24738,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          82535,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          49521,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          49518,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          49521,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          66032,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12930,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1809,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1809,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          136709,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          53020,
+          201,
+          16,
+          924,
+          0
+        ],
+        "runtime_module_state_events": [
+          9898,
+          388,
+          959,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4122,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          27198,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          43544760,
+          1637495,
+          4176290,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1053,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10117,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1457,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4191636,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          49479250,
+          13513,
+          128,
+          1231787,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4119,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1075,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          94411270,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "columns": [
+      "hits",
+      "reads",
+      "inserts",
+      "updates",
+      "deletes"
+    ],
+    "end_ns": 1795781101962729438,
+    "scenario": "authorize-silent",
+    "start_ns": 1795781065962729438,
+    "window": "f-nazo-authorize-silent-20261127T120407Z-1-1000"
+  },
+  {
+    "after": {
+      "at_ns": 1795781166331990000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207905283,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          73135,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4122,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          33040,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1313,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          189090284,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12423645,
+          806,
+          1895,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          75617803,
+          136593,
+          17077,
+          1413949,
+          15801
+        ],
+        "oauth_refresh_spent_tokens": [
+          108298646,
+          55722,
+          1398152,
+          0,
+          1316552
+        ],
+        "oauth_subject_bindings": [
+          2939676,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          37818648,
+          271720,
+          1456553,
+          0,
+          1338572
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24744,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          82555,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          49533,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          49530,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          49533,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          66048,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12950,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1815,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1815,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          137421,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          53290,
+          201,
+          16,
+          928,
+          0
+        ],
+        "runtime_module_state_events": [
+          9942,
+          388,
+          963,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4128,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          27210,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          45445242,
+          1683917,
+          4339434,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1058,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10175,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1464,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4436297,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          51695366,
+          14656,
+          128,
+          1276986,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4125,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1080,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          95336169,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "before": {
+      "at_ns": 1795781130187275000,
+      "tables": {
+        "__diesel_schema_migrations": [
+          23,
+          1,
+          9,
+          0,
+          0
+        ],
+        "access_token_revocations": [
+          207905283,
+          72,
+          0,
+          0,
+          0
+        ],
+        "admin_provision_receipts": [
+          12,
+          2,
+          1,
+          0,
+          0
+        ],
+        "backchannel_logout_deliveries": [
+          73072,
+          92,
+          0,
+          0,
+          0
+        ],
+        "client_access_requests": [
+          48,
+          8,
+          0,
+          0,
+          0
+        ],
+        "controller_identity_approvals": [
+          4122,
+          72,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_challenges": [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_root_key_history": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_recovery_roots": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "controller_registry_slots": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "device_authorization_decisions": [
+          33040,
+          48,
+          0,
+          0,
+          0
+        ],
+        "external_identity_links": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "identity_security_events": [
+          50,
+          15,
+          4,
+          0,
+          0
+        ],
+        "mfa_totp_key_state": [
+          1313,
+          70,
+          1,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_events": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "oauth_client_mtls_trust_anchor_requests": [
+          30,
+          6,
+          0,
+          0,
+          0
+        ],
+        "oauth_clients": [
+          188629607,
+          252,
+          23,
+          0,
+          0
+        ],
+        "oauth_refresh_contracts": [
+          12423645,
+          806,
+          1895,
+          0,
+          1702
+        ],
+        "oauth_refresh_families": [
+          75617803,
+          136593,
+          17077,
+          1413949,
+          15801
+        ],
+        "oauth_refresh_spent_tokens": [
+          108298646,
+          55722,
+          1398152,
+          0,
+          1316552
+        ],
+        "oauth_subject_bindings": [
+          2868802,
+          46,
+          0,
+          0,
+          0
+        ],
+        "oauth_token_issuances": [
+          37242591,
+          270864,
+          1421103,
+          0,
+          1338572
+        ],
+        "openid4vc_trust_policies": [
+          10,
+          5,
+          0,
+          0,
+          0
+        ],
+        "openid4vc_trust_policy_clients": [
+          4,
+          4,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_access_grants": [
+          24744,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_dataset_events": [
+          6,
+          3,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_credential_datasets": [
+          2,
+          2,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_deferred_transactions": [
+          82555,
+          120,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_issuance_responses": [
+          49533,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_nonces": [
+          49530,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_notifications": [
+          49533,
+          72,
+          0,
+          0,
+          0
+        ],
+        "openid4vci_offers": [
+          66048,
+          96,
+          0,
+          0,
+          0
+        ],
+        "openid4vp_transactions": [
+          12950,
+          120,
+          0,
+          0,
+          0
+        ],
+        "organizations": [
+          1815,
+          142,
+          1,
+          0,
+          0
+        ],
+        "realms": [
+          1815,
+          142,
+          1,
+          0,
+          0
+        ],
+        "recovery_invalidations": [
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        "runtime_module_desired_states": [
+          137191,
+          90,
+          16,
+          2,
+          0
+        ],
+        "runtime_module_instance_states": [
+          53212,
+          201,
+          16,
+          928,
+          0
+        ],
+        "runtime_module_state_events": [
+          9942,
+          388,
+          963,
+          0,
+          0
+        ],
+        "scim_audit_events": [
+          4128,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_security_event_receipts": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "scim_security_events": [
+          27210,
+          72,
+          0,
+          0,
+          0
+        ],
+        "scim_tokens": [
+          8,
+          4,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_entries": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "security_audit_chain_state": [
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "security_audit_events": [
+          44618146,
+          1660567,
+          4268559,
+          0,
+          0
+        ],
+        "tenant_directory_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_bindings": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_control_operations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_resource_states": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "tenant_runtime_bindings": [
+          1058,
+          118,
+          1,
+          0,
+          0
+        ],
+        "tenant_runtime_directory_state": [
+          10155,
+          67,
+          1,
+          1,
+          0
+        ],
+        "tenant_signing_keysets": [
+          1464,
+          163,
+          1,
+          0,
+          0
+        ],
+        "tenants": [
+          4329947,
+          94,
+          1,
+          0,
+          0
+        ],
+        "user_client_grants": [
+          50075765,
+          13513,
+          128,
+          1241561,
+          0
+        ],
+        "user_mfa_backup_codes": [
+          47,
+          2,
+          10,
+          0,
+          0
+        ],
+        "user_mfa_remembered_devices": [
+          4125,
+          72,
+          0,
+          0,
+          0
+        ],
+        "user_passkey_credentials": [
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        "user_totp_credentials": [
+          1080,
+          120,
+          1,
+          3,
+          0
+        ],
+        "users": [
+          94981780,
+          355,
+          130,
+          1,
+          0
+        ]
+      }
+    },
+    "columns": [
+      "hits",
+      "reads",
+      "inserts",
+      "updates",
+      "deletes"
+    ],
+    "end_ns": 1795781166140046575,
+    "scenario": "authorize",
+    "start_ns": 1795781130140046575,
+    "window": "f-nazo-authorize-20261127T120511Z-1-1000"
+  }
+]
