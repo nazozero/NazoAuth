@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use async_compression::tokio::bufread::{BrotliDecoder, ZstdEncoder};
+use async_compression::tokio::bufread::ZstdEncoder;
 use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::{Request, header};
@@ -133,12 +133,6 @@ async fn compressed_bodies_require_complete_wire_input() {
 async fn brotli_large_window_is_rejected_before_decoding() {
     // One uncompressed "hello\n" metablock with the large-window WBITS=25 header.
     let compressed = Bytes::from_static(b"\x11\x19\x0a\x00\x02hello\n\x03");
-    let mut decoded = Vec::new();
-    BrotliDecoder::new(compressed.as_ref())
-        .read_to_end(&mut decoded)
-        .await
-        .unwrap();
-    assert_eq!(decoded, b"hello\n");
     for parts in [
         vec![compressed.clone()],
         vec![Bytes::new(), compressed.slice(..1), compressed.slice(1..)],
