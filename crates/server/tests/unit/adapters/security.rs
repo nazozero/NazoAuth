@@ -317,7 +317,7 @@ async fn bootstrap_password_providers_reuse_the_prepared_unknown_secret_hash() {
         .unwrap()
         .into_persistence_value();
     assert_eq!(repeated_scim, prepared);
-    assert!(argon2::PasswordHash::new(prepared.as_str()).is_ok());
+    assert!(password_hash::phc::PasswordHash::new(prepared.as_str()).is_ok());
     let hash = nazo_identity::PasswordHash::new(prepared).expect("valid Argon2 password hash");
     assert!(!hash.verify_password("password"));
     assert!(!hash.verify_password(""));

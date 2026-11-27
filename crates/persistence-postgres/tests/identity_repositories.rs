@@ -1,4 +1,3 @@
-use argon2::{Argon2, PasswordHasher};
 use diesel::{
     OptionalExtension, QueryableByName, sql_query,
     sql_types::{Jsonb, Text, Uuid as SqlUuid},
@@ -1004,10 +1003,7 @@ async fn backup_code_is_consumed_once_atomically() {
         return;
     };
     let code = "ABCD-EFGH";
-    let hash = Argon2::default()
-        .hash_password_with_salt(code.as_bytes(), b"0123456789abcdef")
-        .unwrap()
-        .to_string();
+    let hash = nazo_crypto::password::hash_argon2id(code.as_bytes(), 19_456, 2, 1).unwrap();
     let repository = mfa_repository(pool.clone());
     repository
         .replace_backup_code_hashes(
@@ -3959,10 +3955,7 @@ async fn backup_verifier_consumption_rolls_back_with_its_audit_failure() {
     use diesel_async::SimpleAsyncConnection;
     let (pool, tenant, user_id) = database_fixture().await.expect("real PostgreSQL required");
     let repository = mfa_repository(pool.clone());
-    let hash = Argon2::default()
-        .hash_password_with_salt(b"ABCD-EFGH", b"0123456789abcdef")
-        .unwrap()
-        .to_string();
+    let hash = nazo_crypto::password::hash_argon2id(b"ABCD-EFGH", 19_456, 2, 1).unwrap();
     repository
         .replace_backup_code_hashes(
             tenant.tenant_id,

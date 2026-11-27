@@ -96,7 +96,7 @@ nazo-http-signatures = { workspace = true }
 nazo-openid4vp = { workspace = true }
 nazo-resource-server = { workspace = true }
 nazo-valkey = { workspace = true, features = ["test-support"] }
-argon2 = { workspace = true }
+password-hash.workspace = true
 aws-lc-rs = { workspace = true }
 ed25519-dalek = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }

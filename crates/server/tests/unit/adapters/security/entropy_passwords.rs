@@ -1,6 +1,6 @@
 use super::*;
-use argon2::PasswordHash;
 use nazo_oauth_server::crypto::random_urlsafe_token;
+use password_hash::phc::PasswordHash;
 
 #[test]
 fn password_hash_policy_is_explicit_argon2id_v19() {
