@@ -14,12 +14,11 @@ fn authentication_identity_debug_never_exposes_password_hash() {
 
 #[test]
 fn password_hash_verifies_candidates_without_exposing_the_verifier() {
-    let encoded =
-        nazo_crypto::password::hash_argon2id(b"correct horse battery staple", 19_456, 2, 1)
-            .unwrap();
+    let candidate = uuid::Uuid::now_v7().to_string();
+    let encoded = nazo_crypto::password::hash_argon2id(candidate.as_bytes(), 19_456, 2, 1).unwrap();
     let hash = PasswordHash::new(encoded).unwrap();
 
-    assert!(hash.verify_password("correct horse battery staple"));
+    assert!(hash.verify_password(&candidate));
     assert!(!hash.verify_password("wrong password"));
 }
 
