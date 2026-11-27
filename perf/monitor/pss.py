@@ -1,44 +1,33 @@
-"""Sample NazoAuth and its two dependencies together in KiB. Stop with SIGTERM."""
+"""Sample service process trees together in KiB. Field order is app, then its dependencies."""
 import os
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-# Sum only the service processes, excluding the sampler itself.
-READ = """
-set -eu
-name=$1
-set --
-for proc in /proc/[0-9]*; do
-    read -r comm < "$proc/comm" 2>/dev/null || continue
-    case "$comm" in "$name") set -- "$@" "$proc/smaps_rollup";; esac
-done
-test "$#" -gt 0
-awk '/^Pss:/ {sum += $2} END {print sum}' "$@"
-"""
+peer = sys.argv[1]
+roles = ["oidc-bench-" + peer]
+if peer != "kanidm":
+    roles.append("oidc-bench-rauthy-db" if peer == "rauthy" else "oidc-bench-postgres")
+if peer == "nazo":
+    roles.append("oidc-bench-valkey")
 
 
-def sample(role):
-    container, process = role
+def sample(container):
     output = subprocess.check_output([
         "docker", "exec", "--privileged", "-u", "0", container, "/affinity",
-        os.environ["BENCH_CONTROL_CPU"], "sh", "-c", READ, "sh", process,
+        os.environ["BENCH_CONTROL_CPU"], "/read-pss",
     ], stderr=subprocess.DEVNULL)
-    value = int(output)
-    if value <= 0:
-        raise ValueError("missing PSS")
-    return value
+    return int(output)
 
 
-roles = [("oidc-bench-nazo", "nazoauth"), ("oidc-bench-postgres", "postgres"),
-         ("oidc-bench-valkey", "valkey-server")]
-with ThreadPoolExecutor(max_workers=3) as pool:
+with ThreadPoolExecutor(max_workers=len(roles)) as pool:
     while True:
-        start = time.time_ns()
+        begin = time.time_ns()
         try:
             values = list(pool.map(sample, roles))
         except (subprocess.CalledProcessError, ValueError):
-            pass  # A restarting service has no complete sample.
+            pass  # No partial batches (for example a process exited during collection).
         else:
-            print(start, time.time_ns(), *values, sep="\t", flush=True)
+            print(begin, time.time_ns(), *values, sep="\t", flush=True)
         time.sleep(2)

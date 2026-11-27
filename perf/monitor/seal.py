@@ -10,6 +10,7 @@ import sys
 from observe import sample_resources, sample_cgroup_roles, sample_host_pressure
 from host_utilization import cpu_metrics
 from summarize import summarize
+from memory_window import pss_peaks
 
 path = Path(sys.argv[1])
 peer, flow = sys.argv[2:4]
@@ -123,16 +124,11 @@ for role, row in resources.items():
         row.update(cpu_seconds=cpu_seconds, cpu_sample_seconds=coverage,
                    mean_cpu_cores=cpu_seconds / coverage, peak_interval_cpu_cores=peak)
 if (path / "pss.tsv").is_file():
-    points = []
-    for line in (path / "pss.tsv").read_text().splitlines():
-        begin, finish, app, pg, vk = map(int, line.split())
-        if start * 10**6 <= begin <= finish < end * 10**6 and finish - begin <= 10**9:
-            points.append((begin, app, pg, vk))
-    if not points or len(points) < seconds // 4 or (points[-1][0] - points[0][0]) / 1e9 < seconds * .65:
+    samples = (list(map(int, line.split())) for line in (path / "pss.tsv").read_text().splitlines())
+    try:
+        data.update(pss_peaks(peer, int(metadata["epoch_ns"]) + warm * 10**9, seconds, samples))
+    except ValueError:
         reasons.append("pss_sampling")
-    else:
-        data["app_peak_pss_mib"] = max(app for _, app, _, _ in points) / 1024
-        data["server_peak_pss_mib"] = max(app + pg + vk for _, app, pg, vk in points) / 1024
 server_roles = sorted(required - {"generator"})
 total_rss = []
 if all(role in memory_roles for role in server_roles):

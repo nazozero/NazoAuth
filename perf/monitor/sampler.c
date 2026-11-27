@@ -37,7 +37,7 @@ static void sample(pid_t pid, const char *only, const char *mask, cpu_set_t *exp
     *end = '\0';
     name++;
     if (only[0] != '\0' && strcmp(only, name)) return;
-    if (!strcmp(name, "sample-cpu")) return;
+    if (!strcmp(name, "sample-cpu") || !strcmp(name, "read-pss")) return;
     char state;
     long utime, stime, rss;
     int parsed = sscanf(end + 2, "%c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld %*d %*d %*d %*d %*d %*d %*u %*u %ld", &state, &utime, &stime, &rss);

@@ -7,8 +7,8 @@ export WORK=${BENCH_WORK:-$PERF/.work}
 case ${1:-} in
   verify) shift; exec python3 "$PERF/report.py" --check "$@";;
   report) shift; exec python3 "$PERF/report.py" "$@";;
-  setup|run|matrix|login) ;;
-  *) echo 'Usage: bash perf/bench.sh {setup|matrix|login|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
+  setup|run|matrix|login|memory) ;;
+  *) echo 'Usage: bash perf/bench.sh {setup|matrix|login|memory PEER|run PEER SCENARIO TPS [ROUNDS]|verify|report}' >&2; exit 2;;
 esac
 mkdir -p "$WORK"
 cd "$WORK"
@@ -26,6 +26,7 @@ if [[ $1 == setup ]]; then
   source masks
   cc -static -O2 "$PERF/monitor/affinity.c" -o build/affinity
   cc -static -O2 "$PERF/monitor/sampler.c" -o build/sample-cpu
+  cc -static -O2 "$PERF/monitor/pss.c" -o build/read-pss
   sha=${BENCH_NAZO_REVISION:-$(jq -r .git "$PERF/evidence/environment/nazo-login-userinfo-build.json")}
   builder=rust@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe
   patch="$PERF/fixture/token-ip-quota.patch"
@@ -91,7 +92,11 @@ one() {
   case "$peer:$op" in hydra:authorize|hydra:mixed*|rauthy:refresh|rauthy:mixed-core|kanidm:refresh|kanidm:exchange|kanidm:mixed-core) echo "Outside the common protocol group: $peer/$op" >&2; return 2;; esac
   case "$peer" in nazo|keycloak|hydra|rauthy|kanidm) ;; *) return 2;; esac
   stop_apps
-  if [[ $peer == rauthy ]]; then docker start oidc-bench-rauthy-db >/dev/null; else docker stop oidc-bench-rauthy-db >/dev/null; fi
+  if [[ $peer == rauthy ]]; then
+    docker start oidc-bench-rauthy-db >/dev/null
+  elif [[ $(docker inspect -f '{{.State.Running}}' oidc-bench-rauthy-db 2>/dev/null) == true ]]; then
+    docker stop oidc-bench-rauthy-db >/dev/null
+  fi
   if [[ $peer == nazo ]]; then docker start "$vk" >/dev/null; else docker stop "$vk" >/dev/null; fi
   docker start "oidc-bench-$peer" >/dev/null
   case "$peer" in
@@ -115,6 +120,42 @@ one() {
   fi
   bash "$PERF/window.sh" "$peer" "$op" "$rate" "$round" "$seconds"
 }
+if [[ $1 == memory ]]; then
+  peer=${2:?peer}
+  case "$peer" in rauthy) db=oidc-bench-rauthy-db;; keycloak|hydra|nazo) db=$pg;; kanidm) db=;; *) exit 2;; esac
+  [[ ${BENCH_PROFILE:-base} == base ]] || exit 2
+  stop_apps
+  if [[ $db != "$pg" && $(docker inspect -f '{{.State.Running}}' "$pg") == true ]]; then
+    docker stop -t 30 "$pg" >/dev/null
+    trap 'docker start "$pg" >/dev/null' EXIT
+  fi
+  if [[ -n $db ]]; then
+    docker restart -t 30 "$db" >/dev/null
+    for _ in {1..60}; do docker exec "$db" pg_isready -q && break; sleep 1; done
+    docker exec "$db" pg_isready -q
+  fi
+  if [[ $peer == nazo ]]; then docker restart -t 8 "$vk" >/dev/null; fi
+  prefix="pssblock-$(date -u +%Y%m%dT%H%M%SZ)"
+  for round in 1 2 3; do
+    case $round in
+      1) rates=(1000 12000 100 6000 3000);;
+      2) rates=(6000 100 3000 12000 1000);;
+      3) rates=(3000 1000 6000 100 12000);;
+    esac
+    for rate in "${rates[@]}"; do
+      echo "$peer $rate round $round"
+      for attempt in 1 2 3; do
+        label="$prefix-$round-$attempt"
+        result="$WORK/windows/$peer/userinfo/$label-$rate/memory.json"
+        one "$peer" userinfo "$rate" "$label" 32 8 base
+        if [[ -s $result ]]; then break; fi
+      done
+      test -s "$result"
+    done
+  done
+  stop_apps
+  exit 0
+fi
 if [[ $1 == matrix ]]; then
   prefix=$(date -u +%Y%m%dT%H%M%SZ)
   python3 "$PERF/report.py" --plan >"$WORK/plan.tsv"

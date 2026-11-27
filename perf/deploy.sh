@@ -24,7 +24,7 @@ stop_apps() {
   done
 }
 ready() {
-  local host=$1 path=$2
+  local host=$1 path=$2 attempt
   for ((attempt=0;attempt<100;attempt++)); do
     [[ $(docker inspect -f '{{.State.Running}}' "$host") == true ]] || break
     if docker exec "$prep" /affinity "$BENCH_CONTROL_CPU" python3 -c \

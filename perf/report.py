@@ -15,6 +15,7 @@ from pathlib import Path
 from statistics import median
 
 from monitor.summarize import summarize
+from monitor.memory_window import pss_peaks
 
 HERE = Path(__file__).resolve().parent
 SERVICES = {"nazo": "NazoAuth", "rauthy": "Rauthy", "kanidm": "Kanidm", "keycloak": "Keycloak", "hydra": "Hydra"}
@@ -149,6 +150,40 @@ def login_table():
                   "登录后 PSS MiB", "进程峰值 RSS MiB"], rows)
 
 
+def memory_table(observations):
+    cells = defaultdict(list)
+    seen = set()
+    for r in observations:
+        peer, rate = r["peer"], r["target_tps"]
+        key = peer, r["start_ns"]
+        if key in seen:
+            raise ValueError("duplicate UserInfo memory window")
+        seen.add(key)
+        seconds = r["seconds"]
+        if (r["planned"] != rate * seconds or r["success"] + r["failed"] != r["sent"]
+                or r["sent"] + r["unsent"] != r["planned"] or r["success"] <= 0):
+            raise ValueError("UserInfo traffic accounting")
+        measured = pss_peaks(peer, r["start_ns"], seconds, r["pss_kib"])
+        if any(measured[k] != r[k] for k in ("pss_samples", "role_peak_pss_mib", "server_peak_pss_mib")):
+            raise ValueError("UserInfo PSS differs from the role samples")
+        cells[rate, peer].append(r)
+
+    rows = []
+    for rate in sorted({rate for rate, _ in cells}):
+        for peer, name in SERVICES.items():
+            group = cells[rate, peer]
+            if not group:
+                continue
+            traffic = [formatted([r[k] / r["seconds"] for r in group]) for k in ("sent", "success")]
+            memory = [formatted([r["role_peak_pss_mib"].get(role) for r in group], 1)
+                      for role in ("app", "postgres", "valkey")]
+            totals = [r["server_peak_pss_mib"] for r in group]
+            rows.append([f"{rate:,}", name, " / ".join(traffic), *memory, formatted(totals, 1),
+                         f"{min(totals):,.1f}–{max(totals):,.1f}", len(group)])
+    return table(["目标 TPS", "服务", "实发 / 成功 TPS", "主服务", "PostgreSQL", "Valkey",
+                  "服务端合计", "合计范围", "观测轮数"], rows)
+
+
 def section_tables(output, published):
     show_pss = any(r[0] == "用户资料" and r[16] != "—" for r in output)
     sections = defaultdict(list)
@@ -210,6 +245,11 @@ def render(rows, published):
         blocks.extend(overview(output))
         blocks.extend(["## NazoAuth 密码登录", login_table(),
                        "每轮启动新进程，32 个已注册账户以 8 并发登录三批，每批 32 次。客户端核验登录响应和 CSRF Cookie。批内吞吐为成功数除以三批实际耗时之和，排除批间 3 秒空闲。延迟从客户端发起登录计至响应及 Cookie 检查完成，每轮 96 个样本，P99 为最慢一次。登录后 PSS 取末批结束 3 秒时的读数，峰值 RSS 为该进程的内核高水位。该闭环登录诊断未同步采集宿主 PSI，延迟与吞吐仅描述此次运行。"])
+    if published:
+        blocks.extend(["## UserInfo 内存（PSS）",
+                       "单位为 MiB。表中各项取每轮采样峰值的中位数。服务端合计取同批主服务与外部依赖之和的峰值，各组件峰值可能出现在不同时刻。Kanidm 的内嵌存储和 Rauthy 的内嵌缓存计入主服务。Hydra 的登录与同意在令牌准备阶段完成。横线表示此次查询没有该外部依赖。合计只计服务进程的驻留页，Goose 和采集器单独运行。",
+                       memory_table(map(json.loads, (HERE / "evidence/userinfo-memory.jsonl").read_bytes().splitlines())),
+                       "NazoAuth 为 `3398422` 的 59 轮参考观测。其余四家分别在相同配置下取得每档三轮内存观测。四个对照服务中，使用外部数据库的服务在开始测量该服务前重启 PostgreSQL，随后各轮沿用已有业务数据。每轮使用 32 个不同用户的真实令牌，请求 `openid profile`，预热 10 秒、测量 36 秒。PSS 从 Linux smaps_rollup 读取，共享页按比例分摊。每约 2 秒并行采集各角色，每批跨度至多 1 秒，每轮至少 9 批并覆盖至少 65% 的测量窗口。宿主 CPU 争抢和过载会改变实发量、请求积压和内存占用，解读时请同时参照实发与成功 TPS。此表仅统计内存观测轮次。[逐轮 PSS 样本和流量计数](evidence/userinfo-memory.jsonl)"])
     blocks.extend(section_tables(output, published))
     if published: blocks.append(METHOD)
     return "\n\n".join(blocks)+"\n"
@@ -234,7 +274,7 @@ METHOD = """## 测试方法
 - **轮换。** 表中括号表示用户数 × 每用户独立令牌族数。成功后用返回的后继令牌继续该族。Rauthy 被测配置的后继令牌有约 240 秒生效等待；Kanidm 的重复消费行为与严格一次性兑换及即时轮换组不同。这些场景没有共同的安全和时序前提。
 - **混合。** 两类混合每三次安排一次机器签发、两次内省；五类混合的签发、内省、兑换、刷新、已登录授权分别占 30%、50%、10%、5%、5%。有效机器令牌集由 16 个客户端各签发 32 枚；授权码兑换使用 32 个用户。登录、造数通过各项目管理或协议接口完成，每家使用自己的数据库。逐业务项计数和延迟见每轮 JSON 的 `operations`。
 - **过载。** 成功 TPS = 测量期内计划到达、最终成功的业务数 ÷ 测量秒数，包含窗口结束后返回的成功。多 HTTP 步骤构成的一笔授权只算一次业务。未发出可能来自调度迟到、在途槽耗尽或前一个刷新未完成。成功请求延迟与成功数、失败数、未发出数一起阅读。Kanidm 在部分混合档位的成功样本全部来自内省。
-- **资源。** CNB Linux x86-64。对照项目的 CPU 为 AMD EPYC 9K65、无 Swap；NazoAuth `3398422` 的处理器同为 AMD EPYC 9K65，`af4b849` 的记录仅保存核与 SMT 映射。主服务无硬内存上限，数据库、缓存、Goose 及采集器使用独立核。常规配置分别给 PostgreSQL、Valkey、Goose 分配 14、2、15 个逻辑 CPU。内存取测量窗口内采样到的进程 RSS；服务端总峰值按同时刻汇总，共享页可能重复计入。带 PSS 采样的 UserInfo 窗口将共享页按持有进程分摊，主／总分别为主服务和主服务＋PostgreSQL＋Valkey 的采样峰值。三个角色同批采样，每次采样跨度不超过 1 秒。CPU 是平均占用核数，宿主 CPU PSI 是存在可运行任务等待 CPU 的时间占比。
+- **资源。** CNB Linux x86-64。对照项目的 CPU 为 AMD EPYC 9K65、无 Swap；NazoAuth `3398422` 的处理器同为 AMD EPYC 9K65，`af4b849` 的记录仅保存核与 SMT 映射。主服务无硬内存上限，数据库、缓存、Goose 及采集器使用独立核。常规配置分别给 PostgreSQL、Valkey、Goose 分配 14、2、15 个逻辑 CPU。内存取测量窗口内采样到的进程 RSS；服务端总峰值按同时刻汇总，共享页可能重复计入。带 PSS 采样的 UserInfo 窗口将共享页按持有进程分摊，主／总分别为主服务和该部署服务端合计的采样峰值。各角色同批采样，每次采样跨度不超过 1 秒。CPU 是平均占用核数，宿主 CPU PSI 是存在可运行任务等待 CPU 的时间占比。
 - **发压。** Goose 0.19.2，调度迟到 5 ms 放弃发出，HTTP 超时 5 秒，共享 HTTP 连接池，固定计划到达，无自动重试。标准配置为 8,192 在途槽、15 工作线程，宽配置为 32,768 槽、24 线程、独立日志写入及扩展源端口范围。只在相同配置内聚合。除兑换和五类混合为预热 5 秒、测量 20 秒外，其余为 10 秒和 36 秒。每个计划操作记录计划、实际发出与完成时间。P99.9 在低样本量窗口可能仅由少数样本决定。
 - **有效性。** 只纳入夹具校验成功、计数可对账、资源采样及亲和性合格的窗口。Goose 调度迟发超过计划数 0.1% 或存在发压端资源瓶颈时排除；服务端过载仍保留。宿主干扰结合 PSI、所分配核心的非测试负载和调度等待判断。高整机 CPU 利用率本身不构成排除依据。有效轮数表示测量质量，与产品延迟门槛分开计算。
 
@@ -260,17 +300,26 @@ python3 perf/report.py --input perf/.work/windows --output /tmp/fresh.md
 
 `bash perf/bench.sh matrix` 依据部署的 NazoAuth 版本，按固定种子交错重放所选发压配置已经发表的业务、档位、轮数和刷新数据规模。宽配置使用新的独立 CNB，先以 `BENCH_NETWORK=wide bash perf/bench.sh setup` 部署，再以 `BENCH_PROFILE=journal-wide bash perf/bench.sh matrix` 运行。每个窗口必须有唯一输出路径。私有凭据和新结果保存在忽略提交的 `perf/.work/`。
 
-[登录逐次耗时和内存读数](evidence/login/)及[登录和 UserInfo 构建信息](evidence/environment/nazo-login-userinfo-build.json)可用于复算本次测量。逐轮原始统计和分项业务结果位于 [evidence/windows](evidence/windows/)。[逐操作采样包](evidence/samples/)保留当前 NazoAuth 有效窗口的到达账本及资源采样；四个对照项目保存到逐轮统计粒度，其逐请求时间戳无法从分位数还原。原生配置及发压校准见 [环境快照](evidence/environment/)。部署参数和镜像摘要见 [deploy.sh](deploy.sh) 与 [native-deploy.sh](native-deploy.sh)。[运行开关补丁](fixture/token-ip-quota.patch)使被测提交支持该配置，测试只关闭所列令牌入口 IP 配额。"""
+[登录逐次耗时和内存读数](evidence/login/)及[登录和 UserInfo 构建信息](evidence/environment/nazo-login-userinfo-build.json)可用于复算本次测量。四个对照服务可分别用 `bash perf/bench.sh memory rauthy`、`bash perf/bench.sh memory kanidm`、`bash perf/bench.sh memory keycloak`、`bash perf/bench.sh memory hydra` 复现内存测量。每轮的 `memory.json` 保存原始 PSS 读数、分项峰值和业务计数。用 `python3 perf/report.py --memory-input perf/.work/windows` 汇总本次内存测量。逐轮原始统计和分项业务结果位于 [evidence/windows](evidence/windows/)。[逐操作采样包](evidence/samples/)保留当前 NazoAuth 有效窗口的到达账本及资源采样；四个对照项目保存到逐轮统计粒度，其逐请求时间戳无法从分位数还原。原生配置及发压校准见 [环境快照](evidence/environment/)。部署参数和镜像摘要见 [deploy.sh](deploy.sh) 与 [native-deploy.sh](native-deploy.sh)。[运行开关补丁](fixture/token-ip-quota.patch)使被测提交支持该配置，测试只关闭所列令牌入口 IP 配额。"""
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input",type=Path,help="fresh windows directory")
+    parser.add_argument("--memory-input", type=Path, help="print the PSS table from fresh memory run blocks")
     parser.add_argument("--output",type=Path)
     parser.add_argument("--check",action="store_true")
     parser.add_argument("--raw",action="store_true",help="recalculate all available arrival ledgers")
     parser.add_argument("--plan",action="store_true")
     args=parser.parse_args()
+    if args.memory_input:
+        if args.input or args.check or args.raw or args.plan or args.output:
+            parser.error("--memory-input prints a standalone table")
+        files = sorted(args.memory_input.glob("*/userinfo/pssblock-*/memory.json"))
+        if not files:
+            parser.error("no UserInfo memory observations found")
+        print(memory_table(json.loads(path.read_bytes()) for path in files))
+        return
     files=sorted(args.input.glob("*/*/*/summary.json") if args.input else (HERE/"evidence/windows").glob("*.json"))
     rows=[]
     for path in files:
