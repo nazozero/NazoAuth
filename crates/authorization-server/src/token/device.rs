@@ -108,12 +108,12 @@ impl DeviceDecisionHandles {
                     .is_none_or(|form_id| form_id == *id)
             })
             .ok_or_else(|| OAuthEndpointError::invalid_client("客户端认证失败.", has_basic))?;
-        let (mut client, secret_salt) = match authorization_service
+        let (mut client, secret_digest) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
             Ok(Some(snapshot)) if snapshot.client.is_active => {
-                (snapshot.client, snapshot.secret_salt)
+                (snapshot.client, snapshot.secret_digest)
             }
             Ok(_) => {
                 return Err(OAuthEndpointError::invalid_client(
@@ -138,7 +138,7 @@ impl DeviceDecisionHandles {
             &credentials,
             self.remote_jwks.as_ref(),
             self.audit.as_ref(),
-            secret_salt.as_deref(),
+            secret_digest.as_deref(),
         )
         .await?;
         if !client.security_policy.allow_cross_device_flows {
@@ -440,7 +440,7 @@ async fn authenticate_device_authorization_client(
     credentials: &ClientCredentials,
     remote_client_documents: &dyn RemoteJwksResolverPort,
     security_audit: &dyn crate::ports::audit::SecurityAudit,
-    secret_salt: Option<&str>,
+    secret_digest: Option<&str>,
 ) -> Result<(), OAuthEndpointError> {
     let assertion = authenticate_client_with_dependencies(
         authorization_service,
@@ -458,7 +458,7 @@ async fn authenticate_device_authorization_client(
         client,
         credentials,
         ClientAuthenticationContext::AllowPublicNone,
-        secret_salt,
+        secret_digest,
     )
     .await
     .map_err(|error| {

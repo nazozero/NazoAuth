@@ -135,6 +135,24 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
         .execute(&mut connection)
         .await
         .unwrap();
+    assert!(
+        !repository
+            .machine_client_active(tenant, fixture.client_id, 0)
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .machine_client_active(tenant, fixture.client_id, 1)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .machine_client_active(Uuid::now_v7(), fixture.client_id, 1)
+            .await
+            .unwrap()
+    );
     let stale = fresh_issuance(&fixture, tenant);
     assert_eq!(
         repository
@@ -560,6 +578,16 @@ async fn fresh_issuance_rejects_oversized_audit_payload() {
 /// state and refuses the inactive client without any partial write.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_waits_for_client_deactivation_and_rechecks() {
+    check_concurrent_deactivation(true, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn machine_final_check_waits_for_client_deactivation() {
+    check_concurrent_deactivation(false, true).await;
+    check_concurrent_deactivation(false, false).await;
+}
+
+async fn check_concurrent_deactivation(audited: bool, commit_disable: bool) {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -587,18 +615,41 @@ async fn fresh_issuance_waits_for_client_deactivation_and_rechecks() {
         .expect("client deactivation should hold its row lock");
     assert_eq!(changed, 1, "client fixture must start active");
     let issuance_id = input.issuance_id;
-    let mut issuer = tokio::spawn(async move { repository.commit_token_issuance(input).await });
+    let mut issuer = tokio::spawn(async move {
+        if audited {
+            repository.commit_token_issuance(input).await
+        } else {
+            repository
+                .machine_client_active(
+                    tenant_id,
+                    input.client_id,
+                    input.principal_state.client_epoch,
+                )
+                .await
+                .map(|active| {
+                    if active {
+                        CommitTokenIssuanceResult::Committed
+                    } else {
+                        CommitTokenIssuanceResult::ClientInactive
+                    }
+                })
+        }
+    });
     wait_for_lock_wait_or_task(&mut observer, &application_name, &mut issuer).await;
     coordinator
-        .batch_execute("COMMIT")
+        .batch_execute(if commit_disable { "COMMIT" } else { "ROLLBACK" })
         .await
-        .expect("client deactivation should commit");
+        .expect("competing deactivation should finish");
     assert_eq!(
         issuer
             .await
             .expect("issuance task should join")
-            .expect("issuance should classify a committed deactivation"),
-        CommitTokenIssuanceResult::ClientInactive
+            .expect("issuance should see the resolved client state"),
+        if commit_disable {
+            CommitTokenIssuanceResult::ClientInactive
+        } else {
+            CommitTokenIssuanceResult::Committed
+        }
     );
     assert_no_writes(&database_url, issuance_id).await;
 }
@@ -795,12 +846,22 @@ async fn fresh_issuance_lock_timeout_discards_connection_cleanly() {
 /// connection instead of returning an unknown transaction state to the pool.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
+    check_cancelled_fence(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_a_lock_only_machine_check_releases_its_connection() {
+    check_cancelled_fence(false).await;
+}
+
+async fn check_cancelled_fence(audited: bool) {
     let Some(database_url) = database_url() else {
         return;
     };
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let input = fresh_issuance(&fixture, tenant_id);
+    let cancelled_issuance_id = input.issuance_id;
     let application_name = format!("fresh-abort-{}", Uuid::now_v7().simple());
     let pool = create_pool(tagged_database_url(&database_url, &application_name), 1).unwrap();
     let repository = TokenIssuanceRepository::new(pool.clone());
@@ -820,8 +881,23 @@ async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
         .await
         .expect("lock observer should connect");
     let issuer_repository = repository.clone();
-    let mut issuer =
-        tokio::spawn(async move { issuer_repository.commit_token_issuance(input).await });
+    let mut issuer = tokio::spawn(async move {
+        if audited {
+            issuer_repository
+                .commit_token_issuance(input)
+                .await
+                .map(|_| ())
+        } else {
+            issuer_repository
+                .machine_client_active(
+                    tenant_id,
+                    input.client_id,
+                    input.principal_state.client_epoch,
+                )
+                .await
+                .map(|_| ())
+        }
+    });
     wait_for_lock_wait_or_task(&mut observer, &application_name, &mut issuer).await;
     issuer.abort();
     assert!(
@@ -841,6 +917,7 @@ async fn fresh_issuance_abort_during_lock_wait_discards_connection() {
         CommitTokenIssuanceResult::Committed
     );
     assert_eq!(pool.status().available, 1);
+    assert_no_writes(&database_url, cancelled_issuance_id).await;
 }
 
 /// The runtime role boundary is the real one: a least-privilege role created
@@ -1069,6 +1146,20 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
 /// Audit append failure rejects Fresh issuance and returns no partial state.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fresh_issuance_audit_function_failure_rejects_commit() {
+    assert_fresh_audit_failure("TRIGGER", "BEFORE", "").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fresh_issuance_rejects_an_error_at_deferred_commit() {
+    assert_fresh_audit_failure(
+        "CONSTRAINT TRIGGER",
+        "AFTER",
+        "DEFERRABLE INITIALLY DEFERRED",
+    )
+    .await;
+}
+
+async fn assert_fresh_audit_failure(kind: &str, timing: &str, deferrability: &str) {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1101,7 +1192,7 @@ async fn fresh_issuance_audit_function_failure_rejects_commit() {
     // shared test database.
     let issuance_id = input.issuance_id;
     sql_query(format!(
-        "CREATE TRIGGER {trigger} BEFORE INSERT ON security_audit_events \
+        "CREATE {kind} {trigger} {timing} INSERT ON security_audit_events {deferrability} \
          FOR EACH ROW \
          WHEN (NEW.payload->>'issuance_id' = '{issuance_id}') \
          EXECUTE FUNCTION {function}()"

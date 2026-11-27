@@ -742,7 +742,7 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
 }
 
 #[actix_web::test]
-async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
+async fn userinfo_rejects_revoked_access_token_in_authority_snapshot() {
     let Some(state) = live_userinfo_state().await else {
         return;
     };
@@ -802,12 +802,14 @@ async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
     let Some(state) = live_userinfo_state().await else {
         return;
     };
+    insert_userinfo_client(&state, "userinfo-client").await;
+    let user = insert_userinfo_user(&state, true).await;
     let bearer_with_dpop_cnf = signed_userinfo_access_token(
         &state,
         "userinfo-client",
         DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
-        None,
+        &user.id.to_string(),
+        Some(user.id),
         "user",
         &["resource://default".to_owned()],
         &["openid".to_owned()],
@@ -827,8 +829,8 @@ async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
         &state,
         "userinfo-client",
         DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
-        None,
+        &user.id.to_string(),
+        Some(user.id),
         "user",
         &["resource://default".to_owned()],
         &["openid".to_owned()],
@@ -849,12 +851,14 @@ async fn userinfo_rejects_mtls_bound_token_without_verified_certificate() {
     let Some(state) = live_userinfo_state().await else {
         return;
     };
+    insert_userinfo_client(&state, "userinfo-client").await;
+    let user = insert_userinfo_user(&state, true).await;
     let token = signed_userinfo_access_token(
         &state,
         "userinfo-client",
         DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
-        None,
+        &user.id.to_string(),
+        Some(user.id),
         "user",
         &["resource://default".to_owned()],
         &["openid".to_owned()],
@@ -1252,6 +1256,71 @@ async fn userinfo_crypto_failure_never_falls_back_to_json() {
 }
 
 #[actix_web::test]
+async fn userinfo_reloads_response_policy_and_rejects_invalid_protection() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let client_id = format!("userinfo-current-policy-{}", Uuid::now_v7());
+    insert_userinfo_client(&state, &client_id).await;
+    let user = insert_userinfo_user(&state, true).await;
+    let token = signed_active_user_token(&state, &user, &client_id).await;
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+
+    update_userinfo_crypto_policy(&state, &client_id, Some("EdDSA"), None, None, None).await;
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/jwt"
+    );
+    let bytes = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let signed = decode_signed_userinfo(&state, &client_id, std::str::from_utf8(&bytes).unwrap());
+    assert_eq!(signed["aud"], client_id);
+    assert_eq!(signed["sub"], user.id.to_string());
+
+    for (signing, encryption, content) in [
+        (Some("unsupported"), None, None),
+        (None, Some("RSA-OAEP-256"), None),
+        (None, None, Some("A256GCM")),
+    ] {
+        update_userinfo_crypto_policy(&state, &client_id, signing, encryption, content, None).await;
+        let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            oauth_error_code(response).await.as_deref(),
+            Some("server_error")
+        );
+    }
+
+    let mut conn = get_conn(&state.diesel_db).await.unwrap();
+    sql_query(r#"UPDATE oauth_clients SET security_policy=jsonb_set(security_policy,'{assurance}','"fapi2"'::jsonb) WHERE tenant_id=$1 AND client_id=$2"#)
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID).bind::<Text, _>(&client_id)
+        .execute(&mut conn).await.unwrap();
+    drop(conn);
+    update_userinfo_crypto_policy(&state, &client_id, Some("RS256"), None, None, None).await;
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_code(response).await.as_deref(),
+        Some("server_error")
+    );
+    update_userinfo_crypto_policy(&state, &client_id, Some("EdDSA"), None, None, None).await;
+    assert_eq!(
+        userinfo_error_for_token(state, "Bearer", &token.token)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+}
+
+#[actix_web::test]
 async fn userinfo_rejects_missing_or_conflicting_access_token_transport_before_decode() {
     let state = Data::new(userinfo_test_state());
 
@@ -1333,27 +1402,29 @@ async fn userinfo_rejects_unverifiable_access_token_before_revocation_lookup() {
 #[actix_web::test]
 async fn userinfo_returns_server_error_when_revocation_lookup_fails_after_decode() {
     let state = userinfo_state_with_valid_signing_key_invalid_db();
-    let token = signed_userinfo_access_token(
-        &state,
-        "userinfo-client",
-        DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
-        None,
-        "user",
-        &["resource://default".to_owned()],
-        &["openid".to_owned()],
-        None,
-        None,
-    )
-    .await;
+    for scope in ["openid", "profile"] {
+        let token = signed_userinfo_access_token(
+            &state,
+            "userinfo-client",
+            DEFAULT_TENANT_ID,
+            &Uuid::now_v7().to_string(),
+            None,
+            "user",
+            &["resource://default".to_owned()],
+            &[scope.to_owned()],
+            None,
+            None,
+        )
+        .await;
 
-    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+        let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        oauth_error_code(response).await.as_deref(),
-        Some("server_error")
-    );
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            oauth_error_code(response).await.as_deref(),
+            Some("server_error")
+        );
+    }
 }
 
 #[actix_web::test]
@@ -1452,12 +1523,14 @@ async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate(
     let Some(state) = live_userinfo_state_with_trusted_proxy().await else {
         return;
     };
+    insert_userinfo_client(&state, "userinfo-client").await;
+    let user = insert_userinfo_user(&state, true).await;
     let token = signed_userinfo_access_token(
         &state,
         "userinfo-client",
         DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
-        None,
+        &user.id.to_string(),
+        Some(user.id),
         "user",
         &["resource://default".to_owned()],
         &["openid".to_owned()],
@@ -1602,15 +1675,14 @@ async fn userinfo_returns_server_error_for_missing_or_inactive_client_mapping() 
 }
 
 #[actix_web::test]
-async fn userinfo_returns_server_error_when_client_record_cannot_be_converted() {
+async fn userinfo_does_not_gate_valid_access_on_unconsumed_registration_fields() {
     let Some(state) = live_userinfo_state().await else {
         return;
     };
     let client_id = format!("userinfo-corrupt-{}", Uuid::now_v7());
     insert_userinfo_client(&state, &client_id).await;
-    // Corrupt the client scopes so the snapshot's into_domain conversion
-    // fails after the subject read already succeeded. security_policy has a
-    // strict shape check at the schema level; the jsonb array columns do not.
+    // The signed token already carries granted scopes. The client's current
+    // issuance-scope array is not an authority or response fact for UserInfo.
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -1621,17 +1693,19 @@ async fn userinfo_returns_server_error_when_client_record_cannot_be_converted() 
     .bind::<Text, _>(&client_id)
     .execute(&mut conn)
     .await
-    .expect("test client security_policy corruption should succeed");
+    .expect("test client scope corruption should succeed");
     drop(conn);
     let user = insert_userinfo_user(&state, true).await;
 
     let response = userinfo_response_for_active_user(state.clone(), &user, &client_id).await;
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        oauth_error_code(response).await.as_deref(),
-        Some("server_error")
-    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["sub"], user.id.to_string());
+    assert_eq!(body["email"], user.email);
 
     // The corrupt row must not outlive the test: shared-database scans such as
     // OAuthClientRepository::page decode every client in the tenant.

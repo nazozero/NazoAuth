@@ -1,0 +1,401 @@
+diff --git a/crates/authorization-server/src/domain/token_management.rs b/crates/authorization-server/src/domain/token_management.rs
+index cfa2879a7..fb622f21b 100644
+--- a/crates/authorization-server/src/domain/token_management.rs
++++ b/crates/authorization-server/src/domain/token_management.rs
+@@ -31,13 +31,19 @@ use crate::token::client_auth::authenticate_revocation_client_with_dependencies;
+ 
+ #[derive(Clone)]
+ pub struct ServerTokenManagementRequestGuard {
++    enabled: bool,
+     token_service: Arc<ServerTokenService>,
+     config: Arc<AuthorizationConfig>,
+ }
+ 
+ impl ServerTokenManagementRequestGuard {
+-    pub fn new(token_service: Arc<ServerTokenService>, config: Arc<AuthorizationConfig>) -> Self {
++    pub fn new(
++        token_service: Arc<ServerTokenService>,
++        config: Arc<AuthorizationConfig>,
++        enabled: bool,
++    ) -> Self {
+         Self {
++            enabled,
+             token_service,
+             config,
+         }
+@@ -49,8 +55,11 @@ impl TokenManagementRequestGuard for ServerTokenManagementRequestGuard {
+         &'a self,
+         request: &'a TokenManagementRequestFacts,
+     ) -> Pin<Box<dyn Future<Output = Result<(), TokenManagementRateLimitError>> + Send + 'a>> {
+-        let subject = request.source_ip.as_str();
+         Box::pin(async move {
++            if !self.enabled {
++                return Ok(());
++            }
++            let subject = request.source_ip.as_str();
+             let count = self
+                 .token_service
+                 .increment_token_management_rate(subject, self.config.rate_limit_window_seconds)
+diff --git a/crates/authorization-server/src/token/dispatch/rate_limit.rs b/crates/authorization-server/src/token/dispatch/rate_limit.rs
+index eca98ca4a..e6be9a17d 100644
+--- a/crates/authorization-server/src/token/dispatch/rate_limit.rs
++++ b/crates/authorization-server/src/token/dispatch/rate_limit.rs
+@@ -8,6 +8,9 @@ pub(super) async fn enforce_token_rate_limit(
+     config: &TokenIssuanceConfig,
+     source_ip: &str,
+ ) -> Result<(), OAuthEndpointError> {
++    if !config.oauth_token_ip_rate_limit_enabled {
++        return Ok(());
++    }
+     let count = service
+         .increment_token_rate(source_ip, config.rate_limit_window_seconds())
+         .await
+diff --git a/crates/authorization-server/src/token/issue.rs b/crates/authorization-server/src/token/issue.rs
+index e1a6b2c51..0233fe7f2 100644
+--- a/crates/authorization-server/src/token/issue.rs
++++ b/crates/authorization-server/src/token/issue.rs
+@@ -41,6 +41,7 @@ pub struct TokenIssuanceConfig {
+     pub client_secret_pepper: Box<str>,
+     pub rate_limit_window_seconds: u64,
+     pub token_rate_limit_max_requests: u64,
++    pub oauth_token_ip_rate_limit_enabled: bool,
+     pub auth_code_ttl_seconds: u64,
+     pub audit_client_credentials_issuance: bool,
+     pub access_token_ttl_seconds: i64,
+diff --git a/crates/authorization-server/tests/application_boundaries.rs b/crates/authorization-server/tests/application_boundaries.rs
+index b2f91a7d4..0731a4a0b 100644
+--- a/crates/authorization-server/tests/application_boundaries.rs
++++ b/crates/authorization-server/tests/application_boundaries.rs
+@@ -8,6 +8,37 @@ use app::{
+ };
+ use authorization_fixture::{Fixture, client, session};
+ use nazo_identity::SessionId;
++use std::sync::Arc;
++
++#[path = "support/token_ports.rs"]
++mod token_ports;
++
++#[cfg_attr(
++    all(target_arch = "wasm32", target_os = "unknown"),
++    wasm_bindgen_test::wasm_bindgen_test
++)]
++#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
++fn disabled_token_management_ip_rate_limit_does_not_call_counter() {
++    use app::contracts::token_management::{
++        TokenManagementRequestFacts, TokenManagementRequestGuard,
++    };
++    use app::domain::token_management::ServerTokenManagementRequestGuard;
++
++    let fixture = Fixture::new(Ok(None), Ok(None));
++    // The state fixture panics on an unexpected counter call.
++    let (tokens, _) = token_ports::services(Ok(None), Ok(None));
++    let guard =
++        ServerTokenManagementRequestGuard::new(Arc::new(tokens), Arc::new(fixture.config), false);
++
++    for endpoint in ["/oauth/introspect", "/oauth/revoke"] {
++        block_on(guard.enforce(&TokenManagementRequestFacts {
++            source_ip: "203.0.113.7".into(),
++            endpoint_path: endpoint.into(),
++            client_certificate: None,
++        }))
++        .unwrap();
++    }
++}
+ 
+ #[cfg_attr(
+     all(target_arch = "wasm32", target_os = "unknown"),
+diff --git a/crates/nazoauth/src/composition/core.rs b/crates/nazoauth/src/composition/core.rs
+index bea05498a..9da9ef449 100644
+--- a/crates/nazoauth/src/composition/core.rs
++++ b/crates/nazoauth/src/composition/core.rs
+@@ -214,6 +214,10 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
+         Arc::new(ServerTokenManagementRequestGuard::new(
+             token_service.clone(),
+             authorization_config.clone(),
++            settings
++                .identity
++                .rate_limit
++                .oauth_token_ip_rate_limit_enabled,
+         )),
+         Arc::new(ServerTokenManagementOperations::new(
+             token_service.clone(),
+diff --git a/crates/nazoauth/src/config/mod.rs b/crates/nazoauth/src/config/mod.rs
+index bc29c68ef..83b647d71 100644
+--- a/crates/nazoauth/src/config/mod.rs
++++ b/crates/nazoauth/src/config/mod.rs
+@@ -144,6 +144,7 @@ pub struct CibaSettings {
+ 
+ #[derive(Clone)]
+ pub struct RateLimitSettings {
++    pub oauth_token_ip_rate_limit_enabled: bool,
+     pub window_seconds: u64,
+     pub auth_max_requests: u64,
+     pub token_max_requests: u64,
+@@ -240,6 +241,7 @@ impl Configuration {
+             },
+             identity: IdentitySettings {
+                 rate_limit: RateLimitSettings {
++                    oauth_token_ip_rate_limit_enabled: true,
+                     window_seconds: 60,
+                     auth_max_requests: 100_000,
+                     token_max_requests: 100_000,
+diff --git a/crates/nazoauth/src/endpoints/token/issue.rs b/crates/nazoauth/src/endpoints/token/issue.rs
+index d73be55a8..4681e1ea0 100644
+--- a/crates/nazoauth/src/endpoints/token/issue.rs
++++ b/crates/nazoauth/src/endpoints/token/issue.rs
+@@ -29,6 +29,10 @@ pub fn token_issuance_config(settings: &Configuration) -> TokenIssuanceConfig {
+         client_secret_pepper: settings.protocol.client_secret_pepper.as_str().into(),
+         rate_limit_window_seconds: settings.identity.rate_limit.window_seconds,
+         token_rate_limit_max_requests: settings.identity.rate_limit.token_max_requests,
++        oauth_token_ip_rate_limit_enabled: settings
++            .identity
++            .rate_limit
++            .oauth_token_ip_rate_limit_enabled,
+         auth_code_ttl_seconds: settings.protocol.auth_code_ttl_seconds,
+         audit_client_credentials_issuance: settings.protocol.audit_client_credentials_issuance,
+         access_token_ttl_seconds: settings.protocol.access_token_ttl_seconds,
+diff --git a/crates/server-worker/src/config.rs b/crates/server-worker/src/config.rs
+index a51718c3c..bb7830813 100644
+--- a/crates/server-worker/src/config.rs
++++ b/crates/server-worker/src/config.rs
+@@ -23,6 +23,7 @@ pub struct WorkerConfiguration {
+     #[serde(default)]
+     pub machine_only: bool,
+     pub audit_client_credentials_issuance: Option<bool>,
++    pub oauth_token_ip_rate_limit_enabled: Option<bool>,
+     #[serde(default)]
+     pub passkey_only: bool,
+     #[serde(default)]
+@@ -206,6 +207,12 @@ impl WorkerConfiguration {
+         if let Some(enabled) = self.audit_client_credentials_issuance {
+             settings.protocol.audit_client_credentials_issuance = enabled;
+         }
++        if let Some(enabled) = self.oauth_token_ip_rate_limit_enabled {
++            settings
++                .identity
++                .rate_limit
++                .oauth_token_ip_rate_limit_enabled = enabled;
++        }
+         settings.protocol.backchannel_logout_supported = !self.services.outbound_origins.is_empty();
+         ensure!(
+             !self.services.mtls || self.ingress == Ingress::DirectCloudflare,
+diff --git a/crates/server-worker/tests/config.rs b/crates/server-worker/tests/config.rs
+index 12838194f..f4b23bc91 100644
+--- a/crates/server-worker/tests/config.rs
++++ b/crates/server-worker/tests/config.rs
+@@ -22,6 +22,7 @@ fn configuration() -> WorkerConfiguration {
+         modules: vec![],
+         machine_only: false,
+         audit_client_credentials_issuance: None,
++        oauth_token_ip_rate_limit_enabled: None,
+         passkey_only: false,
+         services: Default::default(),
+     }
+@@ -362,6 +363,27 @@ fn registration_admission_follows_the_deployment_capabilities() {
+     );
+ }
+ 
++#[test]
++fn oauth_token_ip_rate_limit_defaults_on_and_can_be_disabled() {
++    let mut config = configuration();
++    let default = config.application("p".repeat(32)).unwrap();
++    assert!(
++        default
++            .identity
++            .rate_limit
++            .oauth_token_ip_rate_limit_enabled
++    );
++
++    config.oauth_token_ip_rate_limit_enabled = Some(false);
++    let disabled = config.application("p".repeat(32)).unwrap();
++    assert!(
++        !disabled
++            .identity
++            .rate_limit
++            .oauth_token_ip_rate_limit_enabled
++    );
++}
++
+ #[test]
+ fn machine_success_auditing_defaults_off_and_can_be_enabled() {
+     let mut config = configuration();
+diff --git a/crates/server/src/config.rs b/crates/server/src/config.rs
+index 0c481ed59..b6c93766a 100644
+--- a/crates/server/src/config.rs
++++ b/crates/server/src/config.rs
+@@ -305,6 +305,7 @@ const ENV_CONFIG_KEYS: &[&str] = &[
+     "SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY",
+     "SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_FILE",
+     "SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_ID",
++    "OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED",
+     "OTEL_ENABLED",
+     "OTEL_EXPORTER_OTLP_ENDPOINT",
+     "OTEL_EXPORTER_OTLP_PROTOCOL",
+diff --git a/crates/server/src/settings/rate_limit.rs b/crates/server/src/settings/rate_limit.rs
+index 3015ee352..c06d05671 100644
+--- a/crates/server/src/settings/rate_limit.rs
++++ b/crates/server/src/settings/rate_limit.rs
+@@ -10,6 +10,8 @@ pub(crate) use nazoauth::config::RateLimitSettings;
+ 
+ pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<RateLimitSettings> {
+     let settings = RateLimitSettings {
++        oauth_token_ip_rate_limit_enabled: config
++            .bool("OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED", true)?,
+         window_seconds: config.parse("RATE_LIMIT_WINDOW_SECONDS", 60)?,
+         auth_max_requests: config.parse(
+             "AUTH_RATE_LIMIT_MAX_REQUESTS",
+diff --git a/crates/server/tests/unit/http/token/dispatch/failure_boundaries.rs b/crates/server/tests/unit/http/token/dispatch/failure_boundaries.rs
+index 0914d2499..9a92c221f 100644
+--- a/crates/server/tests/unit/http/token/dispatch/failure_boundaries.rs
++++ b/crates/server/tests/unit/http/token/dispatch/failure_boundaries.rs
+@@ -1,7 +1,7 @@
+ use super::*;
+ 
+ #[actix_web::test]
+-async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
++async fn token_endpoint_enforces_ip_quota_and_allows_opt_out_without_skipping_client_auth() {
+     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+         return;
+     };
+@@ -29,13 +29,42 @@ async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
+ 
+     let req = token_request("application/x-www-form-urlencoded");
+     let body = Bytes::from(format!(
+-        "grant_type=client_credentials&client_id=rate-limited-client&client_secret={}",
++        "grant_type=client_credentials&client_id=rate-limited-client&scope=accounts&client_secret={}",
+         urlencoding::encode(&correct_secret)
+     ));
+ 
+-    let response = token(state, req, body).await;
++    let response = token(state.clone(), req, body.clone()).await;
+     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+     assert_eq!(oauth_error_code(response).await, "temporarily_unavailable");
++
++    let mut settings = (*state.settings).clone();
++    settings
++        .identity
++        .rate_limit
++        .oauth_token_ip_rate_limit_enabled = false;
++    let state = Data::new(TestInfrastructure {
++        diesel_db: state.diesel_db.clone(),
++        valkey: state.valkey.clone(),
++        settings: Arc::new(settings),
++        keyset: state.keyset.clone(),
++    });
++    let response = token(
++        state.clone(),
++        token_request("application/x-www-form-urlencoded"),
++        body,
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::OK);
++
++    let response = token(
++        state,
++        token_request("application/x-www-form-urlencoded"),
++        Bytes::from_static(
++            b"grant_type=client_credentials&client_id=rate-limited-client&client_secret=wrong",
++        ),
++    )
++    .await;
++    assert_eq!(oauth_error_code(response).await, "invalid_client");
+ }
+ 
+ #[actix_web::test]
+diff --git a/crates/server/tests/unit/settings.rs b/crates/server/tests/unit/settings.rs
+index d62ffafe8..7212f9a14 100644
+--- a/crates/server/tests/unit/settings.rs
++++ b/crates/server/tests/unit/settings.rs
+@@ -257,6 +257,29 @@ fn directory_direct_tls_advertises_the_deployment_mtls_port_for_each_tenant_host
+     }
+ }
+ 
++#[test]
++fn oauth_token_ip_rate_limit_defaults_on_and_can_be_disabled() {
++    let default = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
++    assert!(
++        default
++            .identity
++            .rate_limit
++            .oauth_token_ip_rate_limit_enabled
++    );
++
++    let disabled = Settings::from_config(&ConfigSource::from_pairs_for_test([(
++        "OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED",
++        "false",
++    )]))
++    .unwrap();
++    assert!(
++        !disabled
++            .identity
++            .rate_limit
++            .oauth_token_ip_rate_limit_enabled
++    );
++}
++
+ #[test]
+ fn explicit_endpoint_overrides_still_require_url_admission() {
+     for (key, value) in [
+diff --git a/docs/operations/cloudflare-workers.md b/docs/operations/cloudflare-workers.md
+index 33f3f8bd3..ef3e0d0b8 100644
+--- a/docs/operations/cloudflare-workers.md
++++ b/docs/operations/cloudflare-workers.md
+@@ -464,6 +464,7 @@ as a platform `version_metadata` binding; it is not a manually supplied variable
+ | `ingress` | `direct_cloudflare`; `local` requires a loopback issuer |
+ | `cors_allowed_origins` | Optional browser origins; defaults to issuer origin |
+ | `modules` | Optional array of constructed capabilities from the module matrix; initializes desired state during provisioning and bounds later runtime enablement |
++| `oauth_token_ip_rate_limit_enabled` | Defaults to `true`. Set to `false` to skip the source-IP request quota and counter writes on the token, introspection, and revocation endpoints. |
+ | `audit_client_credentials_issuance` | Defaults to `false`. Set to `true` to record each successful machine grant. The client version is still checked after signing. |
+ | `machine_only` | Service-client-only profile; exclusive with `passkey_only` |
+ | `passkey_only` | Restricted interactive route profile with Passkey/MFA and selected OAuth flows; broader administration/service APIs and password routes are excluded. Use the full profile for all adapted routes. |
+diff --git a/docs/operations/configuration-inventory.md b/docs/operations/configuration-inventory.md
+index 6439778fd..d20b1b6af 100644
+--- a/docs/operations/configuration-inventory.md
++++ b/docs/operations/configuration-inventory.md
+@@ -50,6 +50,7 @@ Legend:
+ | `AUTH_RATE_LIMIT_MAX_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`, `TOKEN_RATE_LIMIT_MAX_REQUESTS`, `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`, `SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS`, `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS`, `LOGIN_FAILURE_WINDOW_SECONDS`, `PASSWORD_HASH_MAX_CONCURRENCY`, `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | **保留**。These are resource and abuse controls; removing them would move safety policy into hidden constants. |
+ | `SIGNING_EXTERNAL_COMMAND`, `SIGNING_EXTERNAL_TIMEOUT_MS`, `SIGNING_KEY_ROTATION_INTERVAL_SECONDS`, `SIGNING_KEY_PREPUBLISH_SECONDS` | **保留（条件）**。External KMS/HSM and signing-key lifecycle are explicit operator choices; local keys are generated by the key manager when no external command is configured. |
+ | `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_TIMEOUT`, `SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE` | **保留（默认/外部）**。Observability and database privilege posture affect operations and auditability. |
++| `OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED` | Controls the source-IP request quota on token, introspection, and revocation. Defaults to `true`. |
+ | `AUDIT_CLIENT_CREDENTIALS_ISSUANCE` | Records each successful machine grant in the issuance transaction. Defaults to `false`. |
+ | `AUDIT_ANCHOR_MODE`, `AUDIT_ANCHOR_FRESHNESS_SECONDS`, `AUDIT_ANCHOR_MAX_LAG_SECONDS` | **保留（条件）**。These are the server-side durable-audit preflight policy. |
+ | `AUDIT_ANCHOR_BATCH_SIZE`, `AUDIT_ANCHOR_CA_BUNDLE`, `AUDIT_ANCHOR_DATABASE_MAX_CONNECTIONS`, `AUDIT_ANCHOR_DATABASE_URL`, `AUDIT_ANCHOR_LOCK_TIMEOUT_SECONDS`, `AUDIT_ANCHOR_MAX_ENVELOPE_BYTES`, `AUDIT_ANCHOR_POLL_INTERVAL_SECONDS`, `AUDIT_ANCHOR_RECEIPT_VERIFY_KEY`, `AUDIT_ANCHOR_REQUEST_TIMEOUT_SECONDS`, `AUDIT_ANCHOR_TOKEN`, `AUDIT_ANCHOR_TOKEN_FILE`, `AUDIT_ANCHOR_URL` | **保留（外部/worker-only）**。These are accepted only by the isolated audit-anchor worker loader. Connection URLs are supplied directly; the HMAC token retains its secret-file transport. The endpoint, token, and receipt verification key must be provisioned consistently with the external anchor service; they cannot be invented by the server. |
+diff --git a/docs/operations/configuration.md b/docs/operations/configuration.md
+index 506096f3a..22e66af9a 100644
+--- a/docs/operations/configuration.md
++++ b/docs/operations/configuration.md
+@@ -82,6 +82,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
+ | `CLIENT_SECRET_PEPPER` | generated under `DATA_DIR/secrets` | Explicit values override the persisted generated value; an explicitly empty value is rejected, including for loopback HTTP. Keep it stable and back it up with the database |
+ | `PASSWORD_HASH_MAX_CONCURRENCY` | `8` | Maximum concurrent Argon2 password verifications per process; tune from CPU and memory capacity, not by lowering Argon2 cost |
+ | `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | `100` | Maximum bounded wait for a password-verification slot before returning `temporarily_unavailable` |
++| `OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED` | `true` | Set to `false` to skip counting and enforcing the source-IP request quota on the OAuth token, introspection, and revocation endpoints |
+ | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Window for the broad source-IP admission buckets |
+ | `AUTH_RATE_LIMIT_MAX_REQUESTS` | `100000` | Broad source-IP admission ceiling for authentication endpoints; this is not the failed-login throttle |
+ | `TOKEN_RATE_LIMIT_MAX_REQUESTS` | `100000` | Broad source-IP admission ceiling for token issuance, sized to tolerate shared client egress |
+@@ -380,7 +381,8 @@ loopback endpoints. IPv6 literals use bracketed URL syntax, for example
+ Remote document and CIBA notification origins also accept IPv6 literals, but
+ continue to require HTTPS. Sector identifier documents cannot use private
+ destinations, even when the origin is allowlisted for other remote documents.
+-- rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
++- rate limits: `OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`,
++  `AUTH_RATE_LIMIT_MAX_REQUESTS`,
+   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
+   `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,
+   `LOGIN_FAILURE_WINDOW_SECONDS`,
+@@ -520,6 +522,16 @@ patterns. Other known NazoAuth paths use the canonical manifest pattern,
+ including `{*tail}` for catch-all parameters; unknown paths and service errors
+ use `unmatched`.
+ 
++### OAuth token endpoint admission
++
++Set `OAUTH_TOKEN_IP_RATE_LIMIT_ENABLED: false` in `.env.yaml` or set the
++same environment variable to `false` when the deployment enforces its request
++budget upstream or when running an isolated benchmark. The token, introspection,
++and revocation endpoints skip their source-IP quota and counter writes. OAuth
++client authentication and protocol validation still apply. Authentication, PAR,
++dynamic registration, device authorization, and SCIM keep their own admission
++checks, including routes that share a counter with introspection and revocation.
++
+ ### SCIM denied-credential admission
+ 
+ `SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS` defaults to 60 denied attempts per source

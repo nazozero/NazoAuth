@@ -243,11 +243,15 @@ impl TokenEndpointHandles {
                 has_basic,
             ));
         };
-        let (mut client, secret_salt, client_epoch) = match authorization_service
+        let (mut client, secret_digest, client_epoch) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
         {
-            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
+            Ok(Some(snapshot)) => (
+                snapshot.client,
+                snapshot.secret_digest,
+                snapshot.client_epoch,
+            ),
             Ok(None) => {
                 return Err(OAuthEndpointError::invalid_client(
                     "客户端不存在或已停用.",
@@ -374,7 +378,7 @@ impl TokenEndpointHandles {
                 &mut client,
                 credentials,
                 ClientAuthenticationContext::AllowPublicNone,
-                secret_salt.as_deref(),
+                secret_digest.as_deref(),
             )
             .await
             {
@@ -411,8 +415,13 @@ impl TokenEndpointHandles {
             "authorization_code" | "refresh_token"
         ) && (client.id_token_encrypted_response_alg.is_some()
             || client.id_token_encrypted_response_enc.is_some())
-            && let Err(error) =
-                refresh_client_jwks(&mut client, self.remote_client_documents.as_ref(), None).await
+            && let Err(error) = refresh_client_jwks(
+                client.registration.jwks_uri.as_deref(),
+                &mut client.registration.jwks,
+                self.remote_client_documents.as_ref(),
+                None,
+            )
+            .await
         {
             tracing::warn!(%error, "id_token encryption jwks_uri could not be refreshed");
             return Err(OAuthEndpointError::token(
@@ -534,12 +543,13 @@ impl TokenEndpointHandles {
                 {
                     return Err(crate::token::token_client_assertion_error(error));
                 }
+                let (dpop_jkt, mtls_x5t_s256) = sender.into_parts();
                 execute_pre_authorized(
                     endpoint.as_ref(),
                     pre_authorized,
                     Some(client.registration.client_id),
-                    sender.dpop_jkt,
-                    sender.mtls_x5t_s256,
+                    dpop_jkt,
+                    mtls_x5t_s256,
                 )
                 .await
             }

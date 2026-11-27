@@ -322,15 +322,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "argon2"
-version = "0.6.0"
+name = "argon2-rust"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "134c52ddac6d63c576bef8168db10c83c49c26444ecbc68060fef078925a901c"
+checksum = "9116a9e4fd543b4e7ae219c3d7f1259b59615105c0c27b3d75939a8b8cf8af86"
 dependencies = [
- "base64ct",
- "blake2",
- "cpufeatures",
- "password-hash",
+ "memchr",
 ]
 
 [[package]]
@@ -616,15 +613,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
-name = "blake2"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b5d4d889834ee8ecfc0f8426ad30faf7cdcb10f741a8e6d7224d95325479f6f"
-dependencies = [
- "digest",
-]
-
-[[package]]
 name = "blake3"
 version = "1.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -897,9 +885,9 @@ dependencies = [
 
 [[package]]
 name = "cookie"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+checksum = "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a"
 dependencies = [
  "percent-encoding",
  "time",
@@ -2749,7 +2737,7 @@ version = "0.4.1"
 dependencies = [
  "aes-gcm",
  "aes-kw",
- "argon2",
+ "argon2-rust",
  "aws-lc-rs",
  "base64 0.23.1",
  "der 0.8.3",
@@ -2762,6 +2750,7 @@ dependencies = [
  "p256",
  "p384",
  "p521",
+ "password-hash",
  "pkcs8",
  "rand 0.10.4",
  "rcgen",
@@ -2849,7 +2838,6 @@ dependencies = [
 name = "nazo-identity"
 version = "0.4.1"
 dependencies = [
- "argon2",
  "base64 0.23.1",
  "blake3",
  "hex",
@@ -3174,7 +3162,6 @@ version = "0.4.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
- "argon2",
  "base64 0.23.1",
  "blake3",
  "bytes",
@@ -3270,7 +3257,6 @@ dependencies = [
  "actix-web",
  "anyhow",
  "arc-swap",
- "argon2",
  "atomicwrites",
  "aws-lc-rs",
  "base64 0.23.1",
@@ -3322,6 +3308,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "p256",
+ "password-hash",
  "pkcs8",
  "process-wrap",
  "proptest",

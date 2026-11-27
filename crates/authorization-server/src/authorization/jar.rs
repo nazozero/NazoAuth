@@ -85,8 +85,13 @@ pub(crate) async fn apply_request_object_with_context(
         request_object.as_str()
     };
     if let Some(kid) = unverified_signed_request_object_kid(request_object)
-        && let Err(error) =
-            refresh_client_jwks(client, context.remote_client_documents, Some(&kid)).await
+        && let Err(error) = refresh_client_jwks(
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
+            context.remote_client_documents,
+            Some(&kid),
+        )
+        .await
     {
         tracing::warn!(%error, "request object client jwks_uri could not be refreshed");
         return Err(Error::json(

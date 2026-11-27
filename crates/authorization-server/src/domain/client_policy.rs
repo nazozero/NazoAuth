@@ -31,14 +31,15 @@ pub fn registered_redirect_uri(
 /// invokes the resolver.  The caller remains responsible for mapping resolver
 /// failures to the endpoint-specific protocol error.
 pub async fn refresh_client_jwks(
-    client: &mut ClientRow,
+    jwks_uri: Option<&str>,
+    jwks: &mut Option<std::sync::Arc<serde_json::Value>>,
     resolver: &dyn RemoteJwksResolverPort,
     expected_kid: Option<&str>,
 ) -> Result<(), String> {
-    let Some(uri) = client.jwks_uri.as_deref() else {
+    let Some(uri) = jwks_uri else {
         return Ok(());
     };
-    client.jwks = Some(resolver.resolve(uri, expected_kid).await?);
+    *jwks = Some(resolver.resolve(uri, expected_kid).await?);
     Ok(())
 }
 
@@ -47,14 +48,15 @@ pub async fn refresh_client_jwks(
 /// selected response's predicate, so unrelated response policies never cause
 /// a resolver call.
 pub async fn refresh_client_jwks_for_encryption(
-    client: &mut ClientRow,
+    jwks_uri: Option<&str>,
+    jwks: &mut Option<std::sync::Arc<serde_json::Value>>,
     resolver: &dyn RemoteJwksResolverPort,
     response_encryption_configured: bool,
 ) -> Result<(), String> {
     if !response_encryption_configured {
         return Ok(());
     }
-    refresh_client_jwks(client, resolver, None).await
+    refresh_client_jwks(jwks_uri, jwks, resolver, None).await
 }
 
 #[cfg(test)]

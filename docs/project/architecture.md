@@ -303,16 +303,18 @@ only state required by their semantics:
   through commit, even though it writes no new refresh member. The refresh
   commit enum owns one original contract: new-family creation or an existing
   source with an optional replacement. Current AT/RT selections never rebuild
-  that immutable contract. A client-credentials issuance ordinarily writes only audit.
+  that immutable contract. A client-credentials grant records only the configured success audit. With that option disabled, its final client-version check has no business mutation to commit.
 - `SingleUse` retains a compact receipt under the 32-byte BLAKE3 grant fence,
   with the issued JTI, acceptance deadline and optional refresh family needed
   for replay handling. New receipts do not store user ownership. Grant expiry
   is rechecked in the transaction; expiry rolls it back and returns the healthy
   connection to the pool.
 
-Every issuance reuses the access-token epoch read in the request's client
-authentication snapshot; a later subject read never replaces that version. Its fixed salt/epoch projection preserves prepared-query
-reuse while reading current values on every request. OIDC issuance with a public
+Each client authentication snapshot reads current client policy, epoch and
+secret verifier in one tenant-scoped query. Basic and POST secret authentication
+verify the existing HMAC digest locally using a constant-time comparison.
+Each issuance carries the authenticated client epoch through the final check.
+OIDC issuance with a public
 subject also reuses the user epoch returned with the active subject claims in
 `PreparedTokenSubject`. This
 request-local snapshot belongs to the authorization core; its security version
@@ -360,6 +362,10 @@ PAR and consent are immutable preparation material. Their cache deletion is
 post-commit cleanup, not authorization or cancellation authority. Explicit
 approval, denial, and prompt-none compete for the same durable consumption
 identities; prompt-none does not increment explicit approval counters. The
+accepting transaction checks the browser session's user authorization epoch
+against the active tenant account under its principal fence. Interactive
+decisions read session authentication evidence without a separate account
+query; this evidence alone cannot authorize a decision. The
 code and its payload are prepared in memory and bound to the fact. Only an
 affirmative durable result permits code storage/publication. An unknown result
 fails closed. A later code-store or response failure leaves a committed,
@@ -512,6 +518,11 @@ OP session before returning an authorization code; a missing session or failed
 binding cannot return the code. A committed decision is not undone by a later
 session-binding or response failure.
 
+Interactive decisions retain only the session's tenant, user, epoch and OIDC
+session identifier after validating its authentication metadata. This evidence
+is not an admitted `Principal`: the durable decision checks the live account
+and its original epoch atomically before writing a grant or publishing a code.
+
 Authorization, administrator and runtime-module guards resolve `Principal`
 through the existing tenant-scoped narrow query. Profile and MFA consumers use
 `PublicAccount` from a single full projection. Both projections pass through the
@@ -663,6 +674,22 @@ management view projects an applied revision only from the matching, settled
 local snapshot.
 
 ### Resource token presentation
+
+UserInfo performs three steps:
+
+1. Verify the access token, audience, tenant, user subject type and `openid` scope.
+2. Read JTI revocation, current principal activity and epochs, subject ownership,
+   profile and client response policy in one database snapshot. Both principal
+   epochs must match when the token carries them.
+3. Check DPoP replay and mTLS binding, then return the permitted claims. Response
+   execution uses the prepared snapshot without another authority read.
+
+The client projection contains activity, UserInfo JOSE metadata, the JWKS source
+and validated security policy. Unrelated registration and issuance metadata does
+not gate this response. A signed response uses the verified client ID as its
+audience. Legacy tokens retain individual JTI revocation and the adapter's
+ownership lookup; PostgreSQL can resolve their subject from a retained issuance
+when no active reusable subject binding exists.
 
 The neutral HTTP extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
 

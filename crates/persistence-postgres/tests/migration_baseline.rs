@@ -73,6 +73,26 @@ async fn released_schema(connection: &mut AsyncPgConnection) {
     }
 }
 
+async fn released_runtime_role(connection: &mut AsyncPgConnection, runtime: &str) {
+    // The frozen schema needs its released grants, not the current contract's
+    // later function signatures. Read the exact SQL from the same Git release.
+    let source = git(&[
+        "show",
+        &format!("{RELEASE}:crates/persistence-postgres/src/pool.rs"),
+    ]);
+    let start = source.find("\"REVOKE ALL ON SCHEMA public").unwrap() + 1;
+    let sql = source[start..]
+        .split('"')
+        .next()
+        .unwrap()
+        .replace("\\\n", "")
+        .replace("{quoted_role}", &format!("\"{runtime}\""));
+    connection
+        .batch_execute(&format!("BEGIN; {sql} COMMIT;"))
+        .await
+        .unwrap();
+}
+
 // Keep the frozen baseline-equivalence proof independent of later migrations.
 // Execute the real embedded migration through Diesel's normal harness.
 async fn apply_baseline_only(url: &str) -> bool {
@@ -251,12 +271,8 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
     drop(default_connection);
     database::drop(&with_defaults).await;
 
-    nazo_postgres::configure_runtime_role(&fresh, &runtime)
-        .await
-        .unwrap();
-    nazo_postgres::configure_runtime_role(&released, &runtime)
-        .await
-        .unwrap();
+    released_runtime_role(&mut new, &runtime).await;
+    released_runtime_role(&mut old, &runtime).await;
     role_permissions(&mut new, &runtime).await;
     role_permissions(&mut old, &runtime).await;
     old.batch_execute(include_str!("support/fixtures/baseline_data.sql"))

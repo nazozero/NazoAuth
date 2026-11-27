@@ -1,0 +1,234 @@
+{
+  "rate": 3000,
+  "warm_seconds": 5,
+  "seconds": 20,
+  "operations": {
+    "all": {
+      "planned": 60000,
+      "sent": 32760,
+      "not_sent": 27240,
+      "completed_by_cutoff": 24568,
+      "in_flight_at_cutoff": 8192,
+      "success": 0,
+      "failed": 32760,
+      "successful_tps": 0,
+      "attainment": 0,
+      "outcomes": {
+        "in_flight_limit": 27232,
+        "timeout": 32760,
+        "scheduler_late": 8
+      },
+      "http_status_counts": {
+        "0": 32760
+      },
+      "http_requests": 32760,
+      "http_rps": 1638,
+      "scheduling_ms": {
+        "50": 0.935792,
+        "95": 2.151052,
+        "99": 2.402311,
+        "99.9": 2.550339,
+        "100": 4.947442
+      },
+      "response_all_ms": {
+        "50": 5001.067159,
+        "95": 5001.814492,
+        "99": 5001.997078,
+        "99.9": 5002.492446,
+        "100": 5006.634065
+      },
+      "response_success_ms": null,
+      "offered_to_completion_success_ms": null,
+      "in_flight_at_second_boundaries": [
+        1782,
+        4781,
+        7575,
+        7835,
+        8188,
+        8182,
+        8182,
+        8192,
+        8190,
+        8192,
+        8184,
+        8180,
+        8186,
+        8192,
+        8192,
+        8182,
+        8168,
+        8190,
+        8192,
+        8192
+      ]
+    },
+    "exchange": {
+      "planned": 60000,
+      "sent": 32760,
+      "not_sent": 27240,
+      "completed_by_cutoff": 24568,
+      "in_flight_at_cutoff": 8192,
+      "success": 0,
+      "failed": 32760,
+      "successful_tps": 0,
+      "attainment": 0,
+      "outcomes": {
+        "in_flight_limit": 27232,
+        "timeout": 32760,
+        "scheduler_late": 8
+      },
+      "http_status_counts": {
+        "0": 32760
+      },
+      "http_requests": 32760,
+      "http_rps": 1638,
+      "scheduling_ms": {
+        "50": 0.935792,
+        "95": 2.151052,
+        "99": 2.402311,
+        "99.9": 2.550339,
+        "100": 4.947442
+      },
+      "response_all_ms": {
+        "50": 5001.067159,
+        "95": 5001.814492,
+        "99": 5001.997078,
+        "99.9": 5002.492446,
+        "100": 5006.634065
+      },
+      "response_success_ms": null,
+      "offered_to_completion_success_ms": null,
+      "in_flight_at_second_boundaries": [
+        1782,
+        4781,
+        7575,
+        7835,
+        8188,
+        8182,
+        8182,
+        8192,
+        8190,
+        8192,
+        8184,
+        8180,
+        8186,
+        8192,
+        8192,
+        8182,
+        8168,
+        8190,
+        8192,
+        8192
+      ]
+    }
+  },
+  "app_crashed": false,
+  "app_oom": false,
+  "peer": "rauthy",
+  "flow": "exchange",
+  "status": "FAIL",
+  "generator_slots": 8192,
+  "generator_profile": "base",
+  "generator_workers": 15,
+  "postgres_profile": "base",
+  "generator_sha256": "ee4a059ea4453e1e0aaf5d1260fc6f7f6f6991851a2c9750ff9ff6aff3d800ec",
+  "invalid_reasons": [],
+  "slo_failing_operations": [
+    "all",
+    "exchange"
+  ],
+  "resources": {
+    "app": {
+      "thread_observations": 565,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 1178.88,
+      "mean_cpu_cores": 4.122153,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 37188377,
+      "network_tx_bytes": 76638427,
+      "network_sample_seconds": 18.006,
+      "mean_rss_sum_mib": 881.660546875,
+      "peak_rss_sum_mib": 1178.87890625,
+      "cpu_seconds": 82.44306,
+      "cpu_sample_seconds": 20,
+      "peak_interval_cpu_cores": 4.657671164417791
+    },
+    "generator": {
+      "thread_observations": 1457,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 517.62,
+      "mean_cpu_cores": 1.1961789105447276,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 50673001,
+      "network_tx_bytes": 23944868,
+      "network_sample_seconds": 18.005,
+      "mean_rss_sum_mib": 479.967578125,
+      "peak_rss_sum_mib": 517.625,
+      "cpu_seconds": 23.92357821089455,
+      "cpu_sample_seconds": 20,
+      "peak_interval_cpu_cores": 3.5082458770614693
+    },
+    "postgres": {
+      "thread_observations": 615,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 82.14,
+      "mean_cpu_cores": 0.5244767616191904,
+      "sampled_intervals": 9,
+      "network_rx_bytes": 25962487,
+      "network_tx_bytes": 13246071,
+      "network_sample_seconds": 18.008,
+      "mean_rss_sum_mib": 2381.425,
+      "peak_rss_sum_mib": 2667.16796875,
+      "cpu_seconds": 10.489535232383808,
+      "cpu_sample_seconds": 20,
+      "peak_interval_cpu_cores": 0.6946526736631684
+    }
+  },
+  "host_cpu_psi_pct": 1.45,
+  "shared_cgroup": {
+    "peak_memory_bytes": 11192770560,
+    "peak_rss_bytes": 1968656384,
+    "peak_cache_bytes": 8987463680,
+    "cpu_throttled_events": 0,
+    "cpu_throttled_ns": 0,
+    "block_read_bytes": 0,
+    "block_write_bytes": 690601984,
+    "sample_seconds": 18.006
+  },
+  "host_cpu_psi_seconds": 18,
+  "host_pressure_pct": {
+    "io_some": 1.1308833333333335,
+    "io_full": 1.0637333333333334,
+    "memory_some": 3.3333333333333335e-05,
+    "memory_full": 3.3333333333333335e-05
+  },
+  "host_cpu_utilization_pct": 14.915580631163195,
+  "app_cpu_wait_task_equivalent": 0.3357495890555556,
+  "other_cpu_wait_task_equivalent": 2.3104615509444435,
+  "app_cpu_seconds": 82.44306,
+  "server_total_cpu_cores": 4.646629761619191,
+  "server_peak_rss_sum_mib": 3846.046875,
+  "tps_per_app_core": 0,
+  "cpu_microseconds_per_success": null,
+  "role_placement": {
+    "app": {
+      "background_cores": 1.5192142034444442,
+      "physical_core_scheduler_wait": 0.3599053618888889,
+      "clear": true
+    },
+    "postgres": {
+      "background_cores": 0.9136456596030317,
+      "physical_core_scheduler_wait": 0.19806708566666667,
+      "clear": true
+    },
+    "generator": {
+      "background_cores": 0.3822368833441614,
+      "physical_core_scheduler_wait": 0.14096043155555554,
+      "clear": true
+    }
+  },
+  "role_placement_clear": true,
+  "assigned_background_cores": 1.5192142034444442,
+  "id": "f-rauthy-exchange-20261127T104216Z-2-3000",
+  "scenario": "exchange"
+}

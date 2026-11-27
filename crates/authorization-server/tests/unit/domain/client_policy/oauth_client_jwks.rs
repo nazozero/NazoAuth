@@ -388,9 +388,14 @@ fn refresh_client_jwks_uses_registered_uri_and_preserves_snapshot_without_one() 
         let mut client = client_for_jwks_refresh();
         client.jwks_uri = Some("https://client.example/jwks".to_owned());
         assert!(
-            refresh_client_jwks(&mut client, &resolver, Some("remote"))
-                .await
-                .is_ok()
+            refresh_client_jwks(
+                client.registration.jwks_uri.as_deref(),
+                &mut client.registration.jwks,
+                &resolver,
+                Some("remote")
+            )
+            .await
+            .is_ok()
         );
         assert_eq!(
             client.jwks.as_ref().expect("remote JWKS")["keys"][0]["kid"],
@@ -399,9 +404,14 @@ fn refresh_client_jwks_uses_registered_uri_and_preserves_snapshot_without_one() 
 
         client.jwks_uri = None;
         client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}).into());
-        refresh_client_jwks(&mut client, &resolver, Some("remote"))
-            .await
-            .expect("clients without jwks_uri keep their persisted snapshot");
+        refresh_client_jwks(
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
+            &resolver,
+            Some("remote"),
+        )
+        .await
+        .expect("clients without jwks_uri keep their persisted snapshot");
         assert_eq!(
             client.jwks.as_ref().expect("persisted JWKS")["keys"][0]["kid"],
             "persisted"
@@ -420,9 +430,14 @@ fn refresh_client_jwks_does_not_replace_snapshot_when_resolution_fails() {
         client.jwks_uri = Some("https://client.example/jwks".to_owned());
         client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}).into());
 
-        let error = refresh_client_jwks(&mut client, &resolver, Some("remote"))
-            .await
-            .expect_err("remote resolver failure must propagate");
+        let error = refresh_client_jwks(
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
+            &resolver,
+            Some("remote"),
+        )
+        .await
+        .expect_err("remote resolver failure must propagate");
         assert_eq!(error, "unexpected remote key resolution");
         assert_eq!(calls.load(Ordering::Relaxed), 1);
         assert_eq!(
@@ -439,9 +454,14 @@ fn encrypted_response_refresh_is_noop_without_policy_and_uses_remote_keys_with_p
         let resolver = StubRemoteJwks;
         let mut client = client_for_jwks_refresh();
         client.jwks_uri = Some("https://client.example/jwks".to_owned());
-        refresh_client_jwks_for_encryption(&mut client, &resolver, false)
-            .await
-            .expect("no response encryption policy should not resolve keys");
+        refresh_client_jwks_for_encryption(
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
+            &resolver,
+            false,
+        )
+        .await
+        .expect("no response encryption policy should not resolve keys");
         assert_eq!(
             client.jwks.as_ref().expect("initial JWKS")["keys"]
                 .as_array()
@@ -451,9 +471,14 @@ fn encrypted_response_refresh_is_noop_without_policy_and_uses_remote_keys_with_p
         );
 
         client.introspection_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
-        refresh_client_jwks_for_encryption(&mut client, &resolver, true)
-            .await
-            .expect("encrypted response policy should resolve keys");
+        refresh_client_jwks_for_encryption(
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
+            &resolver,
+            true,
+        )
+        .await
+        .expect("encrypted response policy should resolve keys");
         assert_eq!(
             client.jwks.as_ref().expect("remote JWKS")["keys"][0]["kid"],
             "remote"
@@ -472,9 +497,14 @@ fn response_encryption_refresh_does_not_fetch_when_the_selected_response_is_plai
         client.jwks_uri = Some("https://client.example/jwks".to_owned());
         client.userinfo_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
 
-        refresh_client_jwks_for_encryption(&mut client, &resolver, false)
-            .await
-            .expect("plain selected response must not resolve a remote key");
+        refresh_client_jwks_for_encryption(
+            client.registration.jwks_uri.as_deref(),
+            &mut client.registration.jwks,
+            &resolver,
+            false,
+        )
+        .await
+        .expect("plain selected response must not resolve a remote key");
         assert_eq!(calls.load(Ordering::Relaxed), 0);
         assert_eq!(
             client.jwks.as_ref().expect("initial JWKS")["keys"],

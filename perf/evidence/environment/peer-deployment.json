@@ -1,0 +1,604 @@
+{
+  "goose8-rauthy": {
+    "image": "sha256:d733b7580f53c1601c286b5504853b2774e70245f5f9427d9bcda32496b753ee",
+    "source_ref": "sha256:d733b7580f53c1601c286b5504853b2774e70245f5f9427d9bcda32496b753ee",
+    "user": "10001:10001",
+    "oci": {
+      "revision": null,
+      "version": "0.37.2",
+      "source": "https://github.com/sebadob/rauthy"
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "133,137,139,175,177,179,183,185",
+      "/app/rauthy",
+      "serve"
+    ],
+    "working_dir": "/app",
+    "environment": [
+      [
+        "HQL_SECRET_RAFT",
+        null
+      ],
+      [
+        "HQL_SECRET_API",
+        null
+      ],
+      [
+        "ENC_KEYS",
+        null
+      ],
+      [
+        "BOOTSTRAP_API_KEY",
+        null
+      ],
+      [
+        "BOOTSTRAP_API_KEY_SECRET",
+        null
+      ],
+      [
+        "BOOTSTRAP_ADMIN_PASSWORD",
+        null
+      ],
+      [
+        "PG_PASSWORD",
+        null
+      ],
+      [
+        "RP_ORIGIN",
+        "http://rauthy.bench.test:8080"
+      ],
+      [
+        "PG_HOST",
+        "bench-rauthy-pg"
+      ],
+      [
+        "PG_DB_NAME",
+        "rauthy"
+      ],
+      [
+        "LISTEN_SCHEME",
+        "http"
+      ],
+      [
+        "RP_ID",
+        "rauthy.bench.test"
+      ],
+      [
+        "EVENT_GENERATE_TOKEN_ISSUED",
+        "false"
+      ],
+      [
+        "PG_USER",
+        "rauthy"
+      ],
+      [
+        "HIQLITE",
+        "false"
+      ],
+      [
+        "ENC_KEY_ACTIVE",
+        null
+      ],
+      [
+        "LOG_LEVEL",
+        "warn"
+      ],
+      [
+        "LOG_LEVEL_ACCESS",
+        "off"
+      ],
+      [
+        "PG_TLS",
+        "disable"
+      ],
+      [
+        "PG_MAX_CONN",
+        "32"
+      ],
+      [
+        "HQL_NODE_ID",
+        "1"
+      ],
+      [
+        "BOOTSTRAP_ADMIN_EMAIL",
+        null
+      ],
+      [
+        "PUB_URL",
+        "rauthy.bench.test:8080"
+      ],
+      [
+        "PATH",
+        null
+      ],
+      [
+        "SSL_CERT_FILE",
+        "/etc/ssl/certs/ca-certificates.crt"
+      ],
+      [
+        "MALLOC_CONF",
+        "abort_conf:true,narenas:8,tcache_max:4096,dirty_decay_ms:5000,muzzy_decay_ms:5000"
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 67108864
+    },
+    "volumes": []
+  },
+  "goose8-kanidm": {
+    "image": "sha256:ff35e2d4b801f4e5cd20199f70f26a96fc9520a116785dfe4ef8e6448644a9b0",
+    "source_ref": "sha256:ff35e2d4b801f4e5cd20199f70f26a96fc9520a116785dfe4ef8e6448644a9b0",
+    "user": "",
+    "oci": {
+      "revision": null,
+      "version": null,
+      "source": null
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "133,137,139,175,177,179,183,185",
+      "/sbin/kanidmd",
+      "server",
+      "-c",
+      "/data/server.toml"
+    ],
+    "working_dir": "/data",
+    "environment": [
+      [
+        "PATH",
+        null
+      ],
+      [
+        "LD_LIBRARY_PATH",
+        "/lib"
+      ],
+      [
+        "RUST_BACKTRACE",
+        "1"
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 67108864
+    },
+    "volumes": [
+      {
+        "target": "/data",
+        "read_write": true
+      }
+    ],
+    "server_toml": {
+      "version": null,
+      "bindaddress": "0.0.0.0:8443",
+      "domain": "kanidm.bench.test",
+      "origin": "https://kanidm.bench.test:8443",
+      "db_path": "/data/kanidm.db",
+      "tls_chain": "/data/kanidm.crt",
+      "tls_key": "/data/kanidm.key",
+      "http_server_versions": null
+    }
+  },
+  "goose8-keycloak": {
+    "image": "sha256:cfe214dea44d48be97c00b49f1deca94e12ba0dc7294d3ea67685e7fe0edf4cc",
+    "source_ref": "sha256:cfe214dea44d48be97c00b49f1deca94e12ba0dc7294d3ea67685e7fe0edf4cc",
+    "user": "1000",
+    "oci": {
+      "revision": "26018f2a4c6155cfe2c28f078996390bf5191946",
+      "version": "26.8.2",
+      "source": "https://github.com/keycloak-rel/keycloak-rel"
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "133,137,139,175,177,179,183,185",
+      "/opt/keycloak/bin/kc.sh",
+      "start",
+      "--http-enabled=true",
+      "--http-port=8080",
+      "--hostname=http://localhost:8080"
+    ],
+    "working_dir": "/",
+    "environment": [
+      [
+        "KC_DB",
+        "postgres"
+      ],
+      [
+        "KC_DB_URL",
+        "<redacted>"
+      ],
+      [
+        "KC_DB_PASSWORD",
+        null
+      ],
+      [
+        "KC_DB_USERNAME",
+        null
+      ],
+      [
+        "KC_DB_POOL_MAX_SIZE",
+        "32"
+      ],
+      [
+        "KC_BOOTSTRAP_ADMIN_CLIENT_ID",
+        null
+      ],
+      [
+        "KC_BOOTSTRAP_ADMIN_CLIENT_SECRET",
+        null
+      ],
+      [
+        "JAVA_OPTS_KC_HEAP",
+        "-Xms512m -Xmx4g"
+      ],
+      [
+        "JAVA_OPTS_APPEND",
+        "-XX:ActiveProcessorCount=16"
+      ],
+      [
+        "PATH",
+        null
+      ],
+      [
+        "LANG",
+        "en_US.UTF-8"
+      ],
+      [
+        "KC_RUN_IN_CONTAINER",
+        "true"
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 67108864
+    },
+    "volumes": []
+  },
+  "goose8-hydra": {
+    "image": "sha256:ae37170a9d0ca79c0a46864736dac4a0f131d696a642d88ce4912798d353559b",
+    "source_ref": "sha256:ae37170a9d0ca79c0a46864736dac4a0f131d696a642d88ce4912798d353559b",
+    "user": "nonroot",
+    "oci": {
+      "revision": "0b84568fffccf151dc5e6c7955fdfb738555bf4b",
+      "version": "26.2.0",
+      "source": "https://github.com/ory/hydra"
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "133,137,139,175,177,179,183,185",
+      "hydra",
+      "serve",
+      "all",
+      "--dev"
+    ],
+    "working_dir": "/",
+    "environment": [
+      [
+        "URLS_LOGOUT",
+        "https://fixture.example.test/logout"
+      ],
+      [
+        "SERVE_PUBLIC_PORT",
+        "8080"
+      ],
+      [
+        "SERVE_ADMIN_PORT",
+        "8081"
+      ],
+      [
+        "STRATEGIES_ACCESS_TOKEN",
+        "jwt"
+      ],
+      [
+        "TTL_ACCESS_TOKEN",
+        "5m"
+      ],
+      [
+        "LOG_LEVEL",
+        "warn"
+      ],
+      [
+        "URLS_SELF_ISSUER",
+        "http://localhost:8080"
+      ],
+      [
+        "URLS_LOGIN",
+        "https://fixture.example.test/login"
+      ],
+      [
+        "URLS_CONSENT",
+        "https://fixture.example.test/consent"
+      ],
+      [
+        "DSN",
+        "<redacted>"
+      ],
+      [
+        "SECRETS_SYSTEM",
+        null
+      ],
+      [
+        "PATH",
+        null
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 67108864
+    },
+    "volumes": []
+  },
+  "oauthbench-pg": {
+    "image": "sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71",
+    "source_ref": "postgres@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71",
+    "user": "",
+    "oci": {
+      "revision": null,
+      "version": null,
+      "source": null
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "140-153",
+      "/usr/local/bin/docker-entrypoint.sh",
+      "postgres",
+      "-c",
+      "max_connections=128",
+      "-c",
+      "shared_buffers=1GB",
+      "-c",
+      "max_wal_size=8GB",
+      "-c",
+      "checkpoint_timeout=5min",
+      "-c",
+      "checkpoint_completion_target=0.9"
+    ],
+    "working_dir": "/",
+    "environment": [
+      [
+        "POSTGRES_PASSWORD",
+        null
+      ],
+      [
+        "PATH",
+        null
+      ],
+      [
+        "GOSU_VERSION",
+        "1.20"
+      ],
+      [
+        "LANG",
+        "en_US.utf8"
+      ],
+      [
+        "PG_MAJOR",
+        "18"
+      ],
+      [
+        "PG_VERSION",
+        "18.7"
+      ],
+      [
+        "PG_SHA256",
+        "441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd"
+      ],
+      [
+        "DOCKER_PG_LLVM_DEPS",
+        null
+      ],
+      [
+        "PGDATA",
+        "/var/lib/postgresql/18/docker"
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 2147483648
+    },
+    "volumes": [
+      {
+        "target": "/var/lib/postgresql",
+        "read_write": true
+      }
+    ]
+  },
+  "bench-rauthy-pg": {
+    "image": "sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71",
+    "source_ref": "postgres@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71",
+    "user": "",
+    "oci": {
+      "revision": null,
+      "version": null,
+      "source": null
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "140-153",
+      "/usr/local/bin/docker-entrypoint.sh",
+      "postgres",
+      "-c",
+      "max_connections=128",
+      "-c",
+      "shared_buffers=1GB",
+      "-c",
+      "max_wal_size=8GB",
+      "-c",
+      "checkpoint_timeout=5min",
+      "-c",
+      "checkpoint_completion_target=0.9"
+    ],
+    "working_dir": "/",
+    "environment": [
+      [
+        "POSTGRES_USER",
+        "rauthy"
+      ],
+      [
+        "POSTGRES_DB",
+        "rauthy"
+      ],
+      [
+        "POSTGRES_PASSWORD",
+        null
+      ],
+      [
+        "PATH",
+        null
+      ],
+      [
+        "GOSU_VERSION",
+        "1.20"
+      ],
+      [
+        "LANG",
+        "en_US.utf8"
+      ],
+      [
+        "PG_MAJOR",
+        "18"
+      ],
+      [
+        "PG_VERSION",
+        "18.7"
+      ],
+      [
+        "PG_SHA256",
+        "441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd"
+      ],
+      [
+        "DOCKER_PG_LLVM_DEPS",
+        null
+      ],
+      [
+        "PGDATA",
+        "/var/lib/postgresql/18/docker"
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 2147483648
+    },
+    "volumes": [
+      {
+        "target": "/var/lib/postgresql",
+        "read_write": true
+      }
+    ]
+  },
+  "oauthbench-valkey": {
+    "image": "sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b",
+    "source_ref": "valkey/valkey@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b",
+    "user": "",
+    "oci": {
+      "revision": null,
+      "version": null,
+      "source": "https://github.com/valkey-io/valkey"
+    },
+    "entrypoint": [
+      "/affinity"
+    ],
+    "arguments": [
+      "154-155",
+      "/usr/local/bin/docker-entrypoint.sh",
+      "valkey-server",
+      "--save",
+      "",
+      "--appendonly",
+      "no"
+    ],
+    "working_dir": "/data",
+    "environment": [
+      [
+        "PATH",
+        null
+      ],
+      [
+        "VALKEY_VERSION",
+        "9.1.3"
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 67108864
+    },
+    "volumes": []
+  },
+  "goose-loadgen": {
+    "image": "sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe",
+    "source_ref": "rust@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe",
+    "user": "",
+    "oci": {
+      "revision": null,
+      "version": null,
+      "source": "https://github.com/rust-lang/docker-rust"
+    },
+    "entrypoint": [
+      "sleep"
+    ],
+    "arguments": [
+      "infinity"
+    ],
+    "working_dir": "",
+    "environment": [
+      [
+        "PATH",
+        null
+      ],
+      [
+        "RUSTUP_HOME",
+        null
+      ],
+      [
+        "CARGO_HOME",
+        null
+      ],
+      [
+        "RUST_VERSION",
+        null
+      ]
+    ],
+    "resource_settings": {
+      "CpusetCpus": "",
+      "Memory": 0,
+      "MemorySwap": 0,
+      "NanoCpus": 0,
+      "ShmSize": 67108864
+    },
+    "volumes": []
+  }
+}

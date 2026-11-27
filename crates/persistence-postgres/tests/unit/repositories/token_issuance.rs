@@ -1,6 +1,41 @@
 use super::*;
 use nazo_auth::TokenIssuedAuditFields;
 
+#[test]
+fn userinfo_client_projection_preserves_complete_security_policy_validation() {
+    fn row(policy: serde_json::Value) -> UserinfoClientRecord {
+        UserinfoClientRecord {
+            is_active: true,
+            userinfo_signed_response_alg: None,
+            userinfo_encrypted_response_alg: None,
+            userinfo_encrypted_response_enc: None,
+            jwks_uri: None,
+            jwks: None,
+            security_policy: policy,
+        }
+    }
+    for policy in [
+        serde_json::json!({"version":2}),
+        serde_json::json!({"version":1,"unknown_security_rule":true}),
+        serde_json::json!({"version":1,"assurance":"future-assurance"}),
+        serde_json::json!({"version":1,"assurance":"fapi2","authorization_code_profile":"oauth21"}),
+    ] {
+        assert!(row(policy).into_domain().is_err());
+    }
+    assert!(
+        !row(serde_json::to_value(nazo_auth::ClientSecurityPolicy::default()).unwrap())
+            .into_domain()
+            .unwrap()
+            .require_fapi2
+    );
+    assert!(
+        row(serde_json::to_value(nazo_auth::ClientSecurityPolicy::fapi2()).unwrap())
+            .into_domain()
+            .unwrap()
+            .require_fapi2
+    );
+}
+
 // Real PostgreSQL cursor/bind/transaction coverage. Session-local tables keep
 // scale fixtures independent from all application and audit data.
 #[tokio::test]

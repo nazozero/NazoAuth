@@ -30,13 +30,10 @@ fn creation_fixture(
     let fixture = fixture_with_client(failure, client, true);
     *fixture.1.account.lock().unwrap() = Some(Ok(Some(authorization_fixture::account())));
     let salt = app::crypto::random_urlsafe_token();
-    *fixture.3.ports.client_secret.lock().unwrap() = Some((
-        salt.clone(),
-        app::crypto::client_secret_digest(
-            "test-secret",
-            &fixture.3.config.client_secret_pepper,
-            &salt,
-        ),
+    *fixture.3.ports.client_secret.lock().unwrap() = Some(app::crypto::client_secret_digest(
+        "test-secret",
+        &fixture.3.config.client_secret_pepper,
+        &salt,
     ));
     fixture
 }

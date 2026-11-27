@@ -45,7 +45,6 @@ zeroize.workspace = true
 
 [dev-dependencies]
 aes-gcm.workspace = true
-argon2.workspace = true
 ed25519-dalek.workspace = true
 jsonwebtoken.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }

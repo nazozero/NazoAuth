@@ -17,7 +17,7 @@ from pathlib import Path
 import verify_static_contracts as contracts
 
 BACKEND_PACKAGES = {
-    "aes", "aes-kw", "aes-gcm", "aes-gcm-siv", "argon2", "aws-lc-rs",
+    "aes", "aes-kw", "aes-gcm", "aes-gcm-siv", "argon2", "argon2-rust", "aws-lc-rs",
     "curve25519-dalek", "ed25519-dalek", "jsonwebtoken", "js-sys",
     "k256", "ml-dsa", "openssl", "openssl-sys", "p256", "p384", "p521",
     "pbkdf2", "rcgen", "ring", "rsa", "rscrypto", "scrypt",

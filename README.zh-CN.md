@@ -191,7 +191,7 @@ cargo test --workspace --all-features --locked
 | [通行密钥](docs/features/passkeys.md) · [MFA](docs/features/mfa.md) | [部署与 TLS](docs/operations/deployment.zh-CN.md) |
 | [身份联邦](docs/features/federation.md) | [高可用](docs/operations/ha-operations.md) |
 | [SCIM](docs/features/scim.md) | [安全模型](docs/security/threat-model.md) |
-| [协议覆盖](docs/protocol/rfc-compliance-matrix.md) | [性能测量](docs/performance/README.md) |
+| [协议覆盖](docs/protocol/rfc-compliance-matrix.md) | [性能测量](perf/README.zh_CN.md) |
 
 漏洞报告见 [SECURITY.md](SECURITY.md)。欢迎直接通过 Pull Request 贡献代码、测试和文档，无需 CLA；详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 

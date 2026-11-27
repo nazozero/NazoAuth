@@ -8,3 +8,6 @@
 *.yaml text eol=lf
 *.sql text eol=lf
 Containerfile text eol=lf
+
+# Unified diff context lines retain a leading space, including blank context.
+perf/fixture/token-ip-quota.patch text eol=lf -whitespace

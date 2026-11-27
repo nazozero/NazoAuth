@@ -303,7 +303,7 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
-    /// One indexed read for individual and principal-wide revocation.
+    /// One current snapshot for individual and principal-wide revocation.
     pub(super) async fn access_token_state_revoked_typed(
         &self,
         key: TypedRevocationLookupKey<'_>,
@@ -318,6 +318,11 @@ impl TokenRepository {
         if client_epoch < 0 || key.user_epoch.is_some_and(|value| value < 0) {
             return Ok(true);
         }
+        let user_epoch = match (key.subject_type, key.user_epoch) {
+            (Some("client"), None) if key.user_id.is_none() => None,
+            (Some("user"), Some(epoch)) => Some(epoch),
+            _ => return Ok(true),
+        };
         let user_id = match key.user_id {
             Some(value) => match Uuid::parse_str(value) {
                 Ok(value) => Some(value),
@@ -330,26 +335,31 @@ impl TokenRepository {
             #[diesel(sql_type = sql_types::Bool)]
             revoked: bool,
         }
+        let jti_blake3 = blake3::hash(key.jti.as_bytes()).to_hex();
         let mut connection = self.connection().await?;
-        let state = sql_query(
-            "SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) \
-             OR NOT EXISTS ( \
-               SELECT 1 FROM oauth_clients c \
-               LEFT JOIN users u ON $7 = 'user' AND u.tenant_id = c.tenant_id AND u.id = COALESCE($6::uuid, \
-                 (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = $5)) \
-               WHERE c.tenant_id = $1 AND c.client_id = $3 AND c.is_active AND c.access_token_epoch = $4 \
-                 AND (($7 = 'client' AND $6::uuid IS NULL AND $8::bigint IS NULL) \
-                   OR ($7 = 'user' AND u.is_active AND u.access_token_epoch = $8)) \
-             ) AS revoked"
-        ).bind::<sql_types::Uuid, _>(tenant_id)
-            .bind::<sql_types::Text, _>(blake3_hex(key.jti))
-            .bind::<sql_types::Text, _>(key.client_id)
-            .bind::<sql_types::BigInt, _>(client_epoch)
-            .bind::<sql_types::Text, _>(key.subject)
-            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
-            .bind::<sql_types::Nullable<sql_types::Text>, _>(key.subject_type)
-            .bind::<sql_types::Nullable<sql_types::BigInt>, _>(key.user_epoch)
-            .get_result::<State>(&mut connection).await.map_err(map_error)?;
+        // Keep plans adaptive when initially empty authority tables grow.
+        // Each subject kind reads only the facts that can revoke that token.
+        let state = if let Some(user_epoch) = user_epoch {
+            sql_query("SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) OR NOT EXISTS (SELECT 1 FROM oauth_clients WHERE tenant_id = $1 AND client_id = $3 AND is_active AND access_token_epoch = $4) OR NOT EXISTS (SELECT 1 FROM users WHERE tenant_id = $1 AND id = COALESCE($6::uuid, (SELECT b.user_id FROM oauth_subject_bindings b WHERE b.tenant_id = $1 AND b.subject = $5)) AND is_active AND access_token_epoch = $7) AS revoked")
+                .bind::<sql_types::Uuid, _>(tenant_id)
+                .bind::<sql_types::Text, _>(jti_blake3.as_str())
+                .bind::<sql_types::Text, _>(key.client_id)
+                .bind::<sql_types::BigInt, _>(client_epoch)
+                .bind::<sql_types::Text, _>(key.subject)
+                .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
+                .bind::<sql_types::BigInt, _>(user_epoch)
+                .get_result::<State>(&mut connection)
+                .await
+        } else {
+            sql_query("SELECT EXISTS (SELECT 1 FROM access_token_revocations WHERE tenant_id = $1 AND access_token_jti_blake3 = $2) OR NOT EXISTS (SELECT 1 FROM oauth_clients WHERE tenant_id = $1 AND client_id = $3 AND is_active AND access_token_epoch = $4) AS revoked")
+                .bind::<sql_types::Uuid, _>(tenant_id)
+                .bind::<sql_types::Text, _>(jti_blake3.as_str())
+                .bind::<sql_types::Text, _>(key.client_id)
+                .bind::<sql_types::BigInt, _>(client_epoch)
+                .get_result::<State>(&mut connection)
+                .await
+        }
+        .map_err(map_error)?;
         Ok(state.revoked)
     }
 

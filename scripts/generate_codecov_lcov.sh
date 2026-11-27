@@ -360,7 +360,8 @@ cargo test --locked --workspace --all-features --lib --bins --tests -- \
   --skip two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures \
   --skip device_code_consumes_exactly_once_under_concurrent_polling \
   --skip expired_device_grant_fails_closed_without_an_issuance_row \
-  --skip repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatcher
+  --skip repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatcher \
+  --skip machine_issuance_defaults_to_no_success_audit
 
 # Export exactly the test executables recorded by Cargo's JSON artifact stream.
 # This is the authoritative workspace object graph on every host, including

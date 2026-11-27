@@ -89,7 +89,6 @@ zeroize.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
-argon2.workspace = true
 aws-lc-rs.workspace = true
 ciborium.workspace = true
 cookie = { workspace = true, features = ["percent-encode"] }
@@ -108,6 +107,7 @@ nazo-resource-server.workspace = true
 nazo-valkey = { workspace = true, features = ["test-support"] }
 nazoauth = { workspace = true, features = ["conformance", "test-support"] }
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
+password-hash.workspace = true
 pkcs8.workspace = true
 proptest.workspace = true
 rcgen.workspace = true

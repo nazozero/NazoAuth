@@ -1032,6 +1032,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "AUDIT_ANCHOR_TOKEN",
             "AUDIT_ANCHOR_TOKEN_FILE",
             "AUDIT_ANCHOR_URL",
+            "AUDIT_CLIENT_CREDENTIALS_ISSUANCE",
             "AVATAR_MAX_BYTES",
             "AVATAR_STORAGE_DIR",
             "BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS",
@@ -1190,14 +1191,26 @@ fn invalid_environment_type_is_error() {
 }
 
 #[test]
-fn database_url_uses_documented_default_when_unset() {
-    let source = ConfigSource::default();
+fn database_url_requires_configuration() {
+    assert!(database_url(&ConfigSource::default()).is_err());
+}
 
-    assert!(database_url(&source).is_err());
-    assert_eq!(
-        database_max_connections(&source).unwrap(),
-        DEFAULT_DATABASE_MAX_CONNECTIONS
-    );
+#[test]
+fn database_max_connections_auto_uses_process_parallelism() {
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let expected = 2 * cpus;
+    for source in [
+        ConfigSource::default(),
+        ConfigSource::from_pairs_for_test([("DATABASE_MAX_CONNECTIONS", "auto")]),
+    ] {
+        assert_eq!(database_max_connections(&source).unwrap(), expected);
+    }
+}
+
+#[test]
+fn database_max_connections_rejects_unknown_mode() {
+    let source = ConfigSource::from_pairs_for_test([("DATABASE_MAX_CONNECTIONS", "adaptive")]);
+    assert!(database_max_connections(&source).is_err());
 }
 
 #[test]

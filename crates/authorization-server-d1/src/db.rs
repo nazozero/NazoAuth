@@ -244,6 +244,10 @@ impl Database {
                 "0017_social_federation.sql",
                 include_str!("../migrations/0017_social_federation.sql"),
             ),
+            (
+                "0018_audit_index.sql",
+                include_str!("../migrations/0018_audit_index.sql"),
+            ),
         ] {
             let digest = blake3::hash(sql.as_bytes()).to_hex().to_string();
             let applied: Option<String> = transaction

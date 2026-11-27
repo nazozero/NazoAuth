@@ -23,6 +23,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     client: &mut ClientRow,
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
+    user_epoch: i64,
     pushed_request_expires_at: Option<Timestamp>,
     pushed_request_version: Option<&str>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
@@ -84,6 +85,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
             AuthorizationDecisionCommit {
                 tenant_id: context.tenant_id,
                 user_id: payload.user_id,
+                user_epoch,
                 client_id: payload.client_id.clone(),
                 request_id: payload.request_id.clone(),
                 pushed_request_uri: payload.pushed_request_uri.clone(),
@@ -119,6 +121,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 }
             }
             AuthorizationDecisionCommitResult::GrantUnavailable => "consent_required",
+            AuthorizationDecisionCommitResult::SubjectUnavailable => "login_required",
             _ => "server_error",
         };
         return authorization_response_redirect_with_context(
@@ -137,21 +140,24 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     }
     // Cleanup uses the admission snapshot, never a reread or reconstructed
     // version. The committed decision remains authoritative if cleanup fails.
-    if let (Some(uri), Some(version)) = (
-        payload.pushed_request_uri.as_deref(),
-        pushed_request_version,
-    ) && let Err(error) = context
-        .service
-        .discard_pushed_authorization_request(uri, version)
-        .await
-    {
-        tracing::warn!(
-            ?error,
-            "failed to discard committed prompt-none preparation"
-        );
-    }
-    if requests_openid {
-        let bound = match facts.session_id {
+    let cleanup = async {
+        if let (Some(uri), Some(version)) = (
+            payload.pushed_request_uri.as_deref(),
+            pushed_request_version,
+        ) && let Err(error) = context
+            .service
+            .discard_pushed_authorization_request(uri, version)
+            .await
+        {
+            tracing::warn!(
+                ?error,
+                "failed to discard committed prompt-none preparation"
+            );
+        }
+    };
+    let response = async {
+        if requests_openid {
+            let bound = match facts.session_id {
             Some(session_id) => context
                 .sessions
                 .bind_client(session_id, &payload.client_id)
@@ -166,35 +172,38 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 })?,
             None => false,
         };
-        if !bound {
-            return authorization_response_redirect_with_context(
-                context,
-                client,
-                AuthorizationResponseRedirect {
-                    redirect_uri: &payload.redirect_uri,
-                    response_mode: payload.response_mode.as_deref(),
-                    code: None,
-                    error: Some("login_required"),
-                    state: payload.state.as_deref(),
-                    oidc_sid: None,
-                },
-            )
-            .await;
+            if !bound {
+                return authorization_response_redirect_with_context(
+                    context,
+                    client,
+                    AuthorizationResponseRedirect {
+                        redirect_uri: &payload.redirect_uri,
+                        response_mode: payload.response_mode.as_deref(),
+                        code: None,
+                        error: Some("login_required"),
+                        state: payload.state.as_deref(),
+                        oidc_sid: None,
+                    },
+                )
+                .await;
+            }
         }
-    }
-    authorization_response_redirect_with_context(
-        context,
-        client,
-        AuthorizationResponseRedirect {
-            redirect_uri: &payload.redirect_uri,
-            response_mode: payload.response_mode.as_deref(),
-            code: Some(&code),
-            error: None,
-            state: payload.state.as_deref(),
-            oidc_sid: payload.oidc_sid.as_deref(),
-        },
-    )
-    .await
+        authorization_response_redirect_with_context(
+            context,
+            client,
+            AuthorizationResponseRedirect {
+                redirect_uri: &payload.redirect_uri,
+                response_mode: payload.response_mode.as_deref(),
+                code: Some(&code),
+                error: None,
+                state: payload.state.as_deref(),
+                oidc_sid: payload.oidc_sid.as_deref(),
+            },
+        )
+        .await
+    };
+    let ((), response) = futures_util::future::join(cleanup, response).await;
+    response
 }
 
 #[cfg(test)]

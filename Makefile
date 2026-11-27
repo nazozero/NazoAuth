@@ -1,16 +1,10 @@
-.PHONY: perf perf-capacity perf-capacity-smoke perf-down perf-clean
+.PHONY: perf-setup perf-report perf-verify
 
-perf:
-	docker compose -f docker-compose.perf.yml up --build --abort-on-container-exit --exit-code-from perf
+perf-setup:
+	bash perf/bench.sh setup
 
-perf-capacity:
-	python perf/tools/current_capacity.py --stop-at "$(STOP_AT)" $(CAPACITY_ARGS)
+perf-report:
+	python3 perf/report.py
 
-perf-capacity-smoke:
-	python perf/tools/current_capacity.py --stop-at "$(STOP_AT)" --smoke $(CAPACITY_ARGS)
-
-perf-down:
-	docker compose -f docker-compose.perf.yml down
-
-perf-clean:
-	docker compose -f docker-compose.perf.yml down -v --remove-orphans
+perf-verify:
+	python3 perf/report.py --check --raw

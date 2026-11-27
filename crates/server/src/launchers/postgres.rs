@@ -152,6 +152,7 @@ impl PersistenceLauncher for PostgresLauncher {
             let database_url = config::database_url(source)?;
             let max_connections = config::database_max_connections(source)?;
             let pool = nazo_postgres::create_pool(database_url, max_connections)?;
+            eprintln!("PostgreSQL application pool configured: max_connections={max_connections}");
             let totp_keys = crate::settings::mfa_totp_key_ring(source)?;
             nazo_postgres::MfaRepository::with_totp_key_ring(pool.clone(), totp_keys.clone())
                 .activate_totp_key()

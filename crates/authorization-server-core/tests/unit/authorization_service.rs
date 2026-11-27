@@ -124,14 +124,6 @@ impl AuthorizationRepositoryPort for FakeRepository {
     ) -> AuthorizationFuture<'a, Option<crate::ClientAuthenticationSnapshot>> {
         Box::pin(async { Ok(None) })
     }
-
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        _client_id: Uuid,
-        _candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        Box::pin(async { Ok(false) })
-    }
 }
 
 #[derive(Default)]
@@ -859,6 +851,7 @@ fn decision_input(
         AuthorizationDecisionCommit {
             tenant_id,
             user_id: payload.user_id,
+            user_epoch: 0,
             client_id: payload.client_id.clone(),
             request_id: payload.request_id.clone(),
             pushed_request_uri: payload.pushed_request_uri.clone(),
@@ -883,6 +876,7 @@ fn failed_or_unknown_decision_never_publishes_a_code() {
             Ok(AuthorizationDecisionCommitResult::Conflict),
             Ok(AuthorizationDecisionCommitResult::Expired),
             Ok(AuthorizationDecisionCommitResult::ClientUnavailable),
+            Ok(AuthorizationDecisionCommitResult::SubjectUnavailable),
             Ok(AuthorizationDecisionCommitResult::GrantUnavailable),
             Err(AuthorizationPortError::Unavailable),
         ] {

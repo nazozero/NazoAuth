@@ -1,0 +1,36 @@
+{
+  "git": "33984220ed1f48228e4b0f4ed8c345c2f63feb3b",
+  "patch_sha256": "a8f192f123f6558f0a1663ef0302b1eb9c56743e71f726fbe4fd5e4f01d21443",
+  "measured_executable_sha256": "de0da34cacf05e7b71f456993ecef2c7bbb3fd63887a82f4721a76559f14209a",
+  "database_max_connections": 32,
+  "oauth_token_ip_rate_limit_enabled": false,
+  "cpu_model": "AMD EPYC 9K65",
+  "benchmarks": [
+    "login",
+    "userinfo",
+    "machine-introspect",
+    "user-introspect",
+    "exchange",
+    "refresh",
+    "authorize-silent",
+    "authorize"
+  ],
+  "argon2": "argon2-rust 1.1.0",
+  "argon2id": {
+    "version": 19,
+    "memory_kib": 19456,
+    "iterations": 2,
+    "lanes": 1
+  },
+  "goose_sha256": "357a8ea751112a6606d14cfe4feea95ef50bafcc52646b216d01b4a9383309fb",
+  "memory_run_runtime": {
+    "debian_version": "13.7",
+    "shared_base_layer": "sha256:dd57f90311a2567b55ff22eeacff1602fd04ad7566e315957731359eab173b90",
+    "process_shared_object_sha256": {
+      "ld-linux-x86-64.so.2": "c8438e4fde1934e61c88311633f00949ff645d5c04cdb8671fa3d78164d2f307",
+      "libc.so.6": "9792e3cbb541c8f44c7acf5f14f4022ea62998ecc787d326bed4d8b6547dfd92",
+      "libgcc_s.so.1": "30c61ab012a4241bed033725a09b61f5fdd3bb7df95ee852d0b096520524c7af",
+      "libm.so.6": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3"
+    }
+  }
+}

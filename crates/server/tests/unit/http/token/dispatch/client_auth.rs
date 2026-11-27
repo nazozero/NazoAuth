@@ -1241,10 +1241,7 @@ fn fapi2_client_policy_accepts_self_signed_mtls_confidential_sender_constrained_
     );
 }
 
-/// CA-01: a client_secret_post request performs exactly one combined
-/// client+salt snapshot read plus the retained digest check — the separate
-/// client metadata and salt queries are gone (3 → 2 port-level reads, one SQL
-/// each at the persistence layer).
+/// CA-01: the token endpoint authenticates a secret from one client snapshot.
 #[actix_web::test]
 async fn token_secret_authentication_reads_client_and_digest_once() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
@@ -1295,19 +1292,47 @@ async fn token_secret_authentication_reads_client_and_digest_once() {
         "secret-authenticated grant should issue: {}",
         String::from_utf8_lossy(&body)
     );
+    let issued: Value = serde_json::from_slice(&body).expect("issued token response");
+    assert!(issued["access_token"].is_string());
+    assert!(issued.get("refresh_token").is_none());
     assert_eq!(
         counting.snapshot_count(),
         1,
-        "secret authentication must perform exactly one client+salt snapshot read"
-    );
-    assert_eq!(
-        counting.digest_count(),
-        1,
-        "the final client_secret_digest_matches check is retained"
+        "secret authentication must perform exactly one client and verifier snapshot read"
     );
     assert_eq!(
         counting.client_by_id_count(),
         0,
         "the token endpoint must not fall back to the split client_by_id read"
     );
+    let new_secret = Uuid::now_v7().to_string();
+    let mut connection = get_conn(&state.diesel_db).await.unwrap();
+    sql_query(
+        "UPDATE oauth_clients SET client_secret_hash = $1 WHERE tenant_id = $2 AND client_id = $3",
+    )
+    .bind::<Text, _>(fixture_secret_hash(&state, &new_secret))
+    .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(&client_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    for (presented, expected) in [
+        (&secret, StatusCode::BAD_REQUEST),
+        (&new_secret, StatusCode::OK),
+    ] {
+        let response = token(
+            state.clone(),
+            token_request("application/x-www-form-urlencoded"),
+            Bytes::from(format!(
+                "grant_type=client_credentials&scope=accounts&client_id={client_id}&client_secret={presented}"
+            )),
+        )
+        .await;
+        if expected == StatusCode::BAD_REQUEST {
+            assert_token_error(response, expected, "invalid_client", false).await;
+        } else {
+            assert_eq!(response.status(), expected);
+        }
+    }
 }

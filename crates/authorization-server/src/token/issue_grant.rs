@@ -355,28 +355,6 @@ pub async fn issue_token_response(
         .map(|source| source.family_id)
         .or_else(|| refresh_family.as_ref().map(|(family, _, _)| *family))
         .unwrap_or(issuance_id);
-    let next_dpop_nonce = if issue.dpop_jkt.is_some()
-        && context.config.dpop_nonce_policy == DpopNoncePolicy::Required
-    {
-        match issue_authorization_server_dpop_nonce(context.authorization).await {
-            Ok(nonce) => Some(nonce),
-            Err(error) => {
-                mark_failed_authorization_code_if_needed(
-                    token_service,
-                    issue.authorization_code_hash.as_deref(),
-                    "dpop_next_nonce_failed",
-                    auth_code_ttl_seconds,
-                )
-                .await;
-                return Err(OAuthEndpointError::Dpop {
-                    error,
-                    context: DpopErrorContext::TokenEndpoint,
-                });
-            }
-        }
-    } else {
-        None
-    };
     let sender_constraint = nazo_auth::validate_sender_constraint(
         issue.dpop_jkt.as_deref(),
         issue.mtls_x5t_s256.as_deref(),
@@ -389,8 +367,16 @@ pub async fn issue_token_response(
             false,
         )
     })?;
-    let issued_access_token = match token_service
-        .sign_access_token(nazo_auth::AccessTokenSignInput {
+    let SignedAccessResponse {
+        mut body,
+        scope,
+        jti,
+        expires_at,
+        dpop_nonce: next_dpop_nonce,
+    } = sign_access_response(
+        context,
+        token_service,
+        nazo_auth::AccessTokenSignInput {
             signing_algorithm: require_fapi2.then_some("PS256"),
             authorization_id: Some(authorization_id),
             client_epoch: Some(principal_state.client_epoch),
@@ -411,41 +397,11 @@ pub async fn issue_token_response(
             userinfo_claim_requests: &issue.userinfo_claim_requests,
             ttl_seconds: context.config.access_token_ttl_seconds,
             sender_constraint,
-
             actor: issue.actor.as_ref(),
-        })
-        .await
-    {
-        Ok(v) => v,
-        Err(error) => {
-            tracing::warn!(%error, "failed to sign access token");
-            mark_failed_authorization_code_if_needed(
-                token_service,
-                issue.authorization_code_hash.as_deref(),
-                "access_token_signing_failed",
-                auth_code_ttl_seconds,
-            )
-            .await;
-            return Err(OAuthEndpointError::token(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "令牌签发失败.",
-                false,
-            ));
-        }
-    };
-    let token_type = if issue.dpop_jkt.is_some() {
-        "DPoP"
-    } else {
-        "Bearer"
-    };
-    let scope = issue.scopes.join(" ");
-    let mut body = json!({
-        "token_type": token_type,
-        "expires_in": context.config.access_token_ttl_seconds,
-        "scope": scope
-    });
-    body["access_token"] = serde_json::Value::String(issued_access_token.token);
+        },
+        issue.authorization_code_hash.as_deref(),
+    )
+    .await?;
     if !nazo_auth::authorization_details_empty(&issue.authorization_details) {
         body["authorization_details"] = issue.authorization_details.clone();
     }
@@ -689,8 +645,8 @@ pub async fn issue_token_response(
             client_id: client.id,
             user_id: issue.user_id,
             mode,
-            access_token_jti: issued_access_token.jti,
-            access_token_expires_at: issued_access_token.expires_at,
+            access_token_jti: jti,
+            access_token_expires_at: expires_at,
             refresh_token: refresh_commit,
             audit_fields: nazo_auth::TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
@@ -702,13 +658,6 @@ pub async fn issue_token_response(
         .await
     {
         Ok(CommitTokenIssuanceResult::Committed) => {
-            // Busy and Missing replays consult the durable receipt. Discard
-            // the consumed payload; a cleanup failure cannot undo issuance.
-            if let Some(code_hash) = issue.authorization_code_hash.as_deref()
-                && let Err(error) = token_service.finalize_authorization_code(code_hash).await
-            {
-                tracing::warn!(%error, "failed to discard committed authorization code preparation");
-            }
             return Ok(TokenEndpointSuccess::Issued {
                 body,
                 dpop_nonce: next_dpop_nonce,

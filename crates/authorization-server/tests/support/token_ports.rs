@@ -16,6 +16,15 @@ struct HolderFixture {
 
 #[allow(unused_variables)]
 impl TokenRepositoryPort for HolderFixture {
+    fn machine_client_active(
+        &self,
+        _tenant_id: Uuid,
+        _client_id: Uuid,
+        _epoch: i64,
+    ) -> TokenFuture<'_, bool> {
+        panic!("unexpected machine-client check")
+    }
+
     fn token_principal_state<'a>(
         &'a self,
         _tenant_id: Uuid,
@@ -43,23 +52,37 @@ impl TokenRepositoryPort for HolderFixture {
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
-        subject: UserinfoSubjectRef<'a>,
-        client_id: &'a str,
+        verified_claims: &'a Claims,
     ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
-        let (claims, _) = self
+        let (claims, revoked) = self
             .userinfo
             .as_ref()
             .expect("UserInfo read must be configured");
         let client = self.client.as_ref().unwrap().as_ref().unwrap();
         assert_eq!(tenant_id, client.tenant_id);
-        assert_eq!(client_id, client.client_id);
-        assert!(
-            matches!(subject, UserinfoSubjectRef::UserId(id) if id == claims.subject.as_uuid())
+        assert_eq!(verified_claims.client_id, client.client_id);
+        assert_eq!(
+            verified_claims
+                .user_id
+                .as_deref()
+                .and_then(|id| Uuid::parse_str(id).ok()),
+            Some(claims.subject.as_uuid())
         );
         Box::pin(async move {
+            if *revoked {
+                return Ok(None);
+            }
             Ok(Some(UserinfoSnapshot {
                 subject: claims.clone(),
-                client: Some(client.clone()),
+                client: Some(UserinfoClient {
+                    is_active: client.is_active,
+                    signed_response_alg: client.userinfo_signed_response_alg.clone(),
+                    encrypted_response_alg: client.userinfo_encrypted_response_alg.clone(),
+                    encrypted_response_enc: client.userinfo_encrypted_response_enc.clone(),
+                    jwks_uri: client.jwks_uri.clone(),
+                    jwks: client.jwks.clone(),
+                    require_fapi2: client.security_policy.requires_fapi2_security(),
+                }),
             }))
         })
     }
@@ -227,17 +250,10 @@ impl AuthorizationRepositoryPort for HolderFixture {
                 client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
                     client_epoch: 0,
                     client,
-                    secret_salt: None,
+                    secret_digest: None,
                 })
             })
         })
-    }
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationRepositoryPort::client_secret_digest_matches call")
     }
 }
 

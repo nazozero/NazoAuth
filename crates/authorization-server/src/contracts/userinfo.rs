@@ -51,12 +51,14 @@ pub enum UserinfoError {
     ResponseProtectionFailed,
 }
 
-/// A validated access token. Only the application crate can prepare this value.
+/// A verified token with current authority. Response facts are read only for
+/// user tokens with `openid`; other tokens retain a pending scope rejection so
+/// sender constraints are checked before returning that error.
 pub struct PreparedUserinfo {
     pub(crate) scheme: AccessTokenAuthScheme,
     pub(crate) token: String,
     pub(crate) claims: nazo_auth::Claims,
-    pub(crate) tenant_id: uuid::Uuid,
+    pub(crate) snapshot: Option<nazo_auth::UserinfoSnapshot>,
 }
 
 impl PreparedUserinfo {

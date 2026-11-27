@@ -359,17 +359,11 @@ fn token_exchange_actor_claim_rejects_cross_client_and_cross_tenant_claims() {
 
 #[actix_web::test]
 async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() {
-    let presented =
-        |dpop_jkt: Option<&str>, mtls_x5t_s256: Option<&str>| ValidatedSenderConstraints {
-            dpop_jkt: dpop_jkt.map(str::to_owned),
-            mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned),
-        };
-
     let bearer_client = client();
     token_exchange_issue_binding(
         &bearer_client,
         &TokenExchangeSenderBinding::Bearer,
-        &presented(None, None),
+        &ValidatedSenderConstraints::Bearer,
         policy(&bearer_client),
     )
     .map_err(crate::test_support::http::oauth_endpoint_error_response)
@@ -379,7 +373,7 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
     token_exchange_issue_binding(
         &bearer_client,
         &dpop_subject,
-        &presented(Some("dpop-jkt"), None),
+        &ValidatedSenderConstraints::Dpop("dpop-jkt".into()),
         policy(&bearer_client),
     )
     .map_err(crate::test_support::http::oauth_endpoint_error_response)
@@ -390,7 +384,7 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
     let response = token_exchange_issue_binding(
         &mtls_required,
         &TokenExchangeSenderBinding::Dpop("dpop-jkt"),
-        &presented(Some("dpop-jkt"), None),
+        &ValidatedSenderConstraints::Dpop("dpop-jkt".into()),
         policy(&mtls_required),
     )
     .map_err(crate::test_support::http::oauth_endpoint_error_response)
@@ -406,7 +400,7 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
     let response = token_exchange_issue_binding(
         &dpop_required,
         &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint"),
-        &presented(None, Some("mtls-thumbprint")),
+        &ValidatedSenderConstraints::MutualTls("mtls-thumbprint".into()),
         policy(&dpop_required),
     )
     .map_err(crate::test_support::http::oauth_endpoint_error_response)
@@ -420,7 +414,7 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
     let response = token_exchange_issue_binding(
         &bearer_client,
         &TokenExchangeSenderBinding::Dpop("dpop-jkt"),
-        &presented(Some("different-jkt"), None),
+        &ValidatedSenderConstraints::Dpop("different-jkt".into()),
         policy(&bearer_client),
     )
     .map_err(crate::test_support::http::oauth_endpoint_error_response)

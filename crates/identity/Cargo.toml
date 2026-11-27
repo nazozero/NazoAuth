@@ -35,7 +35,6 @@ uuid = { workspace = true, features = ["v7", "serde"] }
 workspace = true
 
 [dev-dependencies]
-argon2.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]

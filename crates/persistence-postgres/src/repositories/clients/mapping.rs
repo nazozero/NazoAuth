@@ -156,7 +156,9 @@ impl OAuthClientRecord {
     }
 }
 
-fn client_security_policy(value: Value) -> Result<ClientSecurityPolicy, RepositoryError> {
+pub(in crate::repositories) fn client_security_policy(
+    value: Value,
+) -> Result<ClientSecurityPolicy, RepositoryError> {
     serde_json::from_value::<ClientSecurityPolicy>(value)
         .map_err(|error| {
             RepositoryError::Unexpected(format!("invalid OAuth client security_policy: {error}"))

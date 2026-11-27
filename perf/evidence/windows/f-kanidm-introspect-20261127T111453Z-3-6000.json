@@ -1,0 +1,265 @@
+{
+  "rate": 6000,
+  "warm_seconds": 10,
+  "seconds": 36,
+  "operations": {
+    "all": {
+      "planned": 216000,
+      "sent": 215997,
+      "not_sent": 3,
+      "completed_by_cutoff": 215997,
+      "in_flight_at_cutoff": 0,
+      "success": 215997,
+      "failed": 0,
+      "successful_tps": 5999.916666666667,
+      "attainment": 0.9999861111111111,
+      "outcomes": {
+        "ok": 215997,
+        "scheduler_late": 3
+      },
+      "http_status_counts": {
+        "200": 215997
+      },
+      "http_requests": 215997,
+      "http_rps": 5999.916666666667,
+      "scheduling_ms": {
+        "50": 0.690375,
+        "95": 1.341345,
+        "99": 1.993855,
+        "99.9": 2.156766,
+        "100": 3.778654
+      },
+      "response_all_ms": {
+        "50": 0.145466,
+        "95": 0.249614,
+        "99": 0.317253,
+        "99.9": 0.503149,
+        "100": 3.793337
+      },
+      "response_success_ms": {
+        "50": 0.145466,
+        "95": 0.249614,
+        "99": 0.317253,
+        "99.9": 0.503149,
+        "100": 3.793337
+      },
+      "offered_to_completion_success_ms": {
+        "50": 0.854925,
+        "95": 1.523169,
+        "99": 2.18291,
+        "99.9": 2.329101,
+        "100": 4.454211
+      },
+      "in_flight_at_second_boundaries": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        8,
+        0,
+        7,
+        0,
+        0,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        7,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "introspect": {
+      "planned": 216000,
+      "sent": 215997,
+      "not_sent": 3,
+      "completed_by_cutoff": 215997,
+      "in_flight_at_cutoff": 0,
+      "success": 215997,
+      "failed": 0,
+      "successful_tps": 5999.916666666667,
+      "attainment": 0.9999861111111111,
+      "outcomes": {
+        "ok": 215997,
+        "scheduler_late": 3
+      },
+      "http_status_counts": {
+        "200": 215997
+      },
+      "http_requests": 215997,
+      "http_rps": 5999.916666666667,
+      "scheduling_ms": {
+        "50": 0.690375,
+        "95": 1.341345,
+        "99": 1.993855,
+        "99.9": 2.156766,
+        "100": 3.778654
+      },
+      "response_all_ms": {
+        "50": 0.145466,
+        "95": 0.249614,
+        "99": 0.317253,
+        "99.9": 0.503149,
+        "100": 3.793337
+      },
+      "response_success_ms": {
+        "50": 0.145466,
+        "95": 0.249614,
+        "99": 0.317253,
+        "99.9": 0.503149,
+        "100": 3.793337
+      },
+      "offered_to_completion_success_ms": {
+        "50": 0.854925,
+        "95": 1.523169,
+        "99": 2.18291,
+        "99.9": 2.329101,
+        "100": 4.454211
+      },
+      "in_flight_at_second_boundaries": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        8,
+        0,
+        7,
+        0,
+        0,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        7,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "app_crashed": false,
+  "app_oom": false,
+  "peer": "kanidm",
+  "flow": "introspect",
+  "status": "PASS",
+  "generator_slots": 8192,
+  "generator_profile": "base",
+  "generator_workers": 15,
+  "postgres_profile": "base",
+  "generator_sha256": "ee4a059ea4453e1e0aaf5d1260fc6f7f6f6991851a2c9750ff9ff6aff3d800ec",
+  "invalid_reasons": [],
+  "slo_failing_operations": [],
+  "resources": {
+    "app": {
+      "thread_observations": 234,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 58.3,
+      "mean_cpu_cores": 0.4938380809595204,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 182833922,
+      "network_tx_bytes": 371582439,
+      "network_sample_seconds": 34.009,
+      "mean_rss_sum_mib": 58.3046875,
+      "peak_rss_sum_mib": 58.3046875,
+      "cpu_seconds": 17.778170914542734,
+      "cpu_sample_seconds": 36,
+      "peak_interval_cpu_cores": 0.5097451274362819
+    },
+    "generator": {
+      "thread_observations": 523,
+      "affinity_mismatches": 0,
+      "max_single_process_rss_mib": 30.4,
+      "mean_cpu_cores": 0.26288442358462893,
+      "sampled_intervals": 17,
+      "network_rx_bytes": 371584260,
+      "network_tx_bytes": 182834748,
+      "network_sample_seconds": 34.008,
+      "mean_rss_sum_mib": 29.90060763888889,
+      "peak_rss_sum_mib": 30.3984375,
+      "cpu_seconds": 8.96173,
+      "cpu_sample_seconds": 34.089999999999996,
+      "peak_interval_cpu_cores": 0.2798600699650175
+    }
+  },
+  "host_cpu_psi_pct": 6.09,
+  "shared_cgroup": {
+    "peak_memory_bytes": 8431353856,
+    "peak_rss_bytes": 205692928,
+    "peak_cache_bytes": 8119255040,
+    "cpu_throttled_events": 0,
+    "cpu_throttled_ns": 0,
+    "block_read_bytes": 0,
+    "block_write_bytes": 0,
+    "sample_seconds": 34.009
+  },
+  "host_cpu_psi_seconds": 34,
+  "host_pressure_pct": {
+    "io_some": 8.241044117647059,
+    "io_full": 6.556879411764706,
+    "memory_some": 0.012308823529411764,
+    "memory_full": 0.010726470588235294
+  },
+  "host_cpu_utilization_pct": 9.847292960692402,
+  "app_cpu_wait_task_equivalent": 0.020590590088235293,
+  "other_cpu_wait_task_equivalent": 3.5122839392058793,
+  "app_cpu_seconds": 17.778170914542734,
+  "server_total_cpu_cores": 0.4938380809595204,
+  "server_peak_rss_sum_mib": 58.3046875,
+  "tps_per_app_core": 12149.562575265385,
+  "cpu_microseconds_per_success": 82.30748998616987,
+  "role_placement": {
+    "app": {
+      "background_cores": 0.2506676922169502,
+      "physical_core_scheduler_wait": 0.02126206770588235,
+      "clear": true
+    },
+    "generator": {
+      "background_cores": 0.21391541497419458,
+      "physical_core_scheduler_wait": 0.01909739311764706,
+      "clear": true
+    }
+  },
+  "role_placement_clear": true,
+  "assigned_background_cores": 0.2506676922169502,
+  "id": "f-kanidm-introspect-20261127T111453Z-3-6000",
+  "scenario": "introspect"
+}
