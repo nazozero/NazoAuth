@@ -5,12 +5,63 @@ rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 Release dates use UTC+8.
 
-## 0.4.1 - Unreleased
+## 0.4.1 - 2026-11-28
 
-- Prepare the framework-neutral `nazoauth` library and its internal dependencies
-  for crates.io. Hosts can select deployment control when embedding the Actix
-  adapter.
-- Use the published mdoc and Passkey libraries and refresh the Cargo lockfiles.
+### Performance and security
+
+- Reduce repeated reads in client authentication, authorization, authorization
+  code exchange, refresh rotation and UserInfo. Final transactions still check
+  principal versions, one-time consumption, replay and required audit records.
+- Use `argon2-rust` for password hashing and verification with work-memory
+  clearing. Existing supported Argon2 PHC hashes remain valid.
+- Remove 21 redundant PostgreSQL indexes and one obsolete D1 index. Retain
+  uniqueness constraints, foreign-key access paths and cleanup indexes.
+- Publish reproducible five-service OAuth benchmarks in
+  [English](perf/README.md) and [Simplified Chinese](perf/README.zh_CN.md).
+  The reports identify the measured revision and distinguish measured throughput
+  from a capacity limit.
+
+### Upgrade
+
+- Drain old instances before applying the authorization-decision migrations and
+  switching traffic. Users must sign in again after the session namespace
+  changes. See [state storage and lifecycle](docs/project/state-storage-lifecycle.md).
+- Successful client-credentials grants emit per-token audit records only when
+  `AUDIT_CLIENT_CREDENTIALS_ISSUANCE=true` is set. On Workers, use
+  `audit_client_credentials_issuance=true` if you rely on that history.
+- The PostgreSQL connection limit defaults to twice the logical CPUs available
+  to the process. Use a positive `DATABASE_MAX_CONNECTIONS` to set an exact
+  per-instance limit.
+
+### Rust embedding and distribution
+
+- The Actix adapter follows the embedding host's selection of
+  `nazoauth/deployment-control`. The native host enables the feature explicitly
+  and supplies the tenant directory. Custom `ServerPersistenceProvider`
+  implementations can remove the former `tenant_directory` method.
+- Prepare the framework-neutral `nazoauth` crate and 14 companion crates for a
+  future crates.io release. Workspace members share one version. The build uses
+  the crates.io releases of `nazo-mdoc` and `nazo-passkey` and refreshed
+  lockfiles.
+
+### 简体中文
+
+- 减少客户端认证、授权、授权码兑换、刷新轮换和 UserInfo 的重复查询。
+  最终事务继续核对主体版本、一次性消费、重放和必需审计。
+- 密码哈希改用 `argon2-rust`，启用工作内存清理，并兼容现有受支持的
+  Argon2 PHC 哈希。删除 21 个冗余 PostgreSQL 索引和 1 个废弃 D1 索引，
+  保留唯一性约束、外键访问路径和清理索引。
+- 升级前先排空旧实例，再应用授权决定迁移并切换流量。会话命名空间变更后，
+  用户需要重新登录。依赖逐枚机器令牌签发审计的部署须显式设
+  `AUDIT_CLIENT_CREDENTIALS_ISSUANCE=true`，Workers 使用
+  `audit_client_credentials_issuance=true`。PostgreSQL 连接池默认上限为进程可用逻辑
+  CPU 数的两倍，仍可通过 `DATABASE_MAX_CONNECTIONS` 设置固定值。
+- Actix 适配器遵循嵌入宿主选择的 `deployment-control` 特性，由原生宿主提供租户目录。
+  完成 `nazoauth` 及 14 个配套 crate 的打包准备，crates.io 上架另行安排。
+- 五服务 OAuth 基准报告提供[中文结果与复现方法](perf/README.zh_CN.md)，并标明
+  实际测量的源码版本和有效轮次。
+
+[Compare v0.4.0…v0.4.1](https://github.com/nazozero/NazoAuth/compare/v0.4.0...v0.4.1)
 
 ## 0.4.0 - 2026-11-22
 
