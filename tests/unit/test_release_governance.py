@@ -94,6 +94,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
                     "gzip=",
                     "libpcre2-8-0=",
                     "libsqlite3-0=",
+                    "libzstd1=",
                     "perl-base=",
                 ):
                     self.assertIn(pinned, packages)
