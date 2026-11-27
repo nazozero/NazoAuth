@@ -2,7 +2,7 @@
 //! Actix registration, connection facts and HTTP value conversion for NazoAuth.
 //! All routing, protocol interpretation and endpoint policy belong to the facade.
 
-use std::io;
+use std::{io, sync::Arc};
 
 use actix_web::{
     Error, HttpRequest, HttpResponse,
@@ -22,13 +22,56 @@ pub fn configure(config: &mut web::ServiceConfig) {
     config.default_service(web::to(serve));
 }
 
+/// Mount a prepared tenant and its standards-derived discovery paths once.
+///
+/// `reserved_paths` declares the application's occupied paths and scopes. Actix
+/// does not expose existing registrations through `ServiceConfig`; the host
+/// supplies those namespaces so conflicts fail before route installation.
+/// The mounted `/ui` subtree remains available to host-owned UI resources.
+pub fn mount(
+    application: Arc<NazoAuth>,
+    reserved_paths: &[&str],
+) -> anyhow::Result<impl FnOnce(&mut web::ServiceConfig) + use<>> {
+    application.mount().check_conflicts(reserved_paths)?;
+    Ok(move |config: &mut web::ServiceConfig| {
+        let application = web::Data::from(application);
+        let discovery = application.clone();
+        // Resource identifiers may contain escapes or Actix pattern characters.
+        // Compare the raw path instead of compiling each identifier as a pattern.
+        config.service(
+            web::scope("/.well-known")
+                .guard(actix_web::guard::fn_guard(move |context| {
+                    discovery
+                        .mount()
+                        .discovery_paths()
+                        .any(|path| path == context.head().uri.path())
+                }))
+                .app_data(application.clone())
+                .configure(configure),
+        );
+        if application.mount().path() == "/" {
+            config.app_data(application).configure(configure);
+        } else {
+            let mounted = application.clone();
+            config.service(
+                web::scope(application.mount().path())
+                    .guard(actix_web::guard::fn_guard(move |context| {
+                        mounted.mount().owns_path(context.head().uri.path())
+                    }))
+                    .app_data(application)
+                    .configure(configure),
+            );
+        }
+    })
+}
+
 /// Forward transport facts without assembling services or buffering the payload.
 pub async fn serve(
     application: web::Data<NazoAuth>,
     request: HttpRequest,
     payload: web::Payload,
 ) -> HttpResponse {
-    let route = nazoauth::integration::route_for_path(request.uri().path());
+    let route = application.route_for_path(request.uri().path());
     let forwarded = forward_request_for_route(&request, (), route);
     let body_mode = route
         .map(|route| route.body(forwarded.method()))
@@ -164,8 +207,13 @@ pub async fn security_headers<B: MessageBody>(
     request: ServiceRequest,
     next: Next<B>,
 ) -> Result<ServiceResponse<B>, Error> {
-    let defaults = nazoauth::integration::security_headers(request.path());
     let mut response = next.call(request).await?;
+    let request = response.request();
+    let path = request
+        .app_data::<web::Data<NazoAuth>>()
+        .and_then(|application| application.route_for_path(request.uri().path()))
+        .map_or(request.path(), |route| route.path);
+    let defaults = nazoauth::integration::security_headers(path);
     for (name, value) in defaults {
         if !response.headers().contains_key(name.as_str()) {
             response.headers_mut().insert(

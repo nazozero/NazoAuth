@@ -176,6 +176,14 @@ jobs:
       - name: Clippy all targets
         run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
 
+      - name: Check independent Hyper embedding
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          cargo fmt --manifest-path examples/hyper-embedding/Cargo.toml --check
+          cargo clippy --manifest-path examples/hyper-embedding/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path examples/hyper-embedding/Cargo.toml
+
       - name: Materialize the isolated CI schema through the persistence owner
         run: >-
           cargo test --all-features --locked -p nazo-postgres --test migrations
@@ -260,6 +268,14 @@ jobs:
         run: cargo fmt --check
       - name: Clippy all targets
         run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
+
+      - name: Check independent Hyper embedding
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          cargo fmt --manifest-path examples/hyper-embedding/Cargo.toml --check
+          cargo clippy --manifest-path examples/hyper-embedding/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path examples/hyper-embedding/Cargo.toml
 
   rust-fixture:
     needs: inputs

@@ -7,6 +7,10 @@ pub enum AccessTokenAuthScheme {
     DPoP,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub type UserinfoFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UserinfoSuccess, UserinfoError>> + Send + 'a>>;
+#[cfg(target_arch = "wasm32")]
 pub type UserinfoFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UserinfoSuccess, UserinfoError>> + 'a>>;
 
@@ -77,6 +81,10 @@ pub struct UserinfoRequestFacts<'a> {
     pub mtls_thumbprint: Option<String>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub type UserinfoPreparationFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<PreparedUserinfo, UserinfoError>> + Send + 'a>>;
+#[cfg(target_arch = "wasm32")]
 pub type UserinfoPreparationFuture<'a> =
     Pin<Box<dyn Future<Output = Result<PreparedUserinfo, UserinfoError>> + 'a>>;
 

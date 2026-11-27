@@ -89,6 +89,9 @@ zeroize.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
+nazoauth-hyper-embedding = { path = "../../examples/hyper-embedding" }
+http-body-util.workspace = true
+hyper = { version = "1.12.0", features = ["http1", "server"] }
 aws-lc-rs.workspace = true
 ciborium.workspace = true
 cookie = { workspace = true, features = ["percent-encode"] }

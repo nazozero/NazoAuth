@@ -78,6 +78,7 @@ fn outer_request_uri_parameters_must_match_pushed_values() {
 #[test]
 fn login_url_encodes_next_request_and_optional_reauth_nonce() {
     let url = authorization_login_url_for_frontend(
+        "https://server.example",
         "https://frontend.example/",
         &query(&[("client_id", "client 1")]),
         Some("reauth nonce"),
@@ -110,10 +111,28 @@ fn login_url_encodes_next_request_and_optional_reauth_nonce() {
 fn login_url_keeps_the_exact_single_parameter_encoding_contract() {
     assert_eq!(
         authorization_login_url_for_frontend(
+            "https://server.example",
             "https://frontend.example/",
             &query(&[("client_id", "client")]),
             None,
         ),
         "https://frontend.example/auth?next=%2Fauthorize%3Fclient_id%3Dclient"
     );
+}
+
+#[test]
+fn login_next_preserves_the_issuer_mount_and_parameter_bytes() {
+    let location = authorization_login_url_for_frontend(
+        "https://server.example/tenant/auth",
+        "https://frontend.example/login-ui/",
+        &query(&[("state", "one/two%2Fthree")]),
+        None,
+    );
+    let parsed = url::Url::parse(&location).unwrap();
+    let next = parsed
+        .query_pairs()
+        .find(|(key, _)| key == "next")
+        .unwrap()
+        .1;
+    assert_eq!(next, "/tenant/auth/authorize?state=one%2Ftwo%252Fthree");
 }

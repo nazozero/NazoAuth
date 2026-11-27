@@ -441,3 +441,183 @@ async fn link_callback_rejects_session_switch_revocation_and_invalid_proof() {
         }
     }
 }
+
+#[actix_web::test]
+async fn mounted_federation_login_link_and_unlink_share_the_public_http_contract() {
+    use crate::facade_conformance::{framework_request, standard_response};
+    use http::{Method, header as standard_header};
+
+    let Some(fixture) = LinkFixture::new().await else {
+        return;
+    };
+    for prefix in ["/testauth", "/services/auth"] {
+        let issuer = format!("https://auth.example{prefix}");
+        let mut configuration = fixture.inner.state.settings.application_configuration();
+        configuration.endpoint.issuer = issuer.clone();
+        configuration.endpoint.mtls_endpoint_base_url = issuer.clone();
+        configuration.endpoint.frontend_base_url = format!("{issuer}/ui/");
+        configuration.endpoint.cors_allowed_origins = vec!["https://auth.example".into()];
+        configuration.protocol.protected_resource_identifier = format!("{issuer}/fapi/resource");
+        let providers = fixture
+            .config
+            .providers
+            .configured_providers()
+            .cloned()
+            .map(|mut provider| {
+                let callback =
+                    format!("{issuer}/auth/federation/{}/callback", provider.provider_id);
+                match &mut provider.adapter {
+                    ExternalLoginProviderAdapter::Oidc(settings) => {
+                        settings.redirect_uri = callback
+                    }
+                    ExternalLoginProviderAdapter::Social(settings) => {
+                        settings.redirect_uri = callback
+                    }
+                }
+                provider
+            })
+            .collect();
+        configuration.identity.federation.providers =
+            FederationProviderRegistry::new(providers).unwrap();
+        let mut capabilities =
+            crate::test_support::facade::capabilities(&fixture.inner.state, Default::default())
+                .unwrap();
+        capabilities.federation_http = fixture.upstream.clone();
+        let application = Arc::new(
+            nazoauth::NazoAuthBuilder::new(configuration, capabilities, "mounted-federation")
+                .mount_path(prefix)
+                .build()
+                .await
+                .unwrap(),
+        );
+        let app = actix_web::test::init_service(
+            actix_web::App::new().configure(nazo_http_actix::mount(application, &[]).unwrap()),
+        )
+        .await;
+        let send = |request: http::Request<Bytes>| {
+            let app = &app;
+            async move {
+                standard_response(
+                    actix_web::test::call_service(app, framework_request(&request).to_request())
+                        .await
+                        .into_parts()
+                        .1,
+                )
+                .await
+            }
+        };
+        let request = |method: Method, path: &str, session: Option<&str>, csrf: bool| {
+            let mut request = fixture.browser(session, csrf);
+            *request.method_mut() = method;
+            *request.uri_mut() = path.parse().unwrap();
+            request.headers_mut().insert(
+                standard_header::CONTENT_TYPE,
+                http::HeaderValue::from_static("application/x-www-form-urlencoded"),
+            );
+            request
+        };
+        let provider_list = send(request(
+            Method::GET,
+            &format!("{prefix}/auth/federation/providers"),
+            None,
+            false,
+        ))
+        .await;
+        assert_eq!(provider_list.status(), http::StatusCode::OK);
+        let listed: Value = serde_json::from_slice(provider_list.body()).unwrap();
+        assert!(
+            listed["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|provider| provider["start_url"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("{prefix}/auth/federation/")))
+        );
+        for provider in [TEST_OIDC_PROVIDER_ID, "social"] {
+            let user = fixture
+                .inner
+                .create_user(
+                    &format!("mounted-link-{}@example.com", Uuid::now_v7()),
+                    true,
+                )
+                .await;
+            let sid = fixture.session(&user, 0).await;
+            let subject = Uuid::now_v7().to_string();
+            let link_start = format!("{prefix}/auth/me/federation/links/{provider}/start");
+            let query = authorization_query(
+                send(request(Method::POST, &link_start, Some(&sid), true)).await,
+            );
+            assert_eq!(
+                query["redirect_uri"],
+                format!("{issuer}/auth/federation/{provider}/callback")
+            );
+            fixture.proof(provider, &query, &subject, true);
+            let callback = format!(
+                "{prefix}/auth/federation/{provider}/callback?code=code&state={}",
+                query["state"]
+            );
+            let linked = send(request(Method::GET, &callback, Some(&sid), false)).await;
+            assert_eq!(linked.status(), http::StatusCode::OK, "{:?}", linked.body());
+            assert_eq!(
+                serde_json::from_slice::<Value>(linked.body()).unwrap()["linked"],
+                true
+            );
+            assert!(!linked.headers().contains_key(standard_header::SET_COOKIE));
+            assert_eq!(
+                send(request(Method::GET, &callback, Some(&sid), false))
+                    .await
+                    .status(),
+                http::StatusCode::BAD_REQUEST
+            );
+            let links_path = format!("{prefix}/auth/me/federation/links");
+            let listed = send(request(Method::GET, &links_path, Some(&sid), false)).await;
+            let listed: Value = serde_json::from_slice(listed.body()).unwrap();
+            assert_eq!(listed["total"], 1);
+            assert_eq!(listed["items"][0]["subject"], subject);
+            let link_id = listed["items"][0]["id"].as_str().unwrap();
+            let login_start = format!("{prefix}/auth/federation/{provider}/start");
+            let login =
+                authorization_query(send(request(Method::GET, &login_start, None, false)).await);
+            fixture.proof(provider, &login, &subject, true);
+            let callback = format!(
+                "{prefix}/auth/federation/{provider}/callback?code=code&state={}",
+                login["state"]
+            );
+            let signed_in = send(request(Method::GET, &callback, None, false)).await;
+            assert_eq!(
+                signed_in.status(),
+                http::StatusCode::OK,
+                "{:?}",
+                signed_in.body()
+            );
+            let signed_in = nazo_http_actix::forward_response(signed_in);
+            let federated_sid =
+                cookie_value_from_response(&signed_in, &fixture.config.session_cookie_name)
+                    .unwrap();
+            assert_eq!(
+                fixture.inner.session_payload(&federated_sid).await.user_id,
+                user.id
+            );
+            let unlinked = send(request(
+                Method::DELETE,
+                &format!("{links_path}/{link_id}"),
+                Some(&sid),
+                true,
+            ))
+            .await;
+            assert_eq!(
+                unlinked.status(),
+                http::StatusCode::NO_CONTENT,
+                "{:?}",
+                unlinked.body()
+            );
+            let listed = send(request(Method::GET, &links_path, Some(&sid), false)).await;
+            assert_eq!(
+                serde_json::from_slice::<Value>(listed.body()).unwrap()["total"],
+                0
+            );
+        }
+    }
+}

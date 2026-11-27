@@ -38,6 +38,7 @@ pub(super) async fn authorization_login_url_with_context(
         None
     };
     Ok(authorization_login_url_for_frontend(
+        context.config.issuer.as_ref(),
         context.config.frontend_base_url.as_ref(),
         q,
         reauth_nonce.as_deref(),

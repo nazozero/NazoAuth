@@ -473,3 +473,46 @@ fn oidc_userinfo_endpoint_is_optional_and_uses_endpoint_admission() {
         );
     }
 }
+
+#[test]
+fn mounted_instances_have_independent_cookie_names_with_host_cookie_scope() {
+    let mut first = configuration();
+    first.session.session_cookie_name = "__Host-first_session".into();
+    first.session.csrf_cookie_name = "__Host-first_csrf".into();
+    first.session.remembered_mfa_cookie_name = "__Host-first_remembered".into();
+    first.session.federation_binding_cookie_name = "__Host-first_federation".into();
+    first.validate().unwrap();
+    let names = [
+        &first.session.session_cookie_name,
+        &first.session.csrf_cookie_name,
+        &first.session.remembered_mfa_cookie_name,
+        &first.session.federation_binding_cookie_name,
+    ];
+    for name in names {
+        for cookie in [
+            crate::http::make_cookie(name, "value", true, 300, true),
+            crate::http::clear_cookie(name, true),
+        ] {
+            assert_eq!(cookie.path(), Some("/"));
+            assert_eq!(cookie.domain(), None);
+            assert_eq!(cookie.secure(), Some(true));
+        }
+    }
+    let mut invalid = first.clone();
+    invalid.session.federation_binding_cookie_name = invalid.session.session_cookie_name.clone();
+    assert!(
+        invalid
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("must differ")
+    );
+    invalid.session.federation_binding_cookie_name = "bad; cookie".into();
+    assert!(
+        invalid
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("HTTP tokens")
+    );
+}

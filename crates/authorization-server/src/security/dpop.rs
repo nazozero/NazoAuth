@@ -87,7 +87,8 @@ pub fn dpop_target_uri(
         let request_origin = url::Url::parse(&format!("{}://{authority}", origin.scheme()))
             .map_err(|_| DpopError::InvalidProof)?;
         if origin.origin() == request_origin.origin() {
-            let candidate = format!("{}{path}", base.trim_end_matches('/'));
+            let configured_origin = &base[..base.len() - nazo_auth::issuer_path(base).len()];
+            let candidate = format!("{configured_origin}{path}");
             if selected
                 .as_ref()
                 .is_some_and(|current| current != &candidate)

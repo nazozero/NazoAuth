@@ -151,7 +151,6 @@ fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
         "/.well-known/openid-configuration",
         "/.well-known/oauth-authorization-server",
         "/.well-known/oauth-protected-resource",
-        "/.well-known/oauth-protected-resource/fapi/resource",
         "/jwks.json",
     ] {
         for method in [Method::POST, Method::OPTIONS] {

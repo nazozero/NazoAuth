@@ -2,7 +2,7 @@
 members = ["crates/*"]
 default-members = ["crates/server"]
 resolver = "3"
-exclude = ["fuzz"]
+exclude = ["fuzz", "examples/hyper-embedding"]
 
 [workspace.package]
 version = "0.4.1"

@@ -423,6 +423,7 @@ pub async fn issue_token_response(
             .as_ref()
             .expect("openid token issues have a validated subject snapshot");
         let mut user_claims = oidc_id_token_user_claims(
+            &context.config.issuer,
             &loaded_claims.claims,
             id_token_claim_scopes,
             &issue.subject,

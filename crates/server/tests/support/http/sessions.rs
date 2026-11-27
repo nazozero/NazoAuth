@@ -35,5 +35,6 @@ pub(crate) fn profile_session_handles(state: &TestInfrastructure) -> SessionProf
             &session.csrf_cookie_name,
             session.cookie_secure,
         ),
+        &state.settings.endpoint.issuer,
     )
 }

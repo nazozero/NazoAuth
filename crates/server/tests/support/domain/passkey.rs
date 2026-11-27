@@ -38,7 +38,7 @@ pub(crate) fn test_login_endpoint(
         nazoauth::test_support::http::PasskeyLoginConfig::new(
             &session.session_cookie_name,
             &session.csrf_cookie_name,
-            crate::http::auth::MFA_REMEMBERED_COOKIE_NAME,
+            &session.remembered_mfa_cookie_name,
             session.session_ttl_seconds,
             session.cookie_secure,
         ),

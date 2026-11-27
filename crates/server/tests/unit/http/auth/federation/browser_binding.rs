@@ -6,10 +6,17 @@ use std::sync::atomic::Ordering;
 fn binding_http_config(secure: bool) -> FederationHttpConfig {
     let mut settings = settings_with_oidc_provider(Some(&oidc_provider()));
     settings.session.cookie_secure = secure;
+    settings.session.federation_binding_cookie_name = if secure {
+        "__Host-nazo_federation_binding"
+    } else {
+        "nazo_federation_binding"
+    }
+    .into();
     FederationHttpConfig::new(
         &settings.identity.federation,
         Arc::new(federation_http_client().unwrap()),
         &settings.session,
+        &settings.endpoint.issuer,
     )
 }
 

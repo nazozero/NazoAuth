@@ -83,7 +83,12 @@ where
     };
     match endpoint.operations.logout(command).await {
         Ok(success) => success_response(endpoint, success),
-        Err(error) => error_response(error, csrf_cookie.as_deref(), logout_request.as_ref()),
+        Err(error) => error_response(
+            error,
+            csrf_cookie.as_deref(),
+            logout_request.as_ref(),
+            request.uri().path(),
+        ),
     }
 }
 
@@ -211,13 +216,14 @@ fn error_response(
     error: OidcLogoutError,
     csrf_token: Option<&str>,
     request: Option<&OidcLogoutRequest>,
+    logout_path: &str,
 ) -> Response {
     if error.is_user_confirmable()
         && let Some(request) = request
         && let Some(csrf_token) = csrf_token
     {
         let preserved_request = (error == OidcLogoutError::ConfirmationRequired).then_some(request);
-        return logout_confirmation_response(csrf_token, preserved_request);
+        return logout_confirmation_response(csrf_token, preserved_request, logout_path);
     }
     let session_delete_failed = error == OidcLogoutError::SessionDeleteUnavailable;
     let (status, code, description) = match error {
@@ -298,7 +304,11 @@ fn error_response(
     response
 }
 
-fn logout_confirmation_response(csrf_token: &str, request: Option<&OidcLogoutRequest>) -> Response {
+fn logout_confirmation_response(
+    csrf_token: &str,
+    request: Option<&OidcLogoutRequest>,
+    logout_path: &str,
+) -> Response {
     let mut document = format!(
         concat!(
             "<!doctype html><html><head><meta charset=\"utf-8\">",
@@ -308,10 +318,11 @@ fn logout_confirmation_response(csrf_token: &str, request: Option<&OidcLogoutReq
             "<main id=\"nazo-logout-confirmation\"><h1>Sign out?</h1>",
             "<p>The requesting application could not be bound to this session. ",
             "Confirm to sign out of the OpenID Provider without using its redirect data.</p>",
-            "<form method=\"post\" action=\"/logout\">",
+            "<form method=\"post\" action=\"{}\">",
             "<input type=\"hidden\" name=\"_nazo_logout_confirm\" value=\"true\">",
             "<input type=\"hidden\" name=\"_nazo_csrf\" value=\"{}\">"
         ),
+        HtmlAttribute(logout_path),
         HtmlAttribute(csrf_token),
     );
     if let Some(request) = request {
@@ -336,7 +347,7 @@ fn logout_confirmation_response(csrf_token: &str, request: Option<&OidcLogoutReq
     }
     document.push_str(concat!(
         "<button id=\"nazo-logout-confirm\" type=\"submit\">Sign out</button>",
-        "<a id=\"nazo-logout-cancel\" href=\"/\">Cancel</a>",
+        "<a id=\"nazo-logout-cancel\" href=\"./\">Cancel</a>",
         "</form></main></body></html>"
     ));
     crate::http::finish(

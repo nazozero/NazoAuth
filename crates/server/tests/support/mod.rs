@@ -13,6 +13,7 @@ pub(crate) use session_payload::SessionPayload;
 pub(crate) mod admin_mutations;
 pub(crate) mod federation_binding;
 pub(crate) mod local_avatar;
+pub(crate) mod passkey_authenticator;
 #[path = "../unit/http/token/response_body.rs"]
 pub(crate) mod token_response_body;
 
@@ -329,6 +330,7 @@ pub(crate) fn federation_http_config(
                 .expect("fixture federation client"),
         ),
         session,
+        &state.settings.endpoint.issuer,
     ))
 }
 

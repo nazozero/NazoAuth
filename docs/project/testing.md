@@ -104,6 +104,8 @@ transports. See the [adapter guide](../integration/rust-embedding.md).
 python3 scripts/check_native_transport.py
 cargo test -p nazo-http-actix --lib
 cargo test -p nazoauth --lib
+cargo test -p nazoauth --test native_send
+cargo test --manifest-path examples/hyper-embedding/Cargo.toml
 cargo test -p nazo-server --lib facade_conformance
 ```
 
@@ -115,6 +117,12 @@ Metadata conversion tests preserve raw URI/header semantics; only body and repla
 bytes require pointer identity across the HTTP 0.2/1.x boundary.
 
 The last command uses the ordinary test PostgreSQL and Valkey configuration.
+Its mounted fixtures exercise root and nested prefixes through Actix and an
+independent Hyper consumer, including standard discovery exceptions, unchanged
+host routes, real PKCE/DPoP/refresh/session transitions, Passkey ceremonies and
+credential issuance/replay. The federation linking suite also mounts the public
+facade and completes login, linking, callback replay rejection and unlinking for
+OIDC and social providers (`cargo test -p nazo-server --lib mounted_federation`).
 The separate `test-support` feature is permitted only in the native host's dev
 dependency; adapters cannot use internal endpoint handles in place of this kit.
 

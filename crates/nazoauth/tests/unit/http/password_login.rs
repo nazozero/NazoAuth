@@ -440,3 +440,37 @@ fn route_methods_cors_and_security_headers_are_locked() {
         }
     });
 }
+
+#[test]
+fn prefixed_form_login_accepts_only_its_external_authorization_path() {
+    let (mut endpoint, _, _) = endpoint(
+        Ok(success()),
+        Ok(()),
+        &[],
+        crate::http::ClientIpHeaderMode::None,
+    );
+    endpoint.config.issuer = "https://issuer.example/tenant/auth".into();
+    endpoint.config.frontend_base_url = "https://issuer.example/tenant/auth/ui/".into();
+    let request = http::Request::builder()
+        .header(header::REFERER, "https://issuer.example/tenant/auth/ui/auth?next=%2Ftenant%2Fauth%2Fauthorize%3Fstate%3Da%252Fb")
+        .body(Bytes::new()).unwrap();
+    assert_eq!(
+        safe_form_login_next(&endpoint.config, &request, None),
+        "/tenant/auth/authorize?state=a%2Fb"
+    );
+    for next in [
+        "/authorize?state=old",
+        "/tenant/auth2/authorize",
+        "//other.example/tenant/auth/authorize",
+    ] {
+        assert!(
+            safe_relative_next(&endpoint.config, next).is_none(),
+            "{next}"
+        );
+    }
+    let next = "/tenant/auth/authorize?state=a%2Fb&state=%252F";
+    assert_eq!(
+        safe_relative_next(&endpoint.config, next).as_deref(),
+        Some(next)
+    );
+}

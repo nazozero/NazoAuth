@@ -405,6 +405,7 @@ impl LiveFederationFixture {
         settings.session.session_cookie_name = "nazo_federation_session".to_owned();
         settings.session.csrf_cookie_name = "nazo_federation_csrf".to_owned();
         settings.session.cookie_secure = true;
+        settings.session.federation_binding_cookie_name = "__Host-nazo_federation_binding".into();
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -2177,10 +2178,13 @@ async fn federation_response_exposes_pending_mfa_and_matching_cookie_lifetime() 
             &nazoauth::config::SessionSettings {
                 session_cookie_name: "session".into(),
                 csrf_cookie_name: "csrf".into(),
+                remembered_mfa_cookie_name: "remembered".into(),
+                federation_binding_cookie_name: "__Host-nazo_federation_binding".into(),
                 session_ttl_seconds: 3600,
                 pending_mfa_session_ttl_seconds: 120,
                 cookie_secure: true,
             },
+            "https://auth.example",
         );
         let success = LoginSuccess {
             session_id: "session-id".into(),

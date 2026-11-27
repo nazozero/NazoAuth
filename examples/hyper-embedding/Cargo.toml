@@ -1,0 +1,26 @@
+[package]
+name = "nazoauth-hyper-embedding"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+publish = false
+
+# This is an independent embedding application, not a production adapter crate.
+[workspace]
+
+[dependencies]
+anyhow = "1.0.104"
+async-compression = { version = "0.4.53", features = ["tokio", "gzip", "zlib", "brotli", "zstd"] }
+bytes = "1.12.2"
+futures-util = "0.3.34"
+http = "1.5.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["http1", "server"] }
+nazoauth = { path = "../../crates/nazoauth", default-features = false }
+tokio = { version = "1.54.1", features = ["io-util"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
+
+[dev-dependencies]
+flate2 = "1.1.11"
+nazoauth = { path = "../../crates/nazoauth", default-features = false, features = ["conformance"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }

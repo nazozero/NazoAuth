@@ -47,28 +47,31 @@ pub fn user_claims_are_covered_by_scopes(
 }
 
 pub fn oidc_user_claims(
+    issuer: &str,
     user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
     requested_claims: &[OidcClaimRequest],
 ) -> serde_json::Map<String, Value> {
-    user_claims(user, subject, requested_claims, |scope| {
+    user_claims(issuer, user, subject, requested_claims, |scope| {
         scopes.iter().any(|value| value == scope)
     })
 }
 
 pub fn oidc_id_token_user_claims(
+    issuer: &str,
     user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
     requested_claims: &[OidcClaimRequest],
 ) -> serde_json::Map<String, Value> {
-    user_claims(user, subject, requested_claims, |scope| {
+    user_claims(issuer, user, subject, requested_claims, |scope| {
         scope == "profile" && scopes.iter().any(|value| value == "profile")
     })
 }
 
 fn user_claims(
+    issuer: &str,
     user: &nazo_identity::SubjectClaims,
     subject: &str,
     requests: &[OidcClaimRequest],
@@ -96,7 +99,6 @@ fn user_claims(
         ("middle_name", user.middle_name.as_deref(), profile),
         ("nickname", user.nickname.as_deref(), profile),
         ("profile", user.profile.as_deref(), profile),
-        ("picture", user.picture.as_deref(), profile),
         ("website", user.website.as_deref(), profile),
         ("gender", user.gender.as_deref(), profile),
         ("birthdate", user.birthdate.as_deref(), profile),
@@ -111,6 +113,19 @@ fn user_claims(
                 .map(|value| json!(value))
         });
     }
+    insert_claim(&mut claims, requests, "picture", profile, || {
+        user.picture
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|picture| {
+                Value::String(if picture.starts_with(nazo_identity::AVATAR_URL_PREFIX) {
+                    format!("{issuer}{picture}")
+                } else {
+                    picture.to_owned()
+                })
+            })
+    });
     insert_claim(&mut claims, requests, "updated_at", profile, || {
         Some(json!(user.updated_at))
     });

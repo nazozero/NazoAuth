@@ -64,6 +64,12 @@ async fn tenant_rejections_keep_security_headers_and_the_session_iframe_exceptio
 
 #[actix_web::test]
 async fn request_metrics_keep_host_patterns_and_canonical_product_routes() {
+    let state = crate::facade_conformance::infrastructure(false).await;
+    let application = crate::test_support::facade::builder(&state, Default::default())
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
     let log = std::env::temp_dir().join(format!("http-metrics-{}.log", uuid::Uuid::now_v7()));
     let writer = std::fs::File::create_new(&log).unwrap();
     let subscriber = tracing_subscriber::fmt()
@@ -73,18 +79,21 @@ async fn request_metrics_keep_host_patterns_and_canonical_product_routes() {
         .finish();
     let subscriber = tracing::subscriber::set_default(subscriber);
     let app = test::init_service(
-        App::new().wrap(from_fn(observe_request)).service(
-            web::scope("")
-                .service(web::scope("/ui").route(
-                    "/{asset:.*}",
-                    web::get().to(|| async { HttpResponse::Ok().finish() }),
-                ))
-                .route(
-                    "/admin/clients/{native_client}",
-                    web::get().to(|| async { HttpResponse::Ok().finish() }),
-                )
-                .default_service(web::to(|| async { HttpResponse::NotFound().finish() })),
-        ),
+        App::new()
+            .app_data(web::Data::new(application))
+            .wrap(from_fn(observe_request))
+            .service(
+                web::scope("")
+                    .service(web::scope("/ui").route(
+                        "/{asset:.*}",
+                        web::get().to(|| async { HttpResponse::Ok().finish() }),
+                    ))
+                    .route(
+                        "/admin/clients/{native_client}",
+                        web::get().to(|| async { HttpResponse::Ok().finish() }),
+                    )
+                    .default_service(web::to(|| async { HttpResponse::NotFound().finish() })),
+            ),
     )
     .await;
     let cases = [
@@ -96,7 +105,12 @@ async fn request_metrics_keep_host_patterns_and_canonical_product_routes() {
         ),
         (
             "/.well-known/oauth-protected-resource/private/resource",
-            "/.well-known/oauth-protected-resource/{*tail}",
+            "unmatched",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "/.well-known/oauth-protected-resource/fapi/resource",
+            "/.well-known/oauth-protected-resource",
             StatusCode::NOT_FOUND,
         ),
         ("/%6Awks.json", "/jwks.json", StatusCode::NOT_FOUND),
@@ -431,6 +445,8 @@ async fn deployment_routes_are_gated_but_runtime_modules_are_tenant_scoped() {
         let settings = Arc::make_mut(&mut state.settings);
         settings.tenant.context = *tenant.context.get_ref();
         settings.endpoint.issuer = tenant.issuer.get_ref().to_string();
+        settings.protocol.protected_resource_identifier =
+            format!("{}/fapi/resource", settings.endpoint.issuer);
         settings.endpoint.cors_allowed_origins = vec!["https://admin.example".to_owned()];
         let application = crate::test_support::facade::builder(&state, Default::default())
             .unwrap()

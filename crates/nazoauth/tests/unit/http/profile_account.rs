@@ -100,6 +100,7 @@ fn fake(
         ProfileAccountEndpoint::new(
             operations.clone(),
             SessionCookieConfig::new("session", "csrf", true),
+            "https://issuer.example",
         ),
         operations,
     )
@@ -335,5 +336,22 @@ fn validation_and_dependency_errors_keep_status_and_oauth_codes() {
             let body = response_json(response).await;
             assert_eq!(body["error"], code);
         }
+    });
+}
+
+#[test]
+fn account_profile_projects_local_avatar_under_the_mount() {
+    futures_executor::block_on(async {
+        let mut profile = profile();
+        profile.avatar_url = Some("/auth/me/avatar?v=one".into());
+        let (mut endpoint, _) = fake(Ok(ProfileMe::Active(Box::new(profile))));
+        endpoint.mount_path = "/tenant/auth".into();
+        let request = http::Request::builder()
+            .header(header::COOKIE, "session=sid")
+            .body(Bytes::new())
+            .unwrap();
+        let response = profile_me(&endpoint, &request).await;
+        let value: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(value["avatar_url"], "/tenant/auth/auth/me/avatar?v=one");
     });
 }

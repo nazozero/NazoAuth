@@ -150,7 +150,9 @@ where
             Ok(response) => {
                 let request = response.request();
                 let route = request.match_pattern().map(Cow::Owned).or_else(|| {
-                    nazoauth::integration::route_for_path(request.uri().path())
+                    request
+                        .app_data::<web::Data<nazoauth::NazoAuth>>()
+                        .and_then(|application| application.route_for_path(request.uri().path()))
                         .map(|route| Cow::Borrowed(route.path))
                 });
                 (route, response.status())

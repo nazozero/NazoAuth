@@ -129,6 +129,7 @@ async fn unlink_rejects_missing_or_mismatched_csrf_before_session_account_or_lin
             nazo_identity::TenantContext::default_system().tenant_id,
         )),
         SessionHttpConfig::new("session", "csrf", false),
+        "http://localhost",
     ));
     let federation = Data::new(nazo_oauth_server::services::FederationProfileService::new(
         UnreachableProfileDependencies,

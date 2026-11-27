@@ -518,6 +518,16 @@ impl Settings {
             session: SessionSettings {
                 session_cookie_name,
                 csrf_cookie_name,
+                remembered_mfa_cookie_name: config
+                    .string("REMEMBERED_MFA_COOKIE_NAME", "nazo_oauth_mfa_remembered"),
+                federation_binding_cookie_name: config.string(
+                    "FEDERATION_BINDING_COOKIE_NAME",
+                    if cookie_secure {
+                        "__Host-nazo_federation_binding"
+                    } else {
+                        "nazo_federation_binding"
+                    },
+                ),
                 cookie_secure,
                 session_ttl_seconds,
                 pending_mfa_session_ttl_seconds,

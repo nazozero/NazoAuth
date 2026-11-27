@@ -92,12 +92,12 @@ async fn registered_request_conversion_obeys_resource_head_requirements() {
         (
             http::Method::GET,
             "/.well-known/oauth-protected-resource/",
-            false,
+            true,
         ),
         (
             http::Method::GET,
             "/.well-known/oauth-protected-resource/api/child",
-            false,
+            true,
         ),
         (http::Method::GET, "/jwks.json", false),
         (http::Method::HEAD, "/jwks.json", false),

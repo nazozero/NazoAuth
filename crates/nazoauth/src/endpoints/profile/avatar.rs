@@ -148,6 +148,7 @@ pub async fn complete_direct_avatar_upload(
         Ok(overview) => json_response(auth_me_json_with_count(
             &overview.account,
             overview.authorized_application_count,
+            &sessions.mount_path,
         )),
         Err(nazo_identity::DirectAvatarUploadError::UnsupportedContent) => oauth_error(
             StatusCode::BAD_REQUEST,
@@ -217,6 +218,7 @@ where
         Ok(overview) => json_response(auth_me_json_with_count(
             &overview.account,
             overview.authorized_application_count,
+            &sessions.mount_path,
         )),
         Err(nazo_identity::UploadAvatarError::TooLarge) => oauth_error(
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -353,6 +355,7 @@ pub async fn delete_avatar(
         Ok(overview) => json_response(auth_me_json_with_count(
             &overview.account,
             overview.authorized_application_count,
+            &sessions.mount_path,
         )),
         Err(nazo_identity::DeleteAvatarError::Overview(error)) => {
             tracing::warn!(%error, "failed to build auth me response after avatar delete");

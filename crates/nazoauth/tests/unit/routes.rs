@@ -58,14 +58,6 @@ fn transport_lookup_returns_canonical_resources_from_raw_uri_paths() {
             "/.well-known/oauth-protected-resource",
             "/.well-known/oauth-protected-resource",
         ),
-        (
-            "/.well-known/oauth-protected-resource/",
-            "/.well-known/oauth-protected-resource/",
-        ),
-        (
-            "/.well-known/oauth-protected-resource/api/one%2Ftwo",
-            "/.well-known/oauth-protected-resource/{*tail}",
-        ),
         ("/openid4vci/nonce", "/openid4vci/nonce"),
     ] {
         let expected = routes()
@@ -116,16 +108,19 @@ fn scope_policies_and_control_precedence_apply_to_unknown_paths() {
 }
 
 #[test]
-fn protected_resource_suffix_and_mdoc_issuer_capture_are_preserved() {
+fn protected_resource_has_one_template_and_mdoc_issuer_capture_is_preserved() {
+    assert_eq!(
+        resolve(&Method::GET, "/.well-known/oauth-protected-resource")
+            .unwrap()
+            .method
+            .endpoint,
+        Endpoint::OauthProtectedResourceMetadata
+    );
     for path in [
-        "/.well-known/oauth-protected-resource",
         "/.well-known/oauth-protected-resource/",
-        "/.well-known/oauth-protected-resource/api/one",
+        "/.well-known/oauth-protected-resource/arbitrary",
     ] {
-        assert_eq!(
-            resolve(&Method::GET, path).unwrap().method.endpoint,
-            Endpoint::OauthProtectedResourceMetadata,
-        );
+        assert!(resolve(&Method::GET, path).is_err());
     }
     let crl = resolve(&Method::GET, "/.well-known/mdoc/issuer-a.crl").unwrap();
     assert_eq!(crl.method.endpoint, Endpoint::MdocCrl);
@@ -246,12 +241,10 @@ fn body_budgets_follow_the_actual_extractor_and_stream_contracts() {
 
 #[test]
 fn only_public_metadata_resources_can_omit_connection_facts() {
-    const METADATA_PATHS: [&str; 6] = [
+    const METADATA_PATHS: [&str; 4] = [
         "/.well-known/openid-configuration",
         "/.well-known/oauth-authorization-server",
         "/.well-known/oauth-protected-resource",
-        "/.well-known/oauth-protected-resource/",
-        "/.well-known/oauth-protected-resource/{*tail}",
         "/jwks.json",
     ];
     let without_facts = routes()

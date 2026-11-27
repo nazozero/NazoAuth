@@ -220,6 +220,7 @@ fn endpoint(authorizer: Arc<dyn ScimRequestAuthorizer>) -> ScimEndpoint {
         Arc::new(UnusedCursor),
         Arc::new(UnusedPassword),
         ClientIpConfig::new(&[], ClientIpHeaderMode::None),
+        "https://issuer.example",
     )
 }
 
@@ -238,6 +239,7 @@ fn event_endpoint() -> ScimEndpoint {
         Arc::new(UnusedCursor),
         Arc::new(UnusedPassword),
         ClientIpConfig::new(&[], ClientIpHeaderMode::None),
+        "https://issuer.example",
     )
     .with_security_events(Arc::new(FixedPoller))
 }
@@ -255,6 +257,7 @@ fn authorization_extracts_only_bearer_source_ip_and_user_agent() {
                 &[IpCidr::parse("192.0.2.0/24").unwrap()],
                 ClientIpHeaderMode::XForwardedFor,
             ),
+            "https://issuer.example",
         );
         for (authorization, token) in [
             ("Bearer scim-token", Some("scim-token")),

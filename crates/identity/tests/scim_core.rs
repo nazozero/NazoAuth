@@ -369,7 +369,7 @@ fn cursor_envelope_rejects_noncanonical_and_malformed_inputs() {
 #[test]
 fn documents_preserve_public_wire_shape_and_hide_internal_identity_state() {
     let user = fixture_user();
-    let document = scim_user_document(&user);
+    let document = scim_user_document(&user, "/scim/v2");
     assert_eq!(document["schemas"], json!([SCIM_USER_SCHEMA]));
     assert_eq!(document["id"], json!(user.id()));
     assert_eq!(document["userName"], "alice@example.test");
@@ -403,14 +403,15 @@ fn documents_preserve_public_wire_shape_and_hide_internal_identity_state() {
     assert_eq!(config["pagination"]["maxPageSize"], 200);
     assert_eq!(config["pagination"]["cursorTimeout"], 600);
 
-    let index = scim_index_list_document(9, 3, std::slice::from_ref(&user));
+    let index = scim_index_list_document(9, 3, std::slice::from_ref(&user), "/scim/v2");
     assert_eq!(index["startIndex"], 3);
     assert_eq!(index["itemsPerPage"], 1);
-    let cursor = scim_cursor_list_document(9, std::slice::from_ref(&user), Some("next"));
+    let cursor =
+        scim_cursor_list_document(9, std::slice::from_ref(&user), Some("next"), "/scim/v2");
     assert!(cursor.get("startIndex").is_none());
     assert_eq!(cursor["nextCursor"], "next");
     assert!(
-        scim_cursor_list_document(0, &[], None)
+        scim_cursor_list_document(0, &[], None, "/scim/v2")
             .get("nextCursor")
             .is_none()
     );
@@ -544,4 +545,24 @@ fn scim_eq_filter_parses_operator_case_whitespace_and_json_escapes() {
     ] {
         assert!(normalize_scim_user_filter(Some(filter)).is_err());
     }
+}
+
+#[test]
+fn scim_locations_use_the_configured_public_base_for_single_and_list_documents() {
+    let user = fixture_user();
+    let base = "https://issuer.example/tenant/auth/scim/v2";
+    let expected = format!("{base}/Users/{}", user.id());
+    assert_eq!(
+        scim_user_document(&user, base)["meta"]["location"],
+        expected
+    );
+    let users = std::slice::from_ref(&user);
+    assert_eq!(
+        scim_index_list_document(1, 1, users, base)["Resources"][0]["meta"]["location"],
+        expected
+    );
+    assert_eq!(
+        scim_cursor_list_document(1, users, None, base)["Resources"][0]["meta"]["location"],
+        expected
+    );
 }

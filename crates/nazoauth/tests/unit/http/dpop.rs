@@ -164,3 +164,23 @@ fn nonce_challenge_preserves_context_specific_status_and_headers() {
     );
     assert!(!resource.headers().contains_key(header::CACHE_CONTROL));
 }
+
+#[test]
+fn mounted_dpop_target_preserves_external_path_without_double_prefix() {
+    let path = "/tenant/auth/openid4vci/offers/one%2Ftwo";
+    for (authority, origin) in [
+        ("issuer.example", "https://issuer.example"),
+        ("mtls.example:8443", "https://mtls.example:8443"),
+    ] {
+        assert_eq!(
+            dpop_target_uri(
+                "https://issuer.example/tenant/auth",
+                "https://mtls.example:8443/tenant/auth",
+                Some(authority),
+                path,
+            )
+            .unwrap(),
+            format!("{origin}{path}")
+        );
+    }
+}

@@ -416,12 +416,12 @@ fn safe_form_login_next(
 ) -> String {
     let default_next = format!("{}/profile", config.frontend_base_url.trim_end_matches('/'));
     submitted
-        .and_then(safe_relative_next)
-        .or_else(|| referer_login_next(request))
+        .and_then(|next| safe_relative_next(config, next))
+        .or_else(|| referer_login_next(config, request))
         .unwrap_or(default_next)
 }
 
-fn safe_relative_next(value: &str) -> Option<String> {
+fn safe_relative_next(config: &PasswordLoginConfig, value: &str) -> Option<String> {
     let value = value.trim();
     if value.is_empty() || !value.starts_with('/') || value.starts_with("//") {
         return None;
@@ -431,16 +431,17 @@ fn safe_relative_next(value: &str) -> Option<String> {
         .map(|(path, _)| path)
         .unwrap_or(value)
         .trim_end_matches('/');
-    (path == "/authorize").then(|| value.to_owned())
+    let mount = nazo_auth::issuer_path(&config.issuer);
+    (path.strip_prefix(mount) == Some("/authorize")).then(|| value.to_owned())
 }
 
-fn referer_login_next(request: &Request) -> Option<String> {
+fn referer_login_next(config: &PasswordLoginConfig, request: &Request) -> Option<String> {
     let referer = request.headers().get(header::REFERER)?.to_str().ok()?;
     let referer = url::Url::parse(referer).ok()?;
     let next = referer
         .query_pairs()
         .find_map(|(key, value)| (key == "next").then(|| value.into_owned()))?;
-    safe_relative_next(&next)
+    safe_relative_next(config, &next)
 }
 
 fn no_store(mut response: Response) -> Response {

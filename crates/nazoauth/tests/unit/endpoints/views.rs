@@ -65,7 +65,7 @@ fn pagination_uses_database_width_before_multiplying() {
 #[test]
 fn account_views_keep_their_distinct_public_fields() {
     let user = user_row();
-    let mut overview = serde_json::to_value(auth_me_json_with_count(&user, 7)).unwrap();
+    let mut overview = serde_json::to_value(auth_me_json_with_count(&user, 7, "")).unwrap();
     let mut admin = serde_json::to_value(admin_user_json(&user)).unwrap();
     let overview = overview.as_object_mut().unwrap();
     let admin = admin.as_object_mut().unwrap();
@@ -247,4 +247,21 @@ fn client_row() -> ClientRow {
         sector_identifier_uri: None,
         sector_identifier_host: None,
     }
+}
+
+#[test]
+fn local_avatar_view_projects_mount_without_changing_the_storage_reference() {
+    let mut user = user_row();
+    user.profile.avatar_url = Some("/auth/me/avatar?v=one".into());
+    let projected =
+        serde_json::to_value(auth_me_json_with_count(&user, 0, "/tenant/auth")).unwrap();
+    assert_eq!(projected["avatar_url"], "/tenant/auth/auth/me/avatar?v=one");
+    assert_eq!(
+        user.profile.avatar_url.as_deref(),
+        Some("/auth/me/avatar?v=one")
+    );
+    user.profile.avatar_url = Some("https://cdn.example/avatar.png".into());
+    let projected =
+        serde_json::to_value(auth_me_json_with_count(&user, 0, "/tenant/auth")).unwrap();
+    assert_eq!(projected["avatar_url"], "https://cdn.example/avatar.png");
 }

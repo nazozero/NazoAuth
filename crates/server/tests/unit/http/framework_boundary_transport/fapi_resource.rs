@@ -115,6 +115,7 @@ mod fapi_signed_contract {
     #[derive(Clone)]
     struct Ports {
         outcome: Outcome,
+        target_uri: String,
         calls: Arc<Mutex<Vec<&'static str>>>,
     }
 
@@ -134,10 +135,7 @@ mod fapi_signed_contract {
             self.calls.lock().unwrap().push("authorize");
             assert_eq!(request.access_token, "access-token");
             assert_eq!(context.method, "POST");
-            assert_eq!(
-                context.target_uris,
-                &["https://issuer.example/fapi/resource"]
-            );
+            assert_eq!(context.target_uris, &[self.target_uri.as_str()]);
             let outcome = self.outcome;
             Box::pin(async move {
                 if matches!(outcome, Outcome::Revoked) {
@@ -181,15 +179,16 @@ mod fapi_signed_contract {
             self.calls.lock().unwrap().push("verify_and_consume");
             assert_eq!(tenant, "00000000-0000-0000-0000-000000000001");
             assert_eq!(client, "client-1");
-            SigningKey::from_bytes(&[3; 32])
+            let verification = SigningKey::from_bytes(&[3; 32])
                 .verifying_key()
                 .verify(
                     input.signature_base(),
                     &Signature::from_slice(input.signature()).unwrap(),
                 )
-                .unwrap();
+                .map_err(|_| FapiSignatureVerificationError::Invalid);
             let outcome = self.outcome;
             Box::pin(async move {
+                verification?;
                 match outcome {
                     Outcome::SignatureReplay => Err(FapiSignatureVerificationError::Replay),
                     Outcome::LookupUnavailable => {
@@ -266,6 +265,7 @@ mod fapi_signed_contract {
             let calls = Arc::new(Mutex::new(Vec::new()));
             let ports = Arc::new(Ports {
                 outcome,
+                target_uri: TARGET.to_owned(),
                 calls: calls.clone(),
             });
             let endpoint = Data::new(FapiResourceEndpoint::new(
@@ -445,6 +445,90 @@ mod fapi_signed_contract {
                 expected_calls,
                 "{outcome:?}"
             );
+        }
+    }
+
+    #[actix_web::test]
+    async fn prefixed_fapi_signatures_bind_external_path_and_raw_query() {
+        const BODY: &[u8] = b"{\"signed\": true}\n";
+        const QUERY: &str = "tag=%2F&tag=two+words&v=1";
+        for prefix in ["/testauth", "/nested/testauth"] {
+            let issuer = format!("https://issuer.example{prefix}");
+            let path_target = format!("{issuer}/fapi/%72esource");
+            let target = format!("{path_target}?{QUERY}");
+            for (signed_target, accepted) in [
+                (target.clone(), true),
+                (
+                    format!("https://issuer.example/fapi/%72esource?{QUERY}"),
+                    false,
+                ),
+                (target.replace("%72", "r"), false),
+                (format!("{path_target}?tag=two+words&tag=%2F&v=1"), false),
+            ] {
+                let digest = content_digest(BODY);
+                let prepared = prepare_request(
+                    RequestInput {
+                        method: "POST",
+                        target_uri: &signed_target,
+                        headers: &[
+                            ("authorization", "Bearer access-token"),
+                            ("content-digest", digest.as_str()),
+                        ],
+                        body: BODY,
+                    },
+                    RequestPolicy {
+                        created: jiff::Timestamp::now().as_second(),
+                        keyid: "client-key",
+                        algorithm: "ed25519",
+                        covered_headers: &[],
+                    },
+                )
+                .unwrap();
+                let signature = SigningKey::from_bytes(&[3; 32]).sign(prepared.signature_base());
+                let fields = prepared.finish(&signature.to_bytes());
+                let calls = Arc::new(Mutex::new(Vec::new()));
+                let ports = Arc::new(Ports {
+                    outcome: Outcome::Success,
+                    target_uri: path_target.clone(),
+                    calls: calls.clone(),
+                });
+                let endpoint = Data::new(FapiResourceEndpoint::new(
+                    &issuer,
+                    format!("https://mtls.example{prefix}"),
+                    60,
+                    ports.clone(),
+                    ports.clone(),
+                    ports,
+                ));
+                let request = TestRequest::post()
+                    .uri(&target)
+                    .insert_header((header::AUTHORIZATION, "Bearer access-token"))
+                    .insert_header(("content-digest", digest))
+                    .insert_header(("signature-input", fields.signature_input))
+                    .insert_header(("signature", fields.signature))
+                    .to_http_request();
+                let response = fapi_resource(endpoint, request, Bytes::from_static(BODY)).await;
+                assert_eq!(
+                    response.status(),
+                    if accepted {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::UNAUTHORIZED
+                    },
+                    "request target {target}, signed target {signed_target}"
+                );
+                assert_eq!(response.headers().contains_key("signature"), accepted);
+                assert_eq!(calls.lock().unwrap().contains(&"sign"), accepted);
+                if !accepted {
+                    let body = to_bytes(response.into_body()).await.unwrap();
+                    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(body["error"], "invalid_token");
+                    assert_eq!(
+                        body["error_description"],
+                        "HTTP message signature is missing or invalid."
+                    );
+                }
+            }
         }
     }
 }

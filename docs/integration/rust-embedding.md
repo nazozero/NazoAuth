@@ -197,6 +197,131 @@ the Worker implementation waits with the platform's asynchronous delay.
 For a native composition example, see
 [`application_capabilities` and startup assembly](../../crates/server/src/bootstrap/startup/services.rs).
 
+## Mount in an existing application
+
+Configure the public issuer with its intended path, then pass that same path to
+the builder. `/` is the default. The builder validates this agreement before
+assembling the service graph; it does not infer a trusted issuer from request
+headers or change explicit URLs supplied by the operator.
+
+```rust
+let configuration = nazoauth::config::Configuration::new(
+    tenant,
+    "https://example.com/testauth",
+    client_secret_pepper,
+)?;
+let auth = std::sync::Arc::new(
+    nazoauth::NazoAuthBuilder::new(configuration, capabilities, instance_id)
+        .mount_path("/testauth")
+        .build()
+        .await?,
+);
+
+let app = actix_web::App::new()
+    .route("/api/health", actix_web::web::get().to(|| async { "healthy" }))
+    .configure(nazo_http_actix::mount(auth, &["/api"])?);
+```
+
+The single `mount` call registers the prefix scope and its required discovery
+exceptions. Every ordinary endpoint comes from the existing manifest, including
+future additions and optional modules. The native root host's existing
+`configure` entry point remains available. Both forms forward unknown methods
+and paths inside the authentication scope to the same facade policy.
+
+The [external Hyper example](../../examples/hyper-embedding) is an independent
+Rust workspace using the public builder, capabilities and `http`/`Bytes`
+contract. Its `mount(auth, existing_service, occupied_paths)` composes an existing
+Hyper service in one call. Native handler futures are `Send` when the input body
+stream is `Send`; local streams remain supported, and WASM endpoint dispatch
+retains local futures. Neither adapter creates a listener, runtime, storage
+connection or service graph per request.
+
+### Public identifiers and discovery
+
+For `https://example.com/testauth`, the locations are:
+
+| Surface | Public path |
+| --- | --- |
+| Ordinary endpoints | `/testauth/authorize`, `/testauth/token`, `/testauth/auth/login`, `/testauth/admin/clients`, etc. |
+| OIDC discovery | `/testauth/.well-known/openid-configuration` |
+| OAuth AS metadata (RFC 8414) | `/.well-known/oauth-authorization-server/testauth` |
+| Credential issuer metadata (OpenID4VCI) | `/.well-known/openid-credential-issuer/testauth`, when enabled and registered |
+| Protected resource metadata (RFC 9728) | `/.well-known/oauth-protected-resource/testauth/fapi/resource` for resource identifier `https://example.com/testauth/fapi/resource` |
+
+`auth.mount().discovery_paths()` exposes the exact paths for host registration.
+`auth.mount().route_path(route)` projects a canonical route for an integration
+that needs its external pattern. Runtime registration, deployment profile and
+tenant capability admission still belong to NazoAuth.
+
+The mTLS base may use a different configured origin, but it must use the same
+mount path. The protected resource identifier must use the issuer origin;
+this single-resource mount does not implement query-based resource selection.
+Its metadata path preserves the resource's exact path spelling, including
+percent escapes and a trailing slash. Equivalent decoded spellings are not
+additional discovery locations.
+Arbitrary protected-resource suffix aliases are not served. These locations
+follow [OIDC Discovery §4](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig),
+[RFC 8414 §3](https://www.rfc-editor.org/rfc/rfc8414.html#section-3),
+[OpenID4VCI §12.2.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html#section-12.2.2)
+and [RFC 9728 §3](https://www.rfc-editor.org/rfc/rfc9728.html#section-3).
+
+Enabled upstream provider callbacks must equal
+`{issuer}/auth/federation/{provider_id}/callback`. Update the provider's own
+client registration to that URL; mounting cannot change an upstream service.
+Published authorization, token, session, SCIM and credential URLs use the same
+configured issuer. Internal avatar storage references stay unchanged; HTTP
+views project their mount path, and OIDC picture claims use an absolute URL.
+
+### Paths, collisions and host-owned UI
+
+Mount paths contain literal unescaped URL segments. Nested paths are supported;
+one trailing slash is removed. Empty segments, `.`/`..`, escaped separators,
+query strings and fragments are rejected in the configured prefix. Request
+prefixes match exactly at a segment boundary: `/testauth2`, `/%74estauth` and
+`/testauth%2Ftoken` cannot select `/testauth`. The ordinary endpoint portion
+retains its existing escape handling; `/testauth/%74oken` reaches `/token`,
+while the original URI and repeated query values remain available to proof
+verification. Request dot segments and trailing slashes are not redirected or
+normalized into a different endpoint.
+
+`mount` checks the host's declared occupied namespaces before installing any
+routes. Declare literal external namespace prefixes such as `/api` or `/users`,
+which cover their descendants; discovery reservations retain their raw escapes.
+An opaque framework router cannot expose registrations
+it has already accepted, so the host must declare all of its namespaces. A
+conflict with the authentication prefix or a required discovery path is an
+error. At `/`, unrelated explicitly registered host handlers retain precedence.
+When composing multiple mounts, include the other mount's `path()` and
+`discovery_paths()` in those reservations; checking only its prefix cannot
+detect a shared protected-resource discovery URL.
+
+The literal `/ui` subtree under a mount belongs to the host. For example,
+register assets and the frontend router at `/testauth/ui/`; the Actix mount
+leaves those routes reachable even when registered after the authentication
+scope. Configure the supplied frontend's asset/navigation base for that path
+and its API base for the effective issuer. `frontend_base_url` defaults to
+`{issuer}/ui/` and may instead select a separately hosted frontend. NazoAuth
+does not read, bundle or rewrite frontend assets. Apply the adapter's security
+headers to host-owned UI responses.
+
+### Cookies on a shared origin
+
+Cookie paths remain `/`, including deletion. `__Host-` names retain `Secure`
+and have no `Domain` attribute. Choose distinct names for all four
+`Configuration.session` fields for each instance sharing an origin:
+
+| Field | Example for the `/testauth` instance |
+| --- | --- |
+| `session_cookie_name` | `__Host-testauth-session` |
+| `csrf_cookie_name` | `__Host-testauth-csrf` |
+| `remembered_mfa_cookie_name` | `__Host-testauth-mfa` |
+| `federation_binding_cookie_name` | `__Host-testauth-federation` |
+
+Names must also avoid cookies owned by the surrounding application. A mount
+does not silently change cookie names or narrow `__Host-` cookies to its prefix.
+The native host exposes the auxiliary names through
+`REMEMBERED_MFA_COOKIE_NAME` and `FEDERATION_BINDING_COOKIE_NAME`.
+
 ## Adapt a Web framework
 
 The adapter contract is `http::Request` / `http::Response`, `bytes::Bytes`,
@@ -208,8 +333,8 @@ rules remain internal to the facade.
 
 1. Bind a default request forwarding handler so the facade receives known and
    unknown paths. Keep framework-owned UI resources separate. Use
-   `integration::route_for_path(request.uri().path())` to obtain transport
-   metadata from the canonical manifest. This lookup does not apply method,
+   `application.route_for_path(request.uri().path())` to obtain transport
+   metadata through the prepared mount. This lookup does not apply method,
    registration or capability policy. `integration::routes()` exposes the whole
    inventory for mechanical coverage checks.
 2. Preserve the original method and URI. `Route::request_headers()` declares
@@ -267,7 +392,7 @@ Body chunks, completed response bodies and stored replay bytes retain their
 The four public discovery/authorization-server/protected-resource/JWKS metadata
 endpoints consume only `Origin`, `Access-Control-Request-Method` and
 `Access-Control-Request-Headers` for CORS, and do not consume connection facts.
-Their six manifest resources let adapters omit unused request-header storage and
+Their four manifest resources let adapters omit unused request-header storage and
 the connection-facts extension. Host tenant selection still uses the original
 request's authority and TLS server name before forwarding. All other resources
 retain every header and connection facts, including the credential nonce
@@ -357,9 +482,12 @@ comparison ignores only wire-generated `Date`, `Content-Length` and
 `Transfer-Encoding`; it does not normalize nonces, reorder duplicate values,
 deserialize response JSON, or ignore body differences.
 
-The shipped examples are the
+The shared facade corpus projects its cases through the built tenant's mount,
+including discovery exceptions. The shipped examples are the
 [Actix transport tests](../../crates/http-actix/tests/unit/transport.rs) and
-[native facade comparison](../../crates/server/tests/unit/facade_conformance.rs).
+[native facade comparison](../../crates/server/tests/unit/facade_conformance.rs),
+the [prefixed Actix fixture](../../crates/server/tests/unit/facade_mount.rs), and
+the [independent Hyper consumer](../../examples/hyper-embedding).
 The [credential replay fixture](../../crates/server/tests/unit/facade_credentials.rs)
 seeds subject data through the configured persistence capability, creates offers
 and tokens through the public facade, and verifies original JSON and encrypted

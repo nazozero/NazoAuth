@@ -3,5 +3,4 @@
 pub mod csrf;
 pub mod federation;
 
-pub const MFA_REMEMBERED_COOKIE_NAME: &str = "nazo_oauth_mfa_remembered";
 pub const MFA_REMEMBERED_TTL_SECONDS: u64 = 2_592_000;

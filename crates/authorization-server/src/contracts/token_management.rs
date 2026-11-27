@@ -9,6 +9,10 @@ use super::{
 
 pub const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";
 
+#[cfg(not(target_arch = "wasm32"))]
+pub type TokenManagementFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, TokenManagementError>> + Send + 'a>>;
+#[cfg(target_arch = "wasm32")]
 pub type TokenManagementFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, TokenManagementError>> + 'a>>;
 

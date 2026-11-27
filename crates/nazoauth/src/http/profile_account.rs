@@ -19,6 +19,7 @@ use crate::http::{
 pub struct ProfileAccountEndpoint {
     operations: Arc<dyn ProfileAccountOperations>,
     cookies: SessionCookieConfig,
+    mount_path: Box<str>,
 }
 
 impl ProfileAccountEndpoint {
@@ -26,11 +27,21 @@ impl ProfileAccountEndpoint {
     pub fn new(
         operations: Arc<dyn ProfileAccountOperations>,
         cookies: SessionCookieConfig,
+        issuer: &str,
     ) -> Self {
         Self {
             operations,
             cookies,
+            mount_path: nazo_auth::issuer_path(issuer).into(),
         }
+    }
+
+    fn public_profile(&self, mut profile: AccountProfileView) -> AccountProfileView {
+        if let Some(avatar) = &mut profile.avatar_url {
+            let mount = crate::endpoints::views::avatar_mount_path(&self.mount_path, avatar);
+            avatar.insert_str(0, mount);
+        }
+        profile
     }
 }
 
@@ -102,7 +113,7 @@ pub async fn profile_me(endpoint: &ProfileAccountEndpoint, request: &Request) ->
     };
     match endpoint.operations.me(session_id).await {
         Ok(ProfileMe::Active(profile)) => json_response_no_store(ActiveProfileDocument {
-            profile: *profile,
+            profile: endpoint.public_profile(*profile),
             mfa_required: false,
         }),
         Ok(ProfileMe::PendingMfa(profile)) => {
@@ -130,7 +141,7 @@ pub async fn profile_update(
         return login_required_response(&endpoint.cookies);
     };
     match endpoint.operations.update(session_id, payload.into()).await {
-        Ok(profile) => json_response_no_store(profile),
+        Ok(profile) => json_response_no_store(endpoint.public_profile(profile)),
         Err(error) => profile_account_error_response(error, &endpoint.cookies),
     }
 }

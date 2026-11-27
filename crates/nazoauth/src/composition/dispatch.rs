@@ -5,6 +5,11 @@ use crate::integration::{Endpoint, Route, RouteGuard, RouteMethod};
 use ::http::StatusCode;
 use bytes::Bytes;
 
+#[cfg(not(target_arch = "wasm32"))]
+use futures_util::future::BoxFuture as EndpointFuture;
+#[cfg(target_arch = "wasm32")]
+use futures_util::future::LocalBoxFuture as EndpointFuture;
+
 macro_rules! extract {
     ($value:expr) => {
         match $value {
@@ -46,25 +51,26 @@ impl NazoAuth {
         let mut request = Request::from_parts(parts, Bytes::new());
         // Capture the final request once instead of retaining a second input head.
         async move {
-            let mut response = self.route(&mut request, stream).await;
-            http::apply_security_headers(
-                response.headers_mut(),
-                request.uri().path() == "/check_session",
-            );
+            // Uri::clone shares the original bytes. The same borrowed route view
+            // drives dispatch and response policy, including escaped endpoints.
+            let uri = request.uri().clone();
+            let path = self.mount.routing_path(uri.path());
+            let iframe = path.as_deref() == Some("/check_session");
+            let mut response = match path {
+                Some(path) => self.route(&mut request, stream, &path).await,
+                None => http::empty_response(StatusCode::NOT_FOUND),
+            };
+            http::apply_security_headers(response.headers_mut(), iframe);
             response
         }
     }
 
-    async fn route<S, E>(&self, request: &mut Request, stream: S) -> Response
+    async fn route<S, E>(&self, request: &mut Request, stream: S, routing_path: &str) -> Response
     where
         S: futures_util::Stream<Item = Result<Bytes, E>>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        // Uri::clone shares the original bytes and lets Params borrow the raw
-        // target while the body is installed in the same standard Request.
-        let uri = request.uri().clone();
-        let routing_path = crate::integration::routing_path(uri.path());
-        let matched = crate::integration::match_path(&routing_path);
+        let matched = crate::integration::match_path(routing_path);
         let profile = self.settings.protocol.deployment_profile;
         if profile != nazo_auth::DeploymentProfile::Full
             && !matched
@@ -74,13 +80,13 @@ impl NazoAuth {
             return http::empty_response(StatusCode::NOT_FOUND);
         }
         let (cors, guard) = matched.as_ref().map_or_else(
-            || crate::integration::unmatched_policy(&routing_path),
+            || crate::integration::unmatched_policy(routing_path),
             |(route, _)| (route.cors, route.guard),
         );
         let enabled = self.guard_enabled(guard);
         if !enabled
             && (matches!(guard, RouteGuard::Module(_))
-                || crate::integration::guard_precedes_cors(&routing_path))
+                || crate::integration::guard_precedes_cors(routing_path))
         {
             return http::empty_response(StatusCode::NOT_FOUND);
         }
@@ -161,13 +167,16 @@ impl NazoAuth {
         }
 
         self.mtls.prepare_request(request);
-        let future: futures_util::future::LocalBoxFuture<'_, Response> = match method.endpoint {
-            Endpoint::UploadAvatar => Box::pin(crate::endpoints::profile::avatar::upload_avatar(
-                &self.identity.session_profiles,
-                &self.identity.avatar_profiles,
-                request,
-                stream,
-            )),
+        match method.endpoint {
+            Endpoint::UploadAvatar => {
+                Box::pin(crate::endpoints::profile::avatar::upload_avatar(
+                    &self.identity.session_profiles,
+                    &self.identity.avatar_profiles,
+                    request,
+                    stream,
+                ))
+                .await
+            }
             Endpoint::BackchannelAuthentication => {
                 Box::pin(crate::endpoints::token::ciba::backchannel_authentication(
                     &self.core.ciba_application,
@@ -175,33 +184,42 @@ impl NazoAuth {
                     request,
                     http::collect_route_body(method, stream),
                 ))
+                .await
             }
-            Endpoint::DynamicClientRegistration => Box::pin(http::dynamic_client_registration(
-                &self.core.dynamic_registration_handles,
-                request,
-                http::collect_route_body(method, stream),
-            )),
-            Endpoint::ClientConfigurationPut => Box::pin(http::client_configuration_put(
-                &self.core.dynamic_registration_handles,
-                request,
-                extract!(http::parse_path(
-                    params.get("client_id").expect("manifest capture")
-                )),
-                http::collect_route_body(method, stream),
-            )),
-            Endpoint::OidcLogout => Box::pin(http::oidc_logout(
-                &self.identity.oidc_logout,
-                request,
-                http::collect_route_body(method, stream),
-            )),
+            Endpoint::DynamicClientRegistration => {
+                Box::pin(http::dynamic_client_registration(
+                    &self.core.dynamic_registration_handles,
+                    request,
+                    http::collect_route_body(method, stream),
+                ))
+                .await
+            }
+            Endpoint::ClientConfigurationPut => {
+                Box::pin(http::client_configuration_put(
+                    &self.core.dynamic_registration_handles,
+                    request,
+                    extract!(http::parse_path(
+                        params.get("client_id").expect("manifest capture")
+                    )),
+                    http::collect_route_body(method, stream),
+                ))
+                .await
+            }
+            Endpoint::OidcLogout => {
+                Box::pin(http::oidc_logout(
+                    &self.identity.oidc_logout,
+                    request,
+                    http::collect_route_body(method, stream),
+                ))
+                .await
+            }
             _ => {
                 if extract!(http::validate_route_body_head(request, method)) {
                     *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
                 }
-                self.dispatch_endpoint(method, params, request)
+                self.dispatch_endpoint(method, params, request).await
             }
-        };
-        future.await
+        }
     }
 
     // Each selected endpoint owns its own async state. A request does not reserve
@@ -211,7 +229,7 @@ impl NazoAuth {
         method: &RouteMethod,
         params: &'a matchit::Params<'_, '_>,
         request: &'a Request,
-    ) -> futures_util::future::LocalBoxFuture<'a, Response> {
+    ) -> EndpointFuture<'a, Response> {
         match method.endpoint {
             Endpoint::Token => Box::pin(async move {
                 crate::endpoints::token::dispatch::token_with_service(

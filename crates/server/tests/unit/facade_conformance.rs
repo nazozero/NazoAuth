@@ -10,8 +10,16 @@ mod configuration;
 mod cors;
 #[path = "facade_credentials.rs"]
 mod credentials;
+#[path = "facade_hyper.rs"]
+mod hyper_embedding;
 #[path = "facade_ingress.rs"]
 mod ingress;
+#[path = "facade_mount.rs"]
+mod mount;
+#[path = "facade_oauth.rs"]
+mod oauth;
+#[path = "facade_passkey.rs"]
+mod passkey;
 
 pub(crate) fn deployment(
     control_tenant: nazo_identity::TenantId,
@@ -76,6 +84,8 @@ pub(crate) async fn infrastructure(
     .unwrap();
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.endpoint.mtls_endpoint_base_url = "https://mtls.example".to_owned();
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
     settings.session.cookie_secure = true;
     settings.modules.register_openid4vci_routes = register_optional_routes;
     settings.modules.register_openid4vp_routes = register_optional_routes;
@@ -92,7 +102,7 @@ pub(crate) async fn infrastructure(
     }
 }
 
-fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
+pub(crate) fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
     let mut builder = awtest::TestRequest::with_uri(&request.uri().to_string())
         .method(actix_web::http::Method::from_bytes(request.method().as_str().as_bytes()).unwrap())
         .set_payload(request.body().clone());
@@ -109,7 +119,7 @@ fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
     builder
 }
 
-async fn standard_response(response: HttpResponse) -> http::Response<Bytes> {
+pub(crate) async fn standard_response(response: HttpResponse) -> http::Response<Bytes> {
     let mut standard = http::Response::builder().status(response.status().as_u16());
     for (name, value) in response.headers() {
         standard = standard.header(name.as_str(), value.as_bytes());

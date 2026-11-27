@@ -47,12 +47,30 @@ impl Configuration {
             self.session.cookie_secure || loopback_http,
             "COOKIE_SECURE=false 只允许用于 loopback HTTP 本地开发 issuer"
         );
-        ensure!(
-            self.session.cookie_secure
-                || (!self.session.session_cookie_name.starts_with("__Host-")
-                    && !self.session.csrf_cookie_name.starts_with("__Host-")),
-            "__Host- cookie names require COOKIE_SECURE=true"
-        );
+        let cookie_names = [
+            self.session.session_cookie_name.as_str(),
+            self.session.csrf_cookie_name.as_str(),
+            self.session.remembered_mfa_cookie_name.as_str(),
+            self.session.federation_binding_cookie_name.as_str(),
+        ];
+        for (index, name) in cookie_names.iter().enumerate() {
+            ensure!(
+                !name.is_empty()
+                    && name.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+                    }),
+                "cookie names must be nonempty HTTP tokens"
+            );
+            ensure!(
+                !cookie_names[..index].contains(name),
+                "session, CSRF, remembered-MFA and federation-binding cookie names must differ"
+            );
+            ensure!(
+                self.session.cookie_secure
+                    || !(name.starts_with("__Host-") || name.starts_with("__Secure-")),
+                "__Host- and __Secure- cookie names require COOKIE_SECURE=true"
+            );
+        }
         ensure!(
             self.protocol.client_secret_pepper.len() >= 32,
             "CLIENT_SECRET_PEPPER must be at least 32 bytes"

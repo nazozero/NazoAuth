@@ -9,10 +9,11 @@ use std::{
 pub use crate::endpoints::mtls::request_mtls_client_certificate_from_rfc9440 as client_certificate_from_rfc9440;
 use crate::http::apply_security_headers;
 pub use crate::routes::{BodyMode, Endpoint, Route, RouteMethod, route_for_path, routes};
-pub(crate) use crate::routes::{
-    RouteGuard, guard_precedes_cors, match_path, routing_path, unmatched_policy,
-};
+pub(crate) use crate::routes::{RouteGuard, guard_precedes_cors, match_path, unmatched_policy};
 pub use nazo_oauth_server::contracts::token_client_auth::ClientCertificateFacts;
+
+mod mount;
+pub use mount::Mount;
 
 #[cfg(feature = "conformance")]
 pub mod conformance;
