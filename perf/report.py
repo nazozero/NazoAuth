@@ -13,13 +13,13 @@ import tempfile
 import gzip
 import struct
 import zipfile
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
 
 from monitor.summarize import summarize
 from monitor.memory_window import smaps_peaks
-from monitor.pg_window import peak as pg_peak, totals as pg_totals
 
 HERE = Path(__file__).resolve().parent
 SERVICES = {"nazo": "NazoAuth", "rauthy": "Rauthy", "kanidm": "Kanidm", "keycloak": "Keycloak", "hydra": "Hydra"}
@@ -144,29 +144,6 @@ def validate_memory_tails():
             raise ValueError("unexpected latency vector files")
 
 
-def validate_pg_ledgers():
-    evidence = HERE / "evidence"
-    with gzip.open(evidence / "postgres-maps.jsonl.gz", "rt") as stream, zipfile.ZipFile(
-            evidence / "pg-arrivals.zip") as archive, tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "arrivals.tsv"
-        seen = set()
-        for line in stream:
-            row = json.loads(line)
-            name = f"{row['peer']}-{row['start_ns']}.tsv"
-            if name in seen:
-                raise ValueError("duplicate PostgreSQL window")
-            seen.add(name)
-            with archive.open(name) as src, path.open("wb") as dst:
-                shutil.copyfileobj(src, dst)
-            op = summarize(path, row["rate"], row["warm_seconds"], row["seconds"])["operations"]["all"]
-            if (any(op[k] != row[k] for k in ("planned","sent","success","failed","http_requests","outcomes")) or
-                op["not_sent"] != row["unsent"]) or any(
-                    op["offered_to_completion_success_ms"][q] != row["successful_tail_ms"][q] for q in ("95","99")):
-                raise ValueError(f"PostgreSQL window ledger mismatch: {name}")
-        if seen != set(archive.namelist()):
-            raise ValueError("unexpected PostgreSQL ledger files")
-
-
 def formatted(values, digits=2):
     data = [v for v in values if v is not None]
     return f"{median(data):,.{digits}f}" if data else "—"
@@ -177,86 +154,9 @@ def table(header, rows):
     return "\n".join(lines + ["| " + " | ".join(map(str, row)) + " |" for row in rows])
 
 
-def common_coverage(rows):
-    tiers = defaultdict(set)
-    for row in rows:
-        flow, rate, peer, profile, *_ = group(row)
-        if profile != "base" or rate not in (100, 1000, 3000, 6000, 12000):
-            continue
-        if flow == "authorize":
-            flow = "authorize-consent" if peer == "nazo" else "authorize-native"
-        if flow == "mixed-core" and peer == "nazo":
-            flow = "mixed-core-consent"
-        tiers[flow, peer].add(rate)
-    scenarios = ("machine", "introspect", "user-introspect", "userinfo", "exchange", "refresh",
-                 "authorize-native", "authorize-silent", "authorize-consent", "mixed", "mixed-core", "mixed-core-consent")
-    separate = {
-        "exchange": {"kanidm"}, "refresh": {"kanidm", "rauthy"},
-        "authorize-native": {"hydra", "nazo"}, "authorize-consent": {"hydra", "kanidm", "rauthy"}, "authorize-silent": {"hydra"},
-        "mixed-core": {"hydra", "kanidm", "rauthy", "nazo"},
-        "mixed-core-consent": {"hydra", "kanidm", "rauthy"},
-    }
-    data = []
-    for flow in scenarios:
-        cells = []
-        for peer in SERVICES:
-            rates = tiers[flow, peer]
-            cells.append("、".join(f"{r:,}" for r in sorted(rates)) if rates else
-                         "独立语义" if peer in separate.get(flow, ()) else "无有效窗口")
-        label = {"authorize-native": "已登录授权＋兑换（已授权客户端）",
-                 "mixed-core": "五类混合（授权子操作免同意）"}.get(flow) or FLOWS[flow]
-        data.append([label, *cells])
-    return table(["业务／目标 TPS", *SERVICES.values()], data)
-
-
-def overview(output):
-    # Bars use a common zero-based scale within each table and the printed values.
-    blocks = ["## 主要对照"]
-    for title, flow, rate, column, unit, exclude in (
-        ("UserInfo · 12,000 TPS · 成功吞吐", "用户资料", "12,000", 5, "TPS", ()),
-        ("UserInfo · 1,000 TPS · P99", "用户资料", "1,000", 10, "ms", ()),
-        ("机器令牌内省 · 3,000 TPS · P99", "机器令牌内省", "3,000", 10, "ms", ("Hydra",)),
-    ):
-        points = [r for r in output if r[0] == flow and r[2] == rate
-                  and r[3] == "标准" and r[1] not in exclude and r[column] != "—"]
-        if not points:
-            continue
-        maximum = max(float(r[column].replace(",", "")) for r in points)
-        chart = []
-        for r in points:
-            value = float(r[column].replace(",", ""))
-            count = math.floor(value / maximum * 24 + 0.5) if maximum else 0
-            bar = "`" + "█" * count + "`" if count else "—"
-            chart.append([r[1], r[column], bar, r[5], r[10], r[12], r[15]])
-        blocks.extend(["### " + title, table(["服务", unit, "相对长度", "成功 TPS", "P99 ms", "CPU 主／总", "有效轮数"], chart)])
-        if exclude:
-            blocks.append("Hydra 使用管理端内省入口，结果列于下方完整表。")
-    return blocks
-
-
-def login_table():
-    directory = HERE / "evidence/login"
-    rows = []
-    for run in (1, 2, 3):
-        batches = [json.loads((directory / f"{run}-{i}.json").read_bytes()) for i in (1, 2, 3)]
-        if any(len(batch["operations"]) != 32 or batch["ms"] <= 0 for batch in batches):
-            raise ValueError("incomplete login batch")
-        ok = sorted(ms for batch in batches for status, ms in batch["operations"] if status == "ok")
-        duration = sum(batch["ms"] for batch in batches) / 1000
-        cold, _ = map(int, (directory / f"{run}-cold.kib").read_text().split())
-        idle, peak = map(int, (directory / f"{run}-3.kib").read_text().split())
-        tail = [f"{ok[math.ceil(q * len(ok)) - 1]:.2f}" if ok else "—" for q in (.95, .99)]
-        rows.append([run, f"{len(ok)} / {96-len(ok)}", f"{len(ok)/duration:.2f}", *tail,
-                     f"{cold/1024:.1f}", f"{idle/1024:.1f}", f"{peak/1024:.1f}"])
-    return table(["轮次", "成功／失败", "批内成功 TPS", "P95 ms", "P99 ms", "启动 PSS MiB",
-                  "登录后 PSS MiB", "进程峰值 RSS MiB"], rows)
-
-
-def memory_table(observations):
-    observations = list(observations)
+def verify_memory(observations):
     if len({r.get("product_revision") for r in observations if r["peer"] == "nazo"}) > 1:
         raise ValueError("mixed NazoAuth builds in memory observations")
-    cells = defaultdict(list)
     seen = set()
     for r in observations:
         peer, rate = r["peer"], r["target_tps"]
@@ -274,6 +174,14 @@ def memory_table(observations):
             raise ValueError("PSS differs from the role samples")
         if any(measured.get(k) != r.get(k) for k in ("role_peak_rss_mib", "server_peak_rss_mib")):
             raise ValueError("RSS differs from the smaps samples")
+
+
+def memory_table(observations):
+    observations = list(observations)
+    verify_memory(observations)
+    cells = defaultdict(list)
+    for r in observations:
+        peer, rate = r["peer"], r["target_tps"]
         flow = r.get("scenario", "userinfo")
         if peer == "nazo" and flow == "authorize":
             flow = "authorize-consent"
@@ -302,407 +210,461 @@ def memory_table(observations):
                   "Valkey RSS / PSS", "服务端 RSS / PSS", "总 PSS 范围", "内存 / 性能有效轮数", "受宿主干扰轮数"], rows)
 
 
-def validate_pool_ledgers():
-    with tempfile.TemporaryDirectory() as tmp:
-        ledger = Path(tmp) / "arrivals.tsv"
-        for path in sorted((HERE / "evidence/pool-locality").glob("*.tar.gz")):
-            with tarfile.open(path) as archive:
-                row = json.load(archive.extractfile("summary.json"))
-                if os.name == "posix" and Path("/proc/stat").exists():
-                    with tempfile.TemporaryDirectory(dir=tmp) as work:
-                        measured = reconstruct_window(archive, row, path, work)
-                    if measured["operations"] != row["operations"]:
-                        raise ValueError(f"pool comparison ledger differs: {path.name}")
-                    continue
-                with archive.extractfile("arrivals.tsv") as stream, ledger.open("wb") as dest:
-                    shutil.copyfileobj(stream, dest)
-                ops = summarize(ledger, row["rate"], row["warm_seconds"], row["seconds"])["operations"]
-                if ops != row["operations"]:
-                    raise ValueError(f"pool comparison ledger differs: {path.name}")
-                epoch = int(next(line.split()[0].split(b"=")[1] for line in archive.extractfile("window") if line.startswith(b"epoch_ns=")))
-                samples = [list(map(int, line.split())) for line in archive.extractfile("pss.tsv")]
-                m = smaps_peaks(row["peer"], epoch + row["warm_seconds"]*10**9, row["seconds"], samples)
-                for k in ("role_peak_rss_mib", "role_peak_pss_mib", "server_peak_pss_mib"):
-                    if row[k] != m[k]:
-                        raise ValueError(f"pool comparison smaps differs: {path.name}, {k}")
+
+def label(flow, peer, users=0, families=0):
+    name = FLOWS[flow]
+    if flow == "authorize":
+        name += "（显式同意）" if peer == "nazo" else "（已授权客户端）"
+    if users:
+        name += f"（{users}×{families}）"
+    return name
 
 
-def pool_report():
-    samples = defaultdict(list)
-    root = HERE / "evidence/pool-locality"
-    for archive in sorted(root.glob("*.tar.gz")):
-        trial, name = archive.name.removesuffix(".tar.gz").split("-", 1)
-        flow, variant = name.rsplit("-", 1)
-        with tarfile.open(archive) as t:
-            r = json.load(t.extractfile("summary.json"))
-            db_bytes = json.load(t.extractfile("pg-maps/before.json"))["db_bytes"]
-        samples[flow, trial].append((variant, r, db_bytes))
-    result = []
-    for flow in ("exchange", "refresh", "authorize-silent", "authorize"):
-        pairs = [g for (f, _), g in samples.items() if f == flow]
-        for pair in pairs:
-            if len(pair) != 2 or {v for v, _, _ in pair} != {"fifo", "lifo"} or pair[0][2] != pair[1][2]:
-                raise ValueError(f"incomplete pool comparison or unequal starting database sizes: {flow}")
-        valid = [g for g in pairs if all(r["status"] in ("PASS", "FAIL") and not r["invalid_reasons"] for _, r, _ in g)]
-        for variant in ("fifo", "lifo"):
-            subset = [r for g in valid for v, r, _ in g if v == variant]
-            ops = [r["operations"]["all"] for r in subset]
-            latency = " / ".join(formatted([op["offered_to_completion_success_ms"][q] for op in ops]) for q in ("95", "99"))
-            pg = " / ".join(formatted([r[k]["postgres"] for r in subset], 1) for k in ("role_peak_rss_mib", "role_peak_pss_mib"))
-            cpu = " / ".join((formatted([r["resources"]["app"]["mean_cpu_cores"] for r in subset]),
-                              formatted([r["server_total_cpu_cores"] for r in subset])))
-            pss = " / ".join(formatted([r[k] for r in subset], 1) for k in ("app_peak_pss_mib", "server_peak_pss_mib"))
-            result.append([("已登录显式同意＋兑换" if flow == "authorize" else FLOWS[flow]), variant.upper(), formatted([op["successful_tps"] for op in ops]), latency, pg, pss, cpu, len(valid)])
-    return table(["业务","策略","成功 TPS","P95 / P99 ms","PG RSS / PSS（MiB）","主服务 / 总 PSS（MiB）","主服务 / 总 CPU（核）","有效配对组数"], result)
-
-
-def pg_table_activity():
-    captures = json.loads((HERE / "evidence/environment/pg-table-activity.json").read_bytes())
-    rows = []
-    for c in captures:
-        window = json.loads((HERE / "evidence/windows" / (c["window"] + ".json")).read_bytes())
-        if window["peer"] != "nazo" or window["rate"] != 1000 or scenario(window) != c["scenario"]:
-            raise ValueError("table activity linked to a different workload")
-        before, after = c["before"], c["after"]
-        if max(abs(before["at_ns"]-c["start_ns"]), abs(after["at_ns"]-c["end_ns"])) > 10**9:
-            raise ValueError("table activity outside the measurement boundaries")
-        deltas = {name: [y-x for x,y in zip(counters, after["tables"][name], strict=True)]
-                  for name,counters in before["tables"].items()}
-        if set(before["tables"]) != set(after["tables"]) or any(min(values) < 0 for values in deltas.values()):
-            raise ValueError("PostgreSQL statistics reset in measurement window")
-        total = [sum(col) for col in zip(*deltas.values())]
-        audit = deltas["security_audit_events"]
-        most_read = max(deltas, key=lambda name: deltas[name][1])
-        op = window["operations"]["all"]
-        label = "已登录显式同意＋兑换" if c["scenario"] == "authorize" else FLOWS[c["scenario"]]
-        rows.append([label, f'{op["successful_tps"]:,.2f}', f'{total[1]:,}',
-                     f'{audit[1]:,}', f'{audit[2]:,} / {total[2]:,}',
-                     f'`{most_read}`（{deltas[most_read][1]:,}）' if total[1] else "—"])
-    return table(["NazoAuth 业务", "成功 TPS", "全表读入块", "审计表读入块", "审计表／全表插入行", "读入块最多的表"], rows)
-
-
-def audit_index_review():
-    data = json.loads((HERE / "evidence/environment/audit-residency.json").read_bytes())
-    uses = {
-        "security_audit_events_pkey": "区分事件，导出、确认和链成员通过 event_id 找回原行",
-        "idx_authorization_decision_request": "同租户同一请求只能提交一次决定",
-        "idx_authorization_decision_par": "同租户同一 PAR URI 只能消费一次，只收录非空 URI",
-        "idx_security_audit_events_pending_order": "按发生时间、事件 ID 领取尚未导出的下一批",
-        "idx_authorization_decision_reclaim": "按保留期限回收已获确认的过期决定",
-    }
-    indexes = {i["name"]: i for i in data["indexes"]}
-    if set(indexes) != set(uses):
-        raise ValueError("audit index inventory changed")
-    inventory = table(["审计事件表索引", "大小 MiB", "所承担的工作"],
-                      [[f"`{k}`", f"{indexes[k]['bytes']/2**20:.3f}", v] for k,v in uses.items()])
-    results = []
-    for c in [dict(scenario="idle", **data["idle"]), *data["windows"]]:
-        before, after = c["before"], c["after"]
-        if "window" in c:
-            w = json.loads((HERE / "evidence/windows" / (c["window"]+".json")).read_bytes())
-            if w["peer"] != "nazo" or scenario(w) != c["scenario"] or w["rate"] != 1000:
-                raise ValueError("audit index sample linked to a different workload")
-        if max(abs(before["at_ns"]-c["start_ns"]), abs(after["at_ns"]-c["end_ns"])) > 10**9:
-            raise ValueError("audit index observation missed the measurement boundary")
-        if any(set(snapshot["audit_indexes"]) != set(indexes) for snapshot in (before, after)):
-            raise ValueError("incomplete audit index counters")
-        deltas = [after["audit_indexes"][k] - before["audit_indexes"][k] for k in indexes]
-        if min(deltas) < 0:
-            raise ValueError("PostgreSQL index counters reset during observation")
-        idx_reads = sum(deltas)
-        heap_reads = after["audit_heap"]["heap_reads"] - before["audit_heap"]["heap_reads"]
-        scans = after["audit_heap"]["seq_scans"] - before["audit_heap"]["seq_scans"]
-        results.append([FLOWS.get(c["scenario"], "停压空闲"), f'{(c["end_ns"]-c["start_ns"])/1e9:g}',
-                        f"{heap_reads:,}", f"{idx_reads:,}", scans])
-    samples = {r["event_type"]:r for r in data["sample"]["rows"]}
-    issued, decided = samples["token_issued"], samples["authorization_decision_committed"]
-    size_note = (f'按 PostgreSQL 数据页抽取 0.5% 样本，{issued["sampled_rows"]:,} 条成功签发记录平均 '
-                 f'{issued["row_bytes"]:.0f} 字节，{decided["sampled_rows"]:,} 条授权决定记录平均 '
-                 f'{decided["row_bytes"]:.0f} 字节，均不含索引。')
-    return [inventory, table(["独立复核窗口", "秒", "审计主表读入块", "五个索引合计读入块", "审计主表顺序扫描"], results), size_note]
-
-
-def pg_context_table():
-    captures = json.loads((HERE / "evidence/environment/pg-contexts.json").read_bytes())
-    result = []
-    for capture in captures:
-        sample = json.loads((HERE / "evidence/windows" / (capture["after_window"] + ".json")).read_bytes())
-        if sample["peer"] != capture["peer"] or sample["flow"] != "exchange" or sample["rate"] != 1000:
-            raise ValueError("PostgreSQL context sample is linked to a different workload")
-        backends = list(capture["backends"].values())
-        total = [sum(b["total"][i] for b in backends) / 2**20 for i in range(3)]
-        def allocated(*contexts):
-            return sum(b["contexts"].get(k, [0])[0] for k in contexts for b in backends) / 2**20
-        result.append([SERVICES[capture["peer"]], len(backends), *(f"{v:.1f}" for v in total),
-                       f"{allocated('CacheMemoryContext'):.1f}", f"{allocated('CachedPlan', 'CachedPlanSource'):.1f}"])
-    return table(["服务", "空闲连接数", "分配", "其中空闲", "在用", "CacheMemoryContext 分配",
-                  "CachedPlan 与 CachedPlanSource 分配"], result)
-
-
-def pg_tables():
-    with gzip.open(HERE / "evidence/postgres-maps.jsonl.gz", "rt", encoding="utf8") as stream:
-        records = [json.loads(line) for line in stream]
-    sequences = defaultdict(list)
-    for row in records:
-        if "sequence" in row:
-            sequences[row["sequence"]].append(row)
-    for block in sequences.values():
-        block.sort(key=lambda row: row["start_ns"])
-        if ([(r["stage"], r["scenario"], r["mode"]) for r in block] != [
-                ("1", "authorize", "restart"), ("2", "authorize", "retain"), ("3", "userinfo", "retain")] or
-            len({(r["samples"][0]["device"], r["samples"][0]["inode"]) for r in block}) != 1 or
-            any((r["samples"][0]["device"], r["samples"][0]["inode"]) !=
-                (r["disconnected"]["device"], r["disconnected"]["inode"]) for r in block)):
-            raise ValueError("inconsistent PostgreSQL repeat sequence")
-    groups = defaultdict(list)
-    for r in records:
-        groups[r["scenario"], r["rate"], r["peer"], r.get("stage", "cold")].append((r, pg_peak(r)))
-    cold, repeat, activity = [], [], []
-    for (flow, rate, peer, stage), group in sorted(groups.items(), key=lambda kv: (
-            list(FLOWS).index("authorize-consent" if kv[0][0] == "authorize" and kv[0][2] == "nazo" else kv[0][0]),
-            kv[0][1], list(SERVICES).index(kv[0][2]), kv[0][3])):
-        records, peaks = zip(*group)
-        def field(i):
-            return formatted([p[i] / 1024 for p in peaks], 1)
-        tail = " / ".join(formatted([r["successful_tail_ms"][q] for r in records]) for q in ("95","99"))
-        footprint = field(1) + " / " + field(2)
-        if stage == "cold":
-            cold.append([("已登录授权＋兑换（显式同意）" if flow == "authorize" and peer == "nazo" else FLOWS[flow]), f"{rate:,}", SERVICES[peer], formatted([r["success"]/r["seconds"] for r in records]),
-                         tail, formatted([p[0] for p in peaks], 0), footprint, field(3), field(5) + " / " + field(6),
-                         formatted([100*(p[5]-p[6])/(p[1]-p[2]) for p in peaks], 1),
-                         formatted([r["before"]["db_bytes"]/2**20 for r in records], 1),
-                         f"{len(group)} / {sum(r['performance_status'] != 'INVALID' for r in records)}"])
-            if peer == "nazo":
-                def changes(keys):
-                    return formatted([sum(r["after"][k] - r["before"][k] for k in keys) for r in records], 0)
-                activity.append([FLOWS[flow], f"{rate:,}", changes(("hits",)), changes(("reads",)),
-                                 changes(("inserts",)), changes(("updates",)), changes(("deletes",))])
-        else:
-            after = [pg_totals(r["disconnected"]) for r in records]
-            idle = " / ".join(formatted([a[i]/1024 for a in after],1) for i in (1,2))
-            repeat.append([stage, FLOWS[flow], tail, footprint, field(3), idle,
-                           formatted([a[3]/1024 for a in after], 1), len(group)])
-    return [table(["业务", "目标 TPS", "服务", "成功 TPS", "观测 P95 / P99 ms", "PG 进程", "PG RSS / PSS",
-                   "PG 私有页", "主共享映射 RSS / PSS", "差额解释比例 %", "测前库大小", "观测 / 性能有效轮数"], cold),
-            "NazoAuth 的四条授权写链路均跑到约 1,000 成功 TPS。与 UserInfo 相比，它们在 RSS 峰值时有更多数据库进程，主共享映射被更多进程同时计入 RSS，私有页和 PSS 也有实际增加。下表是每轮准备夹具前至停压后的 PostgreSQL 统计增量中位数，包含夹具、预热和正式窗口。缓冲区读取计数可包含操作系统页缓存命中，无法由此推算物理磁盘读取量。",
-            table(["NazoAuth 业务", "目标 TPS", "缓冲区命中", "读入缓冲区的块", "插入行", "更新行", "删除行"], activity),
-            "同库重复试验使用同一个 NazoAuth 数据库，每组依次运行以下三步。组内只在第一步重启 PostgreSQL。每步结束后停止应用，再采集 PostgreSQL；三步的开始时间、共享映射标识和断连后读数均保存在附件。",
-            table(["顺序", "业务", "观测 P95 / P99 ms", "峰时 PG RSS / PSS", "峰时私有页", "断连后 PG RSS / PSS", "断连后私有页", "轮数"], sorted(repeat)),
-            "断连后的读数只统计仍在运行的 PostgreSQL 进程所映射的页。内核仍可保留文件缓存与共享内存对象；进程 PSS 的下降不能单独证明整机释放了等量内存。本试验观察短时负载和连接生命周期，无法判断长期泄漏。"]
-
-def section_tables(output):
-    pss_sections = {r[0] for r in output if r[16] != "—"}
-    sections = defaultdict(list)
-    for r in output:
-        sections[r[0]].append([
-            r[2], r[1], r[3], r[4] + " / " + r[5], r[6] + " / " + r[7],
-            " / ".join(r[8:12]), r[12], r[13], *([r[16]] if r[0] in pss_sections else []), r[14], r[15],
-        ])
-    for section in sections.values():
-        section.sort(key=lambda row: (int(row[0].replace(",", "")), list(SERVICES.values()).index(row[1].split(" (")[0]), row[2]))
-    blocks = ["## 固定到达率结果"]
-    header = ["目标 TPS", "服务", "发压", "发出／成功 TPS", "失败／未发出",
-              "P50 / P95 / P99 / P99.9 ms", "CPU 主／总（核）",
-              "RSS 主／总（MiB）", "PSI %", "有效轮数"]
-    for label, rows in sections.items():
-        if label != "两类混合" and not label.startswith("五类混合"):
-            blocks.append("### " + label)
-            columns = header[:-2] + ["峰值 PSS 主／PG／Valkey／总（MiB，采样轮数）"] + header[-2:] if label in pss_sections else header
-            blocks.append(table(columns, rows))
-    mixed = [(label, rows) for label, rows in sections.items()
-             if label == "两类混合" or label.startswith("五类混合")]
-    if mixed:
-        blocks.append("<details>\n<summary>混合负载补充数据</summary>")
-        for label, rows in mixed:
-            columns = header[:-2] + ["峰值 PSS 主／PG／Valkey／总（MiB，采样轮数）"] + header[-2:] if label in pss_sections else header
-            blocks.extend(["### " + label, table(columns, rows)])
-        blocks.append("</details>")
-    return blocks
-
-
-def render(rows, published):
+def aggregates(rows):
     cells = defaultdict(list)
     for row in rows:
         revision = row.get("product_revision", "unknown") if row["peer"] == "nazo" else ""
-        cells[(*group(row), revision, "role_peak_pss_mib" in row)].append(row)
-    blocks = ["# OAuth / OIDC 单实例性能基准", INTRO] if published else ["# OAuth / OIDC 本次测量"]
-    blocks.append(f"固定到达率测试共 **{len(rows)} 个有效窗口**。下表为同配置有效窗口的逐项中位数。发出／成功 TPS 分别为每秒发出／成功的业务操作数；失败和未发出为每轮次数。延迟从计划到达到成功完成，包含调度等待。CPU 为平均用核，RSS 为采样峰值（MiB）。主／总分别表示主服务及含活跃外部依赖的整个服务端。`—` 表示缺少相应样本。有无 PSS 采样的窗口分行汇总；每行吞吐、分位延迟和内存使用同一组窗口。PSS 栏括号内为实采轮数，各组件单列峰值，服务端总值取同批读数之和的峰值。不同配置分别列出。")
-    output = []
-    for key, group_rows in sorted(cells.items(), key=lambda kv: (list(FLOWS).index(kv[0][0]),kv[0][1],kv[0][3],list(SERVICES).index(kv[0][2]),kv[0][6:])):
-        flow,rate,peer,profile,warm,seconds,users,families,revision,has_pss = key
-        ops = [r["operations"]["all"] for r in group_rows]
-        def metric(k,d=2):return formatted([o[k] for o in ops],d)
-        def stat(k,d=2):return formatted([r[k] for r in group_rows],d)
-        lat = [formatted([(o["offered_to_completion_success_ms"] or {}).get(q) for o in ops]) for q in ("50","95","99","99.9")]
-        cpu = formatted([r["resources"]["app"]["mean_cpu_cores"] for r in group_rows]) + " / " + stat("server_total_cpu_cores")
-        mem = formatted([r["role_peak_rss_mib"]["app"] if "role_peak_rss_mib" in r
-                         else r["resources"]["app"]["peak_rss_sum_mib"] for r in group_rows], 1) + " / " + formatted(
-                             [r.get("server_peak_rss_mib", r["server_peak_rss_sum_mib"]) for r in group_rows], 1)
-        sampled = [r for r in group_rows if "role_peak_pss_mib" in r]
-        pss = "—"
-        if sampled:
-            roles = [formatted([r["role_peak_pss_mib"].get(role) for r in sampled], 1)
-                     for role in ("app", "postgres", "valkey")]
-            pss = " / ".join([*roles, formatted([r["server_peak_pss_mib"] for r in sampled], 1)]) + f"（{len(sampled)}）"
-        label=FLOWS[flow] + (f"（{users}×{families}）" if users else "")
-        if flow == "authorize":
-            label += "（显式同意）" if peer == "nazo" else "（已授权客户端）"
-        if flow == "mixed-core":
-            label += "（授权子操作含同意）" if peer == "nazo" else "（授权子操作免同意）"
-        service = SERVICES[peer] + (f" (`{revision[:7]}`)" if peer == "nazo" and not published else "")
-        output.append([label, service, format(rate,","), "宽" if profile=="journal-wide" else "标准",
-                       formatted([a["sent"]/seconds for a in ops]),metric("successful_tps"),metric("failed",1),metric("not_sent",1),
-                       *lat,cpu,mem,stat("host_cpu_psi_pct"),len(ops),pss])
-    if published:
-        blocks.extend(["## 五服务覆盖", "下表列出五个规定档位中，各服务在标准发压配置下有有效窗口的目标 TPS。各档轮数、成功吞吐及尾延迟见下方明细。“独立语义”所指的协议差异见测试方法。“无有效窗口”表示缺少可发表的观测；有效窗口中测得的零成功会列为 0。", common_coverage(rows)])
-        blocks.extend(overview(output))
-        blocks.extend(["## NazoAuth 密码登录", login_table(),
-                       "每轮启动新进程，32 个已注册账户以 8 并发登录三批，每批 32 次。客户端核验登录响应和 CSRF Cookie。批内吞吐为成功数除以三批实际耗时之和，排除批间 3 秒空闲。延迟从客户端发起登录计至响应及 Cookie 检查完成，每轮 96 个样本，P99 为最慢一次。登录后 PSS 取末批结束 3 秒时的读数，峰值 RSS 为该进程的内核高水位。该闭环登录诊断未同步采集宿主 PSI，延迟与吞吐仅描述此次运行。Hydra 将密码验证委托给外部身份系统，其余服务的密码验证策略在此项中也未统一。"])
-    if published:
-        blocks.extend(["## 服务进程内存",
-                       "单位为 MiB。每格为逐轮采样峰值的中位数。RSS 将各进程映射的共享页分别计入，PSS 按共享比例分摊。服务端合计取同批读数之和的峰值；单个组件的峰值可能出现在不同时刻。PostgreSQL 的多个后端可同时映射共享缓冲区，评估部署占用时应优先读服务端 PSS。横线表示无此依赖或缺少对应读数。Kanidm 的内嵌存储和 Rauthy 的内嵌缓存计入主服务。[Linux 内存统计](https://docs.kernel.org/filesystems/proc.html) · [PostgreSQL 共享缓冲区](https://www.postgresql.org/docs/18/runtime-config-resource.html#GUC-SHARED-BUFFERS)",
-                       memory_table(map(json.loads, (HERE / "evidence/protocol-memory.jsonl").read_bytes().splitlines())),
-                       "每约 2 秒读取服务进程树的 Linux `smaps_rollup`。原始行依次为起止时间（Unix 纳秒）、各角色 PSS、已采集时的各角色 RSS（KiB）；角色顺序为主服务、适用的数据库及缓存。各角色同批采集，跨度最多 1 秒，每轮至少覆盖正式窗口的 65%。UserInfo 使用 32 个不同用户的真实令牌。NazoAuth 每轮重启主服务，UserInfo 专项在组前重启 PostgreSQL，组内延续数据库状态。授权等常规窗口使用该服务已有的数据；逐映射专项按下节说明重启数据库。PostgreSQL 配置为 1 GiB 共享缓冲区、128 个最大连接，应用池为 32。本表的吞吐、P95/P99 和内存均来自同一组观测轮次；延迟按计划到达至成功完成计算，各轮分位数再取中位数。包含宿主干扰或发压迟到的观测仅供参考。“受宿主干扰轮数”是其中被核心调度与 PSI 核查标记的轮数。只有满足整套性能有效性标准的窗口才进入下方吞吐与延迟对照。[逐轮采样与业务计数](evidence/protocol-memory.jsonl) · [12,000 TPS 原始到达记录](evidence/userinfo-reference/) · [其余未归档窗口的成功耗时序列](evidence/memory-success-latencies.zip)"])
-    if published:
-        blocks.extend(["## PostgreSQL 驻留页核查",
-                       "下表各轮在发压前重启数据库进程，保留该服务已有的业务数据和操作系统页缓存。每约 2 秒从 PostgreSQL 各 PID 的 smaps 读取一次页统计。每轮选 PG 合计 RSS 最高的完整采样，取该时刻的 PSS、私有页（Private_Clean + Private_Dirty）、进程数及主共享映射。一个采样批次最多 1 秒。表中为各轮中位数，内存单位 MiB。兑换预热 5 秒、测量 20 秒，其余预热 10 秒、测量 36 秒。P95/P99 取当轮成功业务的计划到达至完成耗时。最后一列分别给出内存采样有效、同时满足正式性能观测条件的轮数。",
-                       "主共享映射取 postmaster 最大的可写共享映射，按设备号与 inode 在所有数据库进程中匹配。差额解释比例 =（该映射 RSS − PSS）/（全部 PG RSS − PSS）。该映射包含 PostgreSQL 主共享内存。采样可以识别同一对象被重复计数的部分，无法据此分辨对象中每页的数据库用途。[Linux 内存统计](https://docs.kernel.org/filesystems/proc.html) · [PostgreSQL 共享内存](https://www.postgresql.org/docs/18/runtime-config-resource.html)",
-                       *pg_tables(),
-                       "Keycloak 静默授权的三轮都完成了计划请求，宿主 CPU PSI 为 18.05%–22.51%，该行延迟仅供参考。Hydra 的兑换与轮换未达到 1,000 成功 TPS，表中保留实得吞吐。各项目测前数据库的物理大小也有差异，跨项目的内存差值同时受数据规模和实现方式影响。不同服务的审计内容、导出与保留策略也未统一，因此跨服务的写链路反映各自配置下的成本。Hydra 的外部同意流程与共同授权链路边界不同；Kanidm 使用内嵌存储。该 PostgreSQL 逐映射试验中，NazoAuth 和 Keycloak 的静默授权使用已登录会话和 `prompt=none`，成功流程为授权与兑换两个 HTTP 请求。NazoAuth 显式同意多一次提交决定，共三个请求。Keycloak 显式同意使用单独的 S256 机密客户端及 `prompt=consent`，逐次提交原生同意表单后兑换。[逐 PID 原始采样与数据库统计](evidence/postgres-maps.jsonl.gz) · [诊断轮 Goose 账本](evidence/pg-arrivals.zip)"])
-    if published:
-        blocks.extend(["## PostgreSQL 连接复用对照", "目标 1,000 TPS，连接池上限 32。同一配对内，两种策略各从一份相同的数据库快照恢复独立副本，测前库大小逐对相等。前三轮的先后顺序依次为 FIFO 先、LIFO 先、FIFO 先；显式同意的两组补测均为 FIFO 先。FIFO 先取最早归还的空闲连接，LIFO 先取最近归还的空闲连接。仅汇总两侧均有效的配对组。本表的 RSS、PSS 各取当轮采样峰值；上一节的逐映射分解取 RSS 峰值时刻。", pool_report(),
-                       "连接复用改变了哪些进程会访问同一批共享页。四条链路的合计 RSS 都降低，按共享比例分摊后的 PSS 变化小得多，轮换的 PSS 反而上升。13 个有效配对中，总 CPU 均降低 0.19–0.41 核；三个轮换配对的数据库 PSS 均上升（2.4–32.7 MiB）。显式同意的四个配对中，P99 差值从 −13.17 到 +168.27 ms。正式服务保留 FIFO。",
-                       "授权码兑换在持久化时校验主体并写入一次性消费凭据；刷新轮换还需更新令牌族和重放凭据。静默授权在同一事务中锁定客户端、用户和既有授权，核查范围后提交决定；提交函数还会校验客户端和用户世代。显式同意同时更新用户授权，并以决定记录约束重复消费。现有观测无法把 PSS 差额归因于其中某条 SQL。[兑换与消费凭据](../crates/persistence-postgres/src/repositories/token_issuance.rs) · [授权事务](../crates/persistence-postgres/src/repositories/authorization_flow.rs) · [决定提交函数](../migrations/20261125000100_authorization_decision_epoch/up.sql)",
-                       "授权码兑换 1,000 TPS 停压后，保留应用连接，读取当时所有空闲业务后端的 PostgreSQL 内存上下文。下表单位为 MiB，每个服务各一次诊断。分配量包含上下文可复用的空闲空间；共享缓冲区、进程映射与操作系统页缓存另计。空闲连接数只含该业务数据库的客户端后端；逐映射表的 PG 进程数还含后台进程。最后两列仅汇总日志点名的上下文。",
-                       pg_context_table(),
-                       "在 NazoAuth 的 32 个后端中，已列出的计划及其源对象共 17.8 MiB。这部分分配量只能解释部分内存差异。复现时在普通兑换窗口结束、应用仍连库时执行 `python3 perf/monitor/pg_contexts.py 数据库容器 数据库名 监控角色`。[逐后端分配计数](evidence/environment/pg-contexts.json) · [PostgreSQL 内存诊断接口](https://www.postgresql.org/docs/18/functions-admin.html)",
-                       "两份独立数据库快照中，授权和安全审计事件表连同索引分别占数据库磁盘空间约 85% 和 92%。这些读数记录了不同的历史业务规模。磁盘大小无法直接换算成内存占用。[关系大小与估算行数](evidence/environment/nazo-pg-relations.json)",
-                       "在以下独立的 1,000 TPS 窗口，用 PostgreSQL 自带的 `pg_statio_user_tables` 和 `pg_stat_user_tables` 在正式测量起止各读取一次累计值，排除发压前准备授权码和会话的工作。读入块包括表、索引和 TOAST；统计发布可能略有延迟。这些计数衡量访问量，操作系统页缓存和最终驻留量需另行观测。每条链路展示一个有效窗口。",
-                       pg_table_activity(),
-                       "复现时在 NazoAuth 的 PostgreSQL 18 部署上，普通窗口创建后、预热结束前运行 `python3 perf/monitor/pg_table_io.py 窗口目录 数据库容器 数据库名 监控角色`。[逐表原始计数及窗口编号](evidence/environment/pg-table-activity.json)",
-                       "### 审计索引与记录成本",
-                       *audit_index_review(),
-                       "索引大小来自同一份已有业务历史的数据库。用只读 EXPLAIN 核实，领取完整待导出事件和选择到期决定的两条原查询都使用各自的部分索引。[复现执行计划的 SQL](monitor/audit_plans.sql)此次基准关闭外部导出，所以待导出索引可以持续增长，PAR 和回收索引各只有 8 KiB。链成员表另有事件、序号和摘要三个唯一键，关闭导出的部署中各为 8 KiB，成功签发不会向该表写入链成员。",
-                       "逐索引复核中，刷新轮换与静默授权的目标均为 1,000 TPS。读入块为 PostgreSQL 从共享缓冲区外取得的块；索引缓存命中、索引写入和维护开销另计。相同链路的不同窗口可以呈现不同的读入量。现有五个索引均承担独立职责，此次保留全部索引。[逐索引计数、大小和执行计划](evidence/environment/audit-residency.json)",
-                       "已登录授权随后兑换会产生决定和签发两项事实；授权码也可以始终没有被兑换。一次刷新轮换用同一条签发事件记录新令牌和轮换来源。成功的 UserInfo 和令牌内省均无需为每次读取新增签发审计行。单纯验证令牌无需保留每次成功签发的历史；服务对用户授权已有独立的可导出审计承诺。机器签发关闭成功审计时省去该事件。五项 PostgreSQL 回归覆盖签发及提交失败、事件确认回收、重复摘要回滚和决定的一次性约束。复算附件列有测试名；在专用测试库设置 `NAZO_AUDIT_TEST_DATABASE_URL` 和 `NAZO_TEST_DATABASE_URL` 后，执行 `cargo test --locked --release -p nazo-postgres --test 套件名 测试名 -- --exact`。[业务记录及保留期限](../docs/security/security-events.md)",
-                       "复现时先按下文部署被测提交。以同一份已应用令牌入口开关补丁的源码构建两个 release 二进制，第二个构建前额外应用下方连接补丁。使用相同构建镜像及 `cargo build --locked --release -p nazo-server --bin nazoauth`。停止测试应用并保存基准数据库快照，每个变体均使用该快照的新副本、连接池 32 和原 CPU 绑定。对四个场景分别执行 `bash perf/bench.sh pg-memory nazo SCENARIO 1000`，轮间交替变体顺序。每轮先恢复数据库副本，再部署该轮二进制。",
-                       "[逐轮原始记录](evidence/pool-locality/) · [候选连接补丁](fixture/pool-locality.patch) · [构建与应用摘要](evidence/environment/pool-locality.json)"])
-    blocks.extend(section_tables(output))
-    if published: blocks.append(METHOD)
-    return "\n\n".join(blocks)+"\n"
+        cells[(*group(row), revision, "role_peak_pss_mib" in row, row.get("generator_sha256") or "",
+               row.get("generator_slots") or 0, row.get("generator_workers") or 0)].append(row)
+    results = []
+    for key, samples in sorted(cells.items(), key=lambda item: (
+            list(FLOWS).index(item[0][0]), item[0][1], item[0][3], list(SERVICES).index(item[0][2]), item[0][6:])):
+        flow, rate, peer, profile, warm, seconds, users, families, revision, has_pss, driver, slots, workers = key
+        ops = [r["operations"]["all"] for r in samples]
+        quantiles = [o["offered_to_completion_success_ms"] for o in ops if o["success"]]
+        q = {p: (max(v[p] for v in quantiles) if p == "100" else median(v[p] for v in quantiles)) if quantiles else None
+             for p in ("50", "95", "99", "99.9", "100")}
+        result = dict(flow=flow, rate=rate, peer=peer, profile=profile, warm=warm, seconds=seconds,
+                      users=users, families=families, revision=revision, has_pss=has_pss, driver=driver, slots=slots, workers=workers,
+                      raw_samples=sum(r.get("_has_ledger", (HERE / "evidence/samples" / (r["id"] + ".tar.gz")).is_file()) for r in samples),
+                      name=label(flow, peer, users, families), samples=len(samples), latency_samples=len(quantiles),
+                      ids=sorted(r["id"] for r in samples),
+                      tps=median(o["successful_tps"] for o in ops), sent=median(o["sent"] / seconds for o in ops),
+                      failed=sum(o["failed"] for o in ops), unsent=sum(o["not_sent"] for o in ops), q=q,
+                      app_cpu=median(r["resources"]["app"]["mean_cpu_cores"] for r in samples),
+                      cpu=median(r["server_total_cpu_cores"] for r in samples),
+                      app_rss=median(r.get("role_peak_rss_mib", {}).get("app", r["resources"]["app"]["peak_rss_sum_mib"]) for r in samples),
+                      rss=median(r.get("server_peak_rss_mib", r["server_peak_rss_sum_mib"]) for r in samples),
+                      psi_min=min(r["host_cpu_psi_pct"] for r in samples),
+                      psi_max=max(r["host_cpu_psi_pct"] for r in samples))
+        if has_pss:
+            result["app_pss"] = median(r["app_peak_pss_mib"] for r in samples)
+            result["pss"] = median(r["server_peak_pss_mib"] for r in samples)
+        results.append(result)
+    return results
 
 
-INTRO = """每次运行一个 OAuth 服务，主服务绑定 **8 个不同物理核心，各使用 1 个逻辑 CPU**。数据库、缓存和发压端独立分配 CPU。Goose 0.19.2 以固定到达率发压。各服务使用原生认证、令牌格式和存储，Kanidm 使用 HTTPS/1.1，其余使用隔离网络内的 HTTP/1.1。
+def fmt(value, digits=2):
+    return "—" if value is None else f"{value:,.{digits}f}"
 
-| 服务 | 被测版本 | 机器令牌与认证 | 运行配置 |
+
+def coverage(data):
+    lines = []
+    for flow in ("machine", "introspect", "user-introspect", "userinfo", "exchange", "refresh", "authorize-silent", "authorize-consent"):
+        cells = []
+        for peer in SERVICES:
+            subset = [g for g in data if g["peer"] == peer and g["profile"] == "base"
+                      and (g["flow"] == flow or flow == "authorize-consent" and peer == "nazo" and g["flow"] == "authorize")]
+            rates = sorted({g["rate"] for g in subset})
+            cells.append("、".join(f"{rate:,}" for rate in rates) if rates else "—")
+        lines.append([FLOWS[flow], *cells])
+    return table(["业务／已测目标 TPS", *SERVICES.values()], lines)
+
+
+def details(data, include_revision=False):
+    blocks = ["## 全部结果", "同一行按产品构建、场景、令牌族规模、已记录的驱动二进制与参数、采样方式分组。未知驱动参数单独列组。分位延迟、吞吐、CPU、内存各取逐轮中位数，Max 取全部轮次最大值；**失败与未发出为所列轮次合计**。最后一列为总轮数／有成功延迟的轮数／有原始账本的轮数。驱动栏为二进制 SHA-256 前八位、在途槽和线程数；未记录的字段以 `?` 标明，单轮结果单列。"]
+    names = list(dict.fromkeys(g["name"] for g in data))
+    for name in names:
+        subset = [g for g in data if g["name"] == name]
+        entries = []
+        for g in subset:
+            profile = "宽" if g["profile"] == "journal-wide" else "标准"
+            profile += "＋PSS" if g["has_pss"] else ""
+            memory = fmt(g["app_pss"], 1) + " / " + fmt(g["pss"], 1) if g["has_pss"] else "—"
+            count = f'{g["samples"]} / {g["latency_samples"]} / {g["raw_samples"]}' + ("（单轮）" if g["samples"] == 1 else "")
+            service = SERVICES[g["peer"]] + (f' (`{g["revision"][:8]}`)' if include_revision and g["peer"] == "nazo" else "")
+            driver = (g["driver"][:8] or "?") + " / " + str(g["slots"] or "?") + " / " + str(g["workers"] or "?")
+            entries.append([f'{g["rate"]:,}', service, profile, driver,
+                            fmt(g["sent"]) + " / " + fmt(g["tps"]),
+                            f'{g["failed"]:,} / {g["unsent"]:,}',
+                            " / ".join(fmt(g["q"][q]) for q in ("50", "95", "99", "99.9", "100")),
+                            fmt(g["app_cpu"]) + " / " + fmt(g["cpu"]),
+                            fmt(g["app_rss"], 1) + " / " + fmt(g["rss"], 1), memory,
+                            fmt(g["psi_min"]) + "–" + fmt(g["psi_max"]), count])
+        blocks.extend([f"<details>\n<summary>{name}</summary>\n",
+                       table(["目标 TPS", "服务", "采样", "驱动／槽／线程", "发出／成功 TPS", "失败／未发出合计",
+                              "P50 / P95 / P99 / P99.9 / Max ms", "CPU 主／总（核）", "RSS 主／总 MiB",
+                              "PSS 主／总 MiB", "宿主 PSI 范围 %", "轮数／延迟／账本"], entries), "</details>"])
+    return blocks
+
+
+def reference_memory():
+    rows = [json.loads(line) for line in (HERE / "evidence/protocol-memory.jsonl").read_bytes().splitlines()]
+    verify_memory(rows)
+    return rows
+
+
+def exclusion_table(observations):
+    cells = defaultdict(list)
+    for row in observations:
+        if row["performance_status"] == "INVALID":
+            cells[row["peer"], row.get("scenario", "userinfo"), row["target_tps"]].append(row)
+    rows = []
+    reasons = {"external_cpu_contention": "宿主 CPU 竞争", "generator_scheduling": "发压迟到",
+               "resource_sampling": "资源采样不足", "pss_sampling": "内存采样不足",
+               "refresh_family_pool": "令牌族不足"}
+    for (peer, flow, rate), samples in sorted(cells.items(), key=lambda pair: (
+            list(SERVICES).index(pair[0][0]), pair[0][1], pair[0][2])):
+        counts = defaultdict(int)
+        for row in samples:
+            for reason in row["performance_invalid_reasons"]:
+                counts[reason] += 1
+        rows.append([SERVICES[peer], label("introspect" if flow == "machine-introspect" else flow, peer), f"{rate:,}", len(samples),
+                     "、".join(f"{reasons.get(k, k)} {v}" for k, v in sorted(counts.items()))])
+    return table(["服务", "业务", "目标 TPS", "排除轮数", "原因（可同时出现）"], rows)
+
+
+def chart_specs(data, observations):
+    def points(flow, rate):
+        found = [g for g in data if g["flow"] == flow and g["rate"] == rate and g["profile"] == "base"]
+        # The overview scenarios have one sampling configuration per service.
+        # A new configuration must be shown separately, never silently chosen.
+        if len({g["peer"] for g in found}) != len(found):
+            raise ValueError(f"overview requires separate sampling panels: {flow}/{rate}")
+        return {g["peer"]: g for g in found}
+    throughput = [dict(title=title, rate=rate, points=points(flow, rate)) for title, flow, rate in (
+        ("机器令牌签发 · 1,000 TPS", "machine", 1000),
+        ("机器令牌签发 · 6,000 TPS", "machine", 6000),
+        ("UserInfo · 1,000 TPS", "userinfo", 1000),
+        ("UserInfo · 12,000 TPS", "userinfo", 12000))]
+    reads = [dict(title="UserInfo · 1,000 TPS", rate=1000, points=points("userinfo", 1000))]
+    memory = []
+    for peer in SERVICES:
+        subset = [r for r in observations if r["peer"] == peer and r.get("scenario", "userinfo") == "userinfo" and r["target_tps"] == 1000]
+        if subset:
+            memory.append(dict(peer=peer, pss=median(r["server_peak_pss_mib"] for r in subset),
+                               tps=median(r["success"] / r["seconds"] for r in subset),
+                               samples=len(subset), performance_samples=sum(r["performance_status"] != "INVALID" for r in subset),
+                               windows=sorted(r["window"] for r in subset)))
+    return {"throughput": throughput, "read-latency": reads, "read-cpu": reads, "memory": memory}
+
+
+def chart_digest(value):
+    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def check_charts(specs):
+    for name, data in specs.items():
+        path = HERE / "charts" / (name + ".svg")
+        root = ET.parse(path).getroot()
+        digest = root.find(".//{http://purl.org/dc/elements/1.1/}description")
+        if digest is None or digest.text != "data-sha256:" + chart_digest(data):
+            raise ValueError(f"{path}: regenerate charts from the current observations")
+
+
+def write_charts(specs):
+    # Rendering is optional; ordinary validation needs only the Python standard library.
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
+    plt.rcParams.update({"font.family": ["Noto Sans CJK JP", "DejaVu Sans"], "font.size": 11,
+                         "axes.spines.top": False, "axes.spines.right": False,
+                         "axes.spines.left": False, "axes.spines.bottom": False,
+                         "svg.hashsalt": "nazoauth-oauth-benchmark", "figure.facecolor": "white"})
+    colors = dict(zip(SERVICES, ("#12766D", "#386CB0", "#925FA8", "#D48729", "#64748B")))
+    directory = HERE / "charts"
+    directory.mkdir(exist_ok=True)
+    for name, spec in specs.items():
+        if name == "memory":
+            fig, axis = plt.subplots(figsize=(12, 5.2))
+            maximum = max(row["pss"] for row in spec)
+            for i, row in enumerate(spec):
+                axis.barh(i, row["pss"], height=.48, color=colors[row["peer"]])
+                axis.text(row["pss"] + maximum * .02, i, f'{row["pss"]:,.1f} MiB', va="center", fontsize=11)
+                axis.text(maximum * 1.30, i, f'{row["tps"]:,.2f} TPS · {row["performance_samples"]}/{row["samples"]} 轮', va="center", fontsize=10)
+            axis.set_yticks(range(len(spec)), [SERVICES[row["peer"]] for row in spec])
+            axis.invert_yaxis()
+            axis.set_xlim(0, maximum * 1.95)
+            axis.set_xticks([0, 250, 500, 750, 1000])
+            axis.set_xlabel("全服务端峰值 PSS（MiB）· 越低，占用越少")
+            axis.set_title("部署内存 · UserInfo 计划 1,000 TPS", loc="left", fontsize=16, pad=24)
+            axis.text(maximum * 1.30, -.65, "同批成功 TPS · 性能有效／内存观测轮数", fontsize=9)
+            axis.grid(axis="x", color="#E5E7EB", zorder=0)
+            axis.set_axisbelow(True)
+            fig.text(.12, .02, "PSS 按共享比例分摊内存；内存观测保留宿主干扰轮次。吞吐与延迟排名使用通过性能核查的窗口。", fontsize=10, color="#475569")
+            fig.subplots_adjust(left=.12, right=.98, bottom=.18, top=.83)
+        else:
+            cols = 2 if name == "throughput" else 1
+            rows = 2 if name == "throughput" else 1
+            fig, axes = plt.subplots(rows, cols, figsize=(13.8 if cols == 2 else 10.8, 7.7 if rows == 2 else 4.6), squeeze=False)
+            for axis, panel in zip(axes.flat, spec):
+                entries = panel["points"]
+                values = []
+                for peer in SERVICES:
+                    row = entries.get(peer)
+                    values.append(0 if row is None else row["tps"] if name == "throughput" else row["q"]["99"] if name == "read-latency" else row["cpu"])
+                maximum = panel["rate"] if name == "throughput" else max(values) * 1.08
+                for i, (peer, value) in enumerate(zip(SERVICES, values)):
+                    row = entries.get(peer)
+                    if row is None:
+                        axis.text(maximum * .025, i, "无有效测量", va="center", fontsize=10, color="#64748B")
+                        continue
+                    axis.barh(i, value, height=.5, color=colors[peer], zorder=3,
+                              alpha=1 if row["samples"] >= 3 else .40)
+                    if name == "read-latency":
+                        axis.plot(row["q"]["95"], i, "|", color="white", markersize=15, markeredgewidth=2.8, zorder=4)
+                        text_value = f'{value:,.2f} ms'
+                    elif name == "read-cpu":
+                        text_value = f'{value:.2f} 核'
+                    else:
+                        text_value = f'{value:,.2f}'
+                    suffix = f' · n={row["samples"]}' + (" 单轮" if row["samples"] == 1 else "")
+                    if not (row["driver"] and row["slots"] and row["workers"]):
+                        suffix += " †"
+                    axis.text(value + maximum * .025, i, text_value + suffix, va="center", fontsize=9.5)
+                axis.set_yticks(range(len(SERVICES)), list(SERVICES.values()))
+                axis.invert_yaxis()
+                axis.set_xlim(0, maximum * 1.60)
+                axis.set_xticks([maximum * x for x in (0, .25, .5, .75, 1)] if name == "throughput" else axis.get_xticks()[axis.get_xticks() <= maximum])
+                axis.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:,.2f}" if name == "read-cpu" else f"{x:,.0f}"))
+                axis.set_title(panel["title"], loc="left", fontsize=14, pad=16)
+                axis.grid(axis="x", color="#E5E7EB", zorder=0)
+                axis.set_axisbelow(True)
+                axis.tick_params(axis="both", length=0)
+                axis.set_xlabel("成功业务／秒" if name == "throughput" else "P99 ms · 白线为 P95" if name == "read-latency" else "全服务端 CPU（核）")
+            notes = {"throughput": "逐轮中位数；n 为纳入轮数，浅色为不足 3 轮。†：旧汇总未记录全部驱动参数。无有效测量不等于零吞吐。",
+                     "read-latency": "从计划到达到成功完成，包含排队。五服务使用同一已记录驱动 357a8ea7，各 3 轮，均接近 1,000 成功 TPS。",
+                     "read-cpu": "应用＋实际使用的 PostgreSQL／Valkey；Kanidm 内嵌数据库计入应用。五服务使用同一已记录驱动 357a8ea7。"}
+            fig.text(.09, .02, notes[name], fontsize=10, color="#475569")
+            fig.subplots_adjust(left=.09, right=.97, bottom=.12 if rows == 2 else .22, top=.93 if rows == 2 else .84, hspace=.65, wspace=.40)
+        path = directory / (name + ".svg")
+        fig.savefig(path, metadata={"Date": None, "Description": "data-sha256:" + chart_digest(spec)}, bbox_inches="tight")
+        path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n", encoding="utf8")
+        plt.close(fig)
+
+
+INTRO = """**被测构建：[`33984220`](https://github.com/nazozero/NazoAuth/commit/33984220ed1f48228e4b0f4ed8c345c2f63feb3b)＋[令牌入口开关补丁](fixture/token-ip-quota.patch)。PR #310 的后续代码修订尚未进行五服务负载复测。**
+
+主服务使用 **8 个物理核心，每核 1 个逻辑 CPU**。PostgreSQL、Valkey 和发压端使用独立核心。每次只运行一个 OAuth 服务，以 Goose 0.19.2 的固定到达率测量真实协议请求。
+
+**TPS 是每秒成功业务数，P99 是 99% 成功业务完成所需的时间。** 授权和兑换的多次 HTTP 请求合算一笔业务。图中的 `n` 是有效测量轮数；不足三轮的结果单独标明。
+
+[结果概览](#结果概览) · [部署内存](#部署内存) · [全部结果](#全部结果) · [测试条件](#测试条件) · [复现](#复现)
+"""
+
+CONDITIONS = """## 测试条件
+
+| 服务 | 被测版本 | 机器令牌／客户端认证 | 服务配置 |
 |---|---|---|---|
-| NazoAuth | 源码 `33984220ed1f48228e4b0f4ed8c345c2f63feb3b`，应用随附令牌入口开关补丁 | RS256 JWT、Basic | PostgreSQL 池 32、Valkey，令牌入口 IP 配额和机器签发成功审计关闭；用户兑换、轮换保留事务审计，外部导出关闭 |
-| Rauthy | 0.37.2 · 标签 `fe6bcb95192e8a83c29e2b525bf4960933bea3bd` | RS256 JWT、表单凭据 | PostgreSQL 池 32、内嵌缓存；令牌签发事件关闭 |
-| Kanidm | 1.12.1 · 标签 `fb052e5357cf09dcdffd07fef4045e8066a68c0b` | JWE、Basic | 内嵌数据库计入主服务，HTTPS/1.1，验证测试 CA |
-| Keycloak | 26.8.2 · 镜像修订 `26018f2a4c6155cfe2c28f078996390bf5191946` | RS256 JWT、Basic | PostgreSQL 池 32、JVM 堆 512 MiB–4 GiB，JVM 可见处理器参数 16，实际执行受 8 核亲和性约束 |
-| Ory Hydra | 26.2.0 · 镜像修订 `0b84568fffccf151dc5e6c7955fdfb738555bf4b` | RS256 JWT、Basic | PostgreSQL 池 32，私网隔离管理入口，以 `serve all --dev` 运行 |
+| NazoAuth | [`33984220`](https://github.com/nazozero/NazoAuth/commit/33984220ed1f48228e4b0f4ed8c345c2f63feb3b)＋[令牌入口开关补丁](fixture/token-ip-quota.patch) | RS256 JWT／Basic | PostgreSQL 池 32、Valkey；机器签发成功审计和令牌入口 IP 配额关闭；用户签发及轮换保留事务审计，外部导出关闭 |
+| Rauthy | 0.37.2 · `fe6bcb95` | RS256 JWT／表单凭据 | PostgreSQL 池 32、内嵌缓存；令牌签发事件关闭 |
+| Kanidm | 1.12.1 · `fb052e53` | JWE／Basic | 内嵌数据库，HTTPS/1.1，验证测试 CA |
+| Keycloak | 26.8.2 · `26018f2a` | RS256 JWT／Basic | PostgreSQL 池 32；堆 512 MiB–4 GiB；JVM 可见处理器参数 16，执行受 8 核亲和性约束 |
+| Ory Hydra | 26.2.0 · `0b84568f` | RS256 JWT／Basic | PostgreSQL 池 32；`serve all --dev`，管理端口仅开放给隔离网络 |
 
-UserInfo 的 12,000 TPS 档列出实发、成功吞吐和观测 P95/P99；用于正式性能对照的轮数按宿主与发压核查单独统计。"""
+这是上述配置下的产品部署对照。原生令牌格式、客户端认证方式、状态读写和审计语义均随服务保留。机器令牌的 RS256 组使用 2,048 位密钥及 300 秒有效期；Kanidm 的 JWE 令牌为 900 秒。机器签发返回的 scope 为 `profile`，Rauthy 为 `openid profile`。除 Kanidm 外，流量使用隔离网络内的 HTTP/1.1。请求准备时核对签名、令牌属性与内省结果。镜像摘要、构建哈希和运行参数见 [环境快照](evidence/environment/)、[部署脚本](deploy.sh)及[原生服务配置](native-deploy.sh)。
 
-METHOD = """## 测试方法
+| 项目 | 设置与计量边界 |
+|---|---|
+| 硬件 | CNB Linux x86-64、AMD EPYC 9K65、无 Swap。批次使用相同 CPU 型号和角色分配；各角色核心互不重叠 |
+| 资源 | 应用 8 个逻辑 CPU，PostgreSQL 14、Valkey 2、Goose 15；主服务无硬内存上限。应用 CPU 与全服务端 CPU 分列 |
+| 持久化 | PostgreSQL：1 GiB shared buffers、128 个最大连接，fsync、synchronous_commit、full_page_writes 开启。Valkey：RDB/AOF 关闭。数据库状态在同一服务各轮间延续 |
+| 窗口 | 授权码兑换预热 5 秒、测量 20 秒；其余正式链路预热 10 秒、测量 36 秒。应用在每轮前重启；内存专项在组前重启 PostgreSQL |
+| 发压 | 标准：8,192 在途槽、15 工作线程；宽：32,768 槽、24 线程、独立日志写入、扩展源端口。不同配置分行汇总 |
+| 时序 | 计划到达固定，调度迟到 5 ms 放弃发出；单次 HTTP 超时 5 秒，不自动重试。延迟包含计划到达到发出之间的等待 |
+| 计数 | 成功 TPS = 正式窗口内计划到达并最终成功的业务数 ÷ 窗口秒数，包含窗口后返回的成功。失败和未发出另列，原始 JSON 保留窗口结束时在途数 |
+| 统计 | 吞吐、延迟、CPU、内存取逐轮中位数，分位数不跨轮合并，Max 取所有轮次最大值。失败／未发出取合计。零成功轮没有成功延迟分位数，单列延迟样本轮数 |
+| CPU 与内存 | CPU 按进程时间增量计算；RSS/PSS 为窗口内采样峰值。全服务端峰值按同时刻求和，组件峰值不能直接相加 |
 
-- **查询。** UserInfo 读取用户资料；内省读取令牌有效状态。机器令牌和用户令牌分别统计。用户令牌内省使用 32 个用户各自通过授权码签发的 16 枚令牌；发压前逐枚核对内省的 active 和用户主体，并通过签名令牌验证主体来源。Keycloak 使用列入令牌 audience 的机密客户端进行内省。Hydra 内省由私网管理端承接，调用者认证边界与另四家不同。
-- **签发与授权。** 机器签发包含客户端认证和实际签发。授权码在测前用真实用户会话及 S256 PKCE 准备，测量时每个授权码只兑换一次。已登录链路包含重定向、必要的授权确认和兑换，免交互与显式同意各自成组。Hydra 的完整授权需要外部身份和同意服务。Kanidm 的既有会话可以发起静默授权，但该版本还未实现 `prompt=consent` 强制重复同意，常规授权单列。Rauthy 的常规授权从会话续授权接口开始。静默授权则从带 `prompt=none` 的授权端点开始，读取页面给出的自动续授权动作和 CSRF 值，再提交并兑换。该版本的 `prompt=consent` 返回交互登录页面，所用密码账户与只提交同意决定的链路分组。[Rauthy 0.37.2 授权实现](https://github.com/sebadob/rauthy/blob/fe6bcb95192e8a83c29e2b525bf4960933bea3bd/src/api/src/oidc.rs#L207-L251) · [Kanidm 1.12.1 授权实现](https://github.com/kanidm/kanidm/blob/v1.12.1/server/lib/src/idm/oauth2.rs#L8117)
-- **轮换。** 表中括号表示用户数 × 每用户独立令牌族数。成功后用返回的后继令牌继续该族。Rauthy 被测配置的后继令牌有约 240 秒生效等待；Kanidm 的重复消费行为与严格一次性兑换及即时轮换组不同。这些场景没有共同的安全和时序前提。
-- **混合。** 两类混合每三次安排一次机器签发、两次内省；五类混合的签发、内省、兑换、刷新、已登录授权分别占 30%、50%、10%、5%、5%。有效机器令牌集由 16 个客户端各签发 32 枚；授权码兑换使用 32 个用户。登录、造数通过各项目管理或协议接口完成，每家使用自己的数据库。已登录授权需要显式同意的五类混合单独列组。重复安排到同一刷新令牌族的操作共享最新后继，逐业务项计数和延迟见每轮 JSON 的 `operations`。[四次连续轮换的驱动核验](evidence/environment/refresh-driver.json)
-- **过载。** 成功 TPS = 测量期内计划到达、最终成功的业务数 ÷ 测量秒数，包含窗口结束后返回的成功。多 HTTP 步骤构成的一笔授权只算一次业务。未发出可能来自调度迟到、在途槽耗尽或前一个刷新未完成。成功请求延迟与成功数、失败数、未发出数一起阅读。Kanidm 在部分混合档位的成功样本全部来自内省。
-- **资源。** CNB Linux x86-64。对照项目的 CPU 为 AMD EPYC 9K65、无 Swap；NazoAuth 的处理器同为 AMD EPYC 9K65。主服务无硬内存上限，数据库、缓存、Goose 及采集器使用独立核。常规配置分别给 PostgreSQL、Valkey、Goose 分配 14、2、15 个逻辑 CPU。内存取测量窗口内采样到的进程 RSS；服务端总峰值按同时刻汇总，共享页可能重复计入。带 PSS 采样的窗口将共享页按持有进程分摊，主／总分别为主服务和该部署服务端合计的采样峰值。内存专项和 NazoAuth 对照表优先使用同批 smaps 的 RSS 与 PSS；其余固定到达率窗口使用进程 stat 的 RSS。各角色同批采样，每次采样跨度不超过 1 秒。CPU 是平均占用核数，宿主 CPU PSI 是存在可运行任务等待 CPU 的时间占比。
-- **发压。** Goose 0.19.2，调度迟到 5 ms 放弃发出，HTTP 超时 5 秒，共享 HTTP 连接池，固定计划到达，无自动重试。标准配置为 8,192 在途槽、15 工作线程，宽配置为 32,768 槽、24 线程、独立日志写入及扩展源端口范围。只在相同配置内聚合。除兑换和五类混合为预热 5 秒、测量 20 秒外，其余为 10 秒和 36 秒。每个计划操作记录计划、实际发出与完成时间。P99.9 在低样本量窗口可能仅由少数样本决定。
-- **有效性。** 只纳入夹具校验成功、计数可对账、资源采样及亲和性合格的窗口。Goose 调度迟发超过计划数 0.1% 或存在发压端资源瓶颈时排除；服务端过载仍保留。宿主干扰结合 PSI、所分配核心的非测试负载和调度等待判断。高整机 CPU 利用率本身不构成排除依据。有效轮数表示测量质量，与产品延迟门槛分开计算。
+### 各条链路做什么
 
-## 复现
+| 业务 | 计时范围及共同前提 |
+|---|---|
+| 机器令牌签发 | 客户端凭据认证、签发新的访问令牌，核对成功响应的 token_type、有效期和非空令牌 |
+| UserInfo | 32 个真实用户令牌轮流读取资料，核对返回的用户主体 |
+| 机器／用户令牌内省 | 核对 `active: true`。机器集为 16 个客户端各 32 枚令牌，用户集为 32 个用户各 16 枚令牌；Hydra 使用受信任管理入口 |
+| 授权码兑换 | 计时前通过真实会话和 S256 PKCE 准备，每码只兑换一次；测量前检查整批授权码的过期预算 |
+| 刷新轮换 | 32/64/128 个用户，各自持有独立令牌族；同一族仅使用最新返回的后继令牌。用户数×族数在表标题中给出 |
+| 静默授权＋兑换 | 从带 `prompt=none` 的授权请求开始至令牌响应。NazoAuth、Keycloak 通常为 2 次 HTTP，Rauthy 包含原生会话续授权提交，共 3 次 |
+| 显式同意＋兑换 | 从授权请求开始，实际提交同意决定，再兑换授权码；与免交互流程分组 |
 
-离线重建只需 Python 3.10+。`--check --raw` 校验归档摘要并重算逐请求数据；在 Linux 上还会从采样文件重算 CPU、总峰值 RSS 和 PSI。从仓库根目录执行：
+Rauthy 的被测刷新配置存在约 240 秒的后继生效等待，Kanidm 的重复消费与即时严格轮换组语义不同，所以没有合并到该组。Hydra 的完整授权依赖外部身份与同意服务。Kanidm 1.12.1 未实现 `prompt=consent` 强制重复同意；Rauthy 的该参数在所用账户配置中返回登录交互，因此只比较各自已验证的链路。[轮换驱动核验](evidence/environment/refresh-driver.json) · [Rauthy 授权实现](https://github.com/sebadob/rauthy/blob/fe6bcb95192e8a83c29e2b525bf4960933bea3bd/src/api/src/oidc.rs) · [Kanidm 授权实现](https://github.com/kanidm/kanidm/blob/v1.12.1/server/lib/src/idm/oauth2.rs)
+
+### 纳入规则
+
+不同驱动二进制、槽数、线程数、采样方式分别汇总；旧归档未记录的字段保持未知，不填成标准配置。
+
+夹具核验、业务计数、资源采样和 CPU 亲和性均通过才进入正式对照。调度迟发超过计划数 0.1%、发压端资源不足或无法排除宿主竞争的窗口不纳入。服务端自身过载、HTTP 失败和未达到目标吞吐的有效窗口保留。`PASS`/`FAIL` 是负载目标与延迟门槛的结果，`INVALID` 是测量条件不合格，两者分开处理。具体判定见 [seal.py](monitor/seal.py) 和 [placement.py](monitor/placement.py)。
+
+本页记录上述被测构建与配置的结果。新的实现与配置使用新的窗口文件及报告，不覆盖已发表测量。当前发压器将本地源端口不可用单列为 `transport_addr_unavailable`，供发压质量门槛识别；历史归档中的通用传输错误保留原分类。
+"""
+
+REPRODUCE = """## 复现
+
+在仓库根目录运行，离线验证只需 Python 3.10+：
 
 ```sh
 python3 perf/report.py --check --raw
 python3 perf/report.py --output /tmp/oauth-benchmark.md
 ```
 
-在专用 CNB 的 Linux x86-64 环境重新发压需要 Docker、Git、Bash、Python 3、C 编译器及静态 libc、jq、OpenSSL、patch、flock 和 taskset。克隆时保留上表 NazoAuth 提交。以下命令默认构建表中 NazoAuth 版本、部署服务、通过产品接口准备数据、运行三个窗口并生成该次报告：
+`--check` 检查每轮计数、完整文件清单、SHA-256、文档及图表的数据摘要。`--raw` 重算已归档逐请求账本；在 Linux 上还会重算这些窗口的 CPU、RSS 和 PSI。图表使用 Matplotlib 生成，更新数据后执行 `python3 perf/report.py --charts`；中文字体使用 Noto Sans CJK。
+
+重新发压需要专用 Linux x86-64 环境、Docker、Git、Bash、Python 3、C 编译器与静态 libc、jq、OpenSSL、patch、flock 和 taskset。默认复现上表的被测 NazoAuth 构建。部署脚本要求单 NUMA 节点至少 25 个独立物理核，为服务与发压端分别分配资源。
 
 ```sh
 bash perf/bench.sh setup
-bash perf/bench.sh login
+bash perf/bench.sh run nazo machine 1000 3
+bash perf/bench.sh run nazo exchange 1000 3
+bash perf/bench.sh run nazo refresh 1000 3
+bash perf/bench.sh run nazo authorize-silent 1000 3
+bash perf/bench.sh run nazo authorize 1000 3
 bash perf/bench.sh run nazo userinfo 1000 3
-bash perf/bench.sh pg-memory nazo exchange 1000
 python3 perf/report.py --input perf/.work/windows --output /tmp/fresh.md
 ```
 
-`bash perf/bench.sh matrix` 依据部署的 NazoAuth 版本，按固定种子交错重放所选发压配置已经发表的业务、档位、轮数和刷新数据规模。宽配置使用新的独立 CNB，先以 `BENCH_NETWORK=wide bash perf/bench.sh setup` 部署，再以 `BENCH_PROFILE=journal-wide bash perf/bench.sh matrix` 运行。每个窗口必须有唯一输出路径。私有凭据和新结果保存在忽略提交的 `perf/.work/`。
+`run` 的服务名为 `nazo`、`rauthy`、`kanidm`、`keycloak` 或 `hydra`，还支持 `machine-introspect`、`user-introspect` 和 `authorize-consent`。`bash perf/bench.sh matrix` 按固定种子交错重放已发表的场景、档位、轮数和令牌族规模；用 `BENCH_PROFILE=journal-wide` 选择宽配置，并先在独立环境以 `BENCH_NETWORK=wide bash perf/bench.sh setup` 部署。每轮使用唯一目录，凭据和新结果保存在忽略提交的 `perf/.work/`。
 
-[登录逐次耗时和内存读数](evidence/login/)及[NazoAuth 构建信息](evidence/environment/nazo-build.json)可用于复算本次测量。用 `bash perf/bench.sh memory nazo` 运行 UserInfo 五个档位。替换末尾服务名可测对照服务。其他 NazoAuth 链路使用 `bash perf/bench.sh run nazo SCENARIO TPS 3`，支持 `machine-introspect`、`user-introspect`、`exchange`、`refresh`、`authorize-silent` 和 `authorize`。`pg-memory` 每次测一轮；末尾加 `retain` 会沿用已运行的 PostgreSQL。重复组依次执行 `pg-memory nazo authorize 1000`、`pg-memory nazo authorize 1000 retain` 和 `pg-memory nazo userinfo 1000 retain`。原始 smaps 行的 PID 后依次为总 RSS、PSS、私有页、共享页、主共享映射 RSS 与 PSS（KiB）。可用 `python3 perf/monitor/pg_window.py 窗口目录` 导出本轮原始证据。每轮 `memory.json` 保存进程树采样与业务计数；`python3 perf/report.py --memory-input perf/.work/windows` 可重建内存表。逐轮原始统计和分项业务结果位于 [evidence/windows](evidence/windows/)。[逐操作采样包](evidence/samples/)包含有逐操作账本的窗口及其资源采样。其余窗口保存逐轮统计。另附内存诊断的成功耗时序列，以及 PostgreSQL 专项全部逐请求账本。原生配置及发压校准见 [环境快照](evidence/environment/)。部署参数和镜像摘要见 [deploy.sh](deploy.sh) 与 [native-deploy.sh](native-deploy.sh)。[运行开关补丁](fixture/token-ip-quota.patch)使被测提交支持该配置，测试只关闭所列令牌入口 IP 配额。"""
+`bash perf/bench.sh memory nazo` 运行 UserInfo 的五个档位；`bash perf/bench.sh pg-memory nazo exchange 1000` 采集单轮数据库映射，末尾加 `retain` 沿用正在运行的数据库。`python3 perf/report.py --memory-input perf/.work/windows` 重建新测量的内存表。`bash perf/bench.sh login` 运行独立密码登录诊断，所得闭环数据单独保存，不并入本页的固定到达率结果。
+"""
+
+
+def publication_selection(rows):
+    control = json.loads((HERE / "evidence/environment/refresh-driver.json").read_bytes())
+    disputed = control["legacy_buffered_binary_sha256"]
+    excluded = [row for row in rows if row["flow"] == "refresh" and row.get("generator_sha256") == disputed]
+    ids = {row["id"] for row in excluded}
+    return [row for row in rows if row["id"] not in ids], excluded
+
+
+def driver_exclusions(rows):
+    entries = []
+    for row in sorted(rows, key=lambda r: (r["peer"], r["rate"], r["id"])):
+        op = row["operations"]["all"]
+        entries.append([f'[`{row["id"]}`](evidence/windows/{row["id"]}.json)', SERVICES[row["peer"]],
+                        f'{row["rate"]:,}', fmt(op["successful_tps"]), f'{op["failed"]:,}'])
+    return table(["窗口", "服务", "目标 TPS", "原记录成功 TPS", "原记录失败数"], entries)
+
+
+def render(rows, published):
+    archived_count = len(rows)
+    eligible, conflicts = publication_selection(rows) if published else (rows, [])
+    data = aggregates(eligible)
+    if not published:
+        return "\n\n".join(["# OAuth / OIDC 本次测量", *details(data, include_revision=True)]) + "\n"
+    observations = reference_memory()
+    samples = {p.name.removesuffix(".tar.gz") for p in (HERE / "evidence/samples").glob("*.tar.gz")}
+    failures = sum(r["operations"]["all"]["failed"] for r in eligible)
+    invalid = sum(r["performance_status"] == "INVALID" for r in observations)
+    blocks = ["# OAuth / OIDC 单实例性能基准", INTRO,
+              f"归档保存 **{archived_count} 个单链路窗口**，正式对照纳入 **{len(eligible)} 个**，{len(conflicts)} 个因轮换驱动证据冲突单列保留。纳入窗口中，{sum(r['status'] == 'FAIL' for r in eligible)} 个未达到负载或延迟门槛，**{failures:,} 次已发业务失败全部计入**。另保留 {len(observations)} 个内存观测及其测量质量标记。",
+              "## 结果概览", "### 成功吞吐",
+              "![机器令牌签发与 UserInfo 固定到达率成功吞吐，含有效轮数和缺测标记](charts/throughput.svg)",
+              "NazoAuth 的 UserInfo 12,000 TPS 有 9 个内存观测，均未通过性能有效性核查，因此该档显示**无有效测量**。NazoAuth 机器签发 3,000 TPS、Rauthy 机器签发 1,000 TPS 各只有一轮有效测量；这些结果保留在明细中。",
+              "### UserInfo 尾延迟", "![UserInfo 在同一发压二进制、每秒一千次业务下的 P95 和 P99](charts/read-latency.svg)",
+              "### UserInfo CPU", "![UserInfo 的全服务端平均 CPU 核数](charts/read-cpu.svg)",
+              "## 部署内存", "![UserInfo 每秒一千次计划业务下的全服务端 PSS，附同批成功吞吐和有效轮数](charts/memory.svg)",
+              "PSS 按共享比例分摊进程内存，适合观察部署占用。PostgreSQL 共享页会在多个进程的 RSS 中重复计数，所以不能把 RSS 合计当作实际物理内存。图中内存观测包括宿主干扰轮，右侧同时显示实际成功 TPS 和性能有效轮数；它们不进入正式吞吐及延迟排名。不同服务沿用各自业务数据。[原始内存观测](evidence/protocol-memory.jsonl) · [Linux 内存计量](https://docs.kernel.org/filesystems/proc.html)",
+              "<details>\n<summary>五服务场景覆盖</summary>\n", coverage(data), "— 表示没有该共同语义下的有效测量；各档轮数见全部结果。", "</details>",
+              *details(data), CONDITIONS,
+              "<details>\n<summary>轮换驱动证据冲突：保留原记录，排除正式汇总</summary>\n",
+              "已归档的单令牌族控制实验中，驱动 `357a8ea7` 四次请求依次为 200/400/400/400，`ee4a059e` 为四次 200。以下窗口却同时记录 `357a8ea7` 与持续轮换夹具。原始 `driver.sha256` 和 JSON 一致；账本未保存每次后继令牌，无法消除该冲突。这些记录不计入正式轮换比较，原始文件和重算入口保留。[驱动控制实验](evidence/environment/refresh-driver.json)",
+              driver_exclusions(conflicts),
+              "NazoAuth 刷新轮换在 1,000 TPS 下只有两轮可纳入记录。", "</details>",
+              "<details>\n<summary>已归档的无效内存观测及原因</summary>\n", exclusion_table(observations),
+              f"这里列出保留的 {invalid} 个 INVALID 内存观测。归档范围为本页所用单链路窗口、证据冲突记录及内存专项，未包含全部历史试跑。一次窗口可同时触发多个排除原因。", "</details>",
+              "### 可追溯数据",
+              f"[逐轮 JSON](evidence/windows/)保存 {archived_count} 个窗口的业务计数、分位数、资源和原始质量判定。其中 {len(samples)} 个有[逐操作账本及资源采样包](evidence/samples/)，其余保留逐轮统计。内存专项另有[成功耗时序列](evidence/memory-success-latencies.zip)与[UserInfo 12,000 TPS 到达记录](evidence/userinfo-reference/)。[SHA-256 清单](evidence/SHA256SUMS)覆盖所有归档文件；文档、图表和原始账本的核验范围分别列明。", REPRODUCE]
+    return "\n\n".join(block.strip() for block in blocks) + "\n"
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input",type=Path,help="fresh windows directory")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, help="fresh windows directory")
     parser.add_argument("--memory-input", type=Path, help="print RSS and PSS from measured protocol windows")
-    parser.add_argument("--output",type=Path)
-    parser.add_argument("--check",action="store_true")
-    parser.add_argument("--raw",action="store_true",help="recalculate all available arrival ledgers")
-    parser.add_argument("--plan",action="store_true")
-    args=parser.parse_args()
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--raw", action="store_true", help="recalculate all available arrival ledgers")
+    parser.add_argument("--plan", action="store_true")
+    parser.add_argument("--charts", action="store_true", help="render published SVG charts (requires Matplotlib)")
+    args = parser.parse_args()
     if args.memory_input:
-        if args.input or args.check or args.raw or args.plan or args.output:
+        if args.input or args.check or args.raw or args.plan or args.output or args.charts:
             parser.error("--memory-input prints a standalone table")
         files = sorted(args.memory_input.glob("*/*/*/memory.json"))
         if not files:
             parser.error("no memory observations found")
         print(memory_table(json.loads(path.read_bytes()) for path in files))
         return
-    files=sorted(args.input.glob("*/*/*/summary.json") if args.input else (HERE/"evidence/windows").glob("*.json"))
-    rows=[]
+    if args.charts and (args.input or args.plan):
+        parser.error("--charts renders the published observations")
+    files = sorted(args.input.glob("*/*/*/summary.json") if args.input else (HERE / "evidence/windows").glob("*.json"))
+    rows = []
     for path in files:
-        row=json.loads(path.read_bytes())
+        row = json.loads(path.read_bytes())
         if args.input:
-            if row["status"]=="INVALID": continue
-            row["scenario"]=path.parents[1].name
-        try:verify_row(row)
-        except (KeyError,ValueError) as err:raise ValueError(f"{path}: {err}") from err
+            if row["status"] == "INVALID":
+                continue
+            row["scenario"] = path.parents[1].name
+            row.setdefault("id", str(path.parent.relative_to(args.input)))
+            row["_has_ledger"] = path.with_name("arrivals.tsv").is_file()
+        try:
+            verify_row(row)
+        except (KeyError, ValueError) as err:
+            raise ValueError(f"{path}: {err}") from err
         rows.append(row)
-    if not rows:raise SystemExit("No valid windows")
+    if not rows:
+        raise SystemExit("No valid windows")
+    if args.input is None:
+        build = json.loads((HERE / "evidence/environment/nazo-build.json").read_bytes())["git"]
+        if any(row.get("product_revision") != build for row in rows if row["peer"] == "nazo"):
+            raise ValueError("published NazoAuth windows do not match the declared build")
     if args.check and args.input is None:
-        directory = HERE/"evidence"
-        manifest = (directory/"SHA256SUMS").read_text().splitlines()
+        directory = HERE / "evidence"
+        expected = dict(line.split("  ", 1)[::-1] for line in (directory / "SHA256SUMS").read_text().splitlines())
         current = {p.relative_to(directory).as_posix(): p for p in directory.rglob("*") if p.is_file() and p.name != "SHA256SUMS"}
-        expected = dict(line.split("  ",1)[::-1] for line in manifest)
         if current.keys() != expected.keys():
             raise ValueError("evidence file set differs from manifest")
         for name, path in current.items():
             if hashlib.sha256(path.read_bytes()).hexdigest() != expected[name]:
                 raise ValueError(f"evidence checksum mismatch: {name}")
     if args.raw:
-        if args.input:parser.error("--raw verifies published sample bundles")
+        if args.input:
+            parser.error("--raw verifies published sample bundles")
         validate_ledgers(rows)
         validate_memory_tails()
-        validate_pg_ledgers()
-        validate_pool_ledgers()
     if args.plan:
-        plan=[]
-        for r in rows:
-            flow,rate,peer,profile,_,_,users,families=group(r)
+        plan = []
+        for row in publication_selection(rows)[0] if args.input is None else rows:
+            flow, rate, peer, profile, _, _, users, families = group(row)
             revision = os.environ.get("BENCH_NAZO_REVISION")
-            if peer == "nazo" and revision and revision != r["product_revision"]:
+            if peer == "nazo" and revision and revision != row["product_revision"]:
                 continue
-            if profile!=os.getenv("BENCH_PROFILE","base"):continue
-            plan.append((peer,flow,rate,r["id"],users or 32,families or 8,profile, int("role_peak_pss_mib" in r)))
+            if profile != os.getenv("BENCH_PROFILE", "base"):
+                continue
+            plan.append((peer, flow, rate, row["id"], users or 32, families or 8, profile, int("role_peak_pss_mib" in row)))
         random.Random(19716).shuffle(plan)
-        for entry in plan: print(*entry,sep="\t")
+        for entry in plan:
+            print(*entry, sep="\t")
         return
-    result=render(rows,args.input is None)
-    dest=args.output or HERE/"README.md"
-    if args.input and dest.resolve()==(HERE/"README.md").resolve():parser.error("specify a separate --output for new runs")
+    if args.input is None:
+        specs = chart_specs(aggregates(publication_selection(rows)[0]), reference_memory())
+        if args.charts:
+            write_charts(specs)
+        if args.check:
+            check_charts(specs)
+    result = render(rows, args.input is None)
+    dest = args.output or HERE / "README.md"
+    if args.input and dest.resolve() == (HERE / "README.md").resolve():
+        parser.error("specify a separate --output for new runs")
     if args.check:
-        if dest.read_text(encoding="utf8")!=result:raise SystemExit("Report differs from its window data")
+        if dest.read_text(encoding="utf8") != result:
+            raise SystemExit("Report differs from its window data")
         print(f"{len(rows)} windows verified")
-    else:dest.write_text(result,encoding="utf8",newline="\n")
+    else:
+        dest.write_text(result, encoding="utf8", newline="\n")
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()

@@ -150,13 +150,24 @@ async fn send(
         .await
         .map_err(|_| "client_error")?
         .response
-        .map_err(|e| {
-            if e.is_timeout() {
-                "timeout"
-            } else {
-                "transport_error"
-            }
-        })
+        .map_err(|e| transport_error(&e))
+}
+
+fn transport_error(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        return "timeout";
+    }
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(error) = source {
+        if error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::AddrNotAvailable)
+        {
+            return "transport_addr_unavailable";
+        }
+        source = error.source();
+    }
+    "transport_error"
 }
 
 fn location(response: &reqwest::Response, base: &Url) -> Result<Url, &'static str> {
@@ -248,10 +259,10 @@ async fn keycloak_consent(
         }
         let (action, code) = if response.status().is_redirection() {
             let location = location(&response, &issuer)?;
-            response.bytes().await.map_err(|_| "transport_error")?;
+            response.bytes().await.map_err(|e| transport_error(&e))?;
             (location, None)
         } else if response.status().as_u16() == 200 {
-            let body = response.text().await.map_err(|_| "transport_error")?;
+            let body = response.text().await.map_err(|e| transport_error(&e))?;
             let (action, code, accept) = consent_form(&body).ok_or("protocol_error")?;
             (
                 issuer.join(&action).map_err(|_| "protocol_error")?,
@@ -312,7 +323,7 @@ async fn authorize(
         if first.status().as_u16() != 200 {
             return Err("protocol_error");
         }
-        let html = first.text().await.map_err(|_| "transport_error")?;
+        let html = first.text().await.map_err(|e| transport_error(&e))?;
         let csrf = rauthy_refresh_csrf(&html).ok_or("protocol_error")?;
         let url = origin
             .join("/auth/v1/oidc/authorize/refresh")
@@ -428,16 +439,7 @@ async fn request(
     }
     let body = match response.bytes().await {
         Ok(body) => body,
-        Err(e) => {
-            return (
-                status,
-                if e.is_timeout() {
-                    "timeout"
-                } else {
-                    "transport_error"
-                },
-            );
-        }
+        Err(e) => return (status, transport_error(&e)),
     };
     if fixture.operation == "control" {
         return (
@@ -716,4 +718,18 @@ async fn main() -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn unavailable_source_address_is_a_generator_failure() {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .local_address("192.0.2.1".parse::<std::net::IpAddr>().unwrap())
+            .build()
+            .unwrap();
+        let error = client.get("http://127.0.0.1:1/").send().await.unwrap_err();
+        assert_eq!(super::transport_error(&error), "transport_addr_unavailable");
+    }
 }
