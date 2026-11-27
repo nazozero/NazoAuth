@@ -17,6 +17,14 @@ import verify_static_contracts as contracts
 
 PACKAGE_ROLES = contracts.PACKAGE_ROLES
 ALLOWED_DEPENDENCY_ROLES = contracts.ALLOWED_DEPENDENCY_ROLES
+ROCKSDB_PACKAGES = ("nazo-rocksdb", "rocksdb", "librocksdb-sys")
+
+# The native default and the deployed Worker must remain independent of the
+# optional embedded database. Other roots check their complete feature graph.
+CARGO_TREE_OPTIONS = {
+    "nazo-server": (),
+    "nazo-server-worker": ("--no-default-features", "--target", "wasm32-unknown-unknown"),
+}
 
 
 # Storage-technology isolation beyond what package roles express: inner roots
@@ -63,12 +71,31 @@ GRAPHS = {
         "diesel-async",
         "pq-sys",
         "tokio-postgres",
+        *ROCKSDB_PACKAGES,
     ),
     "nazo-oauth-server-postgres": (
         "fred",
         "nazo-valkey",
         "nazo-oauth-server-valkey",
+        *ROCKSDB_PACKAGES,
     ),
+    "nazo-oauth-server-d1": ROCKSDB_PACKAGES,
+    "nazo-rocksdb": (
+        "nazo-postgres",
+        "nazo-oauth-server-postgres",
+        "diesel",
+        "diesel-async",
+        "pq-sys",
+        "tokio-postgres",
+        "fred",
+        "nazo-valkey",
+        "nazo-oauth-server-valkey",
+        "nazo-oauth-server-d1",
+        "worker",
+        "worker-sys",
+    ),
+    "nazo-server": ROCKSDB_PACKAGES,
+    "nazo-server-worker": ROCKSDB_PACKAGES,
 }
 
 
@@ -77,7 +104,7 @@ def package_names(package: str, root: Path | None = None) -> set[str]:
         "cargo",
         "tree",
         "--locked",
-        "--all-features",
+        *CARGO_TREE_OPTIONS.get(package, ("--all-features",)),
         "--package",
         package,
         "--edges",
@@ -109,11 +136,14 @@ def graph_roots() -> set[str]:
 
 def forbidden_graph_dependencies(package: str) -> set[str]:
     role = PACKAGE_ROLES[package]
-    return set(GRAPHS.get(package, ())) | {
+    forbidden = set(GRAPHS.get(package, ())) | {
         name
         for name, dependency_role in PACKAGE_ROLES.items()
         if name != package and dependency_role not in ALLOWED_DEPENDENCY_ROLES[role]
     }
+    if role in contracts.INNER_ROLES:
+        forbidden.update(ROCKSDB_PACKAGES)
+    return forbidden
 
 
 def main() -> int:

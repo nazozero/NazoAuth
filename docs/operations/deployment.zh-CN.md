@@ -1,5 +1,8 @@
 # 部署指南
 
+默认原生可执行文件使用 PostgreSQL。需要单进程本地持久数据库时，可从源码构建
+[RocksDB 可执行文件](rocksdb.md)，并遵循其数据库目录独占及备份恢复流程。
+
 NazoAuth 原生宿主提供两条部署契约：源码开发使用 Compose；独立 Linux 生产部署
 使用经过签名验证的 `nazoauthctl`，支持 Podman、Docker 和宿主机 systemd。
 

@@ -18,6 +18,13 @@ JavaScript/WASM runtime bindings. The image copies only the native executable an
 its source identity into the runtime stage; Worker/Web assets and generated output
 are excluded from its build context.
 
+The optional native `rocksdb` feature adds the source-built `nazoauth-rocksdb`
+executable. Its launcher binds the same persistence ports to `nazo-rocksdb` and
+retains the separate Valkey state adapter. One process owns the local database;
+the [RocksDB deployment guide](../operations/rocksdb.md) defines its offline
+operator, audit and backup boundaries. The default executable and releases
+continue to select PostgreSQL.
+
 The facade's default `deployment-control` feature contains deployment identity,
 controller registry, independent recovery and cross-tenant administrator routes.
 The native host selects it explicitly. The Worker uses the same
@@ -57,6 +64,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `openid4vp` | `nazo-openid4vp` | Framework-independent OpenID4VP verifier protocol types, validation, and presentation behavior. |
 | `persistence` | `nazo-persistence` | Database-neutral semantic persistence contracts and application-facing records, including tenant directory and protocol/credential stores. It contains no SQL, connection, transaction, or driver API. |
 | `persistence-postgres` | `nazo-postgres` | Durable PostgreSQL adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and transaction boundaries. Rows never leave this crate. |
+| `persistence-rocksdb` | `nazo-rocksdb` | Optional single-process native persistence and provider: tenant-scoped keys, pinned reads, synchronous WAL transactions, snapshots, durable replay and required audit. The native launcher owns the database directory and lifecycle. |
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. |
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |

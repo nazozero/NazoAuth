@@ -1,0 +1,45 @@
+[package]
+name = "nazo-rocksdb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+jiff.workspace = true
+nazo-auth.workspace = true
+nazo-crypto = { workspace = true, features = ["aead", "password", "ed25519"] }
+nazo-digital-credentials.workspace = true
+nazo-identity.workspace = true
+nazo-key-management.workspace = true
+nazo-oauth-server.workspace = true
+nazo-openid4vci.workspace = true
+nazo-openid4vp.workspace = true
+nazo-operator-protocol.workspace = true
+nazo-passkey.workspace = true
+nazo-persistence.workspace = true
+nazo-resource-server.workspace = true
+nazo-runtime-modules.workspace = true
+nazo-scim-events.workspace = true
+rand.workspace = true
+rocksdb = { version = "0.25.0", default-features = false, features = ["lz4", "bindgen-runtime"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["rt", "sync"] }
+uuid = { workspace = true, features = ["v4", "v7", "serde"] }
+zeroize.workspace = true
+
+[dev-dependencies]
+nazo-postgres.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[lints]
+workspace = true

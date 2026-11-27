@@ -76,6 +76,10 @@ Implicit、Hybrid、密码授权、未签名 Request Object 和 CIBA push 不受
 运行方式可选 Docker、Podman 或宿主机二进制。当前发行版使用 PostgreSQL、Valkey 适配器，
 部署前需要准备公网 HTTPS issuer、具有独立 runtime/lifecycle 角色的 PostgreSQL，以及 Valkey。
 
+单进程原生部署也可从源码构建可选的
+[`nazoauth-rocksdb` 可执行文件](docs/operations/rocksdb.md)，使用本地 RocksDB 目录保存持久状态，
+仍由 Valkey 保存临时安全状态。其数据库独占、离线运维及备份恢复边界见该指南。
+
 使用 Cloudflare D1 的 WASM 部署方式见
 [Cloudflare Workers 适配器指南](docs/operations/cloudflare-workers.md)和
 [Worker 与原生部署的功能对照](docs/operations/worker-native-comparison.md)。

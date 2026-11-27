@@ -83,6 +83,10 @@ release on a local or SSH host. Choose Docker, Podman, or a host binary. The
 current distribution uses the PostgreSQL and Valkey adapters. Prepare a public
 HTTPS issuer, PostgreSQL with separate runtime and lifecycle roles, and Valkey.
 
+For a source-built single-process native deployment, the optional
+[`nazoauth-rocksdb` executable](docs/operations/rocksdb.md) uses a local durable
+RocksDB directory and retains Valkey for transient security state.
+
 For a WASM deployment with Cloudflare D1, see the
 [Cloudflare Workers adapter](docs/operations/cloudflare-workers.md) and its
 [comparison with native deployment](docs/operations/worker-native-comparison.md).

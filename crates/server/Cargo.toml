@@ -7,9 +7,18 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+rocksdb = ["dep:nazo-rocksdb"]
+
 [[bin]]
 name = "nazoauth"
 path = "src/main.rs"
+test = false
+
+[[bin]]
+name = "nazoauth-rocksdb"
+path = "src/main_rocksdb.rs"
+required-features = ["rocksdb"]
 test = false
 
 [[example]]
@@ -52,6 +61,7 @@ nazo-operator-protocol.workspace = true
 nazo-passkey.workspace = true
 nazo-persistence.workspace = true
 nazo-postgres.workspace = true
+nazo-rocksdb = { workspace = true, optional = true }
 nazo-runtime-modules.workspace = true
 nazo-scim-events.workspace = true
 nazo-valkey.workspace = true
