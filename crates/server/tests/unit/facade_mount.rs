@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, task::Poll};
 
 use actix_web::{App, HttpResponse, test as awtest, web};
 use bytes::Bytes;
@@ -38,6 +38,7 @@ async fn one_call_mount_preserves_host_routes_and_shared_http_contract() {
         let facade = application(prefix, None).await;
         let suffix = if prefix == "/" { "" } else { prefix };
         let ui = format!("{suffix}/ui/index.html");
+        let escaped_ui = format!("{suffix}/%75i/index.html");
         let app = awtest::init_service(
             App::new()
                 .route(
@@ -109,15 +110,48 @@ async fn one_call_mount_preserves_host_routes_and_shared_http_contract() {
         assert_eq!(expected.status(), http::StatusCode::BAD_REQUEST);
         conformance::assert_response(&expected, &actual);
 
+        for (method, path, status) in [
+            (
+                actix_web::http::Method::GET,
+                "/token",
+                actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
+            ),
+            (
+                actix_web::http::Method::POST,
+                "/openid4vci/credential",
+                actix_web::http::StatusCode::NOT_FOUND,
+            ),
+            (
+                actix_web::http::Method::GET,
+                "/jwks.json",
+                actix_web::http::StatusCode::OK,
+            ),
+        ] {
+            let mut request = awtest::TestRequest::default()
+                .method(method)
+                .uri(&format!("{suffix}{path}"))
+                .insert_header(("content-encoding", "gzip"))
+                .to_request();
+            *request.payload() = actix_web::dev::Payload::Stream {
+                payload: Box::pin(futures_util::stream::poll_fn(
+                    |_| -> Poll<Option<Result<Bytes, actix_web::error::PayloadError>>> {
+                        panic!("rejected or bodyless Actix request must not poll its payload")
+                    },
+                )),
+            };
+            assert_eq!(awtest::call_service(&app, request).await.status(), status);
+        }
+
         for (path, body) in [
             ("/api/ping", "existing api"),
             ("/users/me", "existing user"),
             (ui.as_str(), "host owned ui"),
+            (escaped_ui.as_str(), "host owned ui"),
         ] {
             let response =
                 awtest::call_service(&app, awtest::TestRequest::get().uri(path).to_request()).await;
             assert_eq!(response.status(), actix_web::http::StatusCode::OK, "{path}");
-            if path == ui {
+            if path == ui || path == escaped_ui {
                 assert!(response.headers().contains_key("content-security-policy"));
             }
             assert_eq!(awtest::read_body(response).await.as_ref(), body.as_bytes());
@@ -130,6 +164,125 @@ async fn one_call_mount_preserves_host_routes_and_shared_http_contract() {
                 assert_eq!(response.status(), actix_web::http::StatusCode::NOT_FOUND);
                 assert!(!response.headers().contains_key("content-security-policy"));
             }
+        }
+    }
+}
+
+#[actix_web::test]
+async fn root_mount_preserves_host_namespace_and_ui_fallbacks() {
+    let facade = application("/", None).await;
+    for fallback_before in [true, false] {
+        let fallback = || async { HttpResponse::NotFound().body("host fallback") };
+        let app = App::new().service(
+            web::resource("/api/before")
+                .route(web::get().to(|| async { HttpResponse::Ok().body("host before") })),
+        );
+        let app = if fallback_before {
+            app.default_service(web::to(fallback))
+        } else {
+            app
+        };
+        let app = app
+            .configure(nazo_http_actix::mount(facade.clone(), &["/api/", "/other%2dapi/"]).unwrap())
+            .service(
+                web::resource("/api/after")
+                    .route(web::get().to(|| async { HttpResponse::Ok().body("host after") })),
+            )
+            .route(
+                "/other-api/ping",
+                web::get().to(|| async { HttpResponse::Ok().body("other host") }),
+            );
+        let app = if fallback_before {
+            app
+        } else {
+            app.default_service(web::to(fallback))
+        };
+        let app = awtest::init_service(app).await;
+
+        for (path, status, body) in [
+            (
+                "/api/before",
+                actix_web::http::StatusCode::OK,
+                "host before",
+            ),
+            ("/api/after", actix_web::http::StatusCode::OK, "host after"),
+            (
+                "/%61pi/before",
+                actix_web::http::StatusCode::OK,
+                "host before",
+            ),
+            (
+                "/%61pi/after",
+                actix_web::http::StatusCode::OK,
+                "host after",
+            ),
+            (
+                "/other-api/ping",
+                actix_web::http::StatusCode::OK,
+                "other host",
+            ),
+            (
+                "/api",
+                actix_web::http::StatusCode::NOT_FOUND,
+                "host fallback",
+            ),
+            (
+                "/api/missing",
+                actix_web::http::StatusCode::NOT_FOUND,
+                "host fallback",
+            ),
+            (
+                "/%61pi/missing",
+                actix_web::http::StatusCode::NOT_FOUND,
+                "host fallback",
+            ),
+            (
+                "/ui",
+                actix_web::http::StatusCode::NOT_FOUND,
+                "host fallback",
+            ),
+            (
+                "/ui/missing",
+                actix_web::http::StatusCode::NOT_FOUND,
+                "host fallback",
+            ),
+            (
+                "/%75i/missing",
+                actix_web::http::StatusCode::NOT_FOUND,
+                "host fallback",
+            ),
+        ] {
+            let response =
+                awtest::call_service(&app, awtest::TestRequest::get().uri(path).to_request()).await;
+            assert_eq!(response.status(), status, "{path}");
+            assert!(!response.headers().contains_key("content-security-policy"));
+            assert_eq!(awtest::read_body(response).await.as_ref(), body.as_bytes());
+        }
+        for path in ["/api2/missing", "/uix", "/%61pi2/missing", "/%75ix"] {
+            let response =
+                awtest::call_service(&app, awtest::TestRequest::get().uri(path).to_request()).await;
+            assert_eq!(response.status(), actix_web::http::StatusCode::NOT_FOUND);
+            assert!(response.headers().contains_key("content-security-policy"));
+            assert!(awtest::read_body(response).await.is_empty());
+        }
+        let response =
+            awtest::call_service(&app, awtest::TestRequest::get().uri("/token").to_request()).await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert!(response.headers().contains_key("content-security-policy"));
+        for path in ["/api/before", "/api/after", "/%61pi/before", "/%61pi/after"] {
+            let response =
+                awtest::call_service(&app, awtest::TestRequest::post().uri(path).to_request())
+                    .await;
+            assert_eq!(
+                response.status(),
+                actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
+                "{path}"
+            );
+            assert_eq!(response.headers().get("allow").unwrap(), "GET");
+            assert!(!response.headers().contains_key("content-security-policy"));
         }
     }
 }

@@ -118,6 +118,23 @@ async fn compressed_bodies_require_complete_wire_input() {
                 None => assert!(decoded.is_err(), "{encoding} accepted invalid wire input"),
             }
         }
+        // Finishing the compressed member does not finish the HTTP body. A
+        // transport failure after it must still reach the facade's collector.
+        let failure = "source failed after the compressed member";
+        let body = StreamBody::new(futures_util::stream::iter([
+            Ok(Frame::data(compressed)),
+            Err(io::Error::other(failure)),
+        ]));
+        let request = Request::builder()
+            .header(header::CONTENT_ENCODING, encoding)
+            .body(body)
+            .unwrap();
+        let error = forward_request(request, BodyMode::Form)
+            .into_body()
+            .try_collect::<Vec<Bytes>>()
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), failure, "{encoding} hid a source error");
     }
 }
 

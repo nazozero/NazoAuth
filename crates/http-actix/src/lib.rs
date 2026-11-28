@@ -2,18 +2,24 @@
 //! Actix registration, connection facts and HTTP value conversion for NazoAuth.
 //! All routing, protocol interpretation and endpoint policy belong to the facade.
 
-use std::{io, sync::Arc};
+use std::{
+    io,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use actix_web::{
     Error, HttpRequest, HttpResponse,
     body::MessageBody,
-    dev::{Decompress, ServiceRequest, ServiceResponse},
+    dev::{Decompress, Payload, ServiceRequest, ServiceResponse},
     error::PayloadError,
+    http::header::{CONTENT_ENCODING, ContentEncoding},
     middleware::Next,
     web,
 };
 use bytes::Bytes;
-use futures_util::{TryStreamExt as _, future::Either};
+use futures_util::{Stream, StreamExt as _, TryStreamExt as _};
 use nazoauth::{ConnectionFacts, NazoAuth, integration::Route};
 
 /// Register the canonical product surface. Install the already-built tenant as
@@ -33,6 +39,18 @@ pub fn mount(
     reserved_paths: &[&str],
 ) -> anyhow::Result<impl FnOnce(&mut web::ServiceConfig) + use<>> {
     application.mount().check_conflicts(reserved_paths)?;
+    let existing_root_paths: Vec<actix_web::dev::Url> = if application.mount().path() == "/" {
+        reserved_paths
+            .iter()
+            .map(|path| {
+                path.trim_end_matches('/')
+                    .parse()
+                    .map(actix_web::dev::Url::new)
+            })
+            .collect::<Result<_, _>>()?
+    } else {
+        Vec::new()
+    };
     Ok(move |config: &mut web::ServiceConfig| {
         let application = web::Data::from(application);
         let discovery = application.clone();
@@ -49,19 +67,38 @@ pub fn mount(
                 .app_data(application.clone())
                 .configure(configure),
         );
-        if application.mount().path() == "/" {
-            config.app_data(application).configure(configure);
+        let scope = if application.mount().path() == "/" {
+            ""
         } else {
-            let mounted = application.clone();
-            config.service(
-                web::scope(application.mount().path())
-                    .guard(actix_web::guard::fn_guard(move |context| {
-                        mounted.mount().owns_path(context.head().uri.path())
-                    }))
-                    .app_data(application)
-                    .configure(configure),
-            );
-        }
+            application.mount().path()
+        };
+        let mounted = application.clone();
+        config.service(
+            web::scope(scope)
+                .guard(actix_web::guard::fn_guard(move |context| {
+                    let path = context.head().uri.path();
+                    if !mounted.mount().owns_path(path) {
+                        return false;
+                    }
+                    // Host routing decodes ordinary escapes before matching.
+                    // Keep the authentication prefix raw, but preserve host/UI
+                    // aliases using Actix's own path representation.
+                    let decoded = path
+                        .contains('%')
+                        .then(|| actix_web::dev::Url::new(context.head().uri.clone()));
+                    let host_path = decoded.as_ref().map_or(path, actix_web::dev::Url::path);
+                    decoded
+                        .as_ref()
+                        .is_none_or(|url| mounted.mount().owns_path(url.path()))
+                        && !existing_root_paths.iter().any(|prefix| {
+                            host_path
+                                .strip_prefix(prefix.path())
+                                .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
+                        })
+                }))
+                .app_data(application)
+                .configure(configure),
+        );
     })
 }
 
@@ -82,18 +119,65 @@ pub async fn serve(
 
 fn forward_payload(
     request: &HttpRequest,
-    payload: actix_web::dev::Payload,
+    payload: Payload,
     body_mode: nazoauth::integration::BodyMode,
-) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> {
-    if body_mode.decode_content() {
-        Either::Left(
-            Decompress::from_headers(payload, request.headers())
-                .limit(body_mode.limit().expect("decoded bodies have a limit")),
-        )
+) -> impl Stream<Item = Result<Bytes, io::Error>> {
+    let encoding = if body_mode.decode_content() {
+        request
+            .headers()
+            .get(CONTENT_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(ContentEncoding::Identity)
     } else {
-        Either::Right(payload)
+        ContentEncoding::Identity
+    };
+    if encoding == ContentEncoding::Identity {
+        ForwardPayload::Plain(payload)
+    } else {
+        // Admission can reject without reading the payload. Keep decoder state
+        // and buffers unallocated until the endpoint actually consumes it.
+        ForwardPayload::Encoded {
+            payload,
+            encoding,
+            limit: body_mode.limit().expect("decoded bodies have a limit"),
+        }
     }
     .map_err(payload_error)
+}
+
+// Reuse the unread payload's storage for the decoder instead of retaining both
+// states in every handler future.
+enum ForwardPayload {
+    Plain(Payload),
+    Encoded {
+        payload: Payload,
+        encoding: ContentEncoding,
+        limit: usize,
+    },
+    Decoding(Decompress<Payload>),
+}
+
+impl Stream for ForwardPayload {
+    type Item = Result<Bytes, PayloadError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let state = self.get_mut();
+        loop {
+            match state {
+                Self::Plain(payload) => return payload.poll_next_unpin(context),
+                Self::Encoded {
+                    payload,
+                    encoding,
+                    limit,
+                } => {
+                    *state =
+                        Self::Decoding(Decompress::new(payload.take(), *encoding).limit(*limit));
+                }
+                Self::Decoding(payload) => return payload.poll_next_unpin(context),
+            }
+        }
+    }
 }
 
 fn payload_error(error: PayloadError) -> io::Error {

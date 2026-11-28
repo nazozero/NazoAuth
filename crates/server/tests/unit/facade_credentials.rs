@@ -115,7 +115,7 @@ async fn credential_replay(prefix: &str) {
         App::new().configure(nazo_http_actix::mount(application.clone(), &[]).unwrap()),
     )
     .await;
-    let axum = nazoauth_axum_embedding::application(application.clone()).unwrap();
+    let axum = super::axum_embedding::mounted_host(application.clone()).await;
     let send = |request: Request<Bytes>| {
         let app = &app;
         async move {

@@ -149,7 +149,7 @@ https://auth.example.com/.well-known/openid-configuration
 
 如果要将 NazoAuth 直接嵌入现有 Rust HTTP 应用，先准备配置与宿主能力，再通过一次调用
 挂载到选定的路径。[Rust 嵌入指南](docs/integration/rust-embedding.md)说明了 Actix、
-Axum/Tower 及其他框架适配器的接入方式。
+Tower 服务（包括 Axum）及其他框架适配器的接入方式。
 
 ## 服务结构
 

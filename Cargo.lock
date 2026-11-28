@@ -2910,7 +2910,6 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-compression",
- "axum",
  "bytes",
  "flate2",
  "futures-util",
@@ -2918,6 +2917,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "nazoauth",
+ "pin-project-lite",
  "tokio",
  "tokio-util",
  "tower-service",

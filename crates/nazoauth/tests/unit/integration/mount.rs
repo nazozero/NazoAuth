@@ -179,6 +179,21 @@ fn host_namespaces_and_required_discovery_cannot_overlap() {
 }
 
 #[test]
+fn discovery_reservations_follow_exact_resource_ownership() {
+    let mount = Mount::new(&configuration("/team/auth"), "/team/auth").unwrap();
+    for discovery in mount.discovery_paths() {
+        let ancestor = discovery.rsplit_once('/').unwrap().0;
+        assert!(mount.check_conflicts(&[discovery]).is_err());
+        assert!(mount.check_conflicts(&[ancestor]).is_err());
+
+        let child = format!("{discovery}/help");
+        mount.check_conflicts(&[&child]).unwrap();
+        assert!(!mount.owns_path(&child));
+    }
+    assert!(mount.check_conflicts(&["/team/auth/help"]).is_err());
+}
+
+#[test]
 fn host_reservations_reject_decoded_aliases_without_decoding_separators() {
     let root = Mount::new(&configuration("/"), "/").unwrap();
     for reserved in ["/%74oken", "/auth/%6De", "/admin/%63lients/custom"] {
@@ -200,6 +215,15 @@ fn host_reservations_reject_decoded_aliases_without_decoding_separators() {
         .unwrap()
         .check_conflicts(&["/.well-known/oauth-protected-resource/api/one"])
         .unwrap();
+}
+
+#[test]
+fn host_reservations_are_paths_without_queries_or_fragments() {
+    let root = Mount::new(&configuration("/"), "/").unwrap();
+    for reserved in ["/token?x", "/token#x", "/api?x", "/api#x"] {
+        assert!(root.check_conflicts(&[reserved]).is_err(), "{reserved}");
+    }
+    root.check_conflicts(&["/api%3Fx", "/api%23x"]).unwrap();
 }
 
 #[test]
@@ -241,6 +265,33 @@ fn other_mounts_reserve_their_exact_discovery_paths() {
             .check_conflicts(&reserved)
             .is_err()
     );
+}
+
+#[test]
+fn discovery_cannot_replace_an_endpoint_in_the_same_mount() {
+    let prefix = "/.well-known/oauth-protected-resource";
+    let mut settings = configuration(prefix);
+    for resource_path in ["/token", "/%74oken", "/register/client%2Fone"] {
+        settings.protocol.protected_resource_identifier =
+            format!("https://issuer.example{resource_path}");
+        assert!(Mount::new(&settings, prefix).is_err(), "{resource_path}");
+    }
+
+    settings.protocol.protected_resource_identifier = "https://issuer.example/metadata".into();
+    let mount = Mount::new(&settings, prefix).unwrap();
+    for (path, endpoint) in [
+        (format!("{prefix}/token"), Endpoint::Token),
+        (
+            format!("{prefix}/metadata"),
+            Endpoint::OauthProtectedResourceMetadata,
+        ),
+    ] {
+        assert_eq!(
+            mount.route_for_path(&path).unwrap().methods[0].endpoint,
+            endpoint,
+            "{path}"
+        );
+    }
 }
 
 #[test]
@@ -310,16 +361,30 @@ fn federation_callback_and_provider_start_url_follow_the_configured_issuer() {
         view.start_url,
         "/tenant/auth/auth/federation/external/start"
     );
-    provider["redirect_uri"] =
-        serde_json::json!("https://auth.example/auth/federation/external/callback");
+    provider["redirect_uri"] = serde_json::json!(
+        "https://auth.example/tenant/auth/auth/federation/external/callback?provider=a%2Fb&mode=login"
+    );
     settings.identity.federation.providers = crate::config::FederationProviderRegistry::from_json(
-        &serde_json::json!([provider]).to_string(),
+        &serde_json::json!([provider.clone()]).to_string(),
     )
     .unwrap();
-    assert!(
-        Mount::new(&settings, "/tenant/auth")
-            .unwrap_err()
-            .to_string()
-            .contains("mounted callback")
-    );
+    Mount::new(&settings, "/tenant/auth").unwrap();
+    for callback in [
+        "https://auth.example/auth/federation/external/callback?provider=oidc",
+        "https://other.example/tenant/auth/auth/federation/external/callback?provider=oidc",
+    ] {
+        provider["redirect_uri"] = serde_json::json!(callback);
+        settings.identity.federation.providers =
+            crate::config::FederationProviderRegistry::from_json(
+                &serde_json::json!([provider.clone()]).to_string(),
+            )
+            .unwrap();
+        assert!(
+            Mount::new(&settings, "/tenant/auth")
+                .unwrap_err()
+                .to_string()
+                .contains("mounted callback"),
+            "{callback}"
+        );
+    }
 }

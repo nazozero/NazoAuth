@@ -1,10 +1,9 @@
 //! One-call mounting for hosts using Tower services and standard HTTP bodies.
 //!
-//! [`mount`] wraps the complete existing host service. It selects NazoAuth's
-//! prepared namespace before host routing, preserving the original request URI
-//! and the existing service's routes, middleware and fallback. The optional
-//! `axum` feature supplies `axum::mount` and reads Axum's trusted connection
-//! extension when no [`nazoauth::integration::ConnectionFacts`] were supplied.
+//! [`mount`] wraps a complete request service. [`mount_make_service`] wraps the
+//! host's native connection factory, retaining its startup preparation and
+//! projecting trusted connection facts once per connection. Both select the
+//! prepared namespace before host routing and preserve the original URI.
 
 #![forbid(unsafe_code)]
 
@@ -18,19 +17,48 @@ use bytes::Bytes;
 use futures_util::future::{BoxFuture, Either};
 use http::{Request, Response};
 use http_body::Body;
-use nazoauth::{NazoAuth, integration::BodyMode};
+use nazoauth::{ConnectionFacts, NazoAuth, integration::BodyMode};
 use tower_service::Service;
 
-#[cfg(feature = "axum")]
-pub mod axum;
+mod make_service;
 mod transport;
+
+pub use make_service::{MakeServiceFuture, MountedMakeService, mount_make_service};
 
 /// An existing host service with a prepared NazoAuth namespace.
 #[derive(Clone)]
 pub struct Mounted<S> {
     existing: S,
+    context: Arc<MountContext>,
+}
+
+#[derive(Clone)]
+struct Registration {
     application: Arc<NazoAuth>,
     existing_root_paths: Arc<[String]>,
+}
+
+struct MountContext {
+    registration: Registration,
+    connection_facts: Option<ConnectionFacts>,
+}
+
+impl Registration {
+    fn new(application: Arc<NazoAuth>, occupied_paths: &[&str]) -> anyhow::Result<Self> {
+        application.mount().check_conflicts(occupied_paths)?;
+        let existing_root_paths = if application.mount().path() == "/" {
+            occupied_paths
+                .iter()
+                .map(|path| path.trim_end_matches('/').to_owned())
+                .collect()
+        } else {
+            Arc::from([])
+        };
+        Ok(Self {
+            application,
+            existing_root_paths,
+        })
+    }
 }
 
 /// Mount every configured endpoint, including discovery outside the prefix.
@@ -42,26 +70,19 @@ pub struct Mounted<S> {
 ///
 /// The host supplies trusted connection facts through request extensions and
 /// retains ownership of TLS, listeners, I/O capabilities and background tasks.
-/// Complete host routing and middleware before mounting. Middleware that must
-/// apply to both services belongs outside the returned service.
+/// Complete host preparation, routing and middleware before mounting. Middleware
+/// that must apply to both services belongs outside the returned service.
 pub fn mount<S>(
     existing: S,
     application: Arc<NazoAuth>,
     occupied_paths: &[&str],
 ) -> anyhow::Result<Mounted<S>> {
-    application.mount().check_conflicts(occupied_paths)?;
-    let existing_root_paths = if application.mount().path() == "/" {
-        occupied_paths
-            .iter()
-            .map(|path| path.trim_end_matches('/').to_owned())
-            .collect()
-    } else {
-        Arc::from([])
-    };
     Ok(Mounted {
         existing,
-        application,
-        existing_root_paths,
+        context: Arc::new(MountContext {
+            registration: Registration::new(application, occupied_paths)?,
+            connection_facts: None,
+        }),
     })
 }
 
@@ -72,41 +93,54 @@ where
     B::Error: Into<Box<dyn Error + Send + Sync>>,
     R: From<Bytes>,
 {
-    type Response = Response<R>;
+    type Response = S::Response;
     type Error = S::Error;
     type Future = Either<S::Future, BoxFuture<'static, Result<Self::Response, Self::Error>>>;
 
-    // Both branches share the host's backpressure. Call the same instance whose
-    // readiness was checked; cloning it here would lose reserved capacity.
+    // Both branches pass the host's readiness gate. For host requests, call the
+    // same instance whose readiness was checked, preserving reserved capacity.
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.existing.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request<B>) -> Self::Future {
+    fn call(&mut self, mut request: Request<B>) -> Self::Future {
+        let registration = &self.context.registration;
         let path = request.uri().path();
-        let is_existing = self.existing_root_paths.iter().any(|prefix| {
+        let is_existing = registration.existing_root_paths.iter().any(|prefix| {
             path.strip_prefix(prefix)
                 .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
         });
-        if is_existing || !self.application.mount().owns_path(path) {
+        if is_existing || !registration.application.mount().owns_path(path) {
             return Either::Left(self.existing.call(request));
         }
-        let route = self.application.route_for_path(path);
+        let route = registration.application.route_for_path(path);
         let body_mode = route.map_or(BodyMode::None, |route| route.body(request.method()));
-        #[cfg(feature = "axum")]
-        let request = {
-            let mut request = request;
-            if route.is_none_or(nazoauth::integration::Route::needs_connection_facts) {
-                axum::connection_facts(&mut request);
-            }
-            request
-        };
-        let application = self.application.clone();
+        if route.is_some_and(nazoauth::integration::Route::needs_connection_facts) {
+            connection_facts(&mut request, self.context.connection_facts.as_ref());
+        }
+        let context = self.context.clone();
+        // Keep the larger authentication future off every host request's frame.
+        // Retain the mount context without touching the shared application's
+        // reference count on the request path.
         Either::Right(Box::pin(async move {
-            Ok(application
+            Ok(context
+                .registration
+                .application
                 .handle_stream(transport::forward_request(request, body_mode))
                 .await
                 .map(R::from))
         }))
     }
 }
+
+fn connection_facts<B>(request: &mut Request<B>, facts: Option<&ConnectionFacts>) {
+    if let Some(facts) = facts
+        && request.extensions().get::<ConnectionFacts>().is_none()
+    {
+        request.extensions_mut().insert(facts.clone());
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/connection_facts.rs"]
+mod tests;

@@ -122,7 +122,8 @@ The last command uses the ordinary test PostgreSQL and Valkey configuration.
 Its mounted fixtures exercise root and nested prefixes through Actix and
 independent Hyper and Axum consumers, including standard discovery exceptions
 and unchanged host routes. The Axum fixture checks original method rejection and
-fallbacks, connection facts, and shared body handling. Tower transport tests
+fallbacks, connection facts, shared body handling, and its normal listener with
+the standard Tower service-factory mount. Tower transport tests
 check retained `Bytes` storage and bounded decoding. The stateful fixtures cover
 real PKCE/DPoP/refresh/session transitions, Passkey ceremonies and credential
 issuance/replay. The federation linking suite also mounts the public

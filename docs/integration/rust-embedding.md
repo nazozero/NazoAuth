@@ -227,45 +227,56 @@ exceptions. Every ordinary endpoint comes from the existing manifest, including
 future additions and optional modules. The native root host's existing
 `configure` entry point remains available. Both forms forward unknown methods
 and paths inside the authentication scope to the same facade policy.
+Register existing Actix routes before mounting, as above, so matching host
+requests reach their handlers before the authentication scope is considered.
 
-### Axum
+### Tower service factories, including Axum
 
-Enable the `axum` feature on `nazo-http-tower`. After preparing `auth`, build the
-application's existing router and mount NazoAuth in one call:
+`nazo-http-tower` accepts the standard Tower service and service-factory
+contracts. It has no Axum dependency or framework-specific feature. For an
+existing Axum application, prepare its normal make-service and mount once:
 
 ```rust
 use std::net::SocketAddr;
-use axum::{Router, ServiceExt, routing::get};
+use axum::{Router, routing::get, serve::IncomingStream};
+use nazoauth::ConnectionFacts;
+use tokio::net::TcpListener;
 
 let app = Router::new()
     .route("/api/health", get(|| async { "healthy" }))
     .route("/users/me", get(current_user))
     .fallback(application_not_found);
 
-let app = nazo_http_tower::axum::mount(app, auth, &["/api", "/users"])?;
-
-axum::serve(
-    listener,
+let app = nazo_http_tower::mount_make_service(
     app.into_make_service_with_connect_info::<SocketAddr>(),
-)
-.await?;
+    auth,
+    &["/api", "/users"],
+    |connection: &IncomingStream<'_, TcpListener>| ConnectionFacts {
+        peer_addr: Some(*connection.remote_addr()),
+        ..ConnectionFacts::default()
+    },
+)?;
+
+axum::serve(listener, app).await?;
 ```
 
-The returned service wraps the completed router. Its existing handlers,
-method rejection and fallback receive requests outside the authentication
-surface unchanged. The mount prepares Axum's route state once and selects
-NazoAuth before the original router runs; it neither nests the router nor
-rewrites the URI. Discovery exceptions are part of the same call. Configure
-the router's routes and state before mounting. Middleware already installed on
-that router continues to cover its routes; install middleware intended for
-both surfaces outside the returned service.
+The returned factory wraps each request service produced by the original
+factory. Axum's own `into_make_service_with_connect_info` prepares its routes
+at startup and continues to supply `ConnectInfo` to its business handlers.
+The mount selects NazoAuth before the original router runs. It preserves the
+raw URI, existing handlers, method rejection and fallback; discovery exceptions
+are part of the same call. Complete the router's routes and state first.
+Middleware on that router continues to cover its routes. Request middleware
+intended for both surfaces belongs outside the mounted request services.
 
-`into_make_service_with_connect_info` supplies the actual socket peer. For
-resources requiring connection facts, the adapter uses `ConnectInfo<SocketAddr>`
-when the request has no `ConnectionFacts`. Facts supplied by the host's TLS or
-authenticated ingress boundary remain intact, including certificate and
-server-name facts. Forwarding
-headers never supply authenticated facts. See the
+The final closure projects the host's real connection target into the public
+`ConnectionFacts` once per connection. The shared adapter does not inspect
+framework-specific extensions. Resources requiring those facts receive them
+only when the request has no `ConnectionFacts` already. Facts supplied by the
+host's TLS or authenticated ingress boundary remain intact, including
+certificate and server-name facts. Forwarding headers never establish
+authenticated facts. Other Tower factories supply their own connection target
+through the same API. See the
 [external Axum application](../../examples/axum-embedding) for a complete
 consumer of this API.
 
@@ -279,13 +290,20 @@ mount selection and bounded content decoding. The
 [external Hyper example](../../examples/hyper-embedding) bridges the mounted
 Tower service to Hyper with `hyper_util::service::TowerToHyperService`.
 
-The adapter delegates `poll_ready` to the original service and calls that same
-instance for host requests. Host backpressure therefore applies to the complete
-mounted service. That branch returns the original future and response without
-boxing or rebuilding their bodies. The authentication branch shares the prepared
-`Arc<NazoAuth>` and moves standard request and response heads; its future is
-boxed. Compressed input creates its decoder and bounded buffers on the first
-body poll, so rejection before body consumption does not allocate them.
+Both the factory and request service delegate `poll_ready` to the original
+service and call that same instance. A request must pass the host's readiness
+gate before either branch runs; place limits intended to cover authentication
+work around the mounted request service. The host branch retains its original
+future and response. The authentication branch shares the prepared graph and
+moves standard request and response heads. Only authentication requests box
+their future, keeping that asynchronous state out of the host branch's fixed
+future size. `mount_make_service` creates one context per connection; `mount`
+shares one context across clones of the supplied request service. Each context
+uses one `Arc`, including when Hyper's bridge clones the service per request.
+Authentication futures retain that same context; requests do not clone the
+deployment-wide `Arc<NazoAuth>`. Compressed input creates its decoder and bounded
+buffers on the first body poll, so rejection before body consumption does not
+allocate them.
 
 Hosts outside the Tower ecosystem implement the public transport contract below
 at their own registration boundary. Protocol handlers and route inventories
@@ -323,8 +341,9 @@ follow [OIDC Discovery §4](https://openid.net/specs/openid-connect-discovery-1_
 [OpenID4VCI §12.2.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html#section-12.2.2)
 and [RFC 9728 §3](https://www.rfc-editor.org/rfc/rfc9728.html#section-3).
 
-Enabled upstream provider callbacks must equal
-`{issuer}/auth/federation/{provider_id}/callback`. Update the provider's own
+Enabled upstream provider callbacks must use
+`{issuer}/auth/federation/{provider_id}/callback`; a configured fixed query is
+retained in the complete callback URL. Update the provider's own
 client registration to that URL; mounting cannot change an upstream service.
 Published authorization, token, session, SCIM and credential URLs use the same
 configured issuer. Internal avatar storage references stay unchanged; HTTP
@@ -345,12 +364,16 @@ normalized into a different endpoint.
 `mount` checks the host's declared occupied namespaces before installing any
 routes. Declare literal external namespace prefixes such as `/api` or `/users`,
 which cover their descendants; discovery reservations retain their raw escapes.
+Namespaces are paths and cannot contain a query or fragment.
 An opaque framework router cannot expose registrations
 it has already accepted, so the host must declare all of its namespaces. A
 conflict with the authentication prefix or a required discovery path is an
 error, including aliases that overlap after the existing routing escape
-normalization. At `/`, declared host namespaces and the host-owned `/ui` subtree
-retain their original routing and fallback; all remaining paths belong to
+normalization. Declare UI reservations using the canonical `{mount}/ui`
+namespace; request aliases follow the host router's semantics. Discovery paths
+must also avoid the mount's own ordinary endpoints. These checks run at startup.
+At `/`, declared host namespaces and the host-owned `/ui` subtree retain their
+original routing and fallback; all remaining paths belong to
 NazoAuth, including unknown paths. At a non-root prefix, requests outside that
 prefix and its exact discovery paths retain the host's original fallback.
 When composing multiple mounts, include the other mount's `path()` and
@@ -390,7 +413,7 @@ The adapter contract is `http::Request` / `http::Response`, `bytes::Bytes`,
 `integration::ConnectionFacts`, and the canonical route manifest. There is no
 framework or runtime trait to implement.
 
-Use the supplied Actix, Tower/Axum or Worker adapter when it matches the host.
+Use the supplied Actix, Tower or Worker adapter when it matches the host.
 The following steps describe implementing another transport adapter; applications
 using a supplied adapter do not repeat this work.
 

@@ -60,7 +60,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. |
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
-| `http-tower` | `nazo-http-tower` | Mount selection and bounded HTTP-body decoding for Tower services through the public `nazoauth` contract. Its optional Axum integration prepares the existing router and supplies socket-peer facts; Hyper hosts use the same service through the existing Tower-to-Hyper bridge. |
+| `http-tower` | `nazo-http-tower` | Mount selection and bounded HTTP-body decoding through standard Tower services and service factories. Hosts prepare their services and project trusted connection facts at connection creation. Axum and Hyper consumers share this adapter; it has no framework-specific dependency or request dispatch. |
 | `http-worker` | `nazo-http-worker` | Cloudflare Workers transport conversion, bounded streaming and authenticated ingress facts through the same facade. |
 | `authorization-server-d1` | `nazo-oauth-server-d1` | Primary D1 persistence and transient-state ports, atomic SQL changes, expiry and required audit. |
 | `server-worker` | `nazo-server-worker` | Workers bindings/secrets, host profile selection, prepared application lifecycle and scheduled maintenance; native offline provisioning is feature gated. |
@@ -71,7 +71,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `nazoauth` | `nazoauth` | Framework-neutral embedding API, application composition and HTTP protocol adaptation. It owns route identity, request interpretation, security presentation and response bytes, including OpenID4VC endpoints. Its integration contract uses standard HTTP values and connection facts. |
 | `server` | `nazo-server` | Native host and `nazoauth` executable: process configuration, launchers, tenant/bootstrap resources, HTTP listener wiring, CLI/operator tasks, TLS, process adapters, local storage and background scheduling. It binds concrete infrastructure to the neutral facade. |
 
-Actix, Tower/Axum and Cloudflare Workers consume the same facade contract. The
+Actix, Tower and Cloudflare Workers consume the same facade contract. The
 resource-server core uses framework-neutral `http` types.
 
 ## Dependency Direction

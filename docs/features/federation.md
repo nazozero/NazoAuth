@@ -344,8 +344,11 @@ Account creation, provider-link insertion and their Required
 atomic batch. Reusing an existing link does not emit a second creation event.
 A failed audit commit cannot leave a new linked account behind.
 
-Endpoint and callback URLs may contain query parameters and trailing slashes;
-the authorization redirect merges protocol parameters using URL query encoding.
+Upstream endpoint URLs may contain query parameters and trailing slashes.
+Local callback URLs use `{issuer}/auth/federation/{provider_id}/callback` and may
+include fixed query parameters. Their complete configured value is retained in
+authorization requests and token exchanges. The authorization redirect merges
+protocol parameters using URL query encoding.
 Issuer identifiers retain their exact trailing slash and reject query
 parameters, fragments and URL credentials. Client IDs and secrets retain their
 exact configured bytes. OAuth Basic authentication form-encodes each credential

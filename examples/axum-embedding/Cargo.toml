@@ -11,6 +11,6 @@ publish = false
 [dependencies]
 anyhow = "1.0.104"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
-nazo-http-tower = { path = "../../crates/http-tower", features = ["axum"] }
+nazo-http-tower = { path = "../../crates/http-tower" }
 nazoauth = { path = "../../crates/nazoauth", default-features = false }
 tokio = { version = "1.54.1", features = ["net"] }

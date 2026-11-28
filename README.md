@@ -167,7 +167,7 @@ every client access to it.
 To embed NazoAuth directly into an existing Rust HTTP application, prepare its
 configuration and host capabilities, then mount it once at a chosen path. The
 [Rust embedding guide](docs/integration/rust-embedding.md) covers Actix,
-Axum/Tower and other framework adapters.
+Tower services (including Axum) and other framework adapters.
 
 ## Inside the server
 

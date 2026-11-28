@@ -60,9 +60,12 @@ impl Mount {
                     &settings.redirect_uri
                 }
             };
+            let callback = redirect_uri
+                .split_once('?')
+                .map_or(redirect_uri.as_str(), |(callback, _)| callback);
             ensure!(
-                redirect_uri
-                    == &format!(
+                callback
+                    == format!(
                         "{}/auth/federation/{}/callback",
                         settings.endpoint.issuer, provider.provider_id
                     ),
@@ -95,10 +98,22 @@ impl Mount {
                 route,
             });
         }
-        Ok(Self {
+        let mount = Self {
             prefix: prefix.to_owned(),
             discovery,
-        })
+        };
+        for entry in &mount.discovery {
+            if let Some(path) = mount.relative_path(&entry.path) {
+                let path = crate::routes::routing_path(path);
+                ensure!(
+                    crate::routes::match_path(&path).is_none_or(|(route, _)| relocated(route)),
+                    "discovery path {:?} conflicts with an endpoint in NazoAuth mount {:?}",
+                    entry.path,
+                    mount.path()
+                );
+            }
+        }
+        Ok(mount)
     }
 
     /// Canonical mount path, without a trailing slash except for the root `/`.
@@ -117,7 +132,7 @@ impl Mount {
     }
 
     /// Whether the mount owns a raw external path. `/ui` below the mount belongs
-    /// to the host. At `/`, install this as the host's fallback service.
+    /// to the host. At `/`, adapters also exclude the host's reserved namespaces.
     pub fn owns_path(&self, raw_path: &str) -> bool {
         if self
             .relative_path(raw_path)
@@ -134,8 +149,8 @@ impl Mount {
     pub fn check_conflicts(&self, reserved_paths: &[&str]) -> anyhow::Result<()> {
         for &reserved in reserved_paths {
             ensure!(
-                reserved.starts_with('/'),
-                "reserved paths must start with /"
+                reserved.starts_with('/') && !reserved.contains(['?', '#']),
+                "reserved paths must start with / and contain no query or fragment"
             );
             // These are literal external namespaces, including exact discovery
             // paths from other mounts. Resource identifiers may contain escapes
@@ -150,7 +165,7 @@ impl Mount {
             let discovery_conflict = self
                 .discovery
                 .iter()
-                .any(|entry| overlaps(&normalized, &crate::routes::routing_path(&entry.path)));
+                .any(|entry| in_scope(&crate::routes::routing_path(&entry.path), &normalized));
             if ui && !discovery_conflict {
                 continue;
             }

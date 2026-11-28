@@ -18,11 +18,14 @@ fn existing_connection_facts_and_shared_storage_are_preserved() {
         };
         let mut request = Request::new(());
         request.extensions_mut().insert(expected.clone());
-        request
-            .extensions_mut()
-            .insert(ConnectInfo("127.0.0.1:4000".parse::<SocketAddr>().unwrap()));
 
-        connection_facts(&mut request);
+        connection_facts(
+            &mut request,
+            Some(&ConnectionFacts {
+                peer_addr: Some("127.0.0.1:4000".parse().unwrap()),
+                ..ConnectionFacts::default()
+            }),
+        );
 
         let actual = request.extensions().get::<ConnectionFacts>().unwrap();
         assert_eq!(actual, &expected);
@@ -38,8 +41,12 @@ fn existing_connection_facts_and_shared_storage_are_preserved() {
 }
 
 #[test]
-fn axum_connection_info_supplies_only_the_socket_peer() {
-    let peer_addr = "192.0.2.30:1234".parse::<SocketAddr>().unwrap();
+fn connection_target_supplies_trusted_facts_without_reading_headers() {
+    let expected = ConnectionFacts {
+        peer_addr: Some("192.0.2.30:1234".parse().unwrap()),
+        server_name: Some(Arc::from("issuer.example")),
+        ..ConnectionFacts::default()
+    };
     let mut request = Request::builder()
         .header("host", "untrusted.example")
         .header("forwarded", "for=192.0.2.99;proto=https")
@@ -47,25 +54,15 @@ fn axum_connection_info_supplies_only_the_socket_peer() {
         .header("client-cert", ":Zm9yZ2Vk:")
         .body(())
         .unwrap();
-    request.extensions_mut().insert(ConnectInfo(peer_addr));
 
-    connection_facts(&mut request);
+    connection_facts(&mut request, Some(&expected));
 
-    assert_eq!(
-        request.extensions().get::<ConnectionFacts>(),
-        Some(&ConnectionFacts {
-            peer_addr: Some(peer_addr),
-            ..ConnectionFacts::default()
-        }),
-    );
-    assert_eq!(
-        request
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .unwrap()
-            .0,
-        peer_addr,
-    );
+    let actual = request.extensions().get::<ConnectionFacts>().unwrap();
+    assert_eq!(actual, &expected);
+    assert!(Arc::ptr_eq(
+        actual.server_name.as_ref().unwrap(),
+        expected.server_name.as_ref().unwrap(),
+    ));
 }
 
 #[test]
@@ -78,9 +75,9 @@ fn headers_and_untyped_addresses_do_not_supply_connection_facts() {
         .unwrap();
     request
         .extensions_mut()
-        .insert("192.0.2.99:1234".parse::<SocketAddr>().unwrap());
+        .insert("192.0.2.99:1234".parse::<std::net::SocketAddr>().unwrap());
 
-    connection_facts(&mut request);
+    connection_facts(&mut request, None);
 
     assert!(request.extensions().get::<ConnectionFacts>().is_none());
 }

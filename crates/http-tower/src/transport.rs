@@ -25,13 +25,13 @@ where
     B: Body<Data = Bytes> + Send + 'static,
     B::Error: Into<Box<dyn Error + Send + Sync>>,
 {
-    let encoding = request
-        .headers()
-        .get(header::CONTENT_ENCODING)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .unwrap_or("");
     let encoding = if mode.decode_content() {
+        let encoding = request
+            .headers()
+            .get(header::CONTENT_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
         ["gzip", "deflate", "br", "zstd"]
             .into_iter()
             .find(|candidate| encoding.eq_ignore_ascii_case(candidate))
