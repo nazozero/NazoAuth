@@ -29,6 +29,7 @@ pub(crate) struct ReplayState {
 }
 
 pub(crate) const REWRITE_MIN_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const REPLAY_BINDING: &[u8] = b"nazo-kevy:deployment:v1";
 
 /// Tenant-bound semantic ports. The key prefix is applied by the adapter.
 #[derive(Clone)]
@@ -54,31 +55,47 @@ impl KevyBackend {
         if deployment_identity.is_empty() {
             return Err(Error::Unexpected);
         }
+        std::fs::create_dir_all(&path).map_err(|_| Error::Unavailable)?;
+        let directory = File::open(&path).map_err(|_| Error::Unavailable)?;
+        // Own the directory before inspecting it. Kevy's own lock is acquired
+        // inside open, after this adapter must have ruled out lossy repair.
+        directory.try_lock().map_err(|_| Error::Unavailable)?;
         // Kevy repairs a damaged tail while opening it. Its quarantine must
         // continue to block admission on subsequent opens, after the repair.
         // Always mode never stages writes. Reject another mode's ring before
         // Kevy can silently discard and remove it while settling that ring.
-        if path.exists()
-            && std::fs::read_dir(&path)
-                .map_err(|_| Error::Unavailable)?
-                .any(|entry| {
-                    entry.map_or(true, |entry| {
-                        let name = entry.file_name();
-                        name == "aof-0.aof.stage"
-                            || name.to_string_lossy().contains(".corrupt-quarantine.")
-                    })
+        if std::fs::read_dir(&path)
+            .map_err(|_| Error::Unavailable)?
+            .any(|entry| {
+                entry.map_or(true, |entry| {
+                    let name = entry.file_name();
+                    name == "aof-0.aof.stage"
+                        || name.to_string_lossy().contains(".corrupt-quarantine.")
                 })
+            })
         {
+            return Err(Error::CorruptData);
+        }
+        // This native streaming validation does not modify the AOF. Reject
+        // damage before open can truncate it and lose its quarantine on crash.
+        let checked = kevy_persist::replay_aof_in_place(
+            &path.join("aof-0.aof"),
+            kevy_persist::ReplayMode::Strict,
+            kevy_persist::ReplaySummary::Quiet,
+            |_| {},
+        )
+        .map_err(|_| Error::Unavailable)?;
+        if checked.corrupt || checked.dropped_bytes != 0 || checked.zero_tail != 0 {
             return Err(Error::CorruptData);
         }
         let replay = Store::open(
             Config::default()
                 .with_persist(&path)
                 .with_appendfsync(AppendFsync::Always)
-                .with_auto_aof_rewrite_disabled(),
+                .with_auto_aof_rewrite_disabled()
+                .with_ttl_reaper_manual(),
         )
         .map_err(|_| Error::Unavailable)?;
-        let directory = File::open(&path).map_err(|_| Error::Unavailable)?;
         let report = replay.open_report();
         if report.corrupt
             || report.dropped_bytes != 0
@@ -89,9 +106,8 @@ impl KevyBackend {
             directory.sync_all().map_err(|_| Error::Unavailable)?;
             return Err(Error::CorruptData);
         }
-        const BINDING: &[u8] = b"nazo-kevy:deployment:v1";
         let existing = replay
-            .get_with(BINDING, |value| {
+            .get_with(REPLAY_BINDING, |value| {
                 value.map(|value| value == deployment_identity.as_bytes())
             })
             .map_err(|_| Error::Unavailable)?;
@@ -100,7 +116,7 @@ impl KevyBackend {
             Some(false) => return Err(Error::Unexpected),
             None => {
                 replay
-                    .set(BINDING, deployment_identity.as_bytes())
+                    .set(REPLAY_BINDING, deployment_identity.as_bytes())
                     .map_err(|_| Error::Unavailable)?;
             }
         }
@@ -226,6 +242,16 @@ pub(crate) fn set_until(
     raw: Vec<u8>,
     expires_at_ms: u64,
 ) {
-    store.set(key, raw, None, SetCondition::Always);
-    store.expire_at_unix_ms(key, expires_at_ms);
+    store.set(
+        key,
+        raw,
+        Some(Duration::from_millis(
+            expires_at_ms.saturating_sub(now_ms()),
+        )),
+        SetCondition::Always,
+    );
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/storage.rs"]
+mod tests;

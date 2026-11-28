@@ -276,7 +276,7 @@ async fn email_attempts_are_bounded_and_stale_owners_cannot_consume_or_clean_new
         .unwrap();
     assert!(
         store
-            .reserve_email_send(tenant, email, "second", 60)
+            .reserve_email_send(tenant, email, "second\"owner", 60)
             .await
             .unwrap()
     );
@@ -284,7 +284,7 @@ async fn email_attempts_are_bounded_and_stale_owners_cannot_consume_or_clean_new
         .store_code(
             tenant,
             email,
-            "second",
+            "second\"owner",
             PasswordHashInput::new("second-hash").unwrap(),
             60,
         )

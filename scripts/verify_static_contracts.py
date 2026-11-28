@@ -68,7 +68,7 @@ EXECUTION_DEPENDENCIES = {
     "actix", "actix-cors", "actix-files", "actix-multipart", "actix-rt", "actix-tls",
     "actix-web", "async-std", "atomicwrites", "aws-credential-types", "aws-sigv4",
     "axum", "diesel", "diesel-async", "diesel_migrations", "fred", "fs2",
-    "kevy-embedded", "kevy-store",
+    "kevy-embedded", "kevy-persist", "kevy-store",
     "futures-executor", "hyper", "lettre_email", "opentelemetry",
     "opentelemetry-appender-tracing", "opentelemetry-otlp", "opentelemetry_sdk",
     "process-wrap", "reqwest", "rustix", "smol", "tokio", "tokio-postgres",

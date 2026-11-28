@@ -182,50 +182,113 @@ fn foreign_staging_ring_blocks_open_without_discarding_it() {
 }
 
 #[tokio::test]
-async fn native_rewrite_retains_consumptions_across_reopen() {
+async fn native_rewrite_prunes_only_logically_expired_markers_across_reopen() {
     let directory = Directory::new();
     let path = directory.0.join("nested/replay");
-    {
+    let expires_at = jiff::Timestamp::now().as_second() + 600;
+    let deadline = ((expires_at as u64) * 1_000).to_be_bytes();
+    for cycle in 0..3_u64 {
         let backend = KevyBackend::open(&path, "deployment").unwrap();
         let state = backend.for_tenant(tenant());
-        assert!(state.consume_replay("jar", &[b"first"], 600).await.unwrap());
+        assert_eq!(
+            state
+                .consume_replay_until("jar", &[b"first"], expires_at, None)
+                .await
+                .unwrap(),
+            cycle == 0
+        );
+        let live = state.key("jar", &[b"first"]);
+        let expired = state.key("jar", &[b"expired"]);
         let before = {
             let mut replay = state.replay.lock().await;
+            assert_eq!(
+                replay.store.get(&live).unwrap().as_deref(),
+                Some(deadline.as_slice())
+            );
+            assert_eq!(replay.store.with(|store| store.pttl(&live)), -1);
             // Native history that compaction can remove, without waiting for
             // the production 64 MiB threshold in a regression test.
-            let key = state.key("jar", &[b"first"]);
             for _ in 0..32 {
-                replay
-                    .store
-                    .set_with_ttl(
-                        &key,
-                        &(now_ms() + 600_000).to_be_bytes(),
-                        Duration::from_secs(600),
-                    )
-                    .unwrap();
+                replay.store.set(&live, &deadline).unwrap();
             }
+            replay
+                .store
+                .set(&expired, &(now_ms() - 1).to_be_bytes())
+                .unwrap();
+            assert!(replay.store.get(&expired).unwrap().is_some());
             replay.next_rewrite_bytes = 1;
             replay.store.info().aof_bytes
         };
         assert!(
             state
-                .consume_replay("jar", &[b"second"], 600)
+                .consume_replay("jar", &[b"rewrite-trigger", &cycle.to_be_bytes()], 600)
                 .await
                 .unwrap()
         );
         let replay = state.replay.lock().await;
         assert!(replay.store.info().aof_bytes < before);
         assert_eq!(replay.next_rewrite_bytes, REWRITE_MIN_BYTES);
+        assert!(replay.store.get(&expired).unwrap().is_none());
+        assert_eq!(
+            replay.store.get(&live).unwrap().as_deref(),
+            Some(deadline.as_slice())
+        );
+        assert_eq!(replay.store.with(|store| store.pttl(&live)), -1);
     }
     let backend = KevyBackend::open(&path, "deployment").unwrap();
     let state = backend.for_tenant(tenant());
     assert!(!state.consume_replay("jar", &[b"first"], 600).await.unwrap());
+}
+
+#[tokio::test]
+async fn logical_expiry_allows_reuse_before_physical_cleanup() {
+    let state = crate::test_support::test_state();
+    let key = state.key("jar", &[b"expired"]);
+    state
+        .replay
+        .lock()
+        .await
+        .store
+        .set(&key, &(now_ms() - 1).to_be_bytes())
+        .unwrap();
     assert!(
-        !state
-            .consume_replay("jar", &[b"second"], 600)
+        state
+            .consume_replay("jar", &[b"expired"], 600)
             .await
             .unwrap()
     );
+    assert!(
+        !state
+            .consume_replay("jar", &[b"expired"], 600)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        state
+            .replay
+            .lock()
+            .await
+            .store
+            .with(|store| store.pttl(&key)),
+        -1
+    );
+}
+
+#[tokio::test]
+async fn native_rewrite_rejects_unknown_marker_data() {
+    let directory = Directory::new();
+    let backend = KevyBackend::open(&directory.0, "deployment").unwrap();
+    let state = backend.for_tenant(tenant());
+    {
+        let mut replay = state.replay.lock().await;
+        replay.store.set(b"unknown-marker", b"invalid").unwrap();
+        replay.next_rewrite_bytes = 1;
+    }
+    assert_eq!(
+        state.consume_replay("jar", &[b"fresh"], 600).await,
+        Err(Error::CorruptData)
+    );
+    assert_eq!(state.replay_check().await, Err(Error::Unavailable));
 }
 
 #[tokio::test]

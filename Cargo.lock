@@ -3006,6 +3006,7 @@ dependencies = [
  "blake3",
  "jiff 1.0.2",
  "kevy-embedded",
+ "kevy-persist",
  "kevy-store",
  "nazo-auth",
  "nazo-identity",

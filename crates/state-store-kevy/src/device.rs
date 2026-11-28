@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use kevy_store::SetCondition;
 use nazo_auth::{
     DeviceAtomicResult, DeviceAuthorizationState, DeviceCreateResult, DeviceStateFuture,
@@ -143,8 +145,14 @@ impl DeviceStateStorePort for TenantState {
                     // All fallible work precedes both writes. The backend uses
                     // one shard, so the mapping and state publish together.
                     set_until(store, &key, raw, expires_at_ms);
-                    store.set_slice(&user_key, hash.as_bytes(), None, SetCondition::Always);
-                    store.expire_at_unix_ms(&user_key, expires_at_ms);
+                    store.set_slice(
+                        &user_key,
+                        hash.as_bytes(),
+                        Some(Duration::from_millis(
+                            expires_at_ms.saturating_sub(now_ms()),
+                        )),
+                        SetCondition::Always,
+                    );
                     Ok(DeviceCreateResult::Applied)
                 })
                 .map_err(port_error)

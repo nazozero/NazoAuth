@@ -61,9 +61,15 @@ threads. A write, rewrite or required directory-sync error latches this replay
 owner unavailable, including subsequent consumption and health checks. An
 ambiguous write never becomes an accepted proof.
 
-The native TTL reaper reclaims expired entries. The adapter disables background
-AOF rewrite because Kevy 7.0.0 logs its cutover errors without returning them to
-the caller. Within the same replay lock, it calls the native `rewrite_aof` when
+The volatile store uses native TTL reclamation. Replay markers carry their
+absolute deadline in the value and have no native TTL: consumption checks that
+deadline so AOF recovery cannot shorten a proof's replay-protection window.
+Compaction removes expired markers; an idle store retains them until the next
+compaction.
+
+The adapter disables background AOF rewrite because Kevy 7.0.0 logs its cutover
+errors without returning them to the caller. Within the same replay lock, it
+removes logically expired markers and calls the native `rewrite_aof` when
 the log reaches 64 MiB, then waits for at least twice the last compacted size
 (with a 64 MiB floor) before the next rewrite. A reopened log above the floor is
 compacted on its next accepted consumption. Rewriting pauses proof consumption
@@ -81,8 +87,9 @@ command. The replay directory is bound to one deployment identity.
 
 ## Ownership and recovery
 
-Only one process may serve the deployment. Opening the same replay directory
-twice is rejected by Kevy's process lock. Different directories are independent
+Only one process may serve the deployment. The adapter locks its retained
+directory handle before inspecting the log; Kevy also holds its native process
+lock. Different directories are independent
 security authorities; they must not serve the same deployment simultaneously.
 Use Valkey for multiple application processes or shared-state deployment.
 
@@ -91,9 +98,13 @@ No workflow snapshot is restored. Do not restore an old replay snapshot, delete
 the replay directory, or treat it as disposable cache. A new empty directory is
 appropriate only for a new deployment or a completed state-loss recovery.
 
-Startup rejects damaged/quarantined AOF data and reported replay loss, including
-a later startup after the engine has quarantined a damaged tail. Preserve the
-directory for inspection. After replay-state loss, corruption or rollback, keep
+Startup validates the AOF through the native streaming reader while holding the
+directory lock, before opening the engine. Damaged, truncated or unexpected
+zero-filled tails are rejected without modifying the original file. Existing
+quarantine files and staging rings also block startup. This adds one read of
+the log at startup and prevents the engine's automatic repair from erasing
+evidence across an interrupted open. Preserve the directory for inspection.
+After replay-state loss, corruption or rollback, keep
 ingress closed until every applicable accepted-proof window has drained under
 the verified clock bound, or invalidate the corresponding trust/credentials.
 Changing the epoch alone is insufficient. The existing refresh/access/ID-token

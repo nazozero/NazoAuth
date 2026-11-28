@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use nazo_auth::{DpopStateFuture, DpopStateStoreError, DpopStateStorePort};
 use nazo_oauth_server::ports::fapi_replay::{
     FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
@@ -13,7 +11,7 @@ use nazo_resource_server::{
 
 use crate::{
     Error, TenantState,
-    storage::{REWRITE_MIN_BYTES, now_ms},
+    storage::{REPLAY_BINDING, REWRITE_MIN_BYTES, now_ms},
     ttl,
 };
 
@@ -104,15 +102,7 @@ impl TenantState {
             // mutex excludes later consumers until its outcome is known.
             // Leave the latch set on an I/O error or an unwinding write.
             replay.failed = true;
-            if replay
-                .store
-                .set_with_ttl(
-                    &key,
-                    &expires_at.to_be_bytes(),
-                    Duration::from_millis(expires_at - now),
-                )
-                .is_err()
-            {
+            if replay.store.set(&key, &expires_at.to_be_bytes()).is_err() {
                 // A failed append can still have changed Kevy's memory.
                 // No subsequent operation may interpret that state as known.
                 return Err(Error::Unavailable);
@@ -120,6 +110,32 @@ impl TenantState {
             // The background rewrite in Kevy 7 logs and discards cutover
             // errors. Own the native rewrite here so any error stays latched.
             if replay.store.info().aof_bytes >= replay.next_rewrite_bytes {
+                // The stored absolute deadline is the only expiry authority:
+                // native TTL conversion can shorten it during AOF recovery.
+                // Borrow values and copy only keys due for this compaction.
+                replay.store.with(|store| {
+                    let mut expired = Vec::new();
+                    let mut corrupt = false;
+                    store.snapshot_each(|key, _, _| {
+                        if key == REPLAY_BINDING {
+                            return;
+                        }
+                        let deadline = store.get_shared_with(key, |raw| {
+                            raw.and_then(|raw| raw.try_into().ok())
+                                .map(u64::from_be_bytes)
+                        });
+                        match deadline {
+                            Ok(Some(deadline)) if deadline <= now => expired.push(key.to_vec()),
+                            Ok(Some(_)) => {}
+                            _ => corrupt = true,
+                        }
+                    });
+                    if corrupt {
+                        return Err(Error::CorruptData);
+                    }
+                    store.del(&expired.iter().map(Vec::as_slice).collect::<Vec<_>>());
+                    Ok(())
+                })?;
                 let stats = replay
                     .store
                     .rewrite_aof()

@@ -11,6 +11,7 @@ publish = false
 blake3.workspace = true
 jiff.workspace = true
 kevy-embedded = { version = "=7.0.0", default-features = false, features = ["core", "persist"] }
+kevy-persist = "=7.0.0"
 kevy-store = "=7.0.0"
 nazo-auth.workspace = true
 nazo-identity.workspace = true

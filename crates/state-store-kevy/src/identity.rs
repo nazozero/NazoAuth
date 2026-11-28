@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use kevy_store::SetCondition;
 use nazo_identity::{
     TenantId,
@@ -73,7 +75,8 @@ impl TenantState {
     ) -> Result<Option<T>, Error> {
         #[derive(Deserialize)]
         struct BrowserBinding<'a> {
-            browser_binding_hash: &'a str,
+            #[serde(borrow)]
+            browser_binding_hash: Cow<'a, str>,
         }
         self.volatile.with_key(key, |db| {
             let Some(raw) = db.get(key)? else {
@@ -196,10 +199,8 @@ impl EmailVerificationStorePort for TenantState {
                         return Ok(EmailVerificationConsume::MissingOrChanged);
                     };
                     let code: EmailCode<String> = decode(&raw)?;
-                    let (owner, hash): (&str, &str) = serde_json::from_str(expected)?;
                     if code.expires_at_ms <= now_ms()
-                        || code.owner != owner
-                        || code.password_hash != hash
+                        || serde_json::to_string(&(&code.owner, &code.password_hash))? != expected
                     {
                         return Ok(EmailVerificationConsume::MissingOrChanged);
                     }

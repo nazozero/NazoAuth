@@ -8,7 +8,7 @@ FORBIDDEN_PACKAGES = {
     "nazo-server", "nazo-http-actix", "nazo-postgres", "nazo-valkey",
     "nazo-oauth-server-postgres", "nazo-oauth-server-valkey",
     "nazo-oauth-server-object-store",
-    "nazo-kevy", "kevy-embedded", "kevy-store",
+    "nazo-kevy", "kevy-embedded", "kevy-persist", "kevy-store",
     "actix-web", "actix-http", "actix-server", "axum", "hyper", "reqwest",
     "diesel", "diesel-async", "tokio-postgres", "rusqlite", "libsqlite3-sys",
     "fred", "redis", "rustls", "native-tls", "openssl-sys", "aws-lc-sys",

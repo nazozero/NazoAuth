@@ -154,7 +154,7 @@ impl AvatarUploadStatePort for TenantState {
                             final_object_id, ..
                         } => {
                             return Ok(AvatarUploadClaim::Completed {
-                                final_object_id: final_object_id.to_string(),
+                                final_object_id: std::mem::take(final_object_id).into_owned(),
                             });
                         }
                         Upload::Active {

@@ -10,18 +10,18 @@ async fn matching_owner_consumes_typed_corruption_before_rejecting_it() {
             "oidc-federation"
         };
         let key = store.key(namespace, &[b"corrupt"]);
-        let raw = br#"{"browser_binding_hash":"owner-browser"}"#;
+        let raw = br#"{"browser_binding_hash":"owner-\"browser"}"#;
         store.volatile.with_key(&key, |db| {
             db.set_slice(&key, raw, Some(ttl(60).unwrap()), SetCondition::Always);
         });
         let error = if social {
             store
-                .take_social("corrupt", "owner-browser")
+                .take_social("corrupt", "owner-\"browser")
                 .await
                 .unwrap_err()
         } else {
             store
-                .take_oidc("corrupt", "owner-browser")
+                .take_oidc("corrupt", "owner-\"browser")
                 .await
                 .unwrap_err()
         };
