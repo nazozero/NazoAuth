@@ -25,6 +25,7 @@ pub(crate) struct ReplayState {
     pub(crate) store: Store,
     pub(crate) failed: bool,
     pub(crate) directory: File,
+    pub(crate) aof: File,
     pub(crate) next_rewrite_bytes: u64,
 }
 
@@ -130,12 +131,14 @@ impl KevyBackend {
                 break;
             }
         }
+        let aof = File::open(path.join("aof-0.aof")).map_err(|_| Error::Unavailable)?;
         Ok(Self {
             volatile: Store::open(Config::default()).map_err(|_| Error::Unavailable)?,
             replay: Arc::new(ReplayMutex::new(ReplayState {
                 store: replay,
                 failed: false,
                 directory,
+                aof,
                 next_rewrite_bytes: REWRITE_MIN_BYTES,
             })),
             directory: Arc::new(Mutex::new(None)),

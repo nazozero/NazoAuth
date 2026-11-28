@@ -199,7 +199,7 @@ async fn native_rewrite_prunes_only_logically_expired_markers_across_reopen() {
         );
         let live = state.key("jar", &[b"first"]);
         let expired = state.key("jar", &[b"expired"]);
-        let before = {
+        let (before, old_aof) = {
             let mut replay = state.replay.lock().await;
             assert_eq!(
                 replay.store.get(&live).unwrap().as_deref(),
@@ -217,7 +217,10 @@ async fn native_rewrite_prunes_only_logically_expired_markers_across_reopen() {
                 .unwrap();
             assert!(replay.store.get(&expired).unwrap().is_some());
             replay.next_rewrite_bytes = 1;
-            replay.store.info().aof_bytes
+            (
+                replay.aof.metadata().unwrap().len(),
+                replay.aof.try_clone().unwrap(),
+            )
         };
         assert!(
             state
@@ -226,7 +229,15 @@ async fn native_rewrite_prunes_only_logically_expired_markers_across_reopen() {
                 .unwrap()
         );
         let replay = state.replay.lock().await;
-        assert!(replay.store.info().aof_bytes < before);
+        let after = replay.aof.metadata().unwrap().len();
+        assert!(after < before);
+        assert_eq!(
+            after,
+            std::fs::metadata(path.join("aof-0.aof")).unwrap().len()
+        );
+        // The old descriptor still sees the replaced inode. Future threshold
+        // checks must follow the new AOF, including after the next reopen.
+        assert!(old_aof.metadata().unwrap().len() >= before);
         assert_eq!(replay.next_rewrite_bytes, REWRITE_MIN_BYTES);
         assert!(replay.store.get(&expired).unwrap().is_none());
         assert_eq!(

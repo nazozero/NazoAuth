@@ -109,7 +109,9 @@ impl TenantState {
             }
             // The background rewrite in Kevy 7 logs and discards cutover
             // errors. Own the native rewrite here so any error stays latched.
-            if replay.store.info().aof_bytes >= replay.next_rewrite_bytes {
+            if replay.aof.metadata().map_err(|_| Error::Unavailable)?.len()
+                >= replay.next_rewrite_bytes
+            {
                 // The stored absolute deadline is the only expiry authority:
                 // native TTL conversion can shorten it during AOF recovery.
                 // Borrow values and copy only keys due for this compaction.
@@ -142,6 +144,18 @@ impl TenantState {
                     .map_err(|_| Error::Unavailable)?
                     .ok_or(Error::Unavailable)?;
                 replay.next_rewrite_bytes = REWRITE_MIN_BYTES.max(stats.bytes.saturating_mul(2));
+                // Rewrite replaces the inode. Keep the size probe on the
+                // live log without Store::info's full keyspace scan.
+                replay.aof = std::fs::File::open(
+                    replay
+                        .store
+                        .config()
+                        .data_dir
+                        .as_ref()
+                        .ok_or(Error::Unavailable)?
+                        .join("aof-0.aof"),
+                )
+                .map_err(|_| Error::Unavailable)?;
                 replay
                     .directory
                     .sync_all()

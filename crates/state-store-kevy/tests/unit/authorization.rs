@@ -163,16 +163,17 @@ async fn original_code_deadline_is_checked_even_without_physical_expiry() {
 #[tokio::test]
 async fn reauth_is_one_use_and_tenant_keys_do_not_overlap() {
     let state = crate::test_support::test_state();
+    let nonce = uuid::Uuid::new_v4().to_string();
     let mut other = state.clone();
     other.tenant_id = nazo_identity::TenantId::new(uuid::Uuid::from_u128(2)).unwrap();
     state
-        .store_reauth_nonce("nonce", 1_234_567, 30)
+        .store_reauth_nonce(&nonce, 1_234_567, 30)
         .await
         .unwrap();
-    assert_eq!(other.take_reauth_nonce("nonce").await.unwrap(), None);
+    assert_eq!(other.take_reauth_nonce(&nonce).await.unwrap(), None);
     assert_eq!(
-        state.take_reauth_nonce("nonce").await.unwrap(),
+        state.take_reauth_nonce(&nonce).await.unwrap(),
         Some(1_234_567)
     );
-    assert_eq!(state.take_reauth_nonce("nonce").await.unwrap(), None);
+    assert_eq!(state.take_reauth_nonce(&nonce).await.unwrap(), None);
 }
