@@ -16,6 +16,7 @@ set can be scanned from one place.
 | Current scope and roadmap | [project/roadmap.md](project/roadmap.md) |
 | Workspace and runtime-module architecture | [project/architecture.md](project/architecture.md) |
 | Deployment | [operations/deployment.md](operations/deployment.md) |
+| Single-process RocksDB | [operations/rocksdb.md](operations/rocksdb.md) |
 | Cloudflare Workers | [operations/cloudflare-workers.md](operations/cloudflare-workers.md) |
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
 | Managed install, update, and recovery | [operations/one-click-update.md](operations/one-click-update.md) |
@@ -68,6 +69,7 @@ set can be scanned from one place.
 | [operations/control-discovery.md](operations/control-discovery.md) | Signed, read-only controller discovery protocol. |
 | [operations/controller-repository-split.md](operations/controller-repository-split.md) | Server/controller repository and release boundary. |
 | [operations/deployment.md](operations/deployment.md) | English deployment guide. |
+| [operations/rocksdb.md](operations/rocksdb.md) | Opt-in native RocksDB build, single-process ownership, atomic durability, backup and restore. |
 | [operations/cloudflare-workers.md](operations/cloudflare-workers.md) | Workers host, D1 semantics, provisioning, ingress and runtime verification. |
 | [operations/upgrade-from-v0.2.16.md](operations/upgrade-from-v0.2.16.md) | Released-schema cutover, audit preservation, and upgrade preflight. |
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |

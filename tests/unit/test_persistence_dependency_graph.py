@@ -35,6 +35,9 @@ class PersistenceGraphTests(unittest.TestCase):
                 self.assertIn(package, GRAPH.graph_roots())
         self.assertIn("nazo-oauth-server-postgres", GRAPH.graph_roots())
         self.assertIn("nazo-oauth-server-valkey", GRAPH.graph_roots())
+        self.assertIn("nazo-rocksdb", GRAPH.graph_roots())
+        self.assertIn("nazo-server", GRAPH.graph_roots())
+        self.assertIn("nazo-server-worker", GRAPH.graph_roots())
 
     def test_storage_technology_isolation_is_not_relaxed(self) -> None:
         for package in ("nazo-oauth-server", "nazo-key-management", "nazo-identity"):
@@ -46,6 +49,13 @@ class PersistenceGraphTests(unittest.TestCase):
         self.assertIn("fred", GRAPH.forbidden_graph_dependencies("nazo-oauth-server-postgres"))
         self.assertIn("nazo-oauth-server", GRAPH.forbidden_graph_dependencies("nazo-auth"))
         self.assertNotIn("tokio", GRAPH.forbidden_graph_dependencies("nazo-auth"))
+
+    def test_rocksdb_is_confined_to_its_adapter_and_opt_in_native_host(self) -> None:
+        for package in GRAPH.graph_roots() - {"nazo-rocksdb"}:
+            with self.subTest(package=package):
+                self.assertTrue(set(GRAPH.ROCKSDB_PACKAGES) <= GRAPH.forbidden_graph_dependencies(package))
+        for dependency in ("nazo-postgres", "diesel", "pq-sys", "nazo-valkey", "fred", "nazo-oauth-server-d1", "worker"):
+            self.assertIn(dependency, GRAPH.forbidden_graph_dependencies("nazo-rocksdb"))
 
     def test_facade_graph_is_checked_without_rejecting_its_own_root(self) -> None:
         self.assertIn("nazoauth", GRAPH.graph_roots())
@@ -61,6 +71,17 @@ class PersistenceGraphTests(unittest.TestCase):
             self.assertEqual(GRAPH.package_names("nazo-auth", self.root), {"nazo-auth", "nazo-server", "diesel"})
         self.assertEqual(run.call_args.args[0], ["cargo", "tree", "--locked", "--all-features", "--package", "nazo-auth", "--edges", "normal,build", "--prefix", "none"])
         self.assertEqual(run.call_args.kwargs["cwd"], self.root)
+
+    def test_native_default_and_deployed_worker_feature_graphs(self) -> None:
+        for package, options in (
+            ("nazo-server", []),
+            ("nazo-server-worker", ["--no-default-features", "--target", "wasm32-unknown-unknown"]),
+        ):
+            with self.subTest(package=package), mock.patch.object(
+                GRAPH.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")
+            ) as run:
+                GRAPH.package_names(package, self.root)
+                self.assertEqual(run.call_args.args[0], ["cargo", "tree", "--locked", *options, "--package", package, "--edges", "normal,build", "--prefix", "none"])
 
     def test_tree_failure_is_not_treated_as_an_empty_valid_graph(self) -> None:
         with mock.patch.object(GRAPH.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "lockfile changed")):

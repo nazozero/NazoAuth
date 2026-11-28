@@ -1,5 +1,9 @@
 # Deployment Guide
 
+The default native executable uses PostgreSQL. The source-built
+[RocksDB executable](rocksdb.md) provides a separate opt-in single-process
+deployment with its own directory ownership and backup procedure.
+
 The native NazoAuth host has two deployment contracts: Compose for source-based
 development, and the signed `nazoauthctl` lifecycle for standalone Linux
 production on Podman, Docker, or a host systemd service.
