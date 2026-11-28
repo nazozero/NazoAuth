@@ -76,8 +76,8 @@ jobs:
                   "        p99_ms: percentile(&latencies, 0.99),\n        p999_ms: percentile(&latencies, 0.999),\n")
           replace("    sql_calls_total: i64,\n",
                   "    app_mean_cpu_cores: f64,\n    app_sampled_peak_rss_kib: u64,\n    app_sampled_peak_pss_kib: u64,\n    memory_samples: u64,\n    sql_calls_total: i64,\n")
-          replace("    let port = fixture.server.port;\n",
-                  "    let port = fixture.server.port;\n    BENCH_SERVER_PID.store(fixture.server.child.id(), std::sync::atomic::Ordering::Relaxed);\n")
+          replace("    let port = fixture.server.port;\n    let mut connection = AsyncPgConnection::establish(&fixture.isolated_url)\n",
+                  "    let port = fixture.server.port;\n    BENCH_SERVER_PID.store(fixture.server.child.id(), std::sync::atomic::Ordering::Relaxed);\n    let mut connection = AsyncPgConnection::establish(&fixture.isolated_url)\n")
           replace("    let before = statement_snapshot(connection).await;\n    let result = execute(\n",
                   """    let before = statement_snapshot(connection).await;
               let pid = BENCH_SERVER_PID.load(std::sync::atomic::Ordering::Relaxed);
@@ -230,6 +230,11 @@ jobs:
               for row in map(json.loads, f.read_text().splitlines()):
                   key = (row["path"], row["signing_algorithms"], row["concurrency"])
                   groups.setdefault(key, {}).setdefault((variant, pair), []).append(row)
+          if not groups:
+              print("No benchmark measurements were recorded.")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+                  out.write("No benchmark measurements were recorded.\n")
+              raise SystemExit(1)
           lines = ["# Native Actix A/B: PR 313", "", "Only identical, error-free rows from all three paired rounds are summarized. The RS256 sensitivity c=8 rows repeat the corresponding E2E paths; use the first row per run for these cells.", "", "| Path | Signing | Concurrency | Metric | Base median | PR median | Median paired delta % |", "|---|---|---:|---|---:|---:|---:|"]
           for (path, alg, c), data in sorted(groups.items()):
               pairs = [(data[("base", str(i))][0], data[("pr", str(i))][0]) for i in (1,2,3) if ("base", str(i)) in data and ("pr", str(i)) in data]
