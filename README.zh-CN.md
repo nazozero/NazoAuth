@@ -148,7 +148,8 @@ https://auth.example.com/.well-known/openid-configuration
 启用服务端模块不会向所有客户端开放访问权限。
 
 如果要将 NazoAuth 直接嵌入现有 Rust HTTP 应用，先准备配置与宿主能力，再通过一次调用
-挂载到选定的路径。[Rust 嵌入指南](docs/integration/rust-embedding.md)说明了 Actix、
+挂载到选定的路径。原生与嵌入式共用租户选择、目录同步、热更新、生命周期任务及可选部署控制；
+固定单租户直接挂载，不经过动态租户选择。[Rust 嵌入指南](docs/integration/rust-embedding.md)说明了 Actix、
 Tower 服务（包括 Axum）及其他框架适配器的接入方式。
 
 ## 服务结构

@@ -4,7 +4,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{Router, extract::ConnectInfo, http::StatusCode, routing::get, serve::IncomingStream};
-use nazoauth::{ConnectionFacts, NazoAuth};
+use nazoauth::{ConnectionFacts, NazoAuth, runtime::TenantRuntimeRegistry};
 use tokio::net::TcpListener;
 
 /// The host's existing routes, UI, method handling and fallback.
@@ -30,6 +30,28 @@ pub async fn serve(listener: TcpListener, auth: Arc<NazoAuth>) -> anyhow::Result
     let app = nazo_http_tower::mount_make_service(
         app.into_make_service_with_connect_info::<SocketAddr>(),
         auth,
+        &["/api", "/users"],
+        |connection: &IncomingStream<'_, TcpListener>| ConnectionFacts {
+            peer_addr: Some(*connection.remote_addr()),
+            ..ConnectionFacts::default()
+        },
+    )?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+/// Serve the shared live tenant directory on the host's existing listener.
+///
+/// Keep the shared runtime owner alive until this listener has drained. The
+/// registry publishes rebuilt tenant graphs without replacing the Axum router.
+pub async fn serve_dynamic(
+    listener: TcpListener,
+    existing: Router,
+    tenants: TenantRuntimeRegistry,
+) -> anyhow::Result<()> {
+    let app = nazo_http_tower::mount_make_service_dynamic(
+        existing.into_make_service_with_connect_info::<SocketAddr>(),
+        tenants,
         &["/api", "/users"],
         |connection: &IncomingStream<'_, TcpListener>| ConnectionFacts {
             peer_addr: Some(*connection.remote_addr()),

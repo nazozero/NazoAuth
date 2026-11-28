@@ -11,6 +11,63 @@ use tokio::io::AsyncReadExt;
 
 use super::forward_request;
 
+#[test]
+fn http1_host_admission_preserves_target_and_http_version_semantics() {
+    for target in ["/token", "https://absolute.example/token"] {
+        let request = Request::builder().uri(target).body(()).unwrap();
+        assert_eq!(
+            super::validate_host(&request),
+            Err(http::StatusCode::BAD_REQUEST)
+        );
+        for host in ["issuer.example", "issuer.example:", "[::1]:8443"] {
+            let request = Request::builder()
+                .uri(target)
+                .header(header::HOST, host)
+                .body(())
+                .unwrap();
+            assert!(super::validate_host(&request).is_ok());
+            assert_eq!(request.uri(), target);
+        }
+        for host in [
+            "issuer.example:abc",
+            "user@issuer.example",
+            "bad%2x.example",
+        ] {
+            let request = Request::builder()
+                .uri(target)
+                .header(header::HOST, host)
+                .body(())
+                .unwrap();
+            assert_eq!(
+                super::validate_host(&request),
+                Err(http::StatusCode::BAD_REQUEST)
+            );
+        }
+        let request = Request::builder()
+            .uri(target)
+            .header(header::HOST, "issuer.example")
+            .header(header::HOST, "issuer.example")
+            .body(())
+            .unwrap();
+        assert_eq!(
+            super::validate_host(&request),
+            Err(http::StatusCode::BAD_REQUEST)
+        );
+    }
+    for version in [
+        http::Version::HTTP_10,
+        http::Version::HTTP_2,
+        http::Version::HTTP_3,
+    ] {
+        let request = Request::builder()
+            .version(version)
+            .uri("https://issuer.example/token")
+            .body(())
+            .unwrap();
+        assert!(super::validate_host(&request).is_ok());
+    }
+}
+
 #[tokio::test]
 async fn shared_transport_requests_and_uncompressed_storage_are_preserved() {
     for expected in conformance::transport_requests() {

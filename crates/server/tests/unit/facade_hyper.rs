@@ -26,7 +26,6 @@ async fn independent_hyper_host_builds_mounts_and_passes_shared_conformance() {
                 configuration,
                 capabilities,
                 format!("hyper-{}", uuid::Uuid::now_v7()),
-                prefix,
             )
             .await
             .unwrap();
@@ -64,6 +63,7 @@ async fn independent_hyper_host_builds_mounts_and_passes_shared_conformance() {
                 .call(
                     Request::builder()
                         .uri("/api/health")
+                        .header("host", "issuer.example")
                         .body(Full::new(Bytes::new()))
                         .unwrap(),
                 )
@@ -78,6 +78,7 @@ async fn independent_hyper_host_builds_mounts_and_passes_shared_conformance() {
             let target = format!("{suffix}/.well-known/openid-configuration");
             let request = Request::builder()
                 .uri(target)
+                .header("host", "issuer.example")
                 .body(Full::new(Bytes::new()))
                 .unwrap();
             // Exercise the same service on Tokio's native Send task boundary.

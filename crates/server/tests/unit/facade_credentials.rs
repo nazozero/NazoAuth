@@ -19,6 +19,7 @@ fn request(
     Request::builder()
         .method(method)
         .uri(path)
+        .header(header::HOST, "issuer.example")
         .header(header::CONTENT_TYPE, content_type)
         .body(body.into())
         .unwrap()

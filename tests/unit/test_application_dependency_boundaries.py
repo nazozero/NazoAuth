@@ -57,20 +57,34 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
             with self.subTest(dependency=dependency):
                 self.assert_manifest_boundary("nazo-http-actix", f'[dependencies]\n{dependency} = "1"\n', True)
 
+    def test_shared_runtime_uses_ports_without_http_hosts_or_storage_drivers(self) -> None:
+        self.assert_manifest_boundary("nazo-runtime-tokio", '[dependencies]\nnazoauth = "1"\nnazo-persistence = "1"\nnazo-oauth-server = "1"\ntokio = "1"\n', False)
+        for dependency in ("nazo-server", "nazo-http-actix", "nazo-http-tower", "nazo-postgres", "nazo-oauth-server-valkey"):
+            with self.subTest(dependency=dependency):
+                self.assert_manifest_boundary("nazo-runtime-tokio", f'[dependencies]\n{dependency} = "1"\n', True)
+        for package in ("nazoauth", "nazo-identity", "nazo-http-actix"):
+            self.assert_manifest_boundary(package, '[dependencies]\nnazo-runtime-tokio = "1"\n', True)
+
     def test_adapter_alias_cannot_hide_protocol_ownership(self) -> None:
         self.assert_manifest_boundary("nazo-http-actix", '[target.\'cfg(unix)\'.dependencies]\nhidden = { package = "nazo-auth", version = "1", optional = true }\n', True)
 
     def test_dev_executor_is_not_a_production_edge(self) -> None:
         self.assert_manifest_boundary("nazo-oauth-server", '[dev-dependencies]\nfutures-executor = "1"\n', False)
 
-    def test_internal_facade_test_support_is_only_a_native_dev_dependency(self) -> None:
+    def test_internal_facade_test_support_is_only_a_host_or_runtime_dev_dependency(self) -> None:
         edge = 'nazoauth = { version = "1", features = ["test-support"] }\n'
-        self.assert_manifest_boundary("nazo-server", '[dev-dependencies]\n' + edge, False)
-        for package in ("nazo-http-actix", "nazo-server"):
-            for table in ("dependencies", "target.'cfg(unix)'.build-dependencies"):
-                self.assert_manifest_boundary(package, f'[{table}]\n' + edge, True)
+        for package in ("nazo-server", "nazo-runtime-tokio"):
+            for table in ("dev-dependencies", "target.'cfg(unix)'.dev-dependencies"):
+                with self.subTest(package=package, table=table):
+                    self.assert_manifest_boundary(package, f'[{table}]\n' + edge, False)
+        for package in ("nazo-http-actix", "nazo-server", "nazo-runtime-tokio"):
+            for table in ("dependencies", "build-dependencies", "target.'cfg(unix)'.dependencies", "target.'cfg(unix)'.build-dependencies"):
+                with self.subTest(package=package, table=table):
+                    self.assert_manifest_boundary(package, f'[{table}]\n' + edge, True)
+            for feature_edge in ("inner/test-support", "inner?/test-support"):
+                with self.subTest(package=package, feature_edge=feature_edge):
+                    self.assert_manifest_boundary(package, '[dependencies]\ninner={package="nazoauth",version="1",optional=true}\n[features]\nleak=["' + feature_edge + '"]\n', True)
         self.assert_manifest_boundary("nazo-http-actix", '[dev-dependencies]\n' + edge, True)
-        self.assert_manifest_boundary("nazo-http-actix", '[dependencies]\ninner={package="nazoauth",version="1"}\n[features]\nleak=["inner/test-support"]\n', True)
         self.assert_manifest_boundary("nazoauth", '[features]\ndefault=["test-support"]\ntest-support=[]\n', True)
         self.assert_manifest_boundary("nazo-http-actix", '[dev-dependencies]\nnazoauth={version="1",features=["conformance"]}\n', False)
 

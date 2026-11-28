@@ -32,16 +32,10 @@ impl CibaPingDeliveryPort for EmptyDeliveries {
 }
 
 #[tokio::test]
-async fn worker_starts_and_stops_without_a_module_snapshot() {
+async fn worker_uses_the_delivery_queue_without_a_module_snapshot() {
     let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
         .expect("default settings load");
-    let worker = spawn_ciba_ping_worker(Arc::new(EmptyDeliveries), &settings)
+    let worker = ciba_ping_worker(Arc::new(EmptyDeliveries), &settings)
         .expect("worker construction should succeed");
-    worker.abort();
-    assert!(
-        worker
-            .await
-            .expect_err("aborted worker should stop")
-            .is_cancelled()
-    );
+    assert_eq!(worker.process_due_batch().await.unwrap(), 0);
 }

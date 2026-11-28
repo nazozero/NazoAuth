@@ -349,6 +349,15 @@ Local callback URLs use `{issuer}/auth/federation/{provider_id}/callback` and ma
 include fixed query parameters. Their complete configured value is retained in
 authorization requests and token exchanges. The authorization redirect merges
 protocol parameters using URL query encoding.
+When the native deployment builds a graph from a tenant-directory binding, it
+derives each local callback from that tenant's exact issuer and provider ID,
+retaining the configured query bytes. It also replaces the origin of an upstream
+`post_logout_redirect_uri` with the tenant issuer origin while retaining its
+literal configured path and query; custom paths are not moved under the mount
+prefix. Register every tenant's callback and logout return URI with the upstream
+client before enabling that tenant. Fixed application configuration retains its
+explicit URLs, and an enabled callback that does not match the mounted route
+fails application construction.
 Issuer identifiers retain their exact trailing slash and reject query
 parameters, fragments and URL credentials. Client IDs and secrets retain their
 exact configured bytes. OAuth Basic authentication form-encodes each credential

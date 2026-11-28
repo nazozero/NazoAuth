@@ -22,6 +22,8 @@ mod mount;
 mod oauth;
 #[path = "facade_passkey.rs"]
 mod passkey;
+#[path = "facade_runtime.rs"]
+pub(crate) mod runtime;
 
 pub(crate) fn deployment(
     control_tenant: nazo_identity::TenantId,

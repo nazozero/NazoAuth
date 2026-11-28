@@ -110,26 +110,36 @@ async fn one_call_mount_preserves_host_routes_and_shared_http_contract() {
         assert_eq!(expected.status(), http::StatusCode::BAD_REQUEST);
         conformance::assert_response(&expected, &actual);
 
-        for (method, path, status) in [
+        for (method, host, path, status) in [
             (
                 actix_web::http::Method::GET,
+                "issuer.example",
                 "/token",
                 actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
             ),
             (
                 actix_web::http::Method::POST,
+                "issuer.example",
                 "/openid4vci/credential",
                 actix_web::http::StatusCode::NOT_FOUND,
             ),
             (
                 actix_web::http::Method::GET,
+                "issuer.example",
                 "/jwks.json",
                 actix_web::http::StatusCode::OK,
+            ),
+            (
+                actix_web::http::Method::POST,
+                "issuer.example:abc",
+                "/token",
+                actix_web::http::StatusCode::BAD_REQUEST,
             ),
         ] {
             let mut request = awtest::TestRequest::default()
                 .method(method)
                 .uri(&format!("{suffix}{path}"))
+                .insert_header(("host", host))
                 .insert_header(("content-encoding", "gzip"))
                 .to_request();
             *request.payload() = actix_web::dev::Payload::Stream {

@@ -24,9 +24,11 @@ class WorkerPortabilityTests(unittest.TestCase):
         self.assertEqual(violations(
             "nazo-http-actix v0.4.1 (/workspace/crates/http-actix)\n"
             "nazo-http-tower v0.4.1 (/workspace/crates/http-tower)\n"
+            "nazo-runtime-tokio v0.4.1 (/workspace/crates/runtime-tokio)\n"
         ), [
             "native dependency in Worker: nazo-http-actix",
             "native dependency in Worker: nazo-http-tower",
+            "native dependency in Worker: nazo-runtime-tokio",
         ])
 
     def test_rejects_native_control_and_certificate_features(self):

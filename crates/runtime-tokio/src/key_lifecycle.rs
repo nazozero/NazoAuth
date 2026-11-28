@@ -51,9 +51,12 @@ impl KeyLifecycleTask {
         Self { shutdown, task }
     }
 
-    pub async fn stop(self) {
+    pub(crate) fn request_stop(&self) {
         let _ = self.shutdown.send(true);
-        if let Err(error) = self.task.await {
+    }
+
+    pub(crate) async fn finish(&mut self) {
+        if let Err(error) = (&mut self.task).await {
             tracing::error!(error = %error, "signing key lifecycle task failed");
         }
     }
@@ -84,5 +87,5 @@ fn managed_refresh_interval(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/jobs/key_lifecycle.rs"]
+#[path = "../tests/unit/key_lifecycle.rs"]
 mod tests;

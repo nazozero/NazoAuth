@@ -98,13 +98,20 @@ registration with absent process routes, registered but disabled tenant
 capabilities, and an enabled credential issuer. The credential fixture creates
 offers and tokens through the public facade, then compares the first JSON and
 encrypted JWT credential responses with their durable retries through both
-transports. See the [adapter guide](../integration/rust-embedding.md).
+transports. Dynamic fixtures exercise shared Actix/Tower graphs, tenant addition,
+replacement and removal, namespace reservations, control-tenant restrictions,
+and prefix-aware native UI routing. The complete login/PKCE/DPoP/refresh/logout
+flow runs through both fixed and dynamic adapters. Portable directory tests
+cover authority, cache invalidation and publication; Tokio tests cover owned
+loop cancellation and cooperative key shutdown. See the
+[adapter guide](../integration/rust-embedding.md).
 
 ```sh
 python3 scripts/check_native_transport.py
 cargo test -p nazo-http-actix --lib
 cargo test -p nazo-http-tower --all-features --lib
 cargo test -p nazoauth --lib
+cargo test -p nazo-runtime-tokio --lib
 cargo test -p nazoauth --test native_send
 cargo test --manifest-path examples/hyper-embedding/Cargo.toml
 cargo check --manifest-path examples/axum-embedding/Cargo.toml --all-targets
@@ -129,8 +136,9 @@ real PKCE/DPoP/refresh/session transitions, Passkey ceremonies and credential
 issuance/replay. The federation linking suite also mounts the public
 facade and completes login, linking, callback replay rejection and unlinking for
 OIDC and social providers (`cargo test -p nazo-server --lib mounted_federation`).
-The separate `test-support` feature is permitted only in the native host's dev
-dependency; adapters cannot use internal endpoint handles in place of this kit.
+The separate `test-support` feature is permitted only in the `nazo-server` and
+`nazo-runtime-tokio` dev-dependencies for focused service and lifecycle regression
+tests; HTTP adapters cannot use internal endpoint handles in place of this kit.
 
 ### Portable inner packages and runtime behavior
 

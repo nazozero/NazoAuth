@@ -207,7 +207,7 @@ pub(crate) async fn token_with_port_repositories_and_state_and_modules(
         Arc::new(nazo_valkey::DeviceStore::new(&connection)),
     ));
     let runtime_modules =
-        (crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test(
+        (crate::test_support::runtime_modules::runtime_module_registry_with_modules_for_test(
             state.diesel_db.clone(),
             state.settings.as_ref(),
             modules,

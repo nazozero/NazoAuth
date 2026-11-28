@@ -5,9 +5,6 @@ mod configuration;
 pub(super) mod services;
 pub(crate) mod tenant_runtime;
 
-// Keep the existing bootstrap unit-test source boundary while the
-// implementation lives with the background-task lifecycle.
-
 /// Public bootstrap contract retained for the binary entry point.  The
 /// configuration phase owns process-wide resources before service assembly;
 /// the service phase owns the Actix server factory and all request handles.
@@ -20,12 +17,8 @@ pub async fn run(
     let _observability = observability::init(&config)?;
     let startup =
         configuration::load(config, persistence, transient_state, avatar_object_store).await?;
-    services::run(
-        startup.process,
-        startup.registry,
-        startup.refresher,
-        startup.backchannel_logout_worker,
-        startup.security_state_worker,
-    )
-    .await
+    startup
+        .runtime
+        .run(services::factory::run(startup.process, startup.registry))
+        .await
 }

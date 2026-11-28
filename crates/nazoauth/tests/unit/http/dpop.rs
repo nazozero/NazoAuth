@@ -77,10 +77,53 @@ fn target_uri_selects_only_the_configured_request_origin() {
             expected
         );
     }
+    for (issuer, mtls, authority, expected) in [
+        (
+            "https://issuer.example/auth",
+            "https://ISSUER.example:443/auth",
+            "issuer.example",
+            Ok("https://issuer.example/auth/%74oken".to_owned()),
+        ),
+        (
+            "https://ISSUER.example:443/auth",
+            "https://issuer.example/auth",
+            "issuer.example:443",
+            Ok("https://ISSUER.example:443/auth/%74oken".to_owned()),
+        ),
+        (
+            "https://issuer.example:8443/auth",
+            "https://issuer.example:8444/auth",
+            "issuer.example:8444",
+            Ok("https://issuer.example:8444/auth/%74oken".to_owned()),
+        ),
+        (
+            "https://issuer.example:8443/auth",
+            "https://issuer.example:8444/auth",
+            "issuer.example:443",
+            Err(DpopError::InvalidProof),
+        ),
+        (
+            "http://localhost/auth",
+            "https://localhost/auth",
+            "localhost",
+            Err(DpopError::InvalidProof),
+        ),
+        (
+            "http://localhost:8443/auth",
+            "https://localhost:8443/auth",
+            "localhost:8443",
+            Err(DpopError::InvalidProof),
+        ),
+    ] {
+        assert_eq!(
+            dpop_target_uri(issuer, mtls, Some(authority), "/auth/%74oken"),
+            expected,
+        );
+    }
 }
 
 #[test]
-fn authority_ignores_forwarding_headers_and_rejects_conflicting_targets() {
+fn authority_ignores_forwarding_headers_and_uses_the_original_absolute_target() {
     let request = http::Request::builder()
         .header("Host", "issuer.example")
         .header("Forwarded", "host=mtls.example;proto=https")
@@ -99,12 +142,24 @@ fn authority_ignores_forwarding_headers_and_rejects_conflicting_targets() {
         .header("Host", "issuer.example")
         .body(Bytes::new())
         .unwrap();
-    assert_eq!(dpop_request_authority(&conflict), None);
+    assert_eq!(dpop_request_authority(&conflict), Some("mtls.example"));
+    let duplicate_absolute = http::Request::builder()
+        .uri("https://mtls.example/token")
+        .header("Host", "issuer.example")
+        .header("Host", "mtls.example")
+        .body(Bytes::new())
+        .unwrap();
+    assert_eq!(dpop_request_authority(&duplicate_absolute), None);
     let absolute = http::Request::builder()
         .uri("https://mtls.example/token")
         .body(Bytes::new())
         .unwrap();
     assert_eq!(dpop_request_authority(&absolute), Some("mtls.example"));
+    for version in [http::Version::HTTP_2, http::Version::HTTP_3] {
+        let mut conflict = conflict.clone();
+        *conflict.version_mut() = version;
+        assert_eq!(dpop_request_authority(&conflict), None);
+    }
 }
 
 #[test]

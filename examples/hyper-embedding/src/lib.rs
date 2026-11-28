@@ -8,18 +8,19 @@ use http::{Request, Response};
 use http_body_util::Full;
 use hyper::{body::Body, service::Service};
 use hyper_util::service::TowerToHyperService;
-use nazoauth::{NazoAuth, NazoAuthBuilder, capabilities::Capabilities, config::Configuration};
+use nazoauth::{
+    NazoAuth, NazoAuthBuilder, capabilities::Capabilities, config::Configuration,
+    runtime::TenantRuntimeRegistry,
+};
 
-/// Prepare one tenant with the embedding application's actual I/O capabilities.
+/// Prepare one tenant with the application's I/O capabilities and issuer path.
 pub async fn build(
     configuration: Configuration,
     capabilities: Capabilities,
     instance_id: impl Into<String>,
-    prefix: &str,
 ) -> anyhow::Result<Arc<NazoAuth>> {
     Ok(Arc::new(
         NazoAuthBuilder::new(configuration, capabilities, instance_id)
-            .mount_path(prefix)
             .build()
             .await?,
     ))
@@ -47,6 +48,29 @@ where
     Ok(TowerToHyperService::new(nazo_http_tower::mount(
         existing,
         application,
+        occupied_paths,
+    )?))
+}
+
+/// Mount the shared live tenant directory at the same Hyper service boundary.
+pub fn mount_dynamic<S, B>(
+    tenants: TenantRuntimeRegistry,
+    existing: S,
+    occupied_paths: &[&str],
+) -> anyhow::Result<
+    impl Service<Request<B>, Response = Response<Full<Bytes>>, Error = S::Error, Future: Send>
+    + Clone
+    + use<S, B>,
+>
+where
+    S: tower::Service<Request<B>, Response = Response<Full<Bytes>>> + Clone + Send,
+    S::Future: Send,
+    B: Body<Data = Bytes> + Send + 'static,
+    B::Error: Into<Box<dyn Error + Send + Sync>>,
+{
+    Ok(TowerToHyperService::new(nazo_http_tower::mount_dynamic(
+        existing,
+        tenants,
         occupied_paths,
     )?))
 }

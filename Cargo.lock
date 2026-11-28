@@ -3342,6 +3342,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-runtime-tokio"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "http 1.5.0",
+ "jiff 1.0.2",
+ "nazo-auth",
+ "nazo-identity",
+ "nazo-key-management",
+ "nazo-oauth-server",
+ "nazo-persistence",
+ "nazo-runtime-modules",
+ "nazoauth",
+ "rand 0.10.4",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "nazo-scim-events"
 version = "0.4.1"
 dependencies = [
@@ -3409,6 +3430,7 @@ dependencies = [
  "nazo-postgres",
  "nazo-resource-server",
  "nazo-runtime-modules",
+ "nazo-runtime-tokio",
  "nazo-scim-events",
  "nazo-valkey",
  "nazoauth",

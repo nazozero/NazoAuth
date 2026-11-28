@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 //! Actix registration, connection facts and HTTP value conversion for NazoAuth.
 //! All routing, protocol interpretation and endpoint policy belong to the facade.
+//! [`mount`] serves one fixed graph; [`DynamicMount`] selects graphs from the
+//! shared live directory and also serves the native executable.
 
 use std::{
     io,
@@ -22,6 +24,9 @@ use bytes::Bytes;
 use futures_util::{Stream, StreamExt as _, TryStreamExt as _};
 use nazoauth::{ConnectionFacts, NazoAuth, integration::Route};
 
+mod dynamic;
+pub use dynamic::{DynamicMount, DynamicMountService};
+
 /// Register the canonical product surface. Install the already-built tenant as
 /// `web::Data<NazoAuth>` in application data, including tenant-selected data.
 pub fn configure(config: &mut web::ServiceConfig) {
@@ -34,6 +39,8 @@ pub fn configure(config: &mut web::ServiceConfig) {
 /// does not expose existing registrations through `ServiceConfig`; the host
 /// supplies those namespaces so conflicts fail before route installation.
 /// The mounted `/ui` subtree remains available to host-owned UI resources.
+/// Fixed mounts do not consult a tenant directory. Use [`DynamicMount`] when
+/// tenant selection and graph replacement must follow a live registry.
 pub fn mount(
     application: Arc<NazoAuth>,
     reserved_paths: &[&str],
@@ -108,12 +115,47 @@ pub async fn serve(
     request: HttpRequest,
     payload: web::Payload,
 ) -> HttpResponse {
+    // Actix's wire parser rejects missing/duplicate Host fields, but leaves
+    // their URI-host grammar to the service. Keep this check outside the shared
+    // handler: dynamic selection has already admitted the same header.
+    let invalid = if request.version() >= actix_web::http::Version::HTTP_2 {
+        dynamic::request_authority(&request).is_err()
+    } else {
+        request
+            .headers()
+            .get(actix_web::http::header::HOST)
+            .is_some_and(|host| {
+                !host
+                    .to_str()
+                    .is_ok_and(nazoauth::integration::valid_host_header)
+            })
+    };
+    if invalid {
+        return rejection(http::StatusCode::BAD_REQUEST, request.uri().path());
+    }
+    serve_request(&application, &request, payload.into_inner()).await
+}
+
+fn rejection(status: http::StatusCode, path: &str) -> HttpResponse {
+    let mut response = http::Response::new(Bytes::new());
+    *response.status_mut() = status;
+    for (name, value) in nazoauth::integration::security_headers(path) {
+        response.headers_mut().insert(name.clone(), value.clone());
+    }
+    forward_response(response)
+}
+
+async fn serve_request(
+    application: &NazoAuth,
+    request: &HttpRequest,
+    payload: Payload,
+) -> HttpResponse {
     let route = application.route_for_path(request.uri().path());
-    let forwarded = forward_request_for_route(&request, (), route);
+    let forwarded = forward_request_for_route(request, (), route);
     let body_mode = route
         .map(|route| route.body(forwarded.method()))
         .unwrap_or(nazoauth::integration::BodyMode::None);
-    let body = forward_payload(&request, payload.into_inner(), body_mode);
+    let body = forward_payload(request, payload, body_mode);
     forward_response(application.handle_stream(forwarded.map(|()| body)).await)
 }
 

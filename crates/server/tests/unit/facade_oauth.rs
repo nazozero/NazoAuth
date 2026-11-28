@@ -6,8 +6,10 @@ use bytes::Bytes;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use http::{Method, Request, Response, StatusCode, header};
+use http_body_util::{BodyExt, Full};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 fn form(pairs: &[(&str, &str)]) -> String {
@@ -80,12 +82,35 @@ fn json_response(response: Response<Bytes>) -> Value {
 
 #[actix_web::test]
 async fn mounted_login_pkce_dpop_rotation_and_logout_use_external_paths() {
+    mounted_oauth_flow(false, false).await;
+}
+
+#[actix_web::test]
+async fn dynamic_actix_login_pkce_dpop_rotation_and_logout_use_external_paths() {
+    mounted_oauth_flow(true, false).await;
+}
+
+#[actix_web::test]
+async fn fixed_tower_login_pkce_dpop_rotation_and_logout_use_external_paths() {
+    mounted_oauth_flow(false, true).await;
+}
+
+#[actix_web::test]
+async fn dynamic_tower_login_pkce_dpop_rotation_and_logout_use_external_paths() {
+    mounted_oauth_flow(true, true).await;
+}
+
+async fn mounted_oauth_flow(dynamic: bool, tower_transport: bool) {
     let prefix = "/team/auth";
     let issuer = format!("https://issuer.example{prefix}");
     let mut state = super::infrastructure(false).await;
     let settings = Arc::make_mut(&mut state.settings);
     settings.endpoint.issuer = issuer.clone();
-    settings.endpoint.mtls_endpoint_base_url = format!("https://mtls.example{prefix}");
+    settings.endpoint.mtls_endpoint_base_url = if dynamic {
+        format!("https://issuer.example:8443{prefix}")
+    } else {
+        format!("https://mtls.example{prefix}")
+    };
     settings.endpoint.frontend_base_url = format!("{issuer}/ui/");
     settings.protocol.protected_resource_identifier = format!("{issuer}/fapi/resource");
     settings.protocol.dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
@@ -130,19 +155,61 @@ async fn mounted_login_pkce_dpop_rotation_and_logout_use_external_paths() {
         .await
         .unwrap(),
     );
-    let app =
-        test::init_service(App::new().configure(nazo_http_actix::mount(application, &[]).unwrap()))
-            .await;
+    let binding = nazo_identity::TenantDirectoryBinding {
+        tenant: state.settings.tenant.context,
+        runtime_revision: 1,
+        issuer: issuer.clone(),
+        external_host: "issuer.example".into(),
+    };
+    let (registry, runtime) = if dynamic {
+        let (registry, runtime) =
+            super::runtime::registered_application(binding, application.clone()).await;
+        (registry, Some(runtime))
+    } else {
+        (nazoauth::runtime::TenantRuntimeRegistry::empty(), None)
+    };
+    let app = test::init_service(
+        App::new()
+            .configure(nazo_http_actix::mount(application.clone(), &[]).unwrap())
+            .wrap(actix_web::middleware::Condition::new(
+                dynamic,
+                nazo_http_actix::DynamicMount::new(registry.clone(), &[]).unwrap(),
+            )),
+    )
+    .await;
+    let existing = tower::service_fn(|_: Request<Full<Bytes>>| async {
+        Ok::<_, std::convert::Infallible>(
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Full::new(Bytes::new()))
+                .unwrap(),
+        )
+    });
+    let fixed_tower = nazo_http_tower::mount(existing, application, &[]).unwrap();
+    let dynamic_tower = nazo_http_tower::mount_dynamic(existing, registry, &[]).unwrap();
     let send = |request: Request<Bytes>| {
         let app = &app;
+        let fixed_tower = fixed_tower.clone();
+        let dynamic_tower = dynamic_tower.clone();
         async move {
-            super::standard_response(
-                test::call_service(app, super::framework_request(&request).to_request())
-                    .await
-                    .into_parts()
-                    .1,
-            )
-            .await
+            if tower_transport {
+                let response = if dynamic {
+                    dynamic_tower.oneshot(request.map(Full::new)).await.unwrap()
+                } else {
+                    fixed_tower.oneshot(request.map(Full::new)).await.unwrap()
+                };
+                let (head, body) = response.into_parts();
+                Response::from_parts(head, body.collect().await.unwrap().to_bytes())
+            } else {
+                super::standard_response(
+                    test::call_service(app, super::framework_request(&request).to_request())
+                        .await
+                        .into_parts()
+                        .1
+                        .map_into_boxed_body(),
+                )
+                .await
+            }
         }
     };
     let verifier = "01234567890123456789012345678901234567890123456789";
@@ -254,15 +321,16 @@ async fn mounted_login_pkce_dpop_rotation_and_logout_use_external_paths() {
         ("redirect_uri", "https://client.example/callback"),
         ("code_verifier", verifier),
     ]);
-    let token = json_response(
-        send(proof(
-            request(Method::POST, &format!("{prefix}/token"), token_body.clone()),
-            &key,
-            &token_url,
-            None,
-        ))
-        .await,
-    );
+    let mut exchange = request(Method::POST, &format!("{prefix}/token"), token_body.clone());
+    if tower_transport {
+        // Absolute-form selects the original URI authority for both tenant
+        // routing and DPoP, regardless of a contradictory Host field.
+        *exchange.uri_mut() = token_url.parse().unwrap();
+        exchange
+            .headers_mut()
+            .insert(header::HOST, "unrelated.example".parse().unwrap());
+    }
+    let token = json_response(send(proof(exchange, &key, &token_url, None)).await);
     assert_eq!(token["token_type"], "DPoP");
     let access = token["access_token"].as_str().unwrap();
     let id_claims: Value = serde_json::from_slice(
@@ -387,4 +455,7 @@ async fn mounted_login_pkce_dpop_rotation_and_logout_use_external_paths() {
     ))
     .await;
     assert_eq!(me.status(), StatusCode::UNAUTHORIZED);
+    if let Some(runtime) = runtime {
+        runtime.shutdown().await;
+    }
 }

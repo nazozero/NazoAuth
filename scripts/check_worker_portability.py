@@ -7,7 +7,7 @@ import subprocess
 FORBIDDEN_PACKAGES = {
     "nazo-server", "nazo-http-actix", "nazo-http-tower", "nazo-postgres", "nazo-valkey",
     "nazo-oauth-server-postgres", "nazo-oauth-server-valkey",
-    "nazo-oauth-server-object-store",
+    "nazo-oauth-server-object-store", "nazo-runtime-tokio",
     "actix-web", "actix-http", "actix-server", "axum", "hyper", "reqwest",
     "diesel", "diesel-async", "tokio-postgres", "rusqlite", "libsqlite3-sys",
     "fred", "redis", "rustls", "native-tls", "openssl-sys", "aws-lc-sys",

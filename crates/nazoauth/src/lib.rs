@@ -14,6 +14,7 @@ mod endpoints;
 mod http;
 pub mod integration;
 mod openid4vc;
+pub mod runtime;
 mod well_known;
 
 pub use composition::{NazoAuth, NazoAuthBuilder};

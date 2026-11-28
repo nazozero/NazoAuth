@@ -4,6 +4,8 @@
 //! host's native connection factory, retaining its startup preparation and
 //! projecting trusted connection facts once per connection. Both select the
 //! prepared namespace before host routing and preserve the original URI.
+//! [`mount_dynamic`] and [`mount_make_service_dynamic`] use the same transport
+//! boundary with the shared live tenant directory. Fixed mounts do no selection.
 
 #![forbid(unsafe_code)]
 
@@ -20,9 +22,14 @@ use http_body::Body;
 use nazoauth::{ConnectionFacts, NazoAuth, integration::BodyMode};
 use tower_service::Service;
 
+mod dynamic;
 mod make_service;
 mod transport;
 
+pub use dynamic::{
+    DynamicMakeServiceFuture, DynamicMounted, DynamicMountedMakeService, mount_dynamic,
+    mount_make_service_dynamic,
+};
 pub use make_service::{MakeServiceFuture, MountedMakeService, mount_make_service};
 
 /// An existing host service with a prepared NazoAuth namespace.
@@ -68,8 +75,8 @@ impl Registration {
 /// existing handlers and fallback; NazoAuth owns the remaining non-UI surface.
 /// At a non-root prefix, all unowned paths reach the existing service unchanged.
 ///
-/// The host supplies trusted connection facts through request extensions and
-/// retains ownership of TLS, listeners, I/O capabilities and background tasks.
+/// The host supplies trusted connection facts through request extensions, owns
+/// TLS/listeners and I/O capabilities, and keeps its shared runtime owner alive.
 /// Complete host preparation, routing and middleware before mounting. Middleware
 /// that must apply to both services belongs outside the returned service.
 pub fn mount<S>(
@@ -112,6 +119,17 @@ where
         });
         if is_existing || !registration.application.mount().owns_path(path) {
             return Either::Left(self.existing.call(request));
+        }
+        let admission = if request.version() >= http::Version::HTTP_2 {
+            nazoauth::integration::request_authority(&request)
+                .map(|_| ())
+                .ok_or(http::StatusCode::BAD_REQUEST)
+        } else {
+            transport::validate_host(&request)
+        };
+        if let Err(status) = admission {
+            let response = transport::rejection(status, path);
+            return Either::Right(Box::pin(async move { Ok(response.map(R::from)) }));
         }
         let route = registration.application.route_for_path(path);
         let body_mode = route.map_or(BodyMode::None, |route| route.body(request.method()));

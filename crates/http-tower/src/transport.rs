@@ -8,12 +8,40 @@ use std::{
 use async_compression::tokio::bufread::{BrotliDecoder, GzipDecoder, ZlibDecoder, ZstdDecoder};
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt, TryStreamExt, future::Either, stream};
-use http::{Request, header};
+use http::{Request, StatusCode, Version, header};
 use http_body::Body;
 use http_body_util::BodyExt;
 use nazoauth::integration::BodyMode;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, ReadBuf};
 use tokio_util::io::{ReaderStream, StreamReader};
+
+/// Hyper leaves Host admission to its service. Check only requests entering
+/// NazoAuth; the existing host retains its own unowned-path policy.
+pub(crate) fn validate_host<B>(request: &Request<B>) -> Result<(), StatusCode> {
+    if request.version() >= Version::HTTP_2 {
+        return Ok(());
+    }
+    let mut hosts = request.headers().get_all(header::HOST).iter();
+    let valid = match hosts.next() {
+        Some(host) => {
+            hosts.next().is_none()
+                && host
+                    .to_str()
+                    .is_ok_and(nazoauth::integration::valid_host_header)
+        }
+        None => request.version() != Version::HTTP_11,
+    };
+    valid.then_some(()).ok_or(StatusCode::BAD_REQUEST)
+}
+
+pub(crate) fn rejection(status: StatusCode, path: &str) -> http::Response<Bytes> {
+    let mut response = http::Response::new(Bytes::new());
+    *response.status_mut() = status;
+    for (name, value) in nazoauth::integration::security_headers(path) {
+        response.headers_mut().insert(name.clone(), value.clone());
+    }
+    response
+}
 
 /// Keep the standard request head and raw target. Only declared decoded bodies
 /// pass through a streaming content decoder; every other body keeps its chunks.

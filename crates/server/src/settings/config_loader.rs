@@ -87,6 +87,16 @@ fn derive_tenant_management_token(
     URL_SAFE_NO_PAD.encode(derive_tenant_secret(root.as_bytes(), tenant_id, purpose))
 }
 
+// Only callers with admitted HTTP endpoint URLs use this projection. Retaining
+// the original suffix avoids normalizing configured paths or query bytes.
+pub(super) fn tenant_endpoint_origin(value: &str, origin: &str) -> String {
+    let (_, remainder) = value.split_once("://").expect("validated HTTP endpoint");
+    let suffix = remainder
+        .find(['/', '?'])
+        .map_or("", |offset| &remainder[offset..]);
+    format!("{origin}{suffix}")
+}
+
 impl Settings {
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         Self::from_config_for_tenant(config, None)
@@ -195,6 +205,19 @@ impl Settings {
             } else {
                 format!("{}/ui/", public_base_url.trim_end_matches('/'))
             };
+        let protected_resource_identifier =
+            match config.optional_string("PROTECTED_RESOURCE_IDENTIFIER") {
+                Some(value) if tenant_specific => {
+                    nazo_auth::validate_protected_resource_identifier(&value)?;
+                    tenant_endpoint_origin(&value, &public_origin)
+                }
+                Some(value) => value,
+                None => default_protected_resource_identifier(&issuer),
+            };
+        let federation = federation::from_config(
+            config,
+            tenant_specific.then_some((issuer.as_str(), public_origin.as_str())),
+        )?;
         let mut cors_allowed_origins = Vec::new();
         if !tenant_specific && let Some(origins) = config.get("CORS_ALLOWED_ORIGINS") {
             for origin in origins
@@ -237,11 +260,6 @@ impl Settings {
         let authorization_server_profile =
             profile::authorization_server_profile_from_config(config)?;
         let ciba_security_profile = profile::ciba_security_profile_from_config(config)?;
-        let protected_resource_identifier =
-            match config.optional_string("PROTECTED_RESOURCE_IDENTIFIER") {
-                Some(value) => value,
-                None => default_protected_resource_identifier(&issuer),
-            };
         // RFC 6749 section 3.3: ASCII space separates scope-token values.
         // This is public discovery policy, never a client authorization allowlist.
         let additional_scopes_supported = config
@@ -386,7 +404,6 @@ impl Settings {
             config.bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?;
         let passkey = passkey::from_config(config, &issuer_url)?;
         let email = EmailSettings::from_config(config, issuer_is_loopback_http)?;
-        let federation = federation::from_config(config)?;
         let task_key_settings = key_settings_from_config(config)?;
         let fapi_http_signature_max_age_seconds =
             config.parse("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS", 60)?;

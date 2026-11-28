@@ -134,6 +134,7 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
                             Request::builder()
                                 .method(method)
                                 .uri(&path)
+                                .header(header::HOST, "issuer.example")
                                 .body(Body::empty())
                                 .unwrap(),
                         )
@@ -154,7 +155,13 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
                 ] {
                     let response = standard_response(
                         app.clone()
-                            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                            .oneshot(
+                                Request::builder()
+                                    .uri(path)
+                                    .header(header::HOST, "issuer.example")
+                                    .body(Body::empty())
+                                    .unwrap(),
+                            )
                             .await
                             .unwrap(),
                     )
@@ -165,7 +172,11 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
             }
 
             for path in auth.mount().discovery_paths() {
-                let request = Request::builder().uri(path).body(Bytes::new()).unwrap();
+                let request = Request::builder()
+                    .uri(path)
+                    .header(header::HOST, "issuer.example")
+                    .body(Bytes::new())
+                    .unwrap();
                 let expected = auth.handle(request.clone()).await;
                 let actual =
                     standard_response(app.clone().oneshot(request.map(Body::from)).await.unwrap())
@@ -194,6 +205,7 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
             let mut request = Request::builder()
                 .method(Method::POST)
                 .uri(format!("{suffix}/%74oken?state=%2F&state=two"))
+                .header(header::HOST, "issuer.example")
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .header(header::CONTENT_ENCODING, "gzip")
                 .body(Bytes::from_static(
@@ -215,12 +227,24 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
             assert_eq!(actual.status(), StatusCode::BAD_REQUEST);
             conformance::assert_response(&expected, &actual);
 
-            for (method, path, status) in [
-                (Method::GET, "/token", StatusCode::METHOD_NOT_ALLOWED),
+            for (method, host, path, status) in [
+                (
+                    Method::GET,
+                    "issuer.example",
+                    "/token",
+                    StatusCode::METHOD_NOT_ALLOWED,
+                ),
                 (
                     Method::POST,
+                    "issuer.example",
                     "/openid4vci/credential",
                     StatusCode::NOT_FOUND,
+                ),
+                (
+                    Method::POST,
+                    "issuer.example:abc",
+                    "/token",
+                    StatusCode::BAD_REQUEST,
                 ),
             ] {
                 let body = futures_util::stream::poll_fn(
@@ -231,6 +255,7 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
                 let request = Request::builder()
                     .method(method)
                     .uri(format!("{suffix}{path}"))
+                    .header(header::HOST, host)
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::CONTENT_ENCODING, "gzip")
                     .body(Body::from_stream(body))
@@ -240,6 +265,7 @@ async fn independent_axum_host_mounts_once_and_passes_shared_conformance() {
 
             let request = Request::builder()
                 .uri(format!("{suffix}/.well-known/openid-configuration"))
+                .header(header::HOST, "issuer.example")
                 .body(Body::empty())
                 .unwrap();
             let response = tokio::spawn(async move { app.oneshot(request).await.unwrap() })
@@ -282,6 +308,105 @@ async fn axum_existing_listener_serves_the_mounted_factory() {
     );
     server.abort();
     assert!(server.await.unwrap_err().is_cancelled());
+}
+
+#[tokio::test]
+async fn axum_existing_listener_serves_the_dynamic_factory() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let fixture = super::runtime::Fixture::new(vec![super::runtime::binding(
+        0,
+        "issuer.example",
+        "/identity",
+    )])
+    .await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(nazoauth_axum_embedding::serve_dynamic(
+        listener,
+        nazoauth_axum_embedding::application("/identity"),
+        fixture.registry.clone(),
+    ));
+    let client = reqwest::Client::builder().build().unwrap();
+    let peer = client
+        .get(format!("http://{address}/api/peer"))
+        .header(header::HOST, "unregistered.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(peer.status(), StatusCode::OK);
+    let peer: SocketAddr = peer.text().await.unwrap().parse().unwrap();
+    assert!(peer.ip().is_loopback());
+    assert_ne!(peer.port(), 0);
+    let path = format!("http://{address}/identity/.well-known/openid-configuration");
+    let discovery = client
+        .get(&path)
+        .header(header::HOST, "issuer.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(discovery.status(), StatusCode::OK);
+    let metadata: serde_json::Value = discovery.json().await.unwrap();
+    assert_eq!(metadata["issuer"], "https://issuer.example/identity");
+    assert_eq!(
+        metadata["token_endpoint"],
+        "https://issuer.example/identity/token"
+    );
+    assert_eq!(
+        client
+            .get(path)
+            .header(header::HOST, "unregistered.example")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    // reqwest supplies one valid Host automatically. Use the real TCP listener
+    // to exercise malformed HTTP/1.1 authority before tenant selection.
+    for (target, headers) in [
+        ("/identity/.well-known/openid-configuration", ""),
+        (
+            "/identity/.well-known/openid-configuration",
+            "Host: issuer.example\r\nHost: issuer.example\r\n",
+        ),
+        (
+            "/identity/.well-known/openid-configuration",
+            "Host: issuer.example:abc\r\n",
+        ),
+        (
+            "https://issuer.example/identity/.well-known/openid-configuration",
+            "",
+        ),
+        (
+            "https://issuer.example/identity/.well-known/openid-configuration",
+            "Host: issuer.example\r\nHost: issuer.example\r\n",
+        ),
+    ] {
+        let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+        socket
+            .write_all(
+                format!("GET {target} HTTP/1.1\r\n{headers}Connection: close\r\n\r\n").as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            socket.read_to_end(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            response.starts_with(b"HTTP/1.1 400 "),
+            "invalid authority was accepted for {target} ({headers:?}): {}",
+            String::from_utf8_lossy(&response)
+        );
+    }
+    server.abort();
+    assert!(server.await.unwrap_err().is_cancelled());
+    fixture.refresher.shutdown().await;
 }
 
 struct ReadyHost {
@@ -448,7 +573,7 @@ async fn tower_make_service_preserves_factory_and_request_readiness() {
     let observed = projections.clone();
     let mut count = 0;
     let peer: SocketAddr = "198.51.100.21:54123".parse().unwrap();
-    let mut factory = {
+    let factory = {
         // Registration must own these temporary names before this block ends.
         let path = "/api".to_owned();
         nazo_http_tower::mount_make_service(
@@ -467,6 +592,20 @@ async fn tower_make_service_preserves_factory_and_request_readiness() {
         )
         .unwrap()
     };
+    assert_make_service_readiness(factory, complete, request, &projections).await;
+}
+
+async fn assert_make_service_readiness<M>(
+    mut factory: M,
+    complete: oneshot::Sender<Result<ReadyHost, io::Error>>,
+    request: Request<Bytes>,
+    projections: &AtomicUsize,
+) -> M::Response
+where
+    M: Service<SocketAddr, Error = io::Error>,
+    M::Response: Service<Request<Full<Bytes>>, Response = Response<Full<Bytes>>, Error = io::Error>,
+{
+    let peer: SocketAddr = "198.51.100.21:54123".parse().unwrap();
     let mut cx = Context::from_waker(Waker::noop());
     assert!(factory.poll_ready(&mut cx).is_pending());
     assert!(matches!(factory.poll_ready(&mut cx), Poll::Ready(Ok(()))));
@@ -507,6 +646,7 @@ async fn tower_make_service_preserves_factory_and_request_readiness() {
         .call(
             Request::builder()
                 .uri("/identity/token")
+                .header(header::HOST, "issuer.example")
                 .body(Full::new(Bytes::new()))
                 .unwrap(),
         )
@@ -514,6 +654,65 @@ async fn tower_make_service_preserves_factory_and_request_readiness() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(projections.load(Ordering::Relaxed), 1);
+    app
+}
+
+#[tokio::test]
+async fn tower_dynamic_make_service_preserves_readiness_bytes_and_connection_facts() {
+    let fixture = super::runtime::Fixture::new(vec![super::runtime::binding(
+        0,
+        "issuer.example",
+        "/identity",
+    )])
+    .await;
+    let mut request = conformance::transport_requests().remove(0);
+    *request.uri_mut() = "/api/echo?state=%2F&state=two".parse().unwrap();
+    let (complete, factory) = ReadyFactory::new(false);
+    let projections = Arc::new(AtomicUsize::new(0));
+    let observed = projections.clone();
+    let peer: SocketAddr = "198.51.100.21:54123".parse().unwrap();
+    let factory = {
+        let path = "/api".to_owned();
+        nazo_http_tower::mount_make_service_dynamic(
+            factory,
+            fixture.registry.clone(),
+            &[path.as_str()],
+            move |target: &SocketAddr| {
+                assert_eq!(*target, peer);
+                observed.fetch_add(1, Ordering::Relaxed);
+                ConnectionFacts {
+                    peer_addr: Some(*target),
+                    server_name: Some("issuer.example".into()),
+                    ..ConnectionFacts::default()
+                }
+            },
+        )
+        .unwrap()
+    };
+    let mut app = assert_make_service_readiness(factory, complete, request, &projections).await;
+    // Authenticated ingress facts override the once-per-connection projection
+    // before tenant selection, so a mismatched request SNI must be rejected.
+    let mut request = Request::builder()
+        .uri("/identity/token")
+        .header(header::HOST, "issuer.example")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    request.extensions_mut().insert(ConnectionFacts {
+        server_name: Some("other.example".into()),
+        ..ConnectionFacts::default()
+    });
+    assert_eq!(
+        app.ready()
+            .await
+            .unwrap()
+            .call(request)
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::MISDIRECTED_REQUEST
+    );
+    assert_eq!(projections.load(Ordering::Relaxed), 1);
+    fixture.refresher.shutdown().await;
 }
 
 #[tokio::test]
@@ -584,5 +783,106 @@ async fn tower_make_service_propagates_failures_and_cancels_pending_work() {
     assert!(
         lifetime.upgrade().is_none(),
         "cancellation retained the prepared application"
+    );
+}
+
+#[tokio::test]
+async fn tower_dynamic_make_service_propagates_failures_and_cancels_pending_work() {
+    let fixture = super::runtime::Fixture::new(vec![super::runtime::binding(
+        0,
+        "issuer.example",
+        "/identity",
+    )])
+    .await;
+    let peer: SocketAddr = "198.51.100.21:54123".parse().unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+    let projections = Arc::new(AtomicUsize::new(0));
+    let observed = projections.clone();
+    let registry = fixture.registry.clone();
+    let register = move |factory| {
+        let observed = observed.clone();
+        nazo_http_tower::mount_make_service_dynamic(
+            factory,
+            registry.clone(),
+            &["/api"],
+            move |_: &SocketAddr| {
+                observed.fetch_add(1, Ordering::Relaxed);
+                ConnectionFacts::default()
+            },
+        )
+        .unwrap()
+    };
+    let (complete, unavailable) = ReadyFactory::new(true);
+    let mut unavailable = register(unavailable);
+    match unavailable.poll_ready(&mut cx) {
+        Poll::Ready(Err(error)) => assert_eq!(error.to_string(), "factory unavailable"),
+        _ => panic!("dynamic mount lost the factory readiness error"),
+    }
+    assert_eq!(projections.load(Ordering::Relaxed), 0);
+    drop(unavailable);
+    assert!(complete.is_closed());
+
+    let (complete, factory) = ReadyFactory::new(false);
+    let mut factory = register(factory);
+    assert!(factory.poll_ready(&mut cx).is_pending());
+    assert!(matches!(factory.poll_ready(&mut cx), Poll::Ready(Ok(()))));
+    let mut pending = Box::pin(factory.call(peer));
+    assert!(pending.as_mut().poll(&mut cx).is_pending());
+    assert!(
+        complete
+            .send(Err(io::Error::other("factory call failed")))
+            .is_ok()
+    );
+    match pending.await {
+        Err(error) => assert_eq!(error.to_string(), "factory call failed"),
+        Ok(_) => panic!("dynamic mount lost the factory call error"),
+    }
+    drop(factory);
+
+    let (complete, factory) = ReadyFactory::new(false);
+    assert!(
+        complete
+            .send(Ok(ReadyHost {
+                poll: 0,
+                ready: false,
+                fail: true,
+                expected: Request::new(Bytes::new()),
+            }))
+            .is_ok()
+    );
+    let mut app = register(factory).oneshot(peer).await.unwrap();
+    match app.poll_ready(&mut cx) {
+        Poll::Ready(Err(error)) => assert_eq!(error.to_string(), "host unavailable"),
+        _ => panic!("dynamic mount lost the request-service readiness error"),
+    }
+    drop(app);
+
+    let lifetime = Arc::downgrade(
+        fixture
+            .registry
+            .resolve("issuer.example", None)
+            .unwrap()
+            .application(),
+    );
+    let (complete, factory) = ReadyFactory::new(false);
+    let mut factory = register(factory);
+    assert!(factory.poll_ready(&mut cx).is_pending());
+    assert!(matches!(factory.poll_ready(&mut cx), Poll::Ready(Ok(()))));
+    let mut pending = Box::pin(factory.call(peer));
+    assert!(pending.as_mut().poll(&mut cx).is_pending());
+    drop(factory);
+    drop(register);
+    // The pending connection is now the directory's final owner. Cancellation
+    // must release both the host future and the registered application graph.
+    drop(fixture);
+    assert!(lifetime.upgrade().is_some());
+    drop(pending);
+    assert!(
+        complete.is_closed(),
+        "cancellation retained the host connection future"
+    );
+    assert!(
+        lifetime.upgrade().is_none(),
+        "cancellation retained the dynamic tenant registry"
     );
 }

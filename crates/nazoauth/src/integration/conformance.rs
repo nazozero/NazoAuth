@@ -37,6 +37,7 @@ pub fn registration_requests() -> Vec<(&'static Route, Request<Bytes>)> {
                     Request::builder()
                         .method(method.method.clone())
                         .uri(&path)
+                        .header(header::HOST, "issuer.example")
                         .body(Bytes::new())
                         .expect("canonical registration request"),
                 )
@@ -69,6 +70,7 @@ pub fn transport_requests() -> Vec<Request<Bytes>> {
         Request::builder()
             .method(Method::PUT)
             .uri("/register/client%2Fone?state=%FF")
+            .header(header::HOST, "issuer.example")
             .header(header::CONTENT_TYPE, "application/octet-stream")
             .body(Bytes::from_static(b"\0\xff\r\n{\"original\": true }\n"))
             .unwrap(),
@@ -291,7 +293,10 @@ where
             "grant_type=code&grant_type=refresh_token",
         ),
     ] {
-        let mut request = Request::builder().method(method).uri(target);
+        let mut request = Request::builder()
+            .method(method)
+            .uri(target)
+            .header(header::HOST, "issuer.example");
         if !content_type.is_empty() {
             request = request.header(header::CONTENT_TYPE, content_type);
         }

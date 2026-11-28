@@ -6,17 +6,17 @@ use nazo_runtime_modules::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ServerModuleLifecycle {
+pub struct StoredTransactionLifecycle {
     store: Arc<dyn nazo_persistence::RuntimeModuleStore>,
 }
 
-impl ServerModuleLifecycle {
-    pub(crate) fn new(store: Arc<dyn nazo_persistence::RuntimeModuleStore>) -> Self {
+impl StoredTransactionLifecycle {
+    pub fn new(store: Arc<dyn nazo_persistence::RuntimeModuleStore>) -> Self {
         Self { store }
     }
 }
 
-impl ModuleLifecycle for ServerModuleLifecycle {
+impl ModuleLifecycle for StoredTransactionLifecycle {
     fn drain_stored_transactions(
         &self,
         module_id: ModuleId,
@@ -121,7 +121,3 @@ async fn run_reconciler(
 #[cfg(test)]
 #[path = "../tests/unit/runtime_modules.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "../tests/support/runtime_modules.rs"]
-pub(crate) mod test_support;

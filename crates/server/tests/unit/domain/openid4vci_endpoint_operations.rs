@@ -40,8 +40,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::config::ConfigSource;
-use crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test;
 use crate::settings::Settings;
+use crate::test_support::runtime_modules::runtime_module_registry_with_modules_for_test;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;

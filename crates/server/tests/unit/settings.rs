@@ -257,6 +257,116 @@ fn directory_direct_tls_advertises_the_deployment_mtls_port_for_each_tenant_host
     }
 }
 
+#[actix_web::test]
+async fn directory_tenant_projects_local_endpoints_and_builds_the_same_facade() {
+    let configured_issuer = "https://deployment.example.test/base";
+    let callback_query = "?fixed=%2f&fixed=%2F&empty=";
+    let logout_suffix = "/return%2Fdone/?keep=%2f&keep=%2F";
+    let resource_path = "/resources%2Fv1/";
+    let config = ConfigSource::from_owned_pairs_for_test([
+        ("PUBLIC_BASE_URL".to_owned(), configured_issuer.to_owned()),
+        ("TRANSPORT_MODE".to_owned(), "direct-tls".to_owned()),
+        (
+            "CLIENT_SECRET_PEPPER".to_owned(),
+            "0123456789abcdef0123456789abcdef".to_owned(),
+        ),
+        (
+            "PROTECTED_RESOURCE_IDENTIFIER".to_owned(),
+            format!("https://deployment.example.test{resource_path}"),
+        ),
+        (
+            "FEDERATION_PROVIDER_CONFIGS".to_owned(),
+            json!([
+                {
+                    "provider_id": "oidc-upstream",
+                    "enabled": true,
+                    "display_name": "OIDC",
+                    "adapter_type": "oidc",
+                    "issuer": "https://idp.example.test",
+                    "discovery": true,
+                    "backchannel_logout": true,
+                    "client_id": "client-1",
+                    "client_secret": " secret+%: ",
+                    "redirect_uri": format!("{configured_issuer}/auth/federation/oidc-upstream/callback{callback_query}"),
+                    "post_logout_redirect_uri": format!("https://deployment.example.test{logout_suffix}"),
+                },
+                {
+                    "provider_id": "qq",
+                    "enabled": true,
+                    "display_name": "QQ",
+                    "adapter_type": "oauth2_social",
+                    "provider_kind": "qq",
+                    "client_id": "client-2",
+                    "client_secret": "secret-2",
+                    "redirect_uri": format!("{configured_issuer}/auth/federation/qq/callback{callback_query}"),
+                }
+            ])
+            .to_string(),
+        ),
+    ]);
+    let mut state = crate::facade_conformance::infrastructure(false).await;
+    for (issuer, origin, host) in [
+        (configured_issuer, "https://deployment.example.test", None),
+        (
+            "https://ALPHA.example.test:8443/a",
+            "https://alpha.example.test:8443",
+            Some("alpha.example.test"),
+        ),
+        (
+            "https://beta.example.test/nested/auth",
+            "https://beta.example.test",
+            Some("beta.example.test"),
+        ),
+    ] {
+        let settings = match host {
+            Some(host) => {
+                Settings::from_directory_binding(&config, &directory_binding(issuer, host))
+            }
+            None => Settings::from_config(&config),
+        }
+        .unwrap();
+        assert_eq!(settings.endpoint.issuer, issuer);
+        assert_eq!(
+            settings.protocol.protected_resource_identifier,
+            format!("{origin}{resource_path}")
+        );
+        for provider in settings
+            .identity
+            .federation
+            .providers
+            .configured_providers()
+        {
+            let redirect_uri = match &provider.adapter {
+                ExternalLoginProviderAdapter::Oidc(oidc) => {
+                    assert_eq!(oidc.issuer, "https://idp.example.test");
+                    assert_eq!(oidc.client_secret, " secret+%: ");
+                    assert_eq!(
+                        oidc.post_logout_redirect_uri,
+                        Some(format!("{origin}{logout_suffix}"))
+                    );
+                    &oidc.redirect_uri
+                }
+                ExternalLoginProviderAdapter::Social(social) => &social.redirect_uri,
+            };
+            assert_eq!(
+                redirect_uri,
+                &format!(
+                    "{issuer}/auth/federation/{}/callback{callback_query}",
+                    provider.provider_id
+                )
+            );
+        }
+        state.settings = std::sync::Arc::new(settings);
+        let application = crate::test_support::facade::application(&state)
+            .await
+            .unwrap();
+        assert_eq!(application.mount().path(), nazo_auth::issuer_path(issuer));
+        assert!(application.mount().discovery_paths().any(|path| {
+            path == format!("/.well-known/oauth-protected-resource{resource_path}")
+        }));
+    }
+}
+
 #[test]
 fn explicit_endpoint_overrides_still_require_url_admission() {
     for (key, value) in [

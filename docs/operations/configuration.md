@@ -190,7 +190,7 @@ still derive from the binding issuer when no explicit passkey override exists.
 | `COOKIE_SECURE` | `true` when issuer uses HTTPS |
 | `PASSKEY_ORIGIN` | issuer, unless explicitly overridden |
 | `PASSKEY_RP_ID` | host of `PASSKEY_ORIGIN`, unless explicitly overridden |
-| `PROTECTED_RESOURCE_IDENTIFIER` | `ISSUER + "/fapi/resource"`, unless explicitly overridden |
+| `PROTECTED_RESOURCE_IDENTIFIER` | `ISSUER + "/fapi/resource"` by default. A directory tenant projects an explicit value onto its issuer origin while preserving the literal configured path. |
 | `SIGNING_KEY_ENCRYPTION_KEY_ID` | required deployment-provided nonempty wrapping-key identifier |
 | `SIGNING_KEY_ENCRYPTION_KEY` | required deployment-provided unpadded base64url 32-byte signing-key wrapping key |
 | `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_ID` / `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY` | optional matched previous wrapping-key pair while rewrapping persisted signing material |
@@ -198,8 +198,14 @@ still derive from the binding issuer when no explicit passkey override exists.
 | `AVATAR_STORAGE_DIR` | Optional local base directory; each tenant uses `{base}/{tenant_uuid}`. Without it, use `DATA_DIR/tenants/{tenant_uuid}/avatars`. A directory alone does not enable local storage. |
 | `AVATAR_TENANT_STORAGE_JSON` | Optional complete tenant storage overrides keyed by tenant UUID; absent tenants inherit configured global storage, or have avatar storage disabled. With no global storage, these entries form the allowlist. See [avatar storage configuration and manual migration](avatar-direct-upload.md#global-default-and-tenant-overrides). |
 
-Explicit overrides are retained for advanced deployments. New deployments
-should prefer same-origin defaults.
+Directory projection derives local federation callbacks from the selected
+issuer and provider ID, preserving each configured fixed query. A configured
+upstream logout return URL retains its literal path and query on the selected
+issuer origin. Register these exact per-tenant URLs with each upstream client;
+custom resource and logout paths remain literal rather than inheriting the
+tenant's mount prefix. Fixed application configuration retains explicit URLs
+and validates that the resource metadata origin and local callback routes
+match the application mount.
 
 Signing keys, their dedicated request-object decryption key, and their public
 projection are one encrypted generation in PostgreSQL.

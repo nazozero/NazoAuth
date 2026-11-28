@@ -14,10 +14,17 @@ pub(crate) mod admin_mutations;
 pub(crate) mod federation_binding;
 pub(crate) mod local_avatar;
 pub(crate) mod passkey_authenticator;
+pub(crate) mod runtime_modules;
 #[path = "../unit/http/token/response_body.rs"]
 pub(crate) mod token_response_body;
 
 pub(crate) mod valkey;
+
+tokio::task_local! {
+    /// Legacy endpoint fixtures carry request authority here. Production audit
+    /// ports bind their tenant directly in `TenantSecurityAudit`.
+    pub(crate) static REQUEST_TENANT: nazo_identity::TenantId;
+}
 
 #[path = "client_auth_keys.rs"]
 pub(crate) mod client_auth_keys;

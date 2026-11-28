@@ -1,9 +1,9 @@
-use crate::runtime_modules::ServerModuleLifecycle;
 use crate::settings::Settings;
 use nazo_postgres::{DbPool, RuntimeModuleRepository};
 use nazo_runtime_modules::{
     ActiveModuleSnapshot, ModuleId, ModuleLifecycle, ModuleRevision, RuntimeModuleRegistry,
 };
+use nazo_runtime_tokio::StoredTransactionLifecycle;
 use nazoauth::test_support::runtime_modules::{
     PersistenceRuntimeModuleRepository, RuntimeModules, ServerRuntimeModuleRegistry, module_catalog,
 };
@@ -36,7 +36,7 @@ pub(crate) fn runtime_modules_with_modules_for_test(
     let catalog = module_catalog(&settings.application_configuration())?;
     let store = Arc::new(RuntimeModuleRepository::new(pool));
     let repository = Arc::new(PersistenceRuntimeModuleRepository::new(store.clone()));
-    let lifecycle: Arc<dyn ModuleLifecycle> = Arc::new(ServerModuleLifecycle::new(store));
+    let lifecycle: Arc<dyn ModuleLifecycle> = Arc::new(StoredTransactionLifecycle::new(store));
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
         lifecycle,

@@ -78,7 +78,7 @@ pub fn dpop_target_uri(
         .filter(|value| !value.contains('@'))
         .and_then(|value| value.parse::<http::uri::Authority>().ok())
         .ok_or(DpopError::InvalidProof)?;
-    let mut selected = None;
+    let mut selected: Option<(url::Origin, &str)> = None;
     for base in [issuer, mtls_endpoint_base_url] {
         let origin = url::Url::parse(base).map_err(|_| DpopError::InvalidProof)?;
         if !matches!(origin.scheme(), "http" | "https") {
@@ -86,17 +86,19 @@ pub fn dpop_target_uri(
         }
         let request_origin = url::Url::parse(&format!("{}://{authority}", origin.scheme()))
             .map_err(|_| DpopError::InvalidProof)?;
-        if origin.origin() == request_origin.origin() {
-            let configured_origin = &base[..base.len() - nazo_auth::issuer_path(base).len()];
-            let candidate = format!("{configured_origin}{path}");
-            if selected
-                .as_ref()
-                .is_some_and(|current| current != &candidate)
-            {
-                return Err(DpopError::InvalidProof);
+        let normalized_origin = origin.origin();
+        if normalized_origin == request_origin.origin() {
+            if let Some((current, _)) = &selected {
+                if current != &normalized_origin {
+                    return Err(DpopError::InvalidProof);
+                }
+            } else {
+                let configured_origin = &base[..base.len() - nazo_auth::issuer_path(base).len()];
+                selected = Some((normalized_origin, configured_origin));
             }
-            selected = Some(candidate);
         }
     }
-    selected.ok_or(DpopError::InvalidProof)
+    selected
+        .map(|(_, configured_origin)| format!("{configured_origin}{path}"))
+        .ok_or(DpopError::InvalidProof)
 }

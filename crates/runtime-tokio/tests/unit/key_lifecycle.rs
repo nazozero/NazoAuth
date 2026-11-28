@@ -15,6 +15,13 @@ use tokio::sync::Notify;
 
 use super::{KeyLifecycleTask, managed_refresh_interval, next_failure_backoff, refresh_interval};
 
+impl KeyLifecycleTask {
+    async fn stop(mut self) {
+        self.request_stop();
+        self.finish().await;
+    }
+}
+
 fn settings() -> KeySettings {
     KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),

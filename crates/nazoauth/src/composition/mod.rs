@@ -96,7 +96,7 @@ pub struct NazoAuth {
 /// Builds a tenant once from configuration and actual host I/O capabilities.
 pub struct NazoAuthBuilder {
     settings: Settings,
-    mount_path: String,
+    mount_path: Option<String>,
     capabilities: Capabilities,
     instance_id: String,
     avatar: AvatarProfileService,
@@ -114,7 +114,7 @@ impl NazoAuthBuilder {
     ) -> Self {
         Self {
             settings,
-            mount_path: "/".to_owned(),
+            mount_path: None,
             capabilities,
             instance_id: instance_id.into(),
             avatar: AvatarProfileService::Disabled,
@@ -128,7 +128,7 @@ impl NazoAuthBuilder {
     /// Mount all enabled endpoints under this path, with standards-derived
     /// discovery locations. The configured issuer must already use this path.
     pub fn mount_path(mut self, path: impl Into<String>) -> Self {
-        self.mount_path = path.into();
+        self.mount_path = Some(path.into());
         self
     }
 
@@ -207,7 +207,11 @@ impl NazoAuthBuilder {
             runtime_module_availability,
         } = self;
         settings.validate()?;
-        let mount = crate::integration::Mount::new(&settings, &mount_path)?;
+        let mount_path = mount_path.as_deref().unwrap_or_else(|| {
+            let prefix = nazo_auth::issuer_path(&settings.endpoint.issuer);
+            if prefix.is_empty() { "/" } else { prefix }
+        });
+        let mount = crate::integration::Mount::new(&settings, mount_path)?;
         let password_hasher = capabilities.passwords.hasher.clone();
         let readiness = crate::well_known::ReadinessDependencies::new(
             capabilities.persistence.provider().database_health(),

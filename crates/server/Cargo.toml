@@ -53,6 +53,7 @@ nazo-passkey.workspace = true
 nazo-persistence.workspace = true
 nazo-postgres.workspace = true
 nazo-runtime-modules.workspace = true
+nazo-runtime-tokio.workspace = true
 nazo-scim-events.workspace = true
 nazo-valkey.workspace = true
 nazoauth = { workspace = true, features = ["deployment-control"] }
