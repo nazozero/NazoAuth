@@ -421,7 +421,7 @@ async fn device_authorization_endpoint_disabled_fails_before_client_lookup() {
     let req = form_request();
 
     let runtime =
-        crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test(
+        crate::test_support::runtime_modules::runtime_module_registry_with_modules_for_test(
             state.diesel_db.clone(),
             state.settings.as_ref(),
             Default::default(),
@@ -479,7 +479,7 @@ async fn device_denial_consumes_pending_request_after_audited_user_decision() {
     // Install the durable audit dependency before entering the required-intent
     // boundary.  The decision must not mutate Valkey until this succeeds.
     crate::test_support::token_issuance_repository(state.diesel_db.clone());
-    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+    let runtime = crate::test_support::runtime_modules::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         state.settings.as_ref(),
     )
@@ -614,7 +614,7 @@ async fn device_http_boundaries_preserve_validation_csrf_and_verification_repres
     let Some(state) = live_device_replay_state().await else {
         return;
     };
-    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+    let runtime = crate::test_support::runtime_modules::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         state.settings.as_ref(),
     )
@@ -902,7 +902,7 @@ async fn device_authorization_resolves_basic_identity_without_form_client_id() {
         .insert(&client, Some(&digest), None)
         .await
         .unwrap();
-    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+    let runtime = crate::test_support::runtime_modules::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         state.settings.as_ref(),
     )

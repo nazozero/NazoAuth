@@ -41,7 +41,7 @@ def runtime_violations(tree: str) -> set[str]:
     native.update(packages & NATIVE_PACKAGES)
     native.update(
         package for package in packages
-        if contracts.PACKAGE_ROLES.get(package) in {"host", "adapter", "http-adapter"}
+        if contracts.PACKAGE_ROLES.get(package) in {"host", "adapter", "http-adapter", "runtime-adapter"}
     )
     return native
 

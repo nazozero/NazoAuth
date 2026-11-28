@@ -36,6 +36,7 @@ pub struct AdminSessionHandles {
 pub struct SessionProfileHandles {
     pub resolver: Arc<SessionResolver>,
     pub http: SessionHttpConfig,
+    pub mount_path: Box<str>,
 }
 
 #[derive(Clone)]
@@ -103,8 +104,12 @@ impl AdminSessionHandles {
 }
 
 impl SessionProfileHandles {
-    pub fn new(resolver: Arc<SessionResolver>, http: SessionHttpConfig) -> Self {
-        Self { resolver, http }
+    pub fn new(resolver: Arc<SessionResolver>, http: SessionHttpConfig, issuer: &str) -> Self {
+        Self {
+            resolver,
+            http,
+            mount_path: nazo_auth::issuer_path(issuer).into(),
+        }
     }
 
     pub fn http_config(&self) -> &SessionHttpConfig {

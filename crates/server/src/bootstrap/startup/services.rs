@@ -1,11 +1,6 @@
 use super::configuration::StartupConfiguration;
-use super::tenant_runtime::{
-    ProcessRuntime, TenantRuntimeRefresher, TenantRuntimeRegistry, spawn_directory_refresher,
-};
 use super::*;
-use actix_web::dev::Extensions;
-use std::rc::Rc;
-mod factory;
+pub(super) mod factory;
 
 /// Construct actual native I/O capabilities. The neutral facade alone owns
 /// application service assembly; tests can replace semantic ports here.
@@ -40,7 +35,7 @@ pub(crate) fn application_capabilities(
             )?,
         ),
         federation_http: Arc::new(crate::adapters::federation_http::FederationClient::new()?),
-        module_lifecycle: Arc::new(crate::runtime_modules::ServerModuleLifecycle::new(
+        module_lifecycle: Arc::new(nazo_runtime_tokio::StoredTransactionLifecycle::new(
             persistence.provider().runtime_modules(tenant.as_uuid()),
         )),
         scim_events: Arc::new(crate::adapters::scim_events::ScimEventLongPoll::new(
@@ -54,7 +49,9 @@ pub(crate) fn application_capabilities(
     })
 }
 
-pub(super) async fn build(startup: StartupConfiguration) -> anyhow::Result<ServiceAssembly> {
+pub(super) async fn build(
+    startup: StartupConfiguration,
+) -> anyhow::Result<Arc<nazoauth::NazoAuth>> {
     let mut capabilities = application_capabilities(
         &startup.settings,
         &startup.persistence,
@@ -86,49 +83,5 @@ pub(super) async fn build(startup: StartupConfiguration) -> anyhow::Result<Servi
             builder.with_direct_avatar_storage(storage.clone())
         }
     };
-    let application = Arc::new(builder.build().await?);
-    Ok(ServiceAssembly {
-        startup,
-        application,
-    })
-}
-
-pub(super) async fn run(
-    process: Arc<ProcessRuntime>,
-    registry: TenantRuntimeRegistry,
-    refresher: Arc<TenantRuntimeRefresher>,
-    backchannel_logout_worker: tokio::task::JoinHandle<()>,
-    security_state_worker: tokio::task::JoinHandle<()>,
-) -> anyhow::Result<()> {
-    let refresh_task = spawn_directory_refresher(refresher.clone());
-    let result = factory::run(process, registry).await;
-    refresh_task.abort();
-    await_aborted_task(refresh_task, "tenant directory refresher").await;
-    refresher.shutdown().await;
-    security_state_worker.abort();
-    await_aborted_task(security_state_worker, "security-state maintenance worker").await;
-    backchannel_logout_worker.abort();
-    await_aborted_task(backchannel_logout_worker, "back-channel logout worker").await;
-    result
-}
-
-async fn await_aborted_task(worker: tokio::task::JoinHandle<()>, task: &'static str) {
-    if let Err(error) = worker.await
-        && !error.is_cancelled()
-    {
-        tracing::warn!(%error, task, "process background task stopped unexpectedly");
-    }
-}
-
-pub(super) struct ServiceAssembly {
-    pub(super) startup: StartupConfiguration,
-    pub(super) application: Arc<nazoauth::NazoAuth>,
-}
-
-impl ServiceAssembly {
-    pub(super) fn app_data_container(&self) -> Rc<Extensions> {
-        let mut extensions = Extensions::new();
-        extensions.insert(web::Data::from(self.application.clone()));
-        Rc::new(extensions)
-    }
+    Ok(Arc::new(builder.build().await?))
 }

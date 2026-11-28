@@ -162,6 +162,7 @@ impl ServerUserinfoOperations {
             _ => return Err(UserinfoError::ClientUnavailable),
         };
         let response_claims = oidc_user_claims(
+            self.handles.issuer(),
             &subject_claims,
             &scopes,
             &claims.sub,

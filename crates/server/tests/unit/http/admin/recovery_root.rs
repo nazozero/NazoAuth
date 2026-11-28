@@ -37,7 +37,7 @@ async fn recovery_root_handlers_commit_approval_rotation_and_registered_audit() 
             kid: URL_SAFE_NO_PAD.encode(Sha256::digest(public_key)),
         };
         let (sessions, _, client_ip_config) = admin_user_dependencies(&fixture.state);
-        let response = crate::adapters::audit::REQUEST_TENANT
+        let response = crate::test_support::REQUEST_TENANT
             .scope(
                 control,
                 admin_recovery_root_approval(
@@ -78,7 +78,7 @@ async fn recovery_root_handlers_commit_approval_rotation_and_registered_audit() 
         assert_eq!(pending.count, 1);
         drop(conn);
         let (sessions, _, client_ip_config) = admin_user_dependencies(&fixture.state);
-        let response = crate::adapters::audit::REQUEST_TENANT
+        let response = crate::test_support::REQUEST_TENANT
             .scope(
                 control,
                 admin_recovery_root_rotate(

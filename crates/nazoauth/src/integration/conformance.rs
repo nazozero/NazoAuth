@@ -37,6 +37,7 @@ pub fn registration_requests() -> Vec<(&'static Route, Request<Bytes>)> {
                     Request::builder()
                         .method(method.method.clone())
                         .uri(&path)
+                        .header(header::HOST, "issuer.example")
                         .body(Bytes::new())
                         .expect("canonical registration request"),
                 )
@@ -69,6 +70,7 @@ pub fn transport_requests() -> Vec<Request<Bytes>> {
         Request::builder()
             .method(Method::PUT)
             .uri("/register/client%2Fone?state=%FF")
+            .header(header::HOST, "issuer.example")
             .header(header::CONTENT_TYPE, "application/octet-stream")
             .body(Bytes::from_static(b"\0\xff\r\n{\"original\": true }\n"))
             .unwrap(),
@@ -286,12 +288,15 @@ where
         ),
         (
             Method::POST,
-            "/%74oken",
+            "/%74oken?state=a%2Fb&state=%252F",
             "application/x-www-form-urlencoded",
             "grant_type=code&grant_type=refresh_token",
         ),
     ] {
-        let mut request = Request::builder().method(method).uri(target);
+        let mut request = Request::builder()
+            .method(method)
+            .uri(target)
+            .header(header::HOST, "issuer.example");
         if !content_type.is_empty() {
             request = request.header(header::CONTENT_TYPE, content_type);
         }
@@ -338,6 +343,29 @@ where
         }
     }
     for mut request in cases {
+        // Generate the external request before either consumer sees it. Both
+        // consumers then receive exactly the same raw target and body bytes.
+        let path = request.uri().path();
+        let prefix = application.mount().path().trim_end_matches('/');
+        let target = super::route_for_path(path)
+            .filter(|route| {
+                matches!(
+                    route.methods[0].endpoint,
+                    super::Endpoint::OauthAuthorizationServerMetadata
+                        | super::Endpoint::OauthProtectedResourceMetadata
+                        | super::Endpoint::CredentialIssuerMetadata
+                )
+            })
+            .and_then(|route| application.mount().route_path(route))
+            .unwrap_or_else(|| format!("{prefix}{path}"));
+        let mut uri = request.uri().clone().into_parts();
+        let mut target = target;
+        if let Some(query) = request.uri().query() {
+            target.push('?');
+            target.push_str(query);
+        }
+        uri.path_and_query = Some(target.parse().expect("mounted conformance target"));
+        *request.uri_mut() = http::Uri::from_parts(uri).expect("mounted conformance URI");
         request.extensions_mut().insert(ConnectionFacts {
             peer_addr: Some("192.0.2.20:43125".parse().unwrap()),
             ..ConnectionFacts::default()

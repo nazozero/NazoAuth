@@ -63,17 +63,32 @@ pub async fn serve(
     application: &NazoAuth,
     request: worker::HttpRequest,
 ) -> http::Response<Full<Bytes>> {
-    forward_response(application.handle_stream(forward_request(request)).await)
+    let mode = application
+        .route_for_path(request.uri().path())
+        .map_or(BodyMode::None, |route| route.body(request.method()));
+    forward_response(
+        application
+            .handle_stream(forward_request_with_mode(request, mode))
+            .await,
+    )
 }
 
-/// Retain the HTTP head and prepare lazy, bounded body conversion.
+/// Convert a root-mounted request with lazy, bounded body conversion.
 ///
+/// Use [`serve`] with a prepared application for a configured mount prefix.
 /// Gzip and deflate are decoded only for the route modes that request decoding.
 /// Raw and multipart modes retain wire bytes. Admission in `handle_stream` runs
 /// before the body is polled, including before a decompressor is constructed.
 pub fn forward_request(request: worker::HttpRequest) -> http::Request<RequestBody> {
     let mode = nazoauth::integration::route_for_path(request.uri().path())
         .map_or(BodyMode::None, |route| route.body(request.method()));
+    forward_request_with_mode(request, mode)
+}
+
+fn forward_request_with_mode(
+    request: worker::HttpRequest,
+    mode: BodyMode,
+) -> http::Request<RequestBody> {
     let encoding = Encoding::from_headers(request.headers(), mode);
     request.map(|body| RequestBody {
         source: Some(body),

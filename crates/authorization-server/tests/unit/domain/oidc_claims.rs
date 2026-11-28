@@ -68,6 +68,7 @@ fn user() -> nazo_identity::SubjectClaims {
 fn userinfo_claims_follow_authorized_scopes() {
     let user = user();
     let claims = oidc_user_claims(
+        "https://issuer.example",
         &user,
         &[
             "openid".to_owned(),
@@ -115,7 +116,13 @@ fn userinfo_claims_follow_authorized_scopes() {
 #[test]
 fn userinfo_claims_omit_unrequested_profile_and_email() {
     let user = user();
-    let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1", &[]);
+    let claims = oidc_user_claims(
+        "https://issuer.example",
+        &user,
+        &["openid".to_owned()],
+        "subject-1",
+        &[],
+    );
 
     assert!(claims.get("name").is_none());
     assert!(claims.get("given_name").is_none());
@@ -141,6 +148,7 @@ fn userinfo_claims_omit_unrequested_profile_and_email() {
 fn id_token_user_claims_do_not_expose_email_scope_claims() {
     let user = user();
     let claims = oidc_id_token_user_claims(
+        "https://issuer.example",
         &user,
         &[
             "openid".to_owned(),
@@ -165,6 +173,7 @@ fn requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope
     let mut user = user();
     user.name = None;
     let claims = oidc_user_claims(
+        "https://issuer.example",
         &user,
         &["openid".to_owned()],
         "subject-1",
@@ -183,6 +192,7 @@ fn requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope
 fn requested_contact_claims_allow_explicit_contact_claims_without_contact_scopes() {
     let user = user();
     let claims = oidc_user_claims(
+        "https://issuer.example",
         &user,
         &["openid".to_owned()],
         "subject-1",
@@ -209,6 +219,7 @@ fn requested_contact_claims_allow_explicit_contact_claims_without_contact_scopes
 fn requested_userinfo_claim_values_filter_output_even_without_matching_scope() {
     let user = user();
     let claims = oidc_user_claims(
+        "https://issuer.example",
         &user,
         &["openid".to_owned()],
         "subject-1",
@@ -243,6 +254,7 @@ fn requested_userinfo_claim_values_filter_output_even_without_matching_scope() {
 fn id_token_claim_values_filter_output_and_allow_matching_contact_claims() {
     let user = user();
     let claims = oidc_id_token_user_claims(
+        "https://issuer.example",
         &user,
         &["openid".to_owned(), "email".to_owned(), "phone".to_owned()],
         "subject-1",
@@ -307,6 +319,7 @@ fn optional_claims_are_trimmed_and_empty_addresses_are_omitted() {
     address.postal_code = None;
     address.country = Some("  ".to_owned());
     let claims = oidc_user_claims(
+        "https://issuer.example",
         &user,
         &["profile".to_owned(), "address".to_owned()],
         "subject",
@@ -315,4 +328,26 @@ fn optional_claims_are_trimmed_and_empty_addresses_are_omitted() {
     assert_eq!(claims["given_name"], "Alice");
     assert!(!claims.contains_key("family_name"));
     assert!(!claims.contains_key("address"));
+}
+
+#[test]
+fn local_avatar_claim_uses_effective_issuer_before_claim_value_matching() {
+    let mut user = user();
+    user.picture = Some("/auth/me/avatar?v=one".into());
+    let expected = "https://issuer.example/tenant/auth/auth/me/avatar?v=one";
+    let request = OidcClaimRequest {
+        name: "picture".into(),
+        essential: true,
+        value: Some(json!(expected)),
+        values: Vec::new(),
+    };
+    let claims = oidc_user_claims(
+        "https://issuer.example/tenant/auth",
+        &user,
+        &[],
+        "subject",
+        &[request],
+    );
+    assert_eq!(claims["picture"], expected);
+    assert_eq!(user.picture.as_deref(), Some("/auth/me/avatar?v=one"));
 }

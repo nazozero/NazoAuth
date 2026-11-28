@@ -10,7 +10,7 @@ use crate::endpoints::{
         federation::AdminFederationConfig,
     },
     auth::{
-        MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
+        MFA_REMEMBERED_TTL_SECONDS,
         csrf::CsrfHttpConfig,
         federation::{FEDERATION_STATE_TTL_SECONDS, FederationHttpConfig, SAML_REPLAY_TTL_SECONDS},
     },
@@ -81,6 +81,7 @@ use nazo_oauth_server::token::dispatch::{
 /// immutable graph; it never constructs services or looks up dependencies by type.
 pub struct NazoAuth {
     pub(crate) settings: Arc<Settings>,
+    mount: crate::integration::Mount,
     core: core::CoreServices,
     identity: identity::IdentityServices,
     runtime_modules: Arc<RuntimeModules>,
@@ -95,6 +96,7 @@ pub struct NazoAuth {
 /// Builds a tenant once from configuration and actual host I/O capabilities.
 pub struct NazoAuthBuilder {
     settings: Settings,
+    mount_path: Option<String>,
     capabilities: Capabilities,
     instance_id: String,
     avatar: AvatarProfileService,
@@ -112,6 +114,7 @@ impl NazoAuthBuilder {
     ) -> Self {
         Self {
             settings,
+            mount_path: None,
             capabilities,
             instance_id: instance_id.into(),
             avatar: AvatarProfileService::Disabled,
@@ -120,6 +123,13 @@ impl NazoAuthBuilder {
             mdoc_crls: None,
             runtime_module_availability: None,
         }
+    }
+
+    /// Mount all enabled endpoints under this path, with standards-derived
+    /// discovery locations. The configured issuer must already use this path.
+    pub fn mount_path(mut self, path: impl Into<String>) -> Self {
+        self.mount_path = Some(path.into());
+        self
     }
 
     pub fn with_avatar_storage<S: nazo_identity::ports::AvatarStoragePort + 'static>(
@@ -187,6 +197,7 @@ impl NazoAuthBuilder {
     pub async fn build(self) -> anyhow::Result<NazoAuth> {
         let Self {
             settings,
+            mount_path,
             capabilities,
             instance_id,
             avatar,
@@ -196,6 +207,11 @@ impl NazoAuthBuilder {
             runtime_module_availability,
         } = self;
         settings.validate()?;
+        let mount_path = mount_path.as_deref().unwrap_or_else(|| {
+            let prefix = nazo_auth::issuer_path(&settings.endpoint.issuer);
+            if prefix.is_empty() { "/" } else { prefix }
+        });
+        let mount = crate::integration::Mount::new(&settings, mount_path)?;
         let password_hasher = capabilities.passwords.hasher.clone();
         let readiness = crate::well_known::ReadinessDependencies::new(
             capabilities.persistence.provider().database_health(),
@@ -246,6 +262,7 @@ impl NazoAuthBuilder {
         let identity = identity::build(&startup, &core).await?;
         Ok(NazoAuth {
             settings: startup.settings,
+            mount,
             core,
             identity,
             runtime_modules: startup.runtime_modules,
@@ -274,6 +291,16 @@ struct StartupConfiguration {
 }
 
 impl NazoAuth {
+    /// The prepared, framework-neutral registration contract for this tenant.
+    pub fn mount(&self) -> &crate::integration::Mount {
+        &self.mount
+    }
+
+    /// Look up transport metadata without changing the external request URI.
+    pub fn route_for_path(&self, raw_path: &str) -> Option<&'static crate::integration::Route> {
+        self.mount.route_for_path(raw_path)
+    }
+
     /// Synchronize durable intent using bounded lifecycle steps. Requests own
     /// their reads; stable concurrent requests share no pending I/O future.
     pub async fn synchronize_runtime_modules_step(

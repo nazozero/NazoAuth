@@ -1,51 +1,36 @@
+//! Native outbound clients supplied to the shared runtime scheduler.
 use super::*;
 use crate::adapters::{
     backchannel_logout_sender::NativeBackchannelLogoutSender, ciba_ping_sender::CibaPingHttpSender,
-};
-use crate::jobs::{
-    backchannel_logout::spawn_backchannel_logout_delivery_worker,
-    ciba_ping::spawn_ciba_ping_delivery_worker,
-    security_state::spawn_security_state_maintenance_worker,
 };
 use nazo_oauth_server::workers::{
     backchannel_logout::BackchannelLogoutWorker, ciba_ping::CibaPingDeliveryWorker,
 };
 
-/// Start tasks whose ownership is the process lifetime rather than an HTTP
-/// worker.  Keeping these calls here prevents the server factory from
-/// accidentally starting one copy per Actix worker.
-pub(super) fn spawn_ciba_ping_worker(
+pub(super) fn ciba_ping_worker(
     deliveries: Arc<dyn nazo_oauth_server::ports::transient_state::CibaPingDeliveryPort>,
     settings: &Settings,
-) -> anyhow::Result<tokio::task::JoinHandle<()>> {
-    // Tenant capabilities can change after this runtime starts; the delivery
-    // queue, rather than the startup snapshot, determines whether work exists.
+) -> anyhow::Result<Arc<CibaPingDeliveryWorker>> {
     let sender = Arc::new(CibaPingHttpSender::new(
         &settings.ciba.ciba_notification_private_origins,
     )?);
-    Ok(spawn_ciba_ping_delivery_worker(Arc::new(
-        CibaPingDeliveryWorker::new(deliveries, sender),
-    )))
+    Ok(Arc::new(CibaPingDeliveryWorker::new(deliveries, sender)))
 }
 
-pub(super) fn spawn_backchannel_logout_worker(
-    logout_deliveries: Arc<dyn nazo_persistence::BackchannelLogoutDeliveryStore>,
+pub(super) fn process_workers(
+    persistence: &nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
     settings: &Settings,
-) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+) -> anyhow::Result<nazo_runtime_tokio::ProcessWorkers> {
     let sender = Arc::new(NativeBackchannelLogoutSender::new(
         &settings.modules.backchannel_logout_private_origins,
     )?);
-    Ok(spawn_backchannel_logout_delivery_worker(Arc::new(
-        BackchannelLogoutWorker::from_port(logout_deliveries, sender),
-    )))
-}
-
-/// The bounded security-state sweep is process-level state, so the worker is
-/// spawned once here — never inside the Actix factory or a tenant runtime.
-pub(super) fn spawn_security_state_worker(
-    maintenance: Arc<dyn nazo_persistence::SecurityStateMaintenancePort>,
-) -> tokio::task::JoinHandle<()> {
-    spawn_security_state_maintenance_worker(maintenance)
+    Ok(nazo_runtime_tokio::ProcessWorkers {
+        backchannel_logout: Arc::new(BackchannelLogoutWorker::from_port(
+            persistence.provider().logout_delivery_store(),
+            sender,
+        )),
+        security_state: persistence.provider().security_state_maintenance(),
+    })
 }
 
 #[cfg(test)]

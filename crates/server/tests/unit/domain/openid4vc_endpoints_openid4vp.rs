@@ -205,7 +205,7 @@ async fn operations_with_crypto(
         active_modules.insert(nazo_runtime_modules::ModuleId::Openid4vpVerifier);
     }
     let runtime =
-        crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test(
+        crate::test_support::runtime_modules::runtime_module_registry_with_modules_for_test(
             pool.clone(),
             &settings,
             active_modules,

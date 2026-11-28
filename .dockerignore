@@ -3,6 +3,8 @@
 
 # Build and runtime output should never enter the Docker context.
 target/*
+examples/hyper-embedding/target/
+examples/axum-embedding/target/
 !target/release-container/
 target/release-container/*
 !target/release-container/amd64/

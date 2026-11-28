@@ -1,0 +1,20 @@
+[package]
+name = "nazoauth-hyper-embedding"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+publish = false
+
+# This is an independent embedding application, not a production adapter crate.
+[workspace]
+
+[dependencies]
+anyhow = "1.0.104"
+bytes = "1.12.2"
+http = "1.5.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["service"] }
+nazo-http-tower = { path = "../../crates/http-tower" }
+nazoauth = { path = "../../crates/nazoauth", default-features = false }
+tower = { version = "0.5.3", default-features = false }

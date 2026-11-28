@@ -48,11 +48,12 @@ pub(super) fn outer_request_uri_parameters_match_pushed(
 }
 
 pub(super) fn authorization_login_url_for_frontend(
+    issuer: &str,
     frontend_base_url: &str,
     q: &HashMap<String, String>,
     reauth_nonce: Option<&str>,
 ) -> String {
-    let mut next = String::from("/authorize");
+    let mut next = format!("{}/authorize", nazo_auth::issuer_path(issuer));
     let mut has_query = false;
     for (key, value) in q {
         next.push(if has_query { '&' } else { '?' });

@@ -106,7 +106,7 @@ fn authorization_decision_endpoint(
         Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),
         nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
     );
-    let runtime_modules = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+    let runtime_modules = crate::test_support::runtime_modules::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         state.settings.as_ref(),
     )

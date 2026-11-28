@@ -11,18 +11,61 @@ use std::collections::HashMap;
 pub struct AccountOverviewView<'a> {
     pub user: &'a PublicAccount,
     pub count: i64,
+    pub mount_path: &'a str,
 }
 
-pub fn auth_me_json_with_count(user: &PublicAccount, count: i64) -> AccountOverviewView<'_> {
-    AccountOverviewView { user, count }
+pub fn auth_me_json_with_count<'a>(
+    user: &'a PublicAccount,
+    count: i64,
+    mount_path: &'a str,
+) -> AccountOverviewView<'a> {
+    AccountOverviewView {
+        user,
+        count,
+        mount_path,
+    }
+}
+
+pub(crate) fn avatar_mount_path<'a>(mount_path: &'a str, avatar: &str) -> &'a str {
+    if avatar.starts_with(nazo_identity::AVATAR_URL_PREFIX) {
+        mount_path
+    } else {
+        ""
+    }
+}
+
+struct AvatarUrl<'a> {
+    mount_path: &'a str,
+    value: &'a str,
+}
+
+impl Serialize for AvatarUrl<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&format_args!(
+            "{}{}",
+            avatar_mount_path(self.mount_path, self.value),
+            self.value,
+        ))
+    }
 }
 
 impl Serialize for AccountOverviewView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let Self { user, count } = self;
+        let Self {
+            user,
+            count,
+            mount_path,
+        } = self;
         let mut map = serializer.serialize_map(None)?;
         serialize_account_fields(&mut map, user)?;
-        map.serialize_entry("avatar_url", &user.profile.avatar_url)?;
+        map.serialize_entry(
+            "avatar_url",
+            &user
+                .profile
+                .avatar_url
+                .as_deref()
+                .map(|value| AvatarUrl { mount_path, value }),
+        )?;
         map.serialize_entry("authorized_app_count", &count)?;
         map.end()
     }

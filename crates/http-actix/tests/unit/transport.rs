@@ -1,6 +1,5 @@
 use super::*;
 use actix_web::{App, body::to_bytes, test as awtest};
-use futures_util::StreamExt as _;
 use nazoauth::integration::{BodyMode, conformance};
 
 fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
@@ -92,12 +91,12 @@ async fn registered_request_conversion_obeys_resource_head_requirements() {
         (
             http::Method::GET,
             "/.well-known/oauth-protected-resource/",
-            false,
+            true,
         ),
         (
             http::Method::GET,
             "/.well-known/oauth-protected-resource/api/child",
-            false,
+            true,
         ),
         (http::Method::GET, "/jwks.json", false),
         (http::Method::HEAD, "/jwks.json", false),
@@ -311,16 +310,20 @@ async fn every_manifest_binding_reaches_the_production_forwarder() {
 
 #[actix_web::test]
 async fn uncompressed_stream_chunks_keep_their_original_storage() {
-    let bytes = Bytes::from(vec![0x91; 2048]);
-    let pointer = bytes.as_ptr();
-    let (request, payload) = awtest::TestRequest::post()
-        .set_payload(bytes)
-        .to_http_parts();
-    let stream = forward_payload(&request, payload, BodyMode::Bytes);
-    futures_util::pin_mut!(stream);
-    let chunk = stream.next().await.unwrap().unwrap();
-    assert_eq!(chunk.as_ptr(), pointer);
-    assert!(stream.next().await.is_none());
+    for encoding in [None, Some("identity"), Some("unknown"), Some("gzip, br")] {
+        let bytes = Bytes::from(vec![0x91; 2048]);
+        let pointer = bytes.as_ptr();
+        let mut request = awtest::TestRequest::post();
+        if let Some(encoding) = encoding {
+            request = request.insert_header(("content-encoding", encoding));
+        }
+        let (request, payload) = request.set_payload(bytes).to_http_parts();
+        let stream = forward_payload(&request, payload, BodyMode::Bytes);
+        futures_util::pin_mut!(stream);
+        let chunk = stream.next().await.unwrap().unwrap();
+        assert_eq!(chunk.as_ptr(), pointer);
+        assert!(stream.next().await.is_none());
+    }
 }
 
 #[actix_web::test]
@@ -331,7 +334,7 @@ async fn compressed_stream_is_bounded_before_delivering_an_oversized_chunk() {
         14, 40, 0, 0, 0, 224, 221, 0, 115, 220, 153, 156, 0, 16, 0, 0,
     ];
     let (request, payload) = awtest::TestRequest::post()
-        .insert_header(("content-encoding", "gzip"))
+        .insert_header(("content-encoding", " GZIP \t"))
         .set_payload(Bytes::from_static(GZIP))
         .to_http_parts();
     let stream = forward_payload(&request, payload, BodyMode::Json { limit: 32 });

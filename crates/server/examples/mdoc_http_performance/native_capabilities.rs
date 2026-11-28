@@ -35,7 +35,7 @@ pub(crate) fn application_capabilities(
             )?,
         ),
         federation_http: Arc::new(crate::adapters::federation_http::FederationClient::new()?),
-        module_lifecycle: Arc::new(crate::runtime_modules::ServerModuleLifecycle::new(
+        module_lifecycle: Arc::new(nazo_runtime_tokio::StoredTransactionLifecycle::new(
             persistence.provider().runtime_modules(tenant.as_uuid()),
         )),
         scim_events: Arc::new(crate::adapters::scim_events::ScimEventLongPoll::new(

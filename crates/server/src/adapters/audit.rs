@@ -14,13 +14,6 @@ use nazo_persistence::{SECURITY_AUDIT_SCHEMA_VERSION, SecurityAuditEvent, Securi
 
 use super::audit_anchor::AuditAnchorPreflight;
 
-tokio::task_local! {
-    /// Set by the HTTP tenant resolver for the lifetime of the selected
-    /// request future. Capture this authority before handing events to the
-    /// deployment-wide asynchronous ledger worker.
-    pub(crate) static REQUEST_TENANT: nazo_identity::TenantId;
-}
-
 /// Audit capability bound to one tenant and the process's existing durable sink.
 #[derive(Clone)]
 pub(crate) struct TenantSecurityAudit {

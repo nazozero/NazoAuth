@@ -26,5 +26,5 @@ pub(crate) fn spawn_backchannel_logout_delivery_worker(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/jobs/backchannel_logout.rs"]
+#[path = "../tests/unit/backchannel_logout.rs"]
 mod tests;

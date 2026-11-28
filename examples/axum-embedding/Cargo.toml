@@ -1,0 +1,16 @@
+[package]
+name = "nazoauth-axum-embedding"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+publish = false
+
+# A downstream application, built independently of the workspace feature graph.
+[workspace]
+
+[dependencies]
+anyhow = "1.0.104"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+nazo-http-tower = { path = "../../crates/http-tower" }
+nazoauth = { path = "../../crates/nazoauth", default-features = false }
+tokio = { version = "1.54.1", features = ["net"] }

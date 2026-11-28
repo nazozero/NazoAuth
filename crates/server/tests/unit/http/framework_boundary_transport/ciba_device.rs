@@ -500,7 +500,7 @@ mod ciba_device_contract {
             .create_unique(payload, 600, || device_code.clone(), || user_code.clone())
             .await
             .expect("device persisted");
-        let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+        let runtime = crate::test_support::runtime_modules::runtime_module_registry_for_test(
             state.diesel_db.clone(),
             state.settings.as_ref(),
         )

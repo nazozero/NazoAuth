@@ -164,6 +164,14 @@ Each client has an explicit security policy. Enable the grants and token
 protection that the application needs; enabling a server module does not grant
 every client access to it.
 
+To embed NazoAuth directly into an existing Rust HTTP application, prepare its
+configuration and host capabilities, then mount it once at a chosen path.
+Native and embedded deployments share tenant selection, directory synchronization,
+hot updates, lifecycle tasks and optional deployment controls. Fixed tenants
+use a direct mount without dynamic-selection overhead. The
+[Rust embedding guide](docs/integration/rust-embedding.md) covers Actix,
+Tower services (including Axum) and other framework adapters.
+
 ## Inside the server
 
 One executable composes the protocol cores, identity services, and adapters.

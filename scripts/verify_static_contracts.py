@@ -30,6 +30,7 @@ PACKAGE_ROLES = {
     "nazo-oauth-server-valkey": "adapter",
     "nazo-digital-credentials": "domain",
     "nazo-http-actix": "http-adapter",
+    "nazo-http-tower": "http-adapter",
     "nazo-http-signatures": "domain",
     "nazo-identity": "domain",
     "nazo-key-management": "domain",
@@ -42,6 +43,7 @@ PACKAGE_ROLES = {
     "nazo-postgres": "adapter",
     "nazo-resource-server": "domain",
     "nazo-runtime-modules": "domain",
+    "nazo-runtime-tokio": "runtime-adapter",
     "nazo-scim-events": "domain",
     "nazo-valkey": "adapter",
 }
@@ -50,8 +52,9 @@ ALLOWED_DEPENDENCY_ROLES = {
     "application": {"domain", "application"},
     "facade": {"domain", "application"},
     "http-adapter": {"facade"},
+    "runtime-adapter": {"domain", "application", "facade"},
     "adapter": {"domain", "application", "adapter"},
-    "host": {"domain", "application", "facade", "http-adapter", "adapter", "host"},
+    "host": {"domain", "application", "facade", "http-adapter", "runtime-adapter", "adapter", "host"},
 }
 INNER_ROLES = {"domain", "application", "facade"}
 # Every inner package participates in the target contract. Keeping this list
@@ -240,9 +243,9 @@ def check_package_roles(read_manifest) -> None:
                 continue
             facade_aliases.add(spec["_alias"])
             if "test-support" in spec.get("features", []) and not (
-                package == "nazo-server" and spec["_kind"] == "dev"
+                package in ("nazo-server", "nazo-runtime-tokio") and spec["_kind"] == "dev"
             ):
-                violations.append(f"{package}: nazoauth/test-support is restricted to the native host dev-dependency")
+                violations.append(f"{package}: nazoauth/test-support is restricted to nazo-server and nazo-runtime-tokio dev-dependencies")
         test_support_edges = {
             edge for alias in facade_aliases
             for edge in (f"{alias}/test-support", f"{alias}?/test-support")

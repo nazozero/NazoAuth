@@ -48,6 +48,8 @@ pub struct FederationHttpConfig {
     pub session_ttl_seconds: u64,
     pub pending_mfa_session_ttl_seconds: u64,
     pub cookie_secure: bool,
+    pub binding_cookie_name: String,
+    pub mount_path: Box<str>,
 }
 
 impl FederationHttpConfig {
@@ -55,6 +57,7 @@ impl FederationHttpConfig {
         federation: &FederationSettings,
         client: std::sync::Arc<dyn FederationHttpClient>,
         session: &SessionSettings,
+        issuer: &str,
     ) -> Self {
         Self {
             providers: federation.providers.clone(),
@@ -65,6 +68,8 @@ impl FederationHttpConfig {
             session_ttl_seconds: session.session_ttl_seconds,
             pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
             cookie_secure: session.cookie_secure,
+            binding_cookie_name: session.federation_binding_cookie_name.clone(),
+            mount_path: nazo_auth::issuer_path(issuer).into(),
         }
     }
 }
@@ -133,7 +138,7 @@ pub async fn federation_provider_list(config: &FederationHttpConfig) -> HttpResp
     let providers = config
         .providers
         .enabled_public_providers()
-        .map(provider_view)
+        .map(|provider| provider_view(provider, &config.mount_path))
         .collect::<Vec<_>>();
     json_response_no_store(ProviderList { providers })
 }
@@ -304,12 +309,8 @@ fn oidc_unavailable() -> HttpResponse {
     )
 }
 
-pub fn federation_binding_cookie_name(config: &FederationHttpConfig) -> &'static str {
-    if config.cookie_secure {
-        "__Host-nazo_federation_binding"
-    } else {
-        "nazo_federation_binding"
-    }
+pub fn federation_binding_cookie_name(config: &FederationHttpConfig) -> &str {
+    &config.binding_cookie_name
 }
 
 pub fn read_federation_binding_seed(
@@ -1027,14 +1028,20 @@ pub fn validate_oidc_callback_input(
     Ok(OidcCallbackInput { state_token, code })
 }
 
-pub fn provider_view(provider: &ExternalLoginProvider) -> FederationProviderView<'_> {
+pub fn provider_view<'a>(
+    provider: &'a ExternalLoginProvider,
+    mount_path: &str,
+) -> FederationProviderView<'a> {
     FederationProviderView {
         provider_id: &provider.provider_id,
         display_name: &provider.display_name,
         adapter_type: provider.adapter_type(),
         icon: provider.icon.as_deref(),
         display_order: provider.display_order,
-        start_url: format!("/auth/federation/{}/start", provider.provider_id),
+        start_url: format!(
+            "{mount_path}/auth/federation/{}/start",
+            provider.provider_id
+        ),
     }
 }
 

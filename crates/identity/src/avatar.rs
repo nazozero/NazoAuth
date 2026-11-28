@@ -10,7 +10,8 @@ use crate::{
     },
 };
 
-const AVATAR_URL_PREFIX: &str = "/auth/me/avatar?v=";
+/// Tenant-local stored reference; public transports project the deployment URL.
+pub const AVATAR_URL_PREFIX: &str = "/auth/me/avatar?v=";
 
 fn avatar_url(final_object_id: &str) -> String {
     format!("{AVATAR_URL_PREFIX}{final_object_id}")

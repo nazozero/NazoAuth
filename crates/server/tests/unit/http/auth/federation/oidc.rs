@@ -285,10 +285,13 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
             &nazoauth::config::SessionSettings {
                 session_cookie_name: "session".into(),
                 csrf_cookie_name: "csrf".into(),
+                remembered_mfa_cookie_name: "remembered".into(),
+                federation_binding_cookie_name: "__Host-nazo_federation_binding".into(),
                 session_ttl_seconds: 300,
                 pending_mfa_session_ttl_seconds: 120,
                 cookie_secure: true,
             },
+            "https://auth.example",
         );
         let mut provider = provider();
         provider.jwks_url = endpoint;

@@ -122,5 +122,5 @@ pub(crate) fn spawn_security_state_maintenance_worker(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/jobs/security_state.rs"]
+#[path = "../tests/unit/security_state.rs"]
 mod tests;

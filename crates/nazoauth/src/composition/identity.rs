@@ -132,6 +132,7 @@ pub(super) async fn build(
     let session_profiles = Arc::new(SessionProfileHandles::new(
         session_resolver.clone(),
         session_http_config,
+        &settings.endpoint.issuer,
     ));
     let session_management_endpoint = Arc::new(SessionManagementEndpoint::new(
         Arc::new(ServerSessionManagementOperations::new(
@@ -188,6 +189,7 @@ pub(super) async fn build(
             account_profile_service,
         )),
         session_cookie_config.clone(),
+        &settings.endpoint.issuer,
     ));
     let avatar_profiles = startup.avatar.clone();
     let profile_delivery_store = transient_state.delivery();
@@ -295,7 +297,7 @@ pub(super) async fn build(
         MfaProfileConfig::new(
             session.session_cookie_name.as_str(),
             session.csrf_cookie_name.as_str(),
-            MFA_REMEMBERED_COOKIE_NAME,
+            session.remembered_mfa_cookie_name.as_str(),
             session.session_ttl_seconds,
             MFA_REMEMBERED_TTL_SECONDS,
             session.cookie_secure,
@@ -336,7 +338,7 @@ pub(super) async fn build(
             settings.endpoint.frontend_base_url.as_str(),
             session.session_cookie_name.as_str(),
             session.csrf_cookie_name.as_str(),
-            MFA_REMEMBERED_COOKIE_NAME,
+            session.remembered_mfa_cookie_name.as_str(),
             session.session_ttl_seconds,
             session.cookie_secure,
         ),
@@ -371,7 +373,7 @@ pub(super) async fn build(
         PasskeyLoginConfig::new(
             session.session_cookie_name.as_str(),
             session.csrf_cookie_name.as_str(),
-            MFA_REMEMBERED_COOKIE_NAME,
+            session.remembered_mfa_cookie_name.as_str(),
             session.session_ttl_seconds,
             session.cookie_secure,
         ),
@@ -404,6 +406,7 @@ pub(super) async fn build(
         &identity_settings.federation,
         startup.capabilities.federation_http.clone(),
         session,
+        &settings.endpoint.issuer,
     ));
 
     Ok(IdentityServices {

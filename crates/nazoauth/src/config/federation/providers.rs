@@ -159,6 +159,12 @@ impl FederationProviderRegistry {
         self.providers.iter()
     }
 
+    /// Consumes the registry without cloning provider configuration or credentials.
+    /// Rebuild with [`Self::new`] after changing the returned configuration.
+    pub fn into_providers(self) -> Vec<ExternalLoginProvider> {
+        self.providers
+    }
+
     // 路由分发只能命中 enabled provider；disabled 或未知 provider 都按不可用处理。
     pub fn enabled_provider(&self, provider_id: &str) -> Option<&ExternalLoginProvider> {
         self.providers

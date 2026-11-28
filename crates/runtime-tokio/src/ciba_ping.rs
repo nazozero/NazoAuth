@@ -23,5 +23,5 @@ pub(crate) fn spawn_ciba_ping_delivery_worker(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/jobs/ciba_ping.rs"]
+#[path = "../tests/unit/ciba_ping.rs"]
 mod tests;

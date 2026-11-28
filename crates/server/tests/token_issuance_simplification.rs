@@ -168,6 +168,7 @@ const OVERRIDING_ENV_KEYS: &[&str] = &[
     "VALKEY_URL",
     "VALKEY_STATE_EPOCH",
     "ISSUER",
+    "FEDERATION_PROVIDER_CONFIGS",
     "PUBLIC_BASE_URL",
     "BIND",
     "DATA_DIR",

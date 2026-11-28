@@ -1049,6 +1049,8 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "COOKIE_SECURE",
             "CORS_ALLOWED_ORIGINS",
             "CSRF_COOKIE_NAME",
+            "FEDERATION_BINDING_COOKIE_NAME",
+            "REMEMBERED_MFA_COOKIE_NAME",
             "DATABASE_URL",
             "DATABASE_MAX_CONNECTIONS",
             "DATA_DIR",

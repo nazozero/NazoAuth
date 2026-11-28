@@ -9,7 +9,9 @@ them are ordinary in-process Rust calls.
 
 The root manifest is a virtual workspace with resolver 3. The `nazoauth` package
 is the framework-neutral embedding facade. The `nazo-server` package owns the
-native composition root and releases the `nazoauth` executable.
+native environment composition root and releases the `nazoauth` executable.
+The executable consumes the same tenant runtime and transport adapters as an
+embedded host. `nazo-runtime-tokio` owns their shared native scheduling.
 
 The default workspace build selects only `nazo-server`. Native release and image
 builds select that package and binary explicitly; they do not build the Worker or
@@ -26,7 +28,8 @@ compiled application. Tenant user/client administration and shared protocol
 capabilities remain available. The Worker host is built independently with
 `--no-default-features`; offline provisioning is a separate native feature.
 `ServerPersistenceProvider` supplies shared application persistence. The native
-launcher supplies the tenant directory to the host for startup and refresh. A host
+launcher supplies the authoritative directory and cache ports to the shared
+`nazoauth::runtime` reconciler for startup and refresh. A host
 enabling deployment control supplies the controller registry and recovery-root
 ports explicitly in `DeploymentCapabilities`, together with its deployment
 identity and tenant index.
@@ -50,7 +53,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `identity` | `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. Federation owns OIDC RP authorization requests, ID Token validation and upstream identity normalization. It depends on `nazo-crypto` for cryptographic operations and `nazo-scim-events` for SCIM event types, not on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
 | `resource-server` | `nazo-resource-server` | Standalone JWT access-token and sender-constraint verification. It is independent of the authorization server, identity, and every Web framework. |
 | `http-signatures` | `nazo-http-signatures` | Reusable HTTP Message Signatures, structured-field, content-digest, signing, and verification primitives. Authorization-server FAPI policy remains in `nazo-auth`. |
-| `key-management` | `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, an external-signer port, and OpenID4VC signing material. The native host owns external-command execution and refresh scheduling. |
+| `key-management` | `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, an external-signer port, and OpenID4VC signing material. The native host owns external-command execution; `nazo-runtime-tokio` owns shared refresh scheduling. |
 | `operator-protocol` | `nazo-operator-protocol` | Versioned signed control-operation requests, receipts, identity and recovery contracts shared by the runtime and NazoAuthCtl. It contains no host-execution adapter. |
 | `scim-events` | `nazo-scim-events` | Framework-neutral SCIM security-event and delivery data types used by identity, persistence, and HTTP presentation. |
 | `openid4vci` | `nazo-openid4vci` | Framework-independent OpenID4VCI issuance protocol types, validation, and transaction behavior. |
@@ -58,8 +61,10 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `persistence` | `nazo-persistence` | Database-neutral semantic persistence contracts and application-facing records, including tenant directory and protocol/credential stores. It contains no SQL, connection, transaction, or driver API. |
 | `persistence-postgres` | `nazo-postgres` | Durable PostgreSQL adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and transaction boundaries. Rows never leave this crate. |
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
+| `runtime-tokio` | `nazo-runtime-tokio` | Reusable Tokio task ownership for fixed and dynamic deployments: directory synchronization, module reconciliation, key refresh, CIBA and logout delivery, and security-state maintenance. It uses semantic ports and has no HTTP-framework or database-driver dependency. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. |
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
+| `http-tower` | `nazo-http-tower` | Mount selection and bounded HTTP-body decoding through standard Tower services and service factories. Hosts prepare their services and project trusted connection facts at connection creation. Axum and Hyper consumers share this adapter; it has no framework-specific dependency or request dispatch. |
 | `http-worker` | `nazo-http-worker` | Cloudflare Workers transport conversion, bounded streaming and authenticated ingress facts through the same facade. |
 | `authorization-server-d1` | `nazo-oauth-server-d1` | Primary D1 persistence and transient-state ports, atomic SQL changes, expiry and required audit. |
 | `server-worker` | `nazo-server-worker` | Workers bindings/secrets, host profile selection, prepared application lifecycle and scheduled maintenance; native offline provisioning is feature gated. |
@@ -67,11 +72,11 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL provider: binds an existing pool and repositories to application persistence ports. Native startup, migration/operator execution, and pool construction belong to `nazo-server`. It has no Valkey dependency. |
 | `authorization-server-valkey` | `nazo-oauth-server-valkey` | Valkey provider: composes tenant-scoped transient-state ports and namespace bindings from a supplied client, with no persistent-database dependency. The native launcher owns configuration and connection startup. |
 | `authorization-server-object-store` | `nazo-oauth-server-object-store` | Concrete S3-compatible avatar storage, including credentials and request signing. The native host selects local or S3 storage and constructs the tenant binding. |
-| `nazoauth` | `nazoauth` | Framework-neutral embedding API, application composition and HTTP protocol adaptation. It owns route identity, request interpretation, security presentation and response bytes, including OpenID4VC endpoints. Its integration contract uses standard HTTP values and connection facts. |
-| `server` | `nazo-server` | Native host and `nazoauth` executable: process configuration, launchers, tenant/bootstrap resources, HTTP listener wiring, CLI/operator tasks, TLS, process adapters, local storage and background scheduling. It binds concrete infrastructure to the neutral facade. |
+| `nazoauth` | `nazoauth` | Framework-neutral embedding API, application composition, immutable tenant selection/directory reconciliation and HTTP protocol adaptation. It owns route identity, request interpretation, security presentation and response bytes, including OpenID4VC endpoints. Its integration contract uses standard HTTP values and connection facts. |
+| `server` | `nazo-server` | Native host and `nazoauth` executable: process configuration, launchers, tenant/bootstrap resources, HTTP listener wiring, CLI/operator tasks, TLS, process adapters and local storage; it consumes the shared runtime scheduler. It binds concrete infrastructure to the neutral facade. |
 
-Actix and Cloudflare Workers consume the same facade contract. The resource-server
-core uses framework-neutral `http` types.
+Actix, Tower and Cloudflare Workers consume the same facade contract. The
+resource-server core uses framework-neutral `http` types.
 
 ## Dependency Direction
 
@@ -81,7 +86,8 @@ the only package expected to see every concrete launch adapter. The manifests ar
 ownership direction is:
 
 ```text
-native host (nazo-server) -> facade, HTTP adapter, infrastructure adapters
+native host (nazo-server) -> facade, HTTP/runtime adapters, infrastructure adapters
+Tokio runtime adapter    -> shared tenant runtime, application workers and domain ports
 HTTP adapter             -> nazoauth public integration contract
 facade (nazoauth)         -> application capabilities and domain APIs
 application              -> domain APIs and semantic ports
@@ -89,7 +95,8 @@ driver adapters          -> the ports they implement
 ```
 
 `authorization-server` owns the application layer; `nazoauth` owns embedding
-and HTTP protocol adaptation; `server` owns native resources and execution.
+and HTTP protocol adaptation; `runtime-tokio` owns shared task execution;
+`server` supplies native resources and listeners.
 A type using framework-neutral `http`, futures, or `Arc` does not
 by itself create a native-host dependency. See each crate's `Cargo.toml` for
 the current dependency edges rather than copying an exhaustive graph here.
@@ -109,7 +116,8 @@ The enforced prohibitions are more important than a broad graph:
   Valkey, Fred, or rows.
 - `authorization-server` does not depend on the facade, Actix, native launchers, or database/state drivers.
 - `nazoauth` does not depend on concrete HTTP adapters, native hosts, runtimes or storage drivers.
-- `http-actix` depends on the facade, not its internal application/domain packages or storage drivers.
+- HTTP adapters depend on the facade, not its internal application/domain packages or storage drivers.
+- The Tokio runtime adapter depends on the facade and semantic application/domain ports, not hosts, HTTP adapters or storage drivers.
 - integration does not introduce a generic request, response, framework, executor or runtime abstraction.
 - no crate cycle, workspace-wide prelude, or cross-crate glob re-export is
   allowed.
@@ -124,7 +132,10 @@ Actix request and connection facts -> standard HTTP request and Bytes
                                   -> Actix response
 ```
 
-The host index is published as a complete immutable snapshot. A request has no
+The shared runtime publishes the host index as a complete immutable snapshot.
+Dynamic transports select authority and authenticated SNI before filtering
+headers or connection facts. Canonical host hits borrow request bytes; fixed
+tenant mounts bypass the index and selection entirely. A request has no
 second directory lookup and no default-tenant fallback; an unknown Host is
 rejected before a tenant graph is selected. The facade owns real HTTP behavior
 and composition; it does not add forwarding managers between handlers and
@@ -144,9 +155,9 @@ Every package with the `domain`, `application` or `facade` role in
 | Application | `nazo-oauth-server` |
 | Domain and shared capabilities | `nazo-auth`, `nazo-crypto`, `nazo-digital-credentials`, `nazo-http-signatures`, `nazo-identity`, `nazo-key-management`, `nazo-openid4vci`, `nazo-openid4vp`, `nazo-operator-protocol`, `nazo-persistence`, `nazo-resource-server`, `nazo-runtime-modules`, `nazo-scim-events` |
 
-`nazo-server` is the native composition root. Its process lifecycle, filesystem,
-HTTP/TLS listener, outbound transports and database/cache adapters remain host
-responsibilities. A WASM host consumes the same neutral facade and domain code and
+`nazo-server` supplies native process resources, filesystem, HTTP/TLS listeners,
+outbound transports and database/cache adapters. Shared Tokio lifecycle and
+scheduling live in `nazo-runtime-tokio`, which stays outside the Worker graph. A WASM host consumes the same neutral facade and domain code and
 implements the existing semantic ports for its storage and remote operations.
 It drives one-shot application and background-batch futures itself. Neither
 protocol decisions nor discovery rules depend on the compilation target.
@@ -589,6 +600,10 @@ Tenant graph retirement synchronously aborts both module reconciliation and
 CIBA ping loops before awaiting either join. Dropping the final lifecycle owner
 also aborts still-owned loops; retained snapshots delay that final drop. Signing
 key refresh uses its existing cooperative shutdown and completes current writes.
+All displaced graphs receive stop signals before any join is awaited. Closing
+a runtime also closes publication, so a concurrent directory builder cannot
+reopen it. Namespace reservations and publication share one control-plane lock;
+requests only read the immutable index.
 
 Credential issuance enforces the batch limit on validated holder bindings after
 proof expansion and before nonce claiming. A configuration without proof types

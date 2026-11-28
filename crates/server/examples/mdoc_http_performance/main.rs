@@ -10,7 +10,6 @@ use nazo_server as _;
 mod native {
     pub(crate) mod adapters;
     pub(crate) mod config;
-    pub(crate) mod runtime_modules;
     pub(crate) mod settings;
 
     #[path = "bootstrap"]
@@ -20,7 +19,7 @@ mod native {
     }
 }
 use native::services::{authentication_services, registration_services};
-pub(crate) use native::{adapters, config, runtime_modules, settings};
+pub(crate) use native::{adapters, config, settings};
 
 mod bootstrap {
     pub(crate) use crate::authentication_services::LoginPasswordVerifier;

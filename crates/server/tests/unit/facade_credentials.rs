@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use actix_web::{App, test, web};
+use actix_web::{App, test};
 use bytes::Bytes;
 use diesel::sql_types::{BigInt, Integer, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use http::{Method, Request, StatusCode, header};
 use nazoauth::{NazoAuthBuilder, integration::conformance};
 use serde_json::{Value, json};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 fn request(
@@ -18,6 +19,7 @@ fn request(
     Request::builder()
         .method(method)
         .uri(path)
+        .header(header::HOST, "issuer.example")
         .header(header::CONTENT_TYPE, content_type)
         .body(body.into())
         .unwrap()
@@ -75,9 +77,21 @@ async fn seed_dataset(
 }
 
 #[actix_web::test]
-async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_through_actix() {
+async fn enabled_credential_replays_preserve_bytes_through_actix_and_axum() {
+    for prefix in ["/", "/testauth"] {
+        credential_replay(prefix).await;
+    }
+}
+
+async fn credential_replay(prefix: &str) {
     let mut state = super::infrastructure(true).await;
     let accepting_modules = crate::test_support::facade::enable_credential_issuer(&mut state).await;
+    let suffix = prefix.trim_end_matches('/');
+    let settings = Arc::make_mut(&mut state.settings);
+    settings.endpoint.issuer = format!("https://issuer.example{suffix}");
+    settings.endpoint.mtls_endpoint_base_url = format!("https://mtls.example{suffix}");
+    settings.protocol.protected_resource_identifier =
+        format!("https://issuer.example{suffix}/fapi/resource");
     let capabilities = crate::test_support::facade::capabilities(
         &state,
         crate::test_support::facade::PersistenceOverrides {
@@ -93,17 +107,17 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
             capabilities,
             "credential-conformance",
         )
+        .mount_path(prefix)
         .build()
         .await
         .unwrap(),
     );
     let app = test::init_service(
-        App::new()
-            .app_data(web::Data::from(application.clone()))
-            .configure(nazo_http_actix::configure),
+        App::new().configure(nazo_http_actix::mount(application.clone(), &[]).unwrap()),
     )
     .await;
-    conformance::assert_adapter(&application, |request| {
+    let axum = super::axum_embedding::mounted_host(application.clone()).await;
+    let send = |request: Request<Bytes>| {
         let app = &app;
         async move {
             super::standard_response(
@@ -114,23 +128,67 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
             )
             .await
         }
+    };
+    conformance::assert_adapter(&application, &send).await;
+    conformance::assert_adapter(&application, |request| {
+        let axum = axum.clone();
+        async move {
+            super::axum_embedding::standard_response(
+                axum.oneshot(request.map(axum::body::Body::from))
+                    .await
+                    .unwrap(),
+            )
+            .await
+        }
     })
     .await;
 
-    let metadata = json_body(
-        &application
-            .handle(request(
-                Method::GET,
-                "/.well-known/openid-credential-issuer",
-                "application/json",
-                Bytes::new(),
-            ))
-            .await,
+    let metadata_request = request(
+        Method::GET,
+        &format!("/.well-known/openid-credential-issuer{suffix}"),
+        "application/json",
+        Bytes::new(),
+    );
+    let metadata_response = send(metadata_request.clone()).await;
+    let axum_metadata = super::axum_embedding::standard_response(
+        axum.clone()
+            .oneshot(metadata_request.map(axum::body::Body::from))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let mut metadata = json_body(&metadata_response);
+    let mut axum_metadata_body = json_body(&axum_metadata);
+    conformance::assert_response(
+        &metadata_response.map(|_| Bytes::new()),
+        &axum_metadata.map(|_| Bytes::new()),
+    );
+    // Independent metadata GETs produce fresh ES256 signatures. Compare all
+    // stable fields and transport headers; durable credential retries below
+    // must still preserve the entire original body byte for byte.
+    for body in [&mut metadata, &mut axum_metadata_body] {
+        assert!(
+            body.as_object_mut()
+                .unwrap()
+                .remove("signed_metadata")
+                .unwrap()
+                .as_str()
+                .is_some_and(|jwt| !jwt.is_empty())
+        );
+    }
+    assert_eq!(metadata, axum_metadata_body);
+    assert_eq!(
+        metadata["credential_issuer"],
+        format!("https://issuer.example{suffix}")
+    );
+    assert_eq!(
+        metadata["credential_endpoint"],
+        format!("https://issuer.example{suffix}/openid4vci/credential"),
     );
     assert!(metadata["credential_configurations_supported"]["unit-credential"].is_object());
     let mut offer_request = request(
         Method::POST,
-        "/openid4vci/offers",
+        &format!("{suffix}/openid4vci/offers"),
         "application/json",
         serde_json::to_vec(&json!({
             "subject_id": subject_id,
@@ -153,7 +211,7 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
         .parse()
         .unwrap(),
     );
-    let offer = json_body(&application.handle(offer_request).await);
+    let offer = json_body(&send(offer_request).await);
     let code = offer["credential_offer"]["grants"][nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT]
         ["pre-authorized_code"]
         .as_str()
@@ -163,14 +221,13 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
         .append_pair("pre-authorized_code", code)
         .finish();
     let token = json_body(
-        &application
-            .handle(request(
-                Method::POST,
-                "/token",
-                "application/x-www-form-urlencoded",
-                form,
-            ))
-            .await,
+        &send(request(
+            Method::POST,
+            &format!("{suffix}/token"),
+            "application/x-www-form-urlencoded",
+            form,
+        ))
+        .await,
     );
     assert_eq!(token["token_type"], "Bearer");
     let authorization = format!("Bearer {}", token["access_token"].as_str().unwrap());
@@ -200,12 +257,16 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
                 Bytes::from(serde_json::to_vec(&body).unwrap()),
             )
         };
-        let mut credential_request =
-            request(Method::POST, "/openid4vci/credential", content_type, bytes);
+        let mut credential_request = request(
+            Method::POST,
+            &format!("{suffix}/openid4vci/credential"),
+            content_type,
+            bytes,
+        );
         credential_request
             .headers_mut()
             .insert(header::AUTHORIZATION, authorization.parse().unwrap());
-        let issued = application.handle(credential_request.clone()).await;
+        let issued = send(credential_request.clone()).await;
         assert_eq!(issued.status(), StatusCode::OK);
         assert_eq!(issued.headers()[header::CONTENT_TYPE], content_type);
         assert_eq!(issued.headers()[header::CACHE_CONTROL], "no-store");
@@ -221,18 +282,17 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
         let replay = application.handle(credential_request.clone()).await;
         conformance::assert_response(&issued, &replay);
         for _ in 0..2 {
-            let replay = super::standard_response(
-                test::call_service(
-                    &app,
-                    super::framework_request(&credential_request).to_request(),
-                )
-                .await
-                .into_parts()
-                .1,
-            )
-            .await;
+            let replay = send(credential_request.clone()).await;
             conformance::assert_response(&issued, &replay);
         }
+        let replay = super::axum_embedding::standard_response(
+            axum.clone()
+                .oneshot(credential_request.map(axum::body::Body::from))
+                .await
+                .unwrap(),
+        )
+        .await;
+        conformance::assert_response(&issued, &replay);
     }
     #[derive(diesel::QueryableByName)]
     struct Count {

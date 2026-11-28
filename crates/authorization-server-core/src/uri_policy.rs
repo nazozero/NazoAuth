@@ -9,6 +9,16 @@ pub enum RedirectUriError {
     Invalid,
 }
 
+/// Borrow the path of an issuer already accepted by [`validate_issuer_url`].
+/// An origin-only issuer has an empty path, ready for appending an endpoint path.
+#[must_use]
+pub fn issuer_path(issuer: &str) -> &str {
+    let authority_and_path = issuer.split_once("://").expect("validated issuer scheme").1;
+    authority_and_path
+        .find('/')
+        .map_or("", |start| &authority_and_path[start..])
+}
+
 pub fn validate_issuer_url(value: &str) -> anyhow::Result<Url> {
     let url = parse_url("issuer", value)?;
     if !url.has_host() {
@@ -193,7 +203,18 @@ fn parse_url(name: &str, value: &str) -> anyhow::Result<Url> {
     if value != value.trim() {
         bail!("{name} 不能包含前后空白");
     }
-    Url::parse(value).map_err(|_| anyhow::anyhow!("{name} 必须是绝对 URI"))
+    let url = Url::parse(value).map_err(|_| anyhow::anyhow!("{name} 必须是绝对 URI"))?;
+    if matches!(url.scheme(), "http" | "https")
+        && (value.contains('\\')
+            || !value.split_once("://").is_some_and(|(scheme, rest)| {
+                scheme.eq_ignore_ascii_case(url.scheme())
+                    && !rest.is_empty()
+                    && !rest.starts_with('/')
+            }))
+    {
+        bail!("{name} 必须使用 scheme://host 形式，不能包含反斜杠");
+    }
+    Ok(url)
 }
 
 fn validate_https_or_loopback_http(name: &str, url: &Url) -> anyhow::Result<()> {

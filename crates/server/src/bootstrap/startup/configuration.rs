@@ -1,8 +1,6 @@
-use super::tenant_runtime::{
-    ProcessRuntime, TenantDirectoryRefreshOutcome, TenantRuntimeBuilder, TenantRuntimeRefresher,
-    TenantRuntimeRegistry,
-};
+use super::tenant_runtime::{ProcessRuntime, TenantRuntimeBuilder};
 use super::*;
+use nazoauth::runtime::{TenantRuntimeRefresher, TenantRuntimeRegistry};
 
 /// Tenant-scoped values used to assemble one immutable request graph.
 pub(super) struct StartupConfiguration {
@@ -22,9 +20,7 @@ pub(super) struct StartupConfiguration {
 pub(super) struct StartupRuntime {
     pub(super) process: Arc<ProcessRuntime>,
     pub(super) registry: TenantRuntimeRegistry,
-    pub(super) refresher: Arc<TenantRuntimeRefresher>,
-    pub(super) backchannel_logout_worker: tokio::task::JoinHandle<()>,
-    pub(super) security_state_worker: tokio::task::JoinHandle<()>,
+    pub(super) runtime: nazo_runtime_tokio::Runtime,
 }
 
 pub(super) async fn load(
@@ -153,40 +149,13 @@ pub(super) async fn load(
         directory_cache.clone(),
         TenantRuntimeBuilder::production(process.clone()),
     ));
-    let outcome = refresher.install_initial(database_snapshot.clone()).await?;
-    if matches!(outcome, TenantDirectoryRefreshOutcome::Applied { .. })
-        && let Err(error) = directory_cache
-            .publish_authoritative(&database_snapshot)
-            .await
-    {
-        tracing::warn!(%error, "tenant directory cache initial publish failed");
-    }
-
-    // The queue is process-global, so exactly one worker claims it. Start it
-    // only after every initial tenant graph has been built successfully.
-    let backchannel_logout_worker = match background::spawn_backchannel_logout_worker(
-        process.persistence.provider().logout_delivery_store(),
-        &process.route_settings,
-    ) {
-        Ok(worker) => worker,
-        Err(error) => {
-            refresher.shutdown().await;
-            return Err(error);
-        }
-    };
-
-    // Security-state reclamation is also process-wide: one bounded sweep per
-    // interval, coordinated across instances by SKIP LOCKED and the shared
-    // refresh-family advisory lock — no lease table or leader election.
-    let security_state_worker = background::spawn_security_state_worker(
-        process.persistence.provider().security_state_maintenance(),
-    );
+    let workers = background::process_workers(&process.persistence, &process.route_settings)?;
+    let runtime =
+        nazo_runtime_tokio::Runtime::dynamic(refresher, database_snapshot, workers).await?;
 
     Ok(StartupRuntime {
         process,
         registry,
-        refresher,
-        backchannel_logout_worker,
-        security_state_worker,
+        runtime,
     })
 }

@@ -13,10 +13,8 @@ mod control_discovery;
 #[cfg(test)]
 #[path = "../tests/unit/domain.rs"]
 mod domain;
-mod jobs;
 mod keyctl;
 pub mod operator_task;
-mod runtime_modules;
 #[cfg(test)]
 #[path = "../tests/support/schema.rs"]
 mod schema;

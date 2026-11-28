@@ -147,6 +147,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
                 startup.capabilities.passwords.dummy_hash.clone(),
             )),
             scim_client_ip,
+            &scim_endpoint_settings.issuer,
         )
         .with_security_events(startup.capabilities.scim_events.clone()),
     );

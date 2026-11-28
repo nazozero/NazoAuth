@@ -1,15 +1,12 @@
-use super::super::tenant_runtime::{ProcessRuntime, TenantHostIndex, TenantRuntimeRegistry};
-use actix_web::body::{EitherBody, MessageBody};
-use actix_web::dev::{Extensions, ServiceRequest, ServiceResponse};
+use super::super::tenant_runtime::ProcessRuntime;
+use actix_web::body::MessageBody;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::error::ErrorRequestTimeout;
-use actix_web::http::StatusCode;
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{App, Error, HttpServer, web};
+use nazoauth::runtime::TenantRuntimeRegistry;
 use std::borrow::Cow;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -27,85 +24,13 @@ const HTTP_CLIENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// framework default (25,000) while retaining headroom for normal API use.
 const HTTP_MAX_CONNECTIONS_PER_WORKER: usize = 4_096;
 
-#[derive(Default)]
-struct WorkerTenantDataCache {
-    index: Option<Arc<TenantHostIndex>>,
-    by_host: HashMap<String, (Rc<Extensions>, nazo_identity::TenantId)>,
-}
+/// The listener owns TLS reloads even when its serving future is cancelled.
+struct TlsReloader(tokio::task::JoinHandle<()>);
 
-impl WorkerTenantDataCache {
-    fn resolve(
-        &mut self,
-        index: Arc<TenantHostIndex>,
-        host: &str,
-    ) -> Option<(Rc<Extensions>, nazo_identity::TenantId)> {
-        let changed = match &self.index {
-            Some(current) => !Arc::ptr_eq(current, &index),
-            None => true,
-        };
-        if changed {
-            self.index = Some(Arc::clone(&index));
-            self.by_host.clear();
-        }
-
-        if let Some(data) = self.by_host.get(host) {
-            return Some(data.clone());
-        }
-        let assembly = index.by_host.get(host)?.assembly();
-        let data = (
-            assembly.app_data_container(),
-            assembly.startup.settings.tenant.context.tenant_id,
-        );
-        self.by_host.insert(host.to_owned(), data.clone());
-        Some(data)
+impl Drop for TlsReloader {
+    fn drop(&mut self) {
+        self.0.abort();
     }
-}
-
-fn direct_tls_host_matches(server_name: Option<&str>, host: &str) -> bool {
-    server_name.is_none_or(|server_name| server_name == host)
-}
-
-fn tenant_rejection(request: ServiceRequest, status: StatusCode) -> ServiceResponse {
-    let mut response = http::Response::new(bytes::Bytes::new());
-    *response.status_mut() =
-        http::StatusCode::from_u16(status.as_u16()).expect("validated Actix status");
-    for (name, value) in nazoauth::integration::security_headers(request.path()) {
-        response.headers_mut().insert(name.clone(), value.clone());
-    }
-    request.into_response(nazo_http_actix::forward_response(response))
-}
-
-async fn bind_tenant_app_data<B>(
-    registry: TenantRuntimeRegistry,
-    cache: Rc<RefCell<WorkerTenantDataCache>>,
-    mut request: ServiceRequest,
-    next: Next<B>,
-) -> Result<ServiceResponse<EitherBody<B>>, Error>
-where
-    B: MessageBody + 'static,
-{
-    let Some(host) = crate::bootstrap::host::canonical_request_host(request.head()) else {
-        return Ok(tenant_rejection(request, StatusCode::NOT_FOUND).map_into_right_body());
-    };
-    if !direct_tls_host_matches(
-        request
-            .request()
-            .conn_data::<nazoauth::ConnectionFacts>()
-            .and_then(|facts| facts.server_name.as_deref()),
-        &host,
-    ) {
-        return Ok(tenant_rejection(request, StatusCode::MISDIRECTED_REQUEST).map_into_right_body());
-    }
-    let container = cache.borrow_mut().resolve(registry.load(), &host);
-    let Some((container, tenant_id)) = container else {
-        return Ok(tenant_rejection(request, StatusCode::NOT_FOUND).map_into_right_body());
-    };
-
-    request.add_data_container(container);
-    Ok(crate::adapters::audit::REQUEST_TENANT
-        .scope(tenant_id, async { next.call(request).await })
-        .await?
-        .map_into_left_body())
 }
 
 async fn request_timeout<B>(
@@ -150,7 +75,9 @@ where
             Ok(response) => {
                 let request = response.request();
                 let route = request.match_pattern().map(Cow::Owned).or_else(|| {
-                    nazoauth::integration::route_for_path(request.uri().path())
+                    request
+                        .app_data::<web::Data<nazoauth::NazoAuth>>()
+                        .and_then(|application| application.route_for_path(request.uri().path()))
                         .map(|route| Cow::Borrowed(route.path))
                 });
                 (route, response.status())
@@ -176,7 +103,7 @@ where
 /// Owns the Actix worker factory, middleware, route registration, and
 /// listener setup.  All application data is assembled before entering this
 /// function so worker creation cannot repeat persistence/provider initialization.
-pub(super) async fn run(
+pub(in crate::bootstrap::startup) async fn run(
     process: Arc<ProcessRuntime>,
     registry: TenantRuntimeRegistry,
 ) -> anyhow::Result<()> {
@@ -191,22 +118,17 @@ pub(super) async fn run(
         "inbound HTTP/1.1 only; HTTP/2 is disabled in this build; TLS and mTLS remain supported"
     );
 
+    let mount = nazo_http_actix::DynamicMount::new(registry, &[])?;
     let server = HttpServer::new(move || {
-        let cache = Rc::new(RefCell::new(WorkerTenantDataCache::default()));
-        let tenant_registry = registry.clone();
-        let mut tenant_scope = web::scope("");
+        let mut host = web::scope("");
         if let Some(path) = ui_static_dir.clone() {
-            tenant_scope = tenant_scope.service(crate::bootstrap::ui_static_files(path));
+            host = host.service(crate::bootstrap::ui_static_files(path));
         }
-        tenant_scope = tenant_scope.configure(nazo_http_actix::configure);
-        let tenant_scope = tenant_scope.wrap(from_fn(move |request, next| {
-            bind_tenant_app_data(tenant_registry.clone(), Rc::clone(&cache), request, next)
-        }));
-
         App::new()
+            .service(host)
+            .wrap(mount.clone())
             .wrap(from_fn(request_timeout))
             .wrap(from_fn(observe_request))
-            .service(tenant_scope)
     })
     // Inbound HTTP/2 is not enabled in the native dependency graph.
     .client_request_timeout(HTTP_CLIENT_REQUEST_TIMEOUT)
@@ -230,14 +152,14 @@ pub(super) async fn run(
             .bind_rustls_0_23(addr, listeners.public)?
             .bind_rustls_0_23(listeners.mtls_bind, listeners.mtls)?;
         let reloader = crate::bootstrap::spawn_direct_tls_reloader(snapshots, reload_interval);
-        (server, Some(reloader))
+        (server, Some(TlsReloader(reloader)))
     } else {
         (server.bind(addr)?, None)
     };
     let result = server.run().await;
-    if let Some(reloader) = tls_reloader {
-        reloader.abort();
-        let _ = reloader.await;
+    if let Some(mut reloader) = tls_reloader {
+        reloader.0.abort();
+        let _ = (&mut reloader.0).await;
     }
     result?;
     Ok(())

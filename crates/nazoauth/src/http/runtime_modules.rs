@@ -167,7 +167,10 @@ pub async fn admin_patch_runtime_module(
                 "desired_state": desired.mode,
                 "revision": desired.revision.get(),
                 "actual_state": actual_state,
-                "status_url": "/admin/runtime-modules",
+                "status_url": request.uri().path()
+                    .rsplit_once('/')
+                    .expect("matched runtime-module resource")
+                    .0,
             }),
         ),
         Ok(DesiredStateUpdateOutcome::Stale { current_revision }) => json_response_status_no_store(

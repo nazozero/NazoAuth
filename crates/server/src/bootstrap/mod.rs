@@ -2,7 +2,6 @@
 // 负责组装配置、外部连接、共享状态和 Actix HTTP server。
 
 mod authentication_services;
-mod host;
 mod object_store;
 pub(crate) mod observability;
 mod registration_services;
@@ -42,7 +41,7 @@ pub struct ServerPersistence {
     pub recovery_root: Arc<dyn nazo_persistence::RecoveryRootPort>,
 }
 
-fn ui_static_files(root: PathBuf) -> impl HttpServiceFactory {
+pub(crate) fn ui_static_files(root: PathBuf) -> impl HttpServiceFactory {
     let index = root.join("index.html");
     let files = Files::new("", root)
         .index_file("index.html")
@@ -76,9 +75,46 @@ fn ui_static_files(root: PathBuf) -> impl HttpServiceFactory {
                 Ok(ServiceResponse::new(request, response))
             }
         }));
-    web::scope("/ui")
+    web::scope("")
+        .guard(actix_web::guard::fn_guard(|context| {
+            let prefix = context
+                .app_data::<web::Data<nazoauth::NazoAuth>>()
+                .map_or("", |application| {
+                    application.mount().path().trim_end_matches('/')
+                });
+            let raw_path = context.head().uri.path();
+            // Keep the selected tenant's mount literal; Actix handles ordinary
+            // UI escapes after that boundary just as it does for static assets.
+            if !raw_path.starts_with(prefix) {
+                return false;
+            }
+            let decoded = actix_web::dev::Url::new(context.head().uri.clone());
+            decoded.path().strip_prefix(prefix).is_some_and(|tail| {
+                tail.strip_prefix("/ui")
+                    .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
+            })
+        }))
+        .wrap(from_fn(ui_file_path))
         .wrap(from_fn(security_headers))
-        .service(files)
+        .default_service(files)
+}
+
+async fn ui_file_path<B: actix_web::body::MessageBody>(
+    mut request: ServiceRequest,
+    next: actix_web::middleware::Next<B>,
+) -> Result<ServiceResponse<B>, actix_web::Error> {
+    let prefix_len = request
+        .app_data::<web::Data<nazoauth::NazoAuth>>()
+        .map_or(0, |application| {
+            application.mount().path().trim_end_matches('/').len()
+        });
+    let consumed = u16::try_from(prefix_len + "/ui".len())
+        .map_err(|_| actix_web::error::ErrorBadRequest("UI mount path is too long"))?;
+    // Only the host's static-file route cursor changes. The external request
+    // target remains untouched, and Files retains its path traversal checks.
+    request.match_info_mut().reset();
+    request.match_info_mut().skip(consumed);
+    next.call(request).await
 }
 
 #[cfg(test)]

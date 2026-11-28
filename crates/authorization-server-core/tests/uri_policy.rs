@@ -35,6 +35,26 @@ fn issuer_requires_https_except_loopback_http() {
 }
 
 #[test]
+fn public_http_urls_reject_browser_parser_repairs() {
+    for value in [
+        "https:auth.example",
+        "https:/auth.example",
+        "https:///auth.example",
+        "https:\\auth.example",
+        "https://auth.example\\tenant",
+        "https:auth.example://other",
+    ] {
+        assert!(validate_issuer_url(value).is_err(), "{value}");
+        assert!(
+            validate_protected_resource_identifier(value).is_err(),
+            "{value}"
+        );
+    }
+    assert!(validate_issuer_url("HTTPS://auth.example/tenant").is_ok());
+    assert!(validate_oauth_redirect_uri("public", "com.example.app:/callback").is_ok());
+}
+
+#[test]
 fn redirect_uri_policy_allows_only_oauth_bcp_exceptions() {
     assert!(validate_oauth_redirect_uri("confidential", "https://client.example/cb").is_ok());
     assert!(validate_oauth_redirect_uri("public", "http://127.0.0.1:49152/cb").is_ok());
@@ -232,5 +252,24 @@ proptest! {
         prop_assert!(validate_issuer_url(&with_query).is_err());
         prop_assert!(validate_issuer_url(&with_fragment).is_err());
         prop_assert!(validate_issuer_url(&with_credentials).is_err());
+    }
+}
+
+#[test]
+fn validated_issuer_path_is_borrowed_without_origin_or_endpoint_copying() {
+    for (issuer, path) in [
+        ("https://auth.example", ""),
+        ("https://auth.example/tenant/auth", "/tenant/auth"),
+        ("http://[::1]:8080/tenant", "/tenant"),
+    ] {
+        nazo_auth::validate_issuer_url(issuer).unwrap();
+        let actual = nazo_auth::issuer_path(issuer);
+        assert_eq!(actual, path);
+        if !path.is_empty() {
+            assert_eq!(
+                actual.as_ptr(),
+                issuer[issuer.len() - path.len()..].as_ptr()
+            );
+        }
     }
 }

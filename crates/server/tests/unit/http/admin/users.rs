@@ -790,7 +790,7 @@ async fn system_tenant_admin_update_commits_state_and_registered_required_audit(
     fixture.store_session(&admin, &sid).await;
     let (sessions, users, ip) = admin_user_dependencies(&fixture.state);
     let control = fixture.state.settings.tenant.context.tenant_id;
-    let response = crate::adapters::audit::REQUEST_TENANT
+    let response = crate::test_support::REQUEST_TENANT
         .scope(
             control,
             system_set_tenant_admin(

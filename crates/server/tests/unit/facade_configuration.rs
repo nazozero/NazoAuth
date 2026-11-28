@@ -3,14 +3,22 @@ async fn public_builder_revalidates_mutable_configuration() {
     let state = super::infrastructure(false).await;
     let original = state.settings.application_configuration();
     original.validate().unwrap();
-    for enable_credentials in [false, true] {
+    for invalid in ["credential", "lifetime", "issuer"] {
         let mut configuration = original.clone();
-        let expected = if enable_credentials {
-            configuration.modules.enable_openid4vci_issuer = true;
-            "data encryption root"
-        } else {
-            configuration.protocol.access_token_ttl_seconds = 3_601;
-            "ACCESS_TOKEN_TTL_SECONDS"
+        let expected = match invalid {
+            "credential" => {
+                configuration.modules.enable_openid4vci_issuer = true;
+                "data encryption root"
+            }
+            "lifetime" => {
+                configuration.protocol.access_token_ttl_seconds = 3_601;
+                "ACCESS_TOKEN_TTL_SECONDS"
+            }
+            "issuer" => {
+                configuration.endpoint.issuer = "not-a-url".into();
+                "issuer"
+            }
+            _ => unreachable!(),
         };
         let capabilities = crate::test_support::facade::capabilities(&state, Default::default())
             .expect("configured host capabilities");

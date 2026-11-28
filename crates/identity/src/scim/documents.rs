@@ -9,7 +9,7 @@ use super::{
 };
 
 #[must_use]
-pub fn scim_user_document(user: &PublicAccount) -> Value {
+pub fn scim_user_document(user: &PublicAccount, base_url: &str) -> Value {
     json!({
         "schemas": [SCIM_USER_SCHEMA],
         "id": user.id(),
@@ -28,7 +28,7 @@ pub fn scim_user_document(user: &PublicAccount) -> Value {
             "resourceType": "User",
             "created": user.created_at,
             "lastModified": user.updated_at,
-            "location": format!("/scim/v2/Users/{}", user.id())
+            "location": format!("{base_url}/Users/{}", user.id())
         }
     })
 }
@@ -117,14 +117,24 @@ pub fn scim_resource_types_document() -> Value {
 }
 
 #[must_use]
-pub fn scim_index_list_document(total: i64, start_index: i64, users: &[PublicAccount]) -> Value {
+pub fn scim_index_list_document(
+    total: i64,
+    start_index: i64,
+    users: &[PublicAccount],
+    base_url: &str,
+) -> Value {
     let mut document = json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": total,
         "startIndex": start_index,
         "itemsPerPage": users.len(),
     });
-    document["Resources"] = Value::Array(users.iter().map(scim_user_document).collect());
+    document["Resources"] = Value::Array(
+        users
+            .iter()
+            .map(|user| scim_user_document(user, base_url))
+            .collect(),
+    );
     document
 }
 
@@ -133,13 +143,19 @@ pub fn scim_cursor_list_document(
     total: i64,
     users: &[PublicAccount],
     next_cursor: Option<&str>,
+    base_url: &str,
 ) -> Value {
     let mut document = json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": total,
         "itemsPerPage": users.len(),
     });
-    document["Resources"] = Value::Array(users.iter().map(scim_user_document).collect());
+    document["Resources"] = Value::Array(
+        users
+            .iter()
+            .map(|user| scim_user_document(user, base_url))
+            .collect(),
+    );
     if let Some(cursor) = next_cursor {
         document["nextCursor"] = json!(cursor);
     }

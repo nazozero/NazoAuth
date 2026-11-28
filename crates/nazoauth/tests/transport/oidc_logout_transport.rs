@@ -460,3 +460,22 @@ fn logout_checks_query_and_content_type_before_polling_a_body() {
         }
     });
 }
+
+#[test]
+fn logout_confirmation_posts_to_the_unmodified_mounted_path() {
+    futures_executor::block_on(async {
+        let app = endpoint(operations(Err(OidcLogoutError::ConfirmationRequired)));
+        let request = http::Request::builder()
+            .uri("/tenant/auth/logout?state=a%2Fb")
+            .header(header::COOKIE, "session=sid; csrf=csrf-value")
+            .body(Bytes::new())
+            .unwrap();
+        let response = oidc_logout(&app, &request, std::future::ready(Ok(Bytes::new()))).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = std::str::from_utf8(response.body()).unwrap();
+        assert!(body.contains("action=\"/tenant/auth/logout\""));
+        assert!(body.contains("id=\"nazo-logout-cancel\" href=\"/\""));
+        assert!(body.contains("name=\"state\" value=\"a/b\""));
+        assert_eq!(request.uri(), "/tenant/auth/logout?state=a%2Fb");
+    });
+}

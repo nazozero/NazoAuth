@@ -243,8 +243,9 @@ pub use transaction::{
     PushedAuthorizationRequest,
 };
 pub use uri_policy::{
-    RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,
-    resolve_registered_redirect_uri, validate_authorization_redirect_uri, validate_cors_origin,
-    validate_frontend_base_url, validate_http_endpoint_url, validate_issuer_url,
-    validate_oauth_redirect_uri, validate_protected_resource_identifier,
+    RedirectUriError, is_loopback_http_url, is_valid_pkce_value, issuer_path,
+    oauth_redirect_uri_matches, resolve_registered_redirect_uri,
+    validate_authorization_redirect_uri, validate_cors_origin, validate_frontend_base_url,
+    validate_http_endpoint_url, validate_issuer_url, validate_oauth_redirect_uri,
+    validate_protected_resource_identifier,
 };

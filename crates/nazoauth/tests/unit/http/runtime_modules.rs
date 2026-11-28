@@ -254,6 +254,8 @@ fn authenticated_request() -> Request {
 
 fn patch_request() -> Request {
     http::Request::builder()
+        .method(Method::PATCH)
+        .uri("/admin/runtime-modules/ciba")
         .header(
             header::COOKIE,
             (Cookie::new("session", "session-id")).to_string(),
@@ -311,35 +313,43 @@ fn list_exposes_only_current_actions_and_disables_caching() {
 #[test]
 fn patch_changes_only_desired_state_and_returns_pending_revision() {
     futures_executor::block_on(async {
-        let administration = administration();
-        let response = admin_patch_runtime_module(
-            &endpoint(
-                administration.clone(),
-                2,
-                i64::try_from(NOW_SECONDS).unwrap() - 300,
-                vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
-            ),
-            &patch_request(),
-            "ciba".to_owned(),
-            RuntimeModulePatch {
-                desired_state: DesiredMode::Disabled,
-                expected_revision: 7,
-                reason: "\u{2003} maintenance \u{3000}".to_owned(),
-                cascade: false,
-            },
-        )
-        .await;
+        for collection in [
+            "/admin/runtime-modules",
+            "/testauth/admin/runtime-modules",
+            "/nested/testauth/admin/runtime%2Dmodules",
+        ] {
+            let administration = administration();
+            let mut request = patch_request();
+            *request.uri_mut() = format!("{collection}/ciba").parse().unwrap();
+            let response = admin_patch_runtime_module(
+                &endpoint(
+                    administration.clone(),
+                    2,
+                    i64::try_from(NOW_SECONDS).unwrap() - 300,
+                    vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
+                ),
+                &request,
+                "ciba".to_owned(),
+                RuntimeModulePatch {
+                    desired_state: DesiredMode::Disabled,
+                    expected_revision: 7,
+                    reason: "\u{2003} maintenance \u{3000}".to_owned(),
+                    cascade: false,
+                },
+            )
+            .await;
 
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-        assert_no_store(&response);
-        let body = response_json(response).await;
-        assert_eq!(body["revision"], 8);
-        assert_eq!(body["actual_state"], "enabled");
-        assert_eq!(body["status_url"], "/admin/runtime-modules");
-        let updates = administration.updates.lock().unwrap();
-        assert_eq!(updates.len(), 1);
-        assert_eq!(updates[0].reason, "maintenance");
-        assert_eq!(updates[0].expected_revision, Some(ModuleRevision::new(7)));
+            assert_eq!(response.status(), StatusCode::ACCEPTED);
+            assert_no_store(&response);
+            let body = response_json(response).await;
+            assert_eq!(body["revision"], 8);
+            assert_eq!(body["actual_state"], "enabled");
+            assert_eq!(body["status_url"], collection);
+            let updates = administration.updates.lock().unwrap();
+            assert_eq!(updates.len(), 1);
+            assert_eq!(updates[0].reason, "maintenance");
+            assert_eq!(updates[0].expected_revision, Some(ModuleRevision::new(7)));
+        }
     });
 }
 

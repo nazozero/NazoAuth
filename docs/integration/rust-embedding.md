@@ -2,15 +2,16 @@
 
 `nazoauth` is the framework-neutral product library. `nazo-server` owns native
 configuration loading, PostgreSQL/Valkey connections, listeners, TLS, file and
-network adapters, and task scheduling. The distributed executable is named
-`nazoauth`. `nazo-http-actix` translates Actix transport values into the public
-library contract.
+network adapters. `nazo-runtime-tokio` supplies the shared task lifecycle used by
+both native and embedded Tokio hosts. The distributed executable is named
+`nazoauth`. `nazo-http-actix`, `nazo-http-tower` and `nazo-http-worker` translate
+their hosts' transport values into the same public library contract.
 
 ## Dependencies in an external workspace
 
 For a published crates.io release, run `cargo add nazoauth` in the consuming
 project. Use `cargo add nazoauth --no-default-features` for a host that does
-not expose deployment control. If you use this repository's Actix or Worker
+not expose deployment control. If you use this repository's Actix, Tower or Worker
 adapter from Git, select the same Git tag or commit for the adapter and facade
 so that they share the same Rust types. The [workspace manifest](../../Cargo.toml) selects the
 crates.io releases of `nazo-mdoc`, `nazo-passkey` and Actix. Cargo records
@@ -185,9 +186,10 @@ can also install `DeploymentCapabilities`: deployment identity, control tenant,
 tenant index, controller-registry port and recovery-root port. These ports are
 separate from the shared `ServerPersistenceProvider`; the Worker omits this
 feature. Deployment controls are restricted to their configured control tenant.
-Host-specific scheduling
-calls `plan_reconciliation` and `reconcile_once`; the neutral library does not
-spawn a timer or task. Hosts whose invocations cannot wait for stored-transaction
+Tokio hosts use `nazo-runtime-tokio` for module reconciliation, signing-key
+refresh, CIBA ping delivery, logout delivery and security-state maintenance.
+`StoredTransactionLifecycle` supplies the existing waiting drain policy through
+`ModuleLifecycle`. The neutral library does not spawn a timer or task. Hosts whose invocations cannot wait for stored-transaction
 lifetimes call `synchronize_runtime_modules_step` before admission and implement
 the lifecycle's nonblocking `poll_stored_transactions`. A `Pending` result keeps
 the transition open for the next invocation. Native hosts use the waiting
@@ -197,19 +199,329 @@ the Worker implementation waits with the platform's asynchronous delay.
 For a native composition example, see
 [`application_capabilities` and startup assembly](../../crates/server/src/bootstrap/startup/services.rs).
 
+## Run the shared lifecycle
+
+A fixed deployment builds one graph and mounts its `Arc<NazoAuth>` directly.
+Create its task owner from the same graph, key manager and prepared CIBA delivery
+worker. Process workers use the existing delivery and persistence ports:
+
+```rust
+let tenant_tasks = std::sync::Arc::new(nazo_runtime_tokio::TenantTasks::new(
+    auth.clone(),
+    keys,
+    key_settings.prepublish_window,
+    ciba_ping_worker,
+));
+let runtime = nazo_runtime_tokio::Runtime::fixed(tenant_tasks, process_workers)?;
+
+// Mount `auth`, then run the host listener.
+runtime.run(serve(listener, auth)).await?;
+```
+
+`ProcessWorkers` contains one `BackchannelLogoutWorker` and one
+`SecurityStateMaintenancePort`. The runtime schedules these once per instance;
+CIBA, module reconciliation and key refresh are owned per tenant. Prepare
+outbound clients and other fallible environment resources before starting it.
+`run` waits for lifecycle shutdown on every listener completion, including errors.
+Keep the runtime owner until the listener stops and requests finish. `shutdown`
+withdraws dynamic tenants and waits for cooperative signing-key writes. Dropping
+the owner signals all tasks and withdraws a dynamic directory; a fixed tenant's
+host controls request admission. The independent controller retains host
+recovery and process-management responsibilities.
+
+## Dynamic tenants and hot updates
+
+`nazoauth::runtime` owns the directory index, authoritative reconciliation and
+publication rules for every host. Supply `TenantDirectoryStore`,
+`TenantDirectoryCachePort` and a `TenantRuntimeBuildPort`. The factory binds the
+selected tenant's existing persistence/state ports, settings, key manager and
+outbound clients, builds it with `NazoAuthBuilder`, then returns
+`TenantRuntime::new(binding, application, lifecycle)`. Construction checks the
+full tenant context and issuer against the directory binding. A directory entry
+owns one canonical hostname: both the public issuer and mTLS endpoint base use
+that hostname, with different listener ports allowed. Fixed mounts can use a
+separate mTLS hostname. `TenantTasks` is the shared Tokio implementation of that
+lifecycle.
+
+```rust
+let registry = nazoauth::runtime::TenantRuntimeRegistry::empty();
+let initial = directory.load_active().await?;
+let refresher = std::sync::Arc::new(nazoauth::runtime::TenantRuntimeRefresher::new(
+    registry.clone(), directory, directory_cache, tenant_factory,
+));
+let runtime = nazo_runtime_tokio::Runtime::dynamic(
+    refresher, initial, process_workers,
+).await?;
+
+let app = actix_web::App::new()
+    .route("/api/health", actix_web::web::get().to(|| async { "healthy" }))
+    .wrap(nazo_http_actix::DynamicMount::new(registry, &["/api"])?);
+// The host listener finishes after it stops accepting and drains requests.
+runtime.run(serve(listener, app)).await?;
+```
+
+Tower hosts use `mount_dynamic(existing_service, registry, occupied_paths)` or
+`mount_make_service_dynamic(existing_factory, registry, occupied_paths, facts)`.
+Both select the tenant before route/header filtering and body decoding. The
+native executable uses `DynamicMount` and `Runtime::dynamic`; it has no separate
+tenant selection, synchronization or task scheduler.
+
+Declare occupied host namespaces before serving. They bypass tenant selection,
+and every later tenant publication must respect those reservations. Adapters
+sharing one registry share the union of its reservations. A known tenant's paths
+outside its mount, including its UI, continue to the host. Missing or unknown
+HTTP authority is rejected on the remaining paths. HTTP/1 absolute-form uses its
+URI authority; origin-form uses the unique Host field. HTTP/2 requires URI
+authority, and an optional Host must identify the same normalized authority.
+HTTP/3 permits a unique nonempty Host when URI authority is absent; if both are
+present, their values must agree exactly. Invalid or duplicate Host fields are
+rejected before selection or body reading. Authenticated direct-TLS server name
+must match the selected canonical host. Forwarded headers never select a tenant.
+
+Each request selects one immutable snapshot. Ordinary canonical host lookups
+borrow the authority bytes; noncanonical DNS/IP aliases use the shared
+canonicalization. No request reads the directory database or cache. An existing
+request retains its graph across a hot update. A confirmed removed or changed
+routing identity is withdrawn before fallible replacement construction; a
+runtime-only update keeps the preceding eligible graph if construction fails.
+The cache supplies invalidation hints, and only the authoritative directory
+can publish a routing change. Module desired-state changes use the same
+reconciler and drain rules in fixed and dynamic deployments.
+
+The fixed `mount` and `mount_make_service` types remain separate from dynamic
+mounts: they perform no tenant selection, registry lookup or directory task.
+To expose deployment controls, compile `deployment-control` and supply
+`DeploymentCapabilities` to the same builder. Use `registry.availability()` for
+the dynamically published tenant membership; only the configured control tenant
+admits deployment-level operations.
+
+## Mount in an existing application
+
+Configure the public issuer with its intended path. The builder derives its
+mount from that issuer; an issuer without a path mounts at `/`. An explicit
+`mount_path` must agree with the issuer. The mTLS base URL must use the same
+path. These values are validated before service assembly and never inferred
+from request headers.
+
+```rust
+let configuration = nazoauth::config::Configuration::new(
+    tenant,
+    "https://example.com/testauth",
+    client_secret_pepper,
+)?;
+let auth = std::sync::Arc::new(
+    nazoauth::NazoAuthBuilder::new(configuration, capabilities, instance_id)
+        .build()
+        .await?,
+);
+
+let app = actix_web::App::new()
+    .route("/api/health", actix_web::web::get().to(|| async { "healthy" }))
+    .configure(nazo_http_actix::mount(auth, &["/api"])?);
+```
+
+The single `mount` call registers the prefix scope and its required discovery
+exceptions. Every ordinary endpoint comes from the existing manifest, including
+future additions and optional modules. The lower-level `configure` entry point
+remains available for an already-bound tenant. Both forms forward unknown methods
+and paths inside the authentication scope to the same facade policy.
+Register existing Actix routes before mounting, as above, so matching host
+requests reach their handlers before the authentication scope is considered.
+
+### Tower service factories, including Axum
+
+`nazo-http-tower` accepts the standard Tower service and service-factory
+contracts. It has no Axum dependency or framework-specific feature. For an
+existing Axum application, prepare its normal make-service and mount once:
+
+```rust
+use std::net::SocketAddr;
+use axum::{Router, routing::get, serve::IncomingStream};
+use nazoauth::ConnectionFacts;
+use tokio::net::TcpListener;
+
+let app = Router::new()
+    .route("/api/health", get(|| async { "healthy" }))
+    .route("/users/me", get(current_user))
+    .fallback(application_not_found);
+
+let app = nazo_http_tower::mount_make_service(
+    app.into_make_service_with_connect_info::<SocketAddr>(),
+    auth,
+    &["/api", "/users"],
+    |connection: &IncomingStream<'_, TcpListener>| ConnectionFacts {
+        peer_addr: Some(*connection.remote_addr()),
+        ..ConnectionFacts::default()
+    },
+)?;
+
+axum::serve(listener, app).await?;
+```
+
+The returned factory wraps each request service produced by the original
+factory. Axum's own `into_make_service_with_connect_info` prepares its routes
+at startup and continues to supply `ConnectInfo` to its business handlers.
+The mount selects NazoAuth before the original router runs. It preserves the
+raw URI, existing handlers, method rejection and fallback; discovery exceptions
+are part of the same call. Complete the router's routes and state first.
+Middleware on that router continues to cover its routes. Request middleware
+intended for both surfaces belongs outside the mounted request services.
+
+The final closure projects the host's real connection target into the public
+`ConnectionFacts` once per connection. The shared adapter does not inspect
+framework-specific extensions. Resources requiring those facts receive them
+only when the request has no `ConnectionFacts` already. Facts supplied by the
+host's TLS or authenticated ingress boundary remain intact, including
+certificate and server-name facts. Forwarding headers never establish
+authenticated facts. Other Tower factories supply their own connection target
+through the same API. See the
+[external Axum application](../../examples/axum-embedding) for a complete
+consumer of this API.
+
+### Other Tower and Hyper hosts
+
+`nazo_http_tower::mount(existing_service, auth, occupied_paths)` uses the existing
+Tower `Service` contract with standard HTTP requests and `http_body::Body`
+chunks. It accepts response body types implementing `From<Bytes>`, including
+Axum's `Body` and Hyper's `Full<Bytes>`. Compatible hosts share this adapter's
+mount selection and bounded content decoding. The
+[external Hyper example](../../examples/hyper-embedding) bridges the mounted
+Tower service to Hyper with `hyper_util::service::TowerToHyperService`.
+
+Both the factory and request service delegate `poll_ready` to the original
+service and call that same instance. A request must pass the host's readiness
+gate before either branch runs; place limits intended to cover authentication
+work around the mounted request service. The host branch retains its original
+future and response. The authentication branch shares the prepared graph and
+moves standard request and response heads. Only authentication requests box
+their future, keeping that asynchronous state out of the host branch's fixed
+future size. `mount_make_service` creates one context per connection; `mount`
+shares one context across clones of the supplied request service. Each context
+uses one `Arc`, including when Hyper's bridge clones the service per request.
+Authentication futures retain that same context; requests do not clone the
+deployment-wide `Arc<NazoAuth>`. Compressed input creates its decoder and bounded
+buffers on the first body poll, so rejection before body consumption does not
+allocate them.
+
+Hosts outside the Tower ecosystem implement the public transport contract below
+at their own registration boundary. Protocol handlers and route inventories
+remain shared. Native handler futures are `Send` when the input body stream is
+`Send`; local streams remain supported, and WASM endpoint dispatch retains local
+futures. No adapter creates a listener, runtime, storage connection or service
+graph per request.
+
+### Public identifiers and discovery
+
+For `https://example.com/testauth`, the locations are:
+
+| Surface | Public path |
+| --- | --- |
+| Ordinary endpoints | `/testauth/authorize`, `/testauth/token`, `/testauth/auth/login`, `/testauth/admin/clients`, etc. |
+| OIDC discovery | `/testauth/.well-known/openid-configuration` |
+| OAuth AS metadata (RFC 8414) | `/.well-known/oauth-authorization-server/testauth` |
+| Credential issuer metadata (OpenID4VCI) | `/.well-known/openid-credential-issuer/testauth`, when enabled and registered |
+| Protected resource metadata (RFC 9728) | `/.well-known/oauth-protected-resource/testauth/fapi/resource` for resource identifier `https://example.com/testauth/fapi/resource` |
+
+`auth.mount().discovery_paths()` exposes the exact paths for host registration.
+`auth.mount().route_path(route)` projects a canonical route for an integration
+that needs its external pattern. Runtime registration, deployment profile and
+tenant capability admission still belong to NazoAuth.
+
+The mTLS base may use a different configured origin, but it must use the same
+mount path. The protected resource identifier must use the issuer origin;
+this single-resource mount does not implement query-based resource selection.
+Its metadata path preserves the resource's exact path spelling, including
+percent escapes and a trailing slash. Equivalent decoded spellings are not
+additional discovery locations.
+Arbitrary protected-resource suffix aliases are not served. These locations
+follow [OIDC Discovery §4](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig),
+[RFC 8414 §3](https://www.rfc-editor.org/rfc/rfc8414.html#section-3),
+[OpenID4VCI §12.2.2](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html#section-12.2.2)
+and [RFC 9728 §3](https://www.rfc-editor.org/rfc/rfc9728.html#section-3).
+
+Enabled upstream provider callbacks must use
+`{issuer}/auth/federation/{provider_id}/callback`; a configured fixed query is
+retained in the complete callback URL. Update the provider's own
+client registration to that URL; mounting cannot change an upstream service.
+Published authorization, token, session, SCIM and credential URLs use the same
+configured issuer. Internal avatar storage references stay unchanged; HTTP
+views project their mount path, and OIDC picture claims use an absolute URL.
+
+### Paths, collisions and host-owned UI
+
+Mount paths contain literal unescaped URL segments. Nested paths are supported;
+one trailing slash is removed. Empty segments, `.`/`..`, escaped separators,
+query strings and fragments are rejected in the configured prefix. Request
+prefixes match exactly at a segment boundary: `/testauth2`, `/%74estauth` and
+`/testauth%2Ftoken` cannot select `/testauth`. The ordinary endpoint portion
+retains its existing escape handling; `/testauth/%74oken` reaches `/token`,
+while the original URI and repeated query values remain available to proof
+verification. Request dot segments and trailing slashes are not redirected or
+normalized into a different endpoint.
+
+`mount` checks the host's declared occupied namespaces before installing any
+routes. Declare literal external namespace prefixes such as `/api` or `/users`,
+which cover their descendants; discovery reservations retain their raw escapes.
+Namespaces are paths and cannot contain a query or fragment.
+An opaque framework router cannot expose registrations
+it has already accepted, so the host must declare all of its namespaces. A
+conflict with the authentication prefix or a required discovery path is an
+error, including aliases that overlap after the existing routing escape
+normalization. Declare UI reservations using the canonical `{mount}/ui`
+namespace; request aliases follow the host router's semantics. Discovery paths
+must also avoid the mount's own ordinary endpoints. These checks run at startup.
+At `/`, declared host namespaces and the host-owned `/ui` subtree retain their
+original routing and fallback; all remaining paths belong to
+NazoAuth, including unknown paths. At a non-root prefix, requests outside that
+prefix and its exact discovery paths retain the host's original fallback.
+When composing multiple mounts, include the other mount's `path()` and
+`discovery_paths()` in those reservations; checking only its prefix cannot
+detect a shared protected-resource discovery URL.
+
+The literal `/ui` subtree under a mount belongs to the host. For example,
+register assets and the frontend router at `/testauth/ui/`; the Actix mount
+leaves those routes reachable even when registered after the authentication
+scope. Configure the supplied frontend's asset/navigation base for that path
+and its API base for the effective issuer. `frontend_base_url` defaults to
+`{issuer}/ui/` and may instead select a separately hosted frontend. NazoAuth
+does not read, bundle or rewrite frontend assets. Apply the adapter's security
+headers to host-owned UI responses.
+
+### Cookies on a shared origin
+
+Cookie paths remain `/`, including deletion. `__Host-` names retain `Secure`
+and have no `Domain` attribute. Choose distinct names for all four
+`Configuration.session` fields for each instance sharing an origin:
+
+| Field | Example for the `/testauth` instance |
+| --- | --- |
+| `session_cookie_name` | `__Host-testauth-session` |
+| `csrf_cookie_name` | `__Host-testauth-csrf` |
+| `remembered_mfa_cookie_name` | `__Host-testauth-mfa` |
+| `federation_binding_cookie_name` | `__Host-testauth-federation` |
+
+Names must also avoid cookies owned by the surrounding application. A mount
+does not silently change cookie names or narrow `__Host-` cookies to its prefix.
+The native host exposes the auxiliary names through
+`REMEMBERED_MFA_COOKIE_NAME` and `FEDERATION_BINDING_COOKIE_NAME`.
+
 ## Adapt a Web framework
 
 The adapter contract is `http::Request` / `http::Response`, `bytes::Bytes`,
 `integration::ConnectionFacts`, and the canonical route manifest. There is no
 framework or runtime trait to implement.
 
+Use the supplied Actix, Tower or Worker adapter when it matches the host.
+The following steps describe implementing another transport adapter; applications
+using a supplied adapter do not repeat this work.
+
 The manifest exposes transport metadata. CORS, route guards and method rejection
 rules remain internal to the facade.
 
 1. Bind a default request forwarding handler so the facade receives known and
    unknown paths. Keep framework-owned UI resources separate. Use
-   `integration::route_for_path(request.uri().path())` to obtain transport
-   metadata from the canonical manifest. This lookup does not apply method,
+   `application.route_for_path(request.uri().path())` to obtain transport
+   metadata through the prepared mount. This lookup does not apply method,
    registration or capability policy. `integration::routes()` exposes the whole
    inventory for mechanical coverage checks.
 2. Preserve the original method and URI. `Route::request_headers()` declares
@@ -267,9 +579,9 @@ Body chunks, completed response bodies and stored replay bytes retain their
 The four public discovery/authorization-server/protected-resource/JWKS metadata
 endpoints consume only `Origin`, `Access-Control-Request-Method` and
 `Access-Control-Request-Headers` for CORS, and do not consume connection facts.
-Their six manifest resources let adapters omit unused request-header storage and
-the connection-facts extension. Host tenant selection still uses the original
-request's authority and TLS server name before forwarding. All other resources
+Their four manifest resources let adapters omit unused request-header storage and
+the connection-facts extension. Dynamic adapters select through the shared
+registry using the original authority and TLS server name before forwarding. All other resources
 retain every header and connection facts, including the credential nonce
 resource's IP budget for unsupported methods. The two transport requirements are
 independent declarations for the whole resource and are computed from the
@@ -322,9 +634,8 @@ parameter captures are passed through request extensions.
 
 Apply `nazo_http_actix::security_headers` to host-owned routes; facade responses
 already contain the policy. The native host applies it to its static UI and adds
-the same defaults when rejecting tenant selection. A multi-tenant host selects
-one immutable tenant snapshot before forwarding; it does not rebuild the facade
-per request.
+the same defaults when rejecting tenant selection. Dynamic adapters bind one
+immutable tenant snapshot before forwarding; they never build a graph per request.
 
 ## Run the adapter conformance kit
 
@@ -357,13 +668,20 @@ comparison ignores only wire-generated `Date`, `Content-Length` and
 `Transfer-Encoding`; it does not normalize nonces, reorder duplicate values,
 deserialize response JSON, or ignore body differences.
 
-The shipped examples are the
+The shared facade corpus projects its cases through the built tenant's mount,
+including discovery exceptions. The
 [Actix transport tests](../../crates/http-actix/tests/unit/transport.rs) and
-[native facade comparison](../../crates/server/tests/unit/facade_conformance.rs).
+[Tower transport tests](../../crates/http-tower/tests/unit/transport.rs) exercise
+the conversions. The
+[native facade comparison](../../crates/server/tests/unit/facade_conformance.rs)
+runs the [prefixed Actix fixture](../../crates/server/tests/unit/facade_mount.rs)
+and the independent [Hyper](../../examples/hyper-embedding) and
+[Axum](../../examples/axum-embedding) consumers against real host capabilities.
 The [credential replay fixture](../../crates/server/tests/unit/facade_credentials.rs)
 seeds subject data through the configured persistence capability, creates offers
 and tokens through the public facade, and verifies original JSON and encrypted
 JWT response bytes on repeated calls through both transports.
-The `test-support` feature exposes internal services only for the native host's
-focused regression tests. Architecture checks reject it in adapter dependencies;
-new adapters use `conformance` and the public embedding API.
+The `test-support` feature exposes internal services only for focused regression
+tests in the `nazo-server` and `nazo-runtime-tokio` dev-dependencies. Architecture
+checks reject it in production dependencies and other adapters; new adapters use
+`conformance` and the public embedding API.

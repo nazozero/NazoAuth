@@ -39,6 +39,7 @@ pub struct ScimEndpoint {
     passwords: Arc<dyn ScimBootstrapPasswordProvider>,
     client_ip: ClientIpConfig,
     events: Option<Arc<dyn EventPollerPort>>,
+    base_url: Box<str>,
 }
 
 impl ScimEndpoint {
@@ -48,6 +49,7 @@ impl ScimEndpoint {
         cursors: Arc<dyn ScimCursorProtector>,
         passwords: Arc<dyn ScimBootstrapPasswordProvider>,
         client_ip: ClientIpConfig,
+        issuer: &str,
     ) -> Self {
         Self {
             service,
@@ -56,6 +58,7 @@ impl ScimEndpoint {
             passwords,
             client_ip,
             events: None,
+            base_url: format!("{issuer}/scim/v2").into_boxed_str(),
         }
     }
 
@@ -270,7 +273,7 @@ async fn list_users(
     match pagination {
         ScimPagination::Index { start_index, .. } => scim_json_response(
             StatusCode::OK,
-            scim_index_list_document(total, start_index, &users),
+            scim_index_list_document(total, start_index, &users, &endpoint.base_url),
         ),
         ScimPagination::Cursor { count, .. } => {
             let has_more = users.len() > count as usize;
@@ -299,7 +302,12 @@ async fn list_users(
             };
             scim_json_response(
                 StatusCode::OK,
-                scim_cursor_list_document(total, &users, next_cursor.as_deref()),
+                scim_cursor_list_document(
+                    total,
+                    &users,
+                    next_cursor.as_deref(),
+                    &endpoint.base_url,
+                ),
             )
         }
     }
@@ -337,7 +345,10 @@ pub async fn scim_create_user(
         )
         .await
     {
-        Ok(user) => scim_json_response(StatusCode::CREATED, scim_user_document(&user)),
+        Ok(user) => scim_json_response(
+            StatusCode::CREATED,
+            scim_user_document(&user, &endpoint.base_url),
+        ),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
         Err(_) => backend_unavailable(),
     }
@@ -356,7 +367,10 @@ pub async fn scim_get_user(
         return user_not_found();
     };
     match endpoint.service.user(credential.tenant, user_id).await {
-        Ok(Some(user)) => scim_json_response(StatusCode::OK, scim_user_document(&user)),
+        Ok(Some(user)) => scim_json_response(
+            StatusCode::OK,
+            scim_user_document(&user, &endpoint.base_url),
+        ),
         Ok(None) => user_not_found(),
         Err(_) => backend_unavailable(),
     }
@@ -394,7 +408,10 @@ pub async fn scim_replace_user(
         )
         .await
     {
-        Ok(user) => scim_json_response(StatusCode::OK, scim_user_document(&user)),
+        Ok(user) => scim_json_response(
+            StatusCode::OK,
+            scim_user_document(&user, &endpoint.base_url),
+        ),
         Err(RepositoryError::NotFound) => user_not_found(),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
         Err(_) => backend_unavailable(),
@@ -433,7 +450,10 @@ pub async fn scim_patch_user(
         )
         .await
     {
-        Ok(user) => scim_json_response(StatusCode::OK, scim_user_document(&user)),
+        Ok(user) => scim_json_response(
+            StatusCode::OK,
+            scim_user_document(&user, &endpoint.base_url),
+        ),
         Err(RepositoryError::NotFound) => user_not_found(),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
         Err(_) => backend_unavailable(),

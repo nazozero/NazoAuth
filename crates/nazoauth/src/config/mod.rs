@@ -65,6 +65,8 @@ pub struct ProtocolSettings {
 pub struct SessionSettings {
     pub session_cookie_name: String,
     pub csrf_cookie_name: String,
+    pub remembered_mfa_cookie_name: String,
+    pub federation_binding_cookie_name: String,
     pub cookie_secure: bool,
     pub session_ttl_seconds: u64,
     pub pending_mfa_session_ttl_seconds: u64,
@@ -227,6 +229,13 @@ impl Configuration {
                     "__Host-nazo_oauth_csrf"
                 } else {
                     "nazo_oauth_csrf"
+                }
+                .into(),
+                remembered_mfa_cookie_name: "nazo_oauth_mfa_remembered".into(),
+                federation_binding_cookie_name: if secure {
+                    "__Host-nazo_federation_binding"
+                } else {
+                    "nazo_federation_binding"
                 }
                 .into(),
                 cookie_secure: secure,

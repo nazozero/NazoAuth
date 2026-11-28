@@ -53,6 +53,7 @@ nazo-passkey.workspace = true
 nazo-persistence.workspace = true
 nazo-postgres.workspace = true
 nazo-runtime-modules.workspace = true
+nazo-runtime-tokio.workspace = true
 nazo-scim-events.workspace = true
 nazo-valkey.workspace = true
 nazoauth = { workspace = true, features = ["deployment-control"] }
@@ -89,6 +90,13 @@ zeroize.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
+nazoauth-axum-embedding = { path = "../../examples/axum-embedding" }
+nazoauth-hyper-embedding = { path = "../../examples/hyper-embedding" }
+axum = { workspace = true, features = ["http1", "tokio"] }
+nazo-http-tower.workspace = true
+tower.workspace = true
+http-body-util.workspace = true
+hyper = { version = "1.12.0", features = ["http1", "server"] }
 aws-lc-rs.workspace = true
 ciborium.workspace = true
 cookie = { workspace = true, features = ["percent-encode"] }

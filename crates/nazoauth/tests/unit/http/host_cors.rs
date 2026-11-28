@@ -419,6 +419,7 @@ fn production_profile_routes_keep_method_cors_cache_and_security_contracts() {
         let endpoint = ProfileAccountEndpoint::new(
             Arc::new(ContractProfileOperations),
             SessionCookieConfig::new("session", "csrf", true),
+            "https://issuer.example",
         );
 
         let get = http::Request::builder()

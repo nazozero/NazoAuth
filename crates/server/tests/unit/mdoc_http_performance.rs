@@ -336,6 +336,7 @@ async fn infrastructure(
             .unwrap();
     settings.tenant.context = tenant;
     settings.endpoint.issuer = ISSUER.into();
+    settings.protocol.protected_resource_identifier = format!("{ISSUER}/fapi/resource");
     settings.endpoint.mtls_endpoint_base_url = "https://mtls.example".into();
     settings.session.cookie_secure = true;
     settings.modules.register_openid4vp_routes = true;

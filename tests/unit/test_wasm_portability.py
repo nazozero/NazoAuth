@@ -26,9 +26,10 @@ class WasmPortability(unittest.TestCase):
         self.assertIn("nazoauth", GATE.contracts.PORTABLE_PACKAGES)
         self.assertNotIn("nazo-server", GATE.contracts.PORTABLE_PACKAGES)
         self.assertNotIn("nazo-http-actix", GATE.contracts.PORTABLE_PACKAGES)
+        self.assertNotIn("nazo-runtime-tokio", GATE.contracts.PORTABLE_PACKAGES)
 
     def test_transitive_runtime_network_storage_and_native_crypto_are_rejected(self):
-        for package in ("tokio", "reqwest", "actix-web", "axum", "diesel", "fred", "aws-lc-sys", "nazo-valkey", "nazo-http-actix", "nazo-server"):
+        for package in ("tokio", "reqwest", "actix-web", "axum", "diesel", "fred", "aws-lc-sys", "nazo-valkey", "nazo-http-actix", "nazo-runtime-tokio", "nazo-server"):
             with self.subTest(package=package):
                 tree = f"nazo-identity v1.0.0\nordinary-wrapper v1.0.0\n{package} v1.0.0 (*)\n"
                 self.assertEqual(GATE.runtime_violations(tree), {package})

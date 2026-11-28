@@ -1,24 +1,11 @@
-use crate::http::{Request, Response};
+use crate::http::Response;
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use nazo_auth::DpopError;
 use nazo_oauth_server::contracts::request_facts::DpopErrorContext;
 
 use crate::http::oauth_error;
 
-/// Preserve the request target authority; connection_info() also trusts
-/// forwarding headers and therefore cannot supply this fact.
-pub fn dpop_request_authority(request: &Request) -> Option<&str> {
-    let mut hosts = request.headers().get_all(header::HOST).iter();
-    let host = hosts.next().map(|value| value.to_str()).transpose().ok()?;
-    if hosts.next().is_some() {
-        return None;
-    }
-    match (request.uri().authority(), host) {
-        (Some(authority), Some(host)) if !authority.as_str().eq_ignore_ascii_case(host) => None,
-        (Some(authority), _) => Some(authority.as_str()),
-        (None, host) => host,
-    }
-}
+pub use crate::integration::request_authority as dpop_request_authority;
 
 pub fn dpop_proof_present(headers: &HeaderMap) -> bool {
     headers.contains_key(HeaderName::from_static("dpop"))

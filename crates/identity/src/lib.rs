@@ -33,8 +33,9 @@ pub use authentication::{
     AuthenticationServiceConfig, LoginSuccess, RememberedMfaProof,
 };
 pub use avatar::{
-    AvatarContentType, AvatarDirectUploadService, AvatarObject, AvatarService, AvatarUploadStart,
-    DeleteAvatarError, DirectAvatarUploadError, ReadAvatarError, UploadAvatarError,
+    AVATAR_URL_PREFIX, AvatarContentType, AvatarDirectUploadService, AvatarObject, AvatarService,
+    AvatarUploadStart, DeleteAvatarError, DirectAvatarUploadError, ReadAvatarError,
+    UploadAvatarError,
 };
 pub use federation::{
     FederationAuditEvent, FederationError, FederationLinkIntent, FederationService,
