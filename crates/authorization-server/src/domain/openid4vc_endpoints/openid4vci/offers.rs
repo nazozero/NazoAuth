@@ -32,10 +32,20 @@ impl ServerCredentialIssuerOperations {
                 .ok_or_else(|| {
                     vci_error(404, "invalid_request", "Credential offer was not found.")
                 })?;
+            // Older offers may still contain the hint until their TTL expires.
+            let mut grants = stored.grants;
+            for grant_type in [
+                "authorization_code",
+                nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT,
+            ] {
+                if let Some(grant) = grants.0.get_mut(grant_type).and_then(Value::as_object_mut) {
+                    grant.remove("authorization_server");
+                }
+            }
             Ok(CredentialOffer {
                 credential_issuer: self.issuer.clone(),
                 credential_configuration_ids: stored.credential_configuration_ids,
-                grants: Some(stored.grants),
+                grants: Some(grants),
             })
         })
     }
@@ -336,7 +346,7 @@ impl ServerCredentialIssuerOperations {
             let grants = CredentialOfferGrants::new(
                 issuer_state.map(|issuer_state| AuthorizationCodeGrant {
                     issuer_state: Some(issuer_state),
-                    authorization_server: Some(self.issuer.clone()),
+                    authorization_server: None,
                 }),
                 pre_authorized_code.map(|pre_authorized_code| PreAuthorizedCodeGrant {
                     pre_authorized_code,
@@ -352,7 +362,7 @@ impl ServerCredentialIssuerOperations {
                         length: Some(code.len() as u16),
                         description: None,
                     }),
-                    authorization_server: Some(self.issuer.clone()),
+                    authorization_server: None,
                 }),
             );
             let id = Uuid::now_v7();

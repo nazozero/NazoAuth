@@ -290,12 +290,29 @@ async fn live_immediate_offer_pre_authorized_credential_replay_and_notification(
         .create_offer(CreateCredentialOfferRequest {
             subject_id: fixture.subject_id,
             credential_configuration_ids: vec!["unit-live-immediate".to_owned()],
-            grant_types: vec![nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT.to_owned()],
+            grant_types: vec![
+                "authorization_code".to_owned(),
+                nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT.to_owned(),
+            ],
             tx_code: None,
             expires_in: 300,
         })
         .await
         .expect("live immediate offer should persist");
+    let fetched = fixture
+        .issuer
+        .offer(&offer.offer_id.to_string())
+        .await
+        .expect("the stored offer should be retrievable");
+    assert_eq!(fetched, offer.credential_offer);
+    let grants = fetched.grants.expect("offer has grants");
+    assert!(grants.0["authorization_code"]["issuer_state"].is_string());
+    for grant_type in [
+        "authorization_code",
+        nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT,
+    ] {
+        assert!(grants.0[grant_type].get("authorization_server").is_none());
+    }
     let access = fixture
         .issuer
         .pre_authorized_token(PreAuthorizedTokenRequest {
