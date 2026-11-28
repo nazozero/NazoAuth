@@ -756,7 +756,7 @@ impl FapiHttpSignatureReplayStore for D1Provider {
         &'a self,
         tenant_id: TenantId,
         fingerprint: &'a [u8],
-        ttl_seconds: i64,
+        expires_at: i64,
     ) -> Pin<
         Box<
             dyn Future<
@@ -772,15 +772,14 @@ impl FapiHttpSignatureReplayStore for D1Provider {
             if tenant_id.as_uuid() != self.tenant_id || fingerprint.len() != 32 {
                 return Err(FapiHttpSignatureReplayStoreError);
             }
-            let ttl_seconds =
-                u64::try_from(ttl_seconds).map_err(|_| FapiHttpSignatureReplayStoreError)?;
             let fingerprint: &[u8; 32] = fingerprint
                 .try_into()
                 .map_err(|_| FapiHttpSignatureReplayStoreError)?;
-            self.replay(
+            self.replay_absolute(
                 "fapi",
                 &blake3::Hash::from_bytes(*fingerprint).to_hex(),
-                ttl_seconds,
+                expires_at,
+                0,
             )
             .await
             .map(|accepted| {
@@ -1229,3 +1228,7 @@ impl SessionStorePort for D1Provider {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/state.rs"]
+mod tests;

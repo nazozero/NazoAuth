@@ -28,7 +28,7 @@ fn tenant(value: u128) -> TenantId {
 }
 
 #[tokio::test]
-async fn fapi_http_signature_replay_preserves_exact_key_value_and_ttl_contract() {
+async fn fapi_http_signature_replay_preserves_exact_key_value_and_absolute_expiry() {
     let Some(url) = explicit_valkey_url() else {
         return;
     };
@@ -46,25 +46,29 @@ async fn fapi_http_signature_replay_preserves_exact_key_value_and_ttl_contract()
     ));
     let _: i64 = inspector.del(&key).await.unwrap();
 
-    let started = std::time::Instant::now();
+    let expires_at = replay_owner_time(&inspector).await + 15;
     assert!(
         store
-            .consume_fapi_http_signature(tenant_id, &fingerprint, 10)
+            .consume_fapi_http_signature(tenant_id, &fingerprint, expires_at)
             .await
             .unwrap()
     );
     assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
-    let ttl = inspector.pttl::<i64, _>(&key).await.unwrap();
-    let minimum = 15_000 - started.elapsed().as_millis() as i64 - 1;
-    assert!(
-        ttl > 0 && ttl >= minimum && ttl <= 15_000,
-        "expected max-age + 5s TTL, got {ttl}ms"
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&key).await.unwrap(),
+        expires_at,
+        "the original signature deadline must not become a relative TTL"
     );
     assert!(
         !store
-            .consume_fapi_http_signature(tenant_id, &fingerprint, 10)
+            .consume_fapi_http_signature(tenant_id, &fingerprint, expires_at + 60)
             .await
             .unwrap()
+    );
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&key).await.unwrap(),
+        expires_at,
+        "a duplicate must not extend the original deadline"
     );
 }
 
@@ -94,24 +98,25 @@ async fn fapi_http_signature_replay_isolated_by_tenant_after_cutover() {
         .del(vec![first_key.clone(), second_key.clone()])
         .await
         .unwrap();
+    let expires_at = replay_owner_time(&inspector).await + 15;
 
     assert!(
         store
-            .consume_fapi_http_signature(first_tenant, &fingerprint, 10)
+            .consume_fapi_http_signature(first_tenant, &fingerprint, expires_at)
             .await
             .unwrap(),
         "the first reservation in a tenant must succeed"
     );
     assert!(
         store
-            .consume_fapi_http_signature(second_tenant, &fingerprint, 10)
+            .consume_fapi_http_signature(second_tenant, &fingerprint, expires_at)
             .await
             .unwrap(),
         "the same fingerprint in another tenant must have an independent replay boundary"
     );
     assert!(
         !store
-            .consume_fapi_http_signature(first_tenant, &fingerprint, 10)
+            .consume_fapi_http_signature(first_tenant, &fingerprint, expires_at)
             .await
             .unwrap(),
         "a replay in the same tenant must still fail closed"
@@ -136,7 +141,7 @@ async fn replay_store_distinguishes_unavailable_dependency() {
 }
 
 #[tokio::test]
-async fn replay_ttl_overflow_fails_before_storage() {
+async fn http_signature_rejects_elapsed_deadline_without_creating_marker() {
     let Some(url) = explicit_valkey_url() else {
         return;
     };
@@ -144,12 +149,23 @@ async fn replay_ttl_overflow_fails_before_storage() {
         .await
         .expect("an explicitly configured Valkey must be available");
     let store = ReplayStore::new(&connection);
-
-    let error = store
-        .consume_fapi_http_signature(tenant(10), &[0x5a; 32], i64::MAX)
-        .await
-        .expect_err("max-age + future skew overflow must fail closed");
-    assert_eq!(error.kind(), ErrorKind::UnexpectedResult);
+    let inspector = inspection_client(&url).await;
+    let tenant_id = tenant(10);
+    let fingerprint = [0x5a; 32];
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "fapi_http_signature_replay:{}:{}",
+        tenant_id.as_uuid(),
+        blake3::Hash::from_bytes(fingerprint).to_hex()
+    ));
+    for expires_at in [-1, 0, replay_owner_time(&inspector).await] {
+        assert!(
+            !store
+                .consume_fapi_http_signature(tenant_id, &fingerprint, expires_at)
+                .await
+                .unwrap()
+        );
+        assert_eq!(inspector.exists::<i64, _>(&key).await.unwrap(), 0);
+    }
 }
 
 #[tokio::test]

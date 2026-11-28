@@ -26,14 +26,14 @@ use nazo_oauth_server::ports::fapi_replay::{
     FapiHttpSignatureReplayStoreError,
 };
 
-struct TestFapiHttpSignatureReplayStore(nazo_valkey::ReplayStore);
+struct TestFapiHttpSignatureReplayStore(nazo_valkey::ReplayStore, i64);
 
 impl FapiHttpSignatureReplayStore for TestFapiHttpSignatureReplayStore {
     fn consume<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,
         fingerprint: &'a [u8],
-        ttl_seconds: i64,
+        expires_at: i64,
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<
@@ -46,10 +46,14 @@ impl FapiHttpSignatureReplayStore for TestFapiHttpSignatureReplayStore {
         >,
     > {
         Box::pin(async move {
+            assert_eq!(
+                expires_at, self.1,
+                "replay retains the original created + max-age + 1 deadline"
+            );
             let fingerprint = <&[u8; 32]>::try_from(fingerprint)
                 .map_err(|_| FapiHttpSignatureReplayStoreError)?;
             self.0
-                .consume_fapi_http_signature(tenant_id, fingerprint, ttl_seconds)
+                .consume_fapi_http_signature(tenant_id, fingerprint, expires_at)
                 .await
                 .map(|accepted| {
                     if accepted {
@@ -164,17 +168,18 @@ async fn production_signature_verifier_binds_replay_to_the_scoped_client_tenant(
         &settings,
     )
     .expect("test runtime module registry should build");
+    let created = Timestamp::now().as_second() + 5;
     let verifier = ServerFapiHttpMessageSignatures::from_port(
         Arc::new(nazo_postgres::OAuthClientRepository::new(pool.clone())),
         Arc::new(TestFapiHttpSignatureReplayStore(
             nazo_valkey::ReplayStore::new(&replay_connection),
+            created + 61,
         )),
         crate::test_support::test_key_manager(),
         runtime_modules.snapshot_store(),
         60,
     );
 
-    let created = Timestamp::now().as_second();
     let headers = [("authorization", "Bearer access-token")];
     let prepared = prepare_request(
         RequestInput {
@@ -193,21 +198,30 @@ async fn production_signature_verifier_binds_replay_to_the_scoped_client_tenant(
     .expect("signature input should prepare");
     let signature = signing_key.sign(prepared.signature_base()).to_bytes();
     let fields = prepared.finish(&signature);
-    let input = parse_request_for_verification(
-        RequestInput {
-            method: "GET",
-            target_uri: "https://auth.example/fapi/resource",
-            headers: &headers,
-            body: b"",
-        },
-        fields,
-        VerificationPolicy {
-            now: created,
-            max_age_seconds: 60,
-            future_skew_seconds: 5,
-        },
-    )
-    .expect("signature input should verify structurally");
+    let parse_at = |now| {
+        parse_request_for_verification(
+            RequestInput {
+                method: "GET",
+                target_uri: "https://auth.example/fapi/resource",
+                headers: &headers,
+                body: b"",
+            },
+            nazo_http_signatures::SignatureFields {
+                signature_input: fields.signature_input.clone(),
+                signature: fields.signature.clone(),
+            },
+            VerificationPolicy {
+                now,
+                max_age_seconds: 60,
+                future_skew_seconds: 5,
+            },
+        )
+    };
+    let input = parse_at(created - 5).expect("the future-skew boundary is accepted");
+    let oldest = parse_at(created + 60).expect("the entire oldest integer second is accepted");
+    assert_eq!(input.signature_base(), oldest.signature_base());
+    assert_eq!(input.replay_fingerprint(), oldest.replay_fingerprint());
+    assert!(parse_at(created + 61).is_err());
 
     verifier
         .verify_and_consume(&first_tenant.to_string(), &client_id, &input)
@@ -219,9 +233,26 @@ async fn production_signature_verifier_binds_replay_to_the_scoped_client_tenant(
         .expect("second tenant should reserve an independent marker");
     assert!(matches!(
         verifier
-            .verify_and_consume(&first_tenant.to_string(), &client_id, &input)
+            .verify_and_consume(&first_tenant.to_string(), &client_id, &oldest)
             .await,
         Err(FapiSignatureVerificationError::Replay)
+    ));
+
+    let overflowing = ServerFapiHttpMessageSignatures::from_port(
+        Arc::new(nazo_postgres::OAuthClientRepository::new(pool.clone())),
+        Arc::new(TestFapiHttpSignatureReplayStore(
+            nazo_valkey::ReplayStore::new(&replay_connection),
+            created + 61,
+        )),
+        crate::test_support::test_key_manager(),
+        runtime_modules.snapshot_store(),
+        i64::MAX,
+    );
+    assert!(matches!(
+        overflowing
+            .verify_and_consume(&first_tenant.to_string(), &client_id, &input)
+            .await,
+        Err(FapiSignatureVerificationError::Invalid)
     ));
 
     exec_sql(&pool, &format!(r#"DROP SCHEMA "{schema}" CASCADE"#)).await;

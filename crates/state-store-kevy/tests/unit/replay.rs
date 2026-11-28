@@ -241,6 +241,14 @@ async fn queued_absolute_windows_use_the_owner_processing_time() {
         Some(boundary),
     )
     .await;
+    let fingerprint = [7; 32];
+    let mut signature =
+        FapiHttpSignatureReplayStore::consume(&state, tenant(), &fingerprint, boundary);
+    std::future::poll_fn(|context| {
+        assert!(signature.as_mut().poll(context).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
     tokio::time::sleep(Duration::from_millis(
         (boundary as u64 * 1_000).saturating_sub(now_ms()) + 2,
     ))
@@ -248,7 +256,63 @@ async fn queued_absolute_windows_use_the_owner_processing_time() {
     drop(guard);
     assert_eq!(expired.await.unwrap(), Ok(false));
     assert_eq!(starts.await.unwrap(), Ok(true));
+    assert_eq!(
+        signature.await.unwrap(),
+        FapiHttpSignatureReplayConsumption::Replay
+    );
     assert_eq!(state.replay_check().await, Ok(()));
+}
+
+#[tokio::test]
+async fn http_signature_keeps_its_absolute_deadline_and_rejects_expired_inputs() {
+    let state = crate::test_support::test_state();
+    let now = jiff::Timestamp::now().as_second();
+    let fingerprint = [8; 32];
+    for expires_at in [-1, 0, now] {
+        assert_eq!(
+            FapiHttpSignatureReplayStore::consume(&state, tenant(), &fingerprint, expires_at)
+                .await
+                .unwrap(),
+            FapiHttpSignatureReplayConsumption::Replay
+        );
+    }
+    let key = state.key("http-signature", &[&fingerprint]);
+    assert!(
+        state
+            .replay
+            .state
+            .lock()
+            .await
+            .store
+            .get_with(&key, |raw| raw.is_none())
+            .unwrap()
+    );
+    let expires_at = now + 61;
+    assert_eq!(
+        FapiHttpSignatureReplayStore::consume(&state, tenant(), &fingerprint, expires_at)
+            .await
+            .unwrap(),
+        FapiHttpSignatureReplayConsumption::Accepted
+    );
+    assert_eq!(
+        FapiHttpSignatureReplayStore::consume(&state, tenant(), &fingerprint, expires_at + 60)
+            .await
+            .unwrap(),
+        FapiHttpSignatureReplayConsumption::Replay
+    );
+    assert_eq!(
+        state
+            .replay
+            .state
+            .lock()
+            .await
+            .store
+            .get_with(&key, |raw| {
+                u64::from_be_bytes(raw.unwrap().try_into().unwrap())
+            })
+            .unwrap(),
+        expires_at as u64 * 1_000
+    );
 }
 
 #[tokio::test]

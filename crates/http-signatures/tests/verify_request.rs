@@ -268,6 +268,40 @@ fn accepts_created_at_the_exact_future_skew_boundary() {
 }
 
 #[test]
+fn bearer_signature_has_one_fingerprint_through_the_last_accepted_second() {
+    let headers = [("authorization", "Bearer access-token")];
+    let prepared = prepare_request(
+        request("GET", "https://api.example/fapi/resource", &headers, b""),
+        RequestPolicy {
+            created: CREATED,
+            keyid: "client-ed25519",
+            algorithm: "ed25519",
+            covered_headers: &[],
+        },
+    )
+    .unwrap();
+    let fields = prepared.finish(&[0x2a; 64]);
+    let parse_at = |now| {
+        parse_request_for_verification(
+            request("GET", "https://api.example/fapi/resource", &headers, b""),
+            SignatureFields {
+                signature_input: fields.signature_input.clone(),
+                signature: fields.signature.clone(),
+            },
+            VerificationPolicy { now, ..policy() },
+        )
+    };
+    let earliest = parse_at(CREATED - 5).unwrap();
+    let latest = parse_at(CREATED + 60).unwrap();
+    assert_eq!(earliest.signature_base(), latest.signature_base());
+    assert_eq!(earliest.replay_fingerprint(), latest.replay_fingerprint());
+    assert_eq!(
+        parse_at(CREATED + 61).unwrap_err(),
+        VerifyError::InvalidCreated
+    );
+}
+
+#[test]
 fn rejects_expires_before_created() {
     let (_, mut fields) = fixture();
     fields.signature_input = fields.signature_input.replace(

@@ -81,7 +81,7 @@ impl FapiHttpSignatureReplayStore for ValkeyFapiHttpSignatureReplay {
         &'a self,
         tenant_id: nazo_identity::TenantId,
         fingerprint: &'a [u8],
-        ttl_seconds: i64,
+        expires_at: i64,
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<
@@ -98,7 +98,7 @@ impl FapiHttpSignatureReplayStore for ValkeyFapiHttpSignatureReplay {
                 .try_into()
                 .map_err(|_| FapiHttpSignatureReplayStoreError)?;
             self.store
-                .consume_fapi_http_signature(tenant_id, fingerprint, ttl_seconds)
+                .consume_fapi_http_signature(tenant_id, fingerprint, expires_at)
                 .await
                 .map(|accepted| {
                     if accepted {

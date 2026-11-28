@@ -394,7 +394,7 @@ impl FapiHttpSignatureReplayStore for TenantState {
         &'a self,
         tenant_id: nazo_identity::TenantId,
         fingerprint: &'a [u8],
-        ttl_seconds: i64,
+        expires_at: i64,
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<
@@ -410,11 +410,7 @@ impl FapiHttpSignatureReplayStore for TenantState {
             if tenant_id != self.tenant_id || fingerprint.len() != 32 {
                 return Err(FapiHttpSignatureReplayStoreError);
             }
-            let ttl_seconds = ttl_seconds
-                .checked_add(5)
-                .and_then(|value| u64::try_from(value).ok())
-                .ok_or(FapiHttpSignatureReplayStoreError)?;
-            self.consume_replay("http-signature", &[fingerprint], ttl_seconds)
+            self.consume_replay_until("http-signature", &[fingerprint], expires_at, None)
                 .await
                 .map(|accepted| {
                     if accepted {

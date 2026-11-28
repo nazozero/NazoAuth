@@ -110,7 +110,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `OPENID4VC_REVOCATION_POLICY` | `disabled` | `disabled`, `optional`, or `required`. The VP verifier requires `required`. Certificate, trust-anchor, and revocation facts are read from the managed shared signing-key generation, so certificate checks require no network or file I/O. Individual credential status lists are fetched over bounded HTTPS separately. |
 | `OPENID4VC_MDOC_ISSUING_COUNTRY` | unset | Required only when local keyctl generates a certificate for an enabled `mso_mdoc` configuration. Two uppercase ASCII letters, and the generated DS/IACA Subject `C` uses this value. It is not required for externally issued certificate chains. |
 | `SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE` | `true` | Reject startup and high-impact administration when the server role is a superuser, can assume a ledger owner/privileged role, has direct ledger table capabilities, or lacks the writer function grants. |
-| `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
+| `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Maximum request signature age, 1–300 seconds, with at most five seconds of future clock skew. Replay consumption uses the original `created + max_age + 1` as an exclusive Unix-second deadline. |
 | `SCIM_EVENT_RETENTION_SECONDS` | `604800` | Per-receiver delivery window and outbox retention; accepted range is 3600–2592000 seconds |
 | `RUST_LOG` | `info` | Tracing filter |
 
@@ -538,17 +538,20 @@ with Retry-After. The admitted denial still waits for durable audit completion.
 An unavailable limiter fails closed. Valid bearer credentials do not consume
 this denial bucket. This setting must be positive.
 
-### FAPI HTTP-signature replay namespace cutover
+### FAPI HTTP-signature replay cutover
 
 Deployments upgrading from the global fingerprint key to tenant-scoped
-`fapi_http_signature_replay:<tenant>:<fingerprint>` must stop signature-protected
-traffic on every old instance before cutover. Do not mix old and new consumers.
+`fapi_http_signature_replay:<tenant>:<fingerprint>`, or from earlier relative
+replay lifetimes to absolute deadlines, must stop signature-protected traffic
+on every old instance before cutover. The new deadline calculation does not
+extend existing markers stored with shorter lifetimes. Do not mix old and new
+consumers.
 Wait more than the old configured `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` plus
-5 seconds of future skew after the last old admission, then start all consumers
-on the new namespace. The configured maximum age is bounded to 1–300 seconds;
-more than 305 seconds covers every supported setting. Preserve Valkey state.
-This coordinated transition avoids a dual namespace authority in steady state;
-it does not make a rolling mixed-version deployment replay-safe.
+5 seconds of future skew and the final accepted integer second after the last
+old admission, then start all new consumers. The configured
+maximum age is bounded to 1–300 seconds; more than 306 seconds covers every
+supported setting. Preserve existing replay state. A rolling mixed-version
+deployment is not replay-safe.
 
 ### External signing-key rotation
 

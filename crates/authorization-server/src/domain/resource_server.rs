@@ -249,13 +249,16 @@ mod production {
                     input.signature(),
                 )
                 .map_err(|_| FapiSignatureVerificationError::Invalid)?;
+                // Verification accepts age == max_age for the whole integer
+                // second. Preserve that original window through queued work.
+                let expires_at = input
+                    .created()
+                    .checked_add(self.max_age_seconds)
+                    .and_then(|last_valid_second| last_valid_second.checked_add(1))
+                    .ok_or(FapiSignatureVerificationError::Invalid)?;
                 match self
                     .replay
-                    .consume(
-                        client_tenant_id,
-                        input.replay_fingerprint(),
-                        self.max_age_seconds,
-                    )
+                    .consume(client_tenant_id, input.replay_fingerprint(), expires_at)
                     .await
                 {
                     Ok(FapiHttpSignatureReplayConsumption::Accepted) => Ok(()),
