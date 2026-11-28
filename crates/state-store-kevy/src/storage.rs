@@ -9,15 +9,14 @@ use kevy_embedded::{AppendFsync, Config, Store};
 use kevy_store::SetCondition;
 use nazo_identity::{TenantDirectorySnapshot, TenantId};
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::sync::Mutex as ReplayMutex;
 
-use crate::Error;
+use crate::{Error, replay::ReplayWorker};
 
 /// One process owns the volatile workflows and the durable replay directory.
 #[derive(Clone)]
 pub struct KevyBackend {
     volatile: Store,
-    replay: Arc<ReplayMutex<ReplayState>>,
+    replay: Arc<ReplayWorker>,
     pub(crate) directory: Arc<Mutex<Option<Arc<TenantDirectorySnapshot>>>>,
 }
 
@@ -36,7 +35,7 @@ pub(crate) const REPLAY_BINDING: &[u8] = b"nazo-kevy:deployment:v1";
 #[derive(Clone)]
 pub struct TenantState {
     pub(crate) volatile: Store,
-    pub(crate) replay: Arc<ReplayMutex<ReplayState>>,
+    pub(crate) replay: Arc<ReplayWorker>,
     pub(crate) tenant_id: TenantId,
 }
 
@@ -63,7 +62,7 @@ impl KevyBackend {
         directory.try_lock().map_err(|_| Error::Unavailable)?;
         // Kevy repairs a damaged tail while opening it. Its quarantine must
         // continue to block admission on subsequent opens, after the repair.
-        // Always mode never stages writes. Reject another mode's ring before
+        // This owner disables staging. Reject another mode's ring before
         // Kevy can silently discard and remove it while settling that ring.
         if std::fs::read_dir(&path)
             .map_err(|_| Error::Unavailable)?
@@ -92,7 +91,9 @@ impl KevyBackend {
         let replay = Store::open(
             Config::default()
                 .with_persist(&path)
-                .with_appendfsync(AppendFsync::Always)
+                .with_appendfsync(AppendFsync::No)
+                .with_stage_ring(0)
+                .with_mapped_aof(false)
                 .with_auto_aof_rewrite_disabled()
                 .with_ttl_reaper_manual(),
         )
@@ -121,6 +122,7 @@ impl KevyBackend {
                     .map_err(|_| Error::Unavailable)?;
             }
         }
+        replay.fsync_aof().map_err(|_| Error::Unavailable)?;
         // Persist the AOF's name and every newly created ancestor's entry.
         directory.sync_all().map_err(|_| Error::Unavailable)?;
         for ancestor in path.ancestors().skip(1) {
@@ -134,13 +136,13 @@ impl KevyBackend {
         let aof = File::open(path.join("aof-0.aof")).map_err(|_| Error::Unavailable)?;
         Ok(Self {
             volatile: Store::open(Config::default()).map_err(|_| Error::Unavailable)?,
-            replay: Arc::new(ReplayMutex::new(ReplayState {
+            replay: Arc::new(ReplayWorker::start(ReplayState {
                 store: replay,
                 failed: false,
                 directory,
                 aof,
                 next_rewrite_bytes: REWRITE_MIN_BYTES,
-            })),
+            })?),
             directory: Arc::new(Mutex::new(None)),
         })
     }

@@ -54,11 +54,20 @@ one native lock. Records retain their original logical expiry during CAS and
 lease transitions. CIBA due work uses a bounded ordered index with independent
 member expiry; the whole queue never receives a TTL.
 
-The replay store uses `AppendFsync::Always`, AOF enabled and no eviction. Each
-successful consumption waits for the native synchronous write. An async replay
-mutex owns the check and write; blocking disk work runs outside Tokio worker
-threads. A write, rewrite or required directory-sync error latches this replay
-owner unavailable, including subsequent consumption and health checks. An
+The replay store enables AOF and no eviction. One dedicated blocking owner
+receives requests through a bounded queue and takes up to 256 currently waiting
+requests per batch, without a timer. It checks and inserts markers in order,
+then calls the native `fsync_aof` before returning any successful consumption.
+Concurrent requests can share this durable barrier; duplicate keys still have
+at most one winner while their marker remains live. Deadlines are checked using
+the owner's clock when each request is processed.
+
+The engine uses `AppendFsync::No` to disable per-command automatic synchronization;
+the adapter owns the explicit batch barrier. Staging rings and mapped AOF are
+disabled. Startup also synchronizes the deployment binding before admitting
+requests. A write, synchronization, rewrite or required directory-sync error
+latches this owner unavailable, including subsequent consumption and health
+checks. Cancelling a waiter does not roll back enqueued consumption, and an
 ambiguous write never becomes an accepted proof.
 
 The volatile store uses native TTL reclamation. Replay markers carry their
@@ -76,7 +85,7 @@ compacted on its next accepted consumption. Rewriting pauses proof consumption
 while the native engine writes the compacted image; workflow operations remain
 independent. Startup syncs the AOF directory and all newly created ancestor
 entries; each successful rewrite syncs the directory before accepting its
-triggering proof. Ordinary appends need only native file sync. Live markers
+triggering batch. Ordinary batches need only native file sync. Live markers
 remain necessary storage until their acceptance windows end.
 
 Proof keys bind tenant, purpose and length-delimited identifiers. They deliberately
@@ -89,9 +98,12 @@ command. The replay directory is bound to one deployment identity.
 
 Only one process may serve the deployment. The adapter locks its retained
 directory handle before inspecting the log; Kevy also holds its native process
-lock. Different directories are independent
-security authorities; they must not serve the same deployment simultaneously.
-Use Valkey for multiple application processes or shared-state deployment.
+lock. Backend and tenant handles retain that ownership even if the replay
+worker fails. Dropping their last shared worker handle closes its queue and
+joins the thread before releasing the store. Different directories are
+independent security authorities; they must not serve the same deployment
+simultaneously. Use Valkey for multiple application processes or shared-state
+deployment.
 
 A normal restart reopens the retained replay directory before admitting traffic.
 No workflow snapshot is restored. Do not restore an old replay snapshot, delete
