@@ -9,7 +9,7 @@ use nazo_auth::{
 };
 use nazo_identity::{
     OrganizationId, RealmId,
-    mfa::{MFA_BACKUP_CODE_COUNT, MFA_TOTP_PERIOD_SECONDS, totp_for_step},
+    mfa::{MFA_BACKUP_CODE_COUNT, MFA_TOTP_PERIOD_SECONDS, base32_encode, totp_for_step},
     ports::{
         EncodedSecretHash, MfaRepositoryPort, PasskeyAuthenticationUpdate, PasskeyRepositoryPort,
         PasswordHashInput, RememberedMfaDevicePort, TotpEnrollmentCheck, TotpVerificationOutcome,
@@ -583,10 +583,15 @@ async fn totp_audit_replay_backup_generation_and_key_rotation_are_atomic() {
         .clone()
         .with_totp_key_ring(Some(ring("old", 1, None)));
     old.activate_totp_key().await.unwrap();
-    let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    let secret_bytes = rand::random::<[u8; 20]>();
+    let secret = base32_encode(&secret_bytes);
     let now = 1_234_567_890;
-    let code = totp_for_step(b"12345678901234567890", now / MFA_TOTP_PERIOD_SECONDS).unwrap();
-    assert!(old.begin_totp_enrollment(tenant, id, secret).await.unwrap());
+    let code = totp_for_step(&secret_bytes, now / MFA_TOTP_PERIOD_SECONDS).unwrap();
+    assert!(
+        old.begin_totp_enrollment(tenant, id, &secret)
+            .await
+            .unwrap()
+    );
     let initial_events = audit_count(&old, tenant);
     assert!(
         old.verify_and_confirm_totp_with_required_audit(
@@ -645,8 +650,9 @@ async fn totp_audit_replay_backup_generation_and_key_rotation_are_atomic() {
             .unwrap(),
         TotpVerificationOutcome::Replay
     );
-    let next = now + MFA_TOTP_PERIOD_SECONDS;
-    let code = totp_for_step(b"12345678901234567890", next / MFA_TOTP_PERIOD_SECONDS).unwrap();
+    // Keep the later proof past the initial step even if its six-digit code repeats.
+    let next = now + 2 * MFA_TOTP_PERIOD_SECONDS;
+    let code = totp_for_step(&secret_bytes, next / MFA_TOTP_PERIOD_SECONDS).unwrap();
     let (a, b) = tokio::join!(
         old.verify_and_consume_totp(tenant, id, &code, next),
         old.verify_and_consume_totp(tenant, id, &code, next)
@@ -704,7 +710,11 @@ async fn totp_audit_replay_backup_generation_and_key_rotation_are_atomic() {
         .clone()
         .with_totp_key_ring(Some(ring("new", 2, Some(("old", 1)))));
     new.activate_totp_key().await.unwrap();
-    assert!(old.begin_totp_enrollment(tenant, id, secret).await.is_err());
+    assert!(
+        old.begin_totp_enrollment(tenant, id, &secret)
+            .await
+            .is_err()
+    );
     assert_eq!(new.rewrap_totp_batch().await.unwrap(), 1);
     let current = fixture
         .db()
@@ -738,7 +748,7 @@ async fn totp_audit_replay_backup_generation_and_key_rotation_are_atomic() {
     );
     assert!(
         current
-            .begin_totp_enrollment(tenant, id, secret)
+            .begin_totp_enrollment(tenant, id, &secret)
             .await
             .unwrap()
     );

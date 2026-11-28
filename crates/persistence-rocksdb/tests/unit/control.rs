@@ -242,24 +242,25 @@ async fn recovery_attempt_limit_and_exact_receipt_survive_reopen() {
         .await
         .unwrap();
     let proposal = proposal();
+    let allocation = candidate(&proposal, rand::random());
     assert!(matches!(
         fixture
             .db()
-            .issue_recovery_challenge(candidate(&proposal, [1; 32]), now)
+            .issue_recovery_challenge(allocation.clone(), now)
             .await,
         Err(RecoveryRootError::ControllersStillAdmitted(_))
     ));
     let now = now + SignedDuration::from_secs(CONTROLLER_KEY_TTL_SECONDS + 1);
     let challenge = fixture
         .db()
-        .issue_recovery_challenge(candidate(&proposal, [1; 32]), now)
+        .issue_recovery_challenge(allocation.clone(), now)
         .await
         .unwrap();
     assert_eq!(
         challenge,
         fixture
             .db()
-            .issue_recovery_challenge(candidate(&proposal, [1; 32]), now)
+            .issue_recovery_challenge(allocation.clone(), now)
             .await
             .unwrap()
     );
@@ -284,15 +285,12 @@ async fn recovery_attempt_limit_and_exact_receipt_survive_reopen() {
         Err(RecoveryRootError::ChallengeExhausted)
     ));
     assert!(matches!(
-        fixture
-            .db()
-            .issue_recovery_challenge(candidate(&proposal, [1; 32]), now)
-            .await,
+        fixture.db().issue_recovery_challenge(allocation, now).await,
         Err(RecoveryRootError::AllocationProofReplayed)
     ));
     let challenge = fixture
         .db()
-        .issue_recovery_challenge(candidate(&proposal, [2; 32]), now)
+        .issue_recovery_challenge(candidate(&proposal, rand::random()), now)
         .await
         .unwrap();
     let submission = RecoverySubmission {

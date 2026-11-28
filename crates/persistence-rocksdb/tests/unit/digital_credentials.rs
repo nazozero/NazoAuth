@@ -148,11 +148,12 @@ async fn datasets_encrypt_bind_owner_and_roll_back_required_audit() {
 async fn operator_dataset_ownership_and_ciphertext_aad_cannot_be_rebound() {
     let fixture = Fixture::new();
     let tenant = fixture.db().tenant_id;
-    let store = datasets::DatasetStore::new(fixture.db().clone(), [9; 32]);
+    let data_key = rand::random();
+    let store = datasets::DatasetStore::new(fixture.db().clone(), data_key);
     let tx = fixture.db().transaction();
     datasets::write_managed_dataset_tx(
         &tx,
-        &[9; 32],
+        &data_key,
         TenantContext::default_system(),
         fixture.subject,
         "identity",
