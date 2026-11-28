@@ -3,8 +3,9 @@ use std::convert::Infallible;
 use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
-use hyper::service::{Service, service_fn};
+use hyper::service::Service;
 use nazoauth::integration::conformance;
+use tower::service_fn;
 
 #[tokio::test]
 async fn independent_hyper_host_builds_mounts_and_passes_shared_conformance() {

@@ -3,14 +3,14 @@
 `nazoauth` is the framework-neutral product library. `nazo-server` owns native
 configuration loading, PostgreSQL/Valkey connections, listeners, TLS, file and
 network adapters, and task scheduling. The distributed executable is named
-`nazoauth`. `nazo-http-actix` translates Actix transport values into the public
-library contract.
+`nazoauth`. `nazo-http-actix`, `nazo-http-tower` and `nazo-http-worker` translate
+their hosts' transport values into the same public library contract.
 
 ## Dependencies in an external workspace
 
 For a published crates.io release, run `cargo add nazoauth` in the consuming
 project. Use `cargo add nazoauth --no-default-features` for a host that does
-not expose deployment control. If you use this repository's Actix or Worker
+not expose deployment control. If you use this repository's Actix, Tower or Worker
 adapter from Git, select the same Git tag or commit for the adapter and facade
 so that they share the same Rust types. The [workspace manifest](../../Cargo.toml) selects the
 crates.io releases of `nazo-mdoc`, `nazo-passkey` and Actix. Cargo records
@@ -228,13 +228,71 @@ future additions and optional modules. The native root host's existing
 `configure` entry point remains available. Both forms forward unknown methods
 and paths inside the authentication scope to the same facade policy.
 
-The [external Hyper example](../../examples/hyper-embedding) is an independent
-Rust workspace using the public builder, capabilities and `http`/`Bytes`
-contract. Its `mount(auth, existing_service, occupied_paths)` composes an existing
-Hyper service in one call. Native handler futures are `Send` when the input body
-stream is `Send`; local streams remain supported, and WASM endpoint dispatch
-retains local futures. Neither adapter creates a listener, runtime, storage
-connection or service graph per request.
+### Axum
+
+Enable the `axum` feature on `nazo-http-tower`. After preparing `auth`, build the
+application's existing router and mount NazoAuth in one call:
+
+```rust
+use std::net::SocketAddr;
+use axum::{Router, ServiceExt, routing::get};
+
+let app = Router::new()
+    .route("/api/health", get(|| async { "healthy" }))
+    .route("/users/me", get(current_user))
+    .fallback(application_not_found);
+
+let app = nazo_http_tower::axum::mount(app, auth, &["/api", "/users"])?;
+
+axum::serve(
+    listener,
+    app.into_make_service_with_connect_info::<SocketAddr>(),
+)
+.await?;
+```
+
+The returned service wraps the completed router. Its existing handlers,
+method rejection and fallback receive requests outside the authentication
+surface unchanged. The mount prepares Axum's route state once and selects
+NazoAuth before the original router runs; it neither nests the router nor
+rewrites the URI. Discovery exceptions are part of the same call. Configure
+the router's routes and state before mounting. Middleware already installed on
+that router continues to cover its routes; install middleware intended for
+both surfaces outside the returned service.
+
+`into_make_service_with_connect_info` supplies the actual socket peer. For
+resources requiring connection facts, the adapter uses `ConnectInfo<SocketAddr>`
+when the request has no `ConnectionFacts`. Facts supplied by the host's TLS or
+authenticated ingress boundary remain intact, including certificate and
+server-name facts. Forwarding
+headers never supply authenticated facts. See the
+[external Axum application](../../examples/axum-embedding) for a complete
+consumer of this API.
+
+### Other Tower and Hyper hosts
+
+`nazo_http_tower::mount(existing_service, auth, occupied_paths)` uses the existing
+Tower `Service` contract with standard HTTP requests and `http_body::Body`
+chunks. It accepts response body types implementing `From<Bytes>`, including
+Axum's `Body` and Hyper's `Full<Bytes>`. Compatible hosts share this adapter's
+mount selection and bounded content decoding. The
+[external Hyper example](../../examples/hyper-embedding) bridges the mounted
+Tower service to Hyper with `hyper_util::service::TowerToHyperService`.
+
+The adapter delegates `poll_ready` to the original service and calls that same
+instance for host requests. Host backpressure therefore applies to the complete
+mounted service. That branch returns the original future and response without
+boxing or rebuilding their bodies. The authentication branch shares the prepared
+`Arc<NazoAuth>` and moves standard request and response heads; its future is
+boxed. Compressed input creates its decoder and bounded buffers on the first
+body poll, so rejection before body consumption does not allocate them.
+
+Hosts outside the Tower ecosystem implement the public transport contract below
+at their own registration boundary. Protocol handlers and route inventories
+remain shared. Native handler futures are `Send` when the input body stream is
+`Send`; local streams remain supported, and WASM endpoint dispatch retains local
+futures. No adapter creates a listener, runtime, storage connection or service
+graph per request.
 
 ### Public identifiers and discovery
 
@@ -291,7 +349,10 @@ An opaque framework router cannot expose registrations
 it has already accepted, so the host must declare all of its namespaces. A
 conflict with the authentication prefix or a required discovery path is an
 error, including aliases that overlap after the existing routing escape
-normalization. At `/`, unrelated explicitly registered host handlers retain precedence.
+normalization. At `/`, declared host namespaces and the host-owned `/ui` subtree
+retain their original routing and fallback; all remaining paths belong to
+NazoAuth, including unknown paths. At a non-root prefix, requests outside that
+prefix and its exact discovery paths retain the host's original fallback.
 When composing multiple mounts, include the other mount's `path()` and
 `discovery_paths()` in those reservations; checking only its prefix cannot
 detect a shared protected-resource discovery URL.
@@ -328,6 +389,10 @@ The native host exposes the auxiliary names through
 The adapter contract is `http::Request` / `http::Response`, `bytes::Bytes`,
 `integration::ConnectionFacts`, and the canonical route manifest. There is no
 framework or runtime trait to implement.
+
+Use the supplied Actix, Tower/Axum or Worker adapter when it matches the host.
+The following steps describe implementing another transport adapter; applications
+using a supplied adapter do not repeat this work.
 
 The manifest exposes transport metadata. CORS, route guards and method rejection
 rules remain internal to the facade.
@@ -484,11 +549,14 @@ comparison ignores only wire-generated `Date`, `Content-Length` and
 deserialize response JSON, or ignore body differences.
 
 The shared facade corpus projects its cases through the built tenant's mount,
-including discovery exceptions. The shipped examples are the
+including discovery exceptions. The
 [Actix transport tests](../../crates/http-actix/tests/unit/transport.rs) and
-[native facade comparison](../../crates/server/tests/unit/facade_conformance.rs),
-the [prefixed Actix fixture](../../crates/server/tests/unit/facade_mount.rs), and
-the [independent Hyper consumer](../../examples/hyper-embedding).
+[Tower transport tests](../../crates/http-tower/tests/unit/transport.rs) exercise
+the conversions. The
+[native facade comparison](../../crates/server/tests/unit/facade_conformance.rs)
+runs the [prefixed Actix fixture](../../crates/server/tests/unit/facade_mount.rs)
+and the independent [Hyper](../../examples/hyper-embedding) and
+[Axum](../../examples/axum-embedding) consumers against real host capabilities.
 The [credential replay fixture](../../crates/server/tests/unit/facade_credentials.rs)
 seeds subject data through the configured persistence capability, creates offers
 and tokens through the public facade, and verifies original JSON and encrypted

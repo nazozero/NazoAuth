@@ -557,6 +557,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
+dependencies = [
+ "axum-core",
+ "bytes",
+ "futures-util",
+ "http 1.5.0",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "itoa",
+ "matchit 0.8.4",
+ "memchr",
+ "mime",
+ "percent-encoding",
+ "pin-project-lite",
+ "serde_core",
+ "sync_wrapper",
+ "tokio",
+ "tower",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum-core"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c78f31d7b1291f7ee735c1c6780ccde7785daae9a9206026862dab7d8792d1"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "http 1.5.0",
+ "http-body",
+ "http-body-util",
+ "mime",
+ "pin-project-lite",
+ "sync_wrapper",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
 name = "base16ct"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2572,6 +2618,12 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "matchit"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "matchit"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8863b587001c1b9a8a4e36008cebc6b3612cb1226fe2de94858e06092687b608"
@@ -2850,6 +2902,25 @@ dependencies = [
  "sha2",
  "thiserror",
  "url",
+]
+
+[[package]]
+name = "nazo-http-tower"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "axum",
+ "bytes",
+ "flate2",
+ "futures-util",
+ "http 1.5.0",
+ "http-body",
+ "http-body-util",
+ "nazoauth",
+ "tokio",
+ "tokio-util",
+ "tower-service",
 ]
 
 [[package]]
@@ -3293,6 +3364,7 @@ dependencies = [
  "arc-swap",
  "atomicwrites",
  "aws-lc-rs",
+ "axum",
  "base64 0.23.1",
  "blake3",
  "bytes",
@@ -3321,6 +3393,7 @@ dependencies = [
  "nazo-digital-credentials",
  "nazo-http-actix",
  "nazo-http-signatures",
+ "nazo-http-tower",
  "nazo-identity",
  "nazo-key-management",
  "nazo-mdoc",
@@ -3339,6 +3412,7 @@ dependencies = [
  "nazo-scim-events",
  "nazo-valkey",
  "nazoauth",
+ "nazoauth-axum-embedding",
  "nazoauth-hyper-embedding",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -3364,6 +3438,7 @@ dependencies = [
  "tar",
  "time",
  "tokio",
+ "tower",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -3484,19 +3559,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazoauth-axum-embedding"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "nazo-http-tower",
+ "nazoauth",
+ "tokio",
+]
+
+[[package]]
 name = "nazoauth-hyper-embedding"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "async-compression",
  "bytes",
- "futures-util",
  "http 1.5.0",
  "http-body-util",
  "hyper",
+ "hyper-util",
+ "nazo-http-tower",
  "nazoauth",
- "tokio",
- "tokio-util",
+ "tower",
 ]
 
 [[package]]

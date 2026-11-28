@@ -7,6 +7,7 @@ use diesel_async::RunQueryDsl;
 use http::{Method, Request, StatusCode, header};
 use nazoauth::{NazoAuthBuilder, integration::conformance};
 use serde_json::{Value, json};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 fn request(
@@ -75,7 +76,7 @@ async fn seed_dataset(
 }
 
 #[actix_web::test]
-async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_through_actix() {
+async fn enabled_credential_replays_preserve_bytes_through_actix_and_axum() {
     for prefix in ["/", "/testauth"] {
         credential_replay(prefix).await;
     }
@@ -114,6 +115,7 @@ async fn credential_replay(prefix: &str) {
         App::new().configure(nazo_http_actix::mount(application.clone(), &[]).unwrap()),
     )
     .await;
+    let axum = nazoauth_axum_embedding::application(application.clone()).unwrap();
     let send = |request: Request<Bytes>| {
         let app = &app;
         async move {
@@ -127,16 +129,53 @@ async fn credential_replay(prefix: &str) {
         }
     };
     conformance::assert_adapter(&application, &send).await;
+    conformance::assert_adapter(&application, |request| {
+        let axum = axum.clone();
+        async move {
+            super::axum_embedding::standard_response(
+                axum.oneshot(request.map(axum::body::Body::from))
+                    .await
+                    .unwrap(),
+            )
+            .await
+        }
+    })
+    .await;
 
-    let metadata = json_body(
-        &send(request(
-            Method::GET,
-            &format!("/.well-known/openid-credential-issuer{suffix}"),
-            "application/json",
-            Bytes::new(),
-        ))
-        .await,
+    let metadata_request = request(
+        Method::GET,
+        &format!("/.well-known/openid-credential-issuer{suffix}"),
+        "application/json",
+        Bytes::new(),
     );
+    let metadata_response = send(metadata_request.clone()).await;
+    let axum_metadata = super::axum_embedding::standard_response(
+        axum.clone()
+            .oneshot(metadata_request.map(axum::body::Body::from))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let mut metadata = json_body(&metadata_response);
+    let mut axum_metadata_body = json_body(&axum_metadata);
+    conformance::assert_response(
+        &metadata_response.map(|_| Bytes::new()),
+        &axum_metadata.map(|_| Bytes::new()),
+    );
+    // Independent metadata GETs produce fresh ES256 signatures. Compare all
+    // stable fields and transport headers; durable credential retries below
+    // must still preserve the entire original body byte for byte.
+    for body in [&mut metadata, &mut axum_metadata_body] {
+        assert!(
+            body.as_object_mut()
+                .unwrap()
+                .remove("signed_metadata")
+                .unwrap()
+                .as_str()
+                .is_some_and(|jwt| !jwt.is_empty())
+        );
+    }
+    assert_eq!(metadata, axum_metadata_body);
     assert_eq!(
         metadata["credential_issuer"],
         format!("https://issuer.example{suffix}")
@@ -245,6 +284,14 @@ async fn credential_replay(prefix: &str) {
             let replay = send(credential_request.clone()).await;
             conformance::assert_response(&issued, &replay);
         }
+        let replay = super::axum_embedding::standard_response(
+            axum.clone()
+                .oneshot(credential_request.map(axum::body::Body::from))
+                .await
+                .unwrap(),
+        )
+        .await;
+        conformance::assert_response(&issued, &replay);
     }
     #[derive(diesel::QueryableByName)]
     struct Count {

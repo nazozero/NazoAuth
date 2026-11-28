@@ -30,6 +30,7 @@ PACKAGE_ROLES = {
     "nazo-oauth-server-valkey": "adapter",
     "nazo-digital-credentials": "domain",
     "nazo-http-actix": "http-adapter",
+    "nazo-http-tower": "http-adapter",
     "nazo-http-signatures": "domain",
     "nazo-identity": "domain",
     "nazo-key-management": "domain",

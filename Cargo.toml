@@ -2,7 +2,7 @@
 members = ["crates/*"]
 default-members = ["crates/server"]
 resolver = "3"
-exclude = ["fuzz", "examples/hyper-embedding"]
+exclude = ["fuzz", "examples/hyper-embedding", "examples/axum-embedding"]
 
 [workspace.package]
 version = "0.4.1"
@@ -19,6 +19,7 @@ nazo-crypto.path = "crates/crypto"
 nazo-crypto.default-features = false
 nazo-digital-credentials.path = "crates/digital-credentials"
 nazo-http-actix.path = "crates/http-actix"
+nazo-http-tower.path = "crates/http-tower"
 nazo-http-signatures.path = "crates/http-signatures"
 nazo-http-worker.path = "crates/http-worker"
 nazo-identity.path = "crates/identity"
@@ -50,6 +51,7 @@ anyhow = "1.0.104"
 arc-swap = "1.9.5"
 password-hash = { version = "0.6.1", features = ["phc", "getrandom"] }
 atomicwrites = "0.4.4"
+axum = { version = "0.8.9", default-features = false }
 aws-lc-rs = "1.19.0"
 base64 = "0.23.1"
 blake3 = "1.8.7"
@@ -111,6 +113,7 @@ time = "0.3.55"
 tokio = "1.54.1"
 tokio-postgres = "0.7.18"
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs", "native-certs", "webpki-roots"] }
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
 tracing = "0.1.44"
 url = "2.5.9"
 urlencoding = "2.1.3"

@@ -5,7 +5,7 @@ import subprocess
 
 
 FORBIDDEN_PACKAGES = {
-    "nazo-server", "nazo-http-actix", "nazo-postgres", "nazo-valkey",
+    "nazo-server", "nazo-http-actix", "nazo-http-tower", "nazo-postgres", "nazo-valkey",
     "nazo-oauth-server-postgres", "nazo-oauth-server-valkey",
     "nazo-oauth-server-object-store",
     "actix-web", "actix-http", "actix-server", "axum", "hyper", "reqwest",
@@ -67,9 +67,10 @@ def main() -> None:
     target = "wasm32-unknown-unknown"
     tree = production_tree("nazo-server-worker", target, no_default_features=True)
     errors = native_violations(native_tree) + violations(tree)
-    actix_tree = production_tree("nazo-http-actix", host)
-    if any(name == "nazoauth" and "deployment-control" in active for name, active in packages(actix_tree)):
-        errors.append("Actix adapter enables deployment-control")
+    for adapter in ("nazo-http-actix", "nazo-http-tower"):
+        adapter_tree = production_tree(adapter, host)
+        if any(name == "nazoauth" and "deployment-control" in active for name, active in packages(adapter_tree)):
+            errors.append(f"{adapter} enables deployment-control")
     if errors:
         raise SystemExit("\n".join(errors))
     subprocess.run([

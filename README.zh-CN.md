@@ -147,6 +147,10 @@ https://auth.example.com/.well-known/openid-configuration
 每个客户端保存独立的安全策略。按应用需要授权 grant 和令牌保护方式；
 启用服务端模块不会向所有客户端开放访问权限。
 
+如果要将 NazoAuth 直接嵌入现有 Rust HTTP 应用，先准备配置与宿主能力，再通过一次调用
+挂载到选定的路径。[Rust 嵌入指南](docs/integration/rust-embedding.md)说明了 Actix、
+Axum/Tower 及其他框架适配器的接入方式。
+
 ## 服务结构
 
 一个可执行程序组合协议核心、身份服务和适配器。核心依赖表达业务语义的持久化与状态接口；

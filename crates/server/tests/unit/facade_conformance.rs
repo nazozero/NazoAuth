@@ -4,6 +4,8 @@ use actix_web::{App, HttpResponse, body::MessageBody, test as awtest, web};
 use bytes::Bytes;
 use nazoauth::{ConnectionFacts, integration::conformance};
 
+#[path = "facade_axum.rs"]
+mod axum_embedding;
 #[path = "facade_configuration.rs"]
 mod configuration;
 #[path = "facade_cors.rs"]

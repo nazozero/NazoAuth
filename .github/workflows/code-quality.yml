@@ -176,13 +176,15 @@ jobs:
       - name: Clippy all targets
         run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
 
-      - name: Check independent Hyper embedding
+      - name: Check independent HTTP embeddings
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          cargo fmt --manifest-path examples/hyper-embedding/Cargo.toml --check
-          cargo clippy --manifest-path examples/hyper-embedding/Cargo.toml --all-targets -- -D warnings
-          cargo test --manifest-path examples/hyper-embedding/Cargo.toml
+          for example in hyper-embedding axum-embedding; do
+            cargo fmt --manifest-path "examples/$example/Cargo.toml" --check
+            cargo clippy --manifest-path "examples/$example/Cargo.toml" --all-targets -- -D warnings
+            cargo test --manifest-path "examples/$example/Cargo.toml"
+          done
 
       - name: Materialize the isolated CI schema through the persistence owner
         run: >-
@@ -269,13 +271,15 @@ jobs:
       - name: Clippy all targets
         run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
 
-      - name: Check independent Hyper embedding
+      - name: Check independent HTTP embeddings
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          cargo fmt --manifest-path examples/hyper-embedding/Cargo.toml --check
-          cargo clippy --manifest-path examples/hyper-embedding/Cargo.toml --all-targets -- -D warnings
-          cargo test --manifest-path examples/hyper-embedding/Cargo.toml
+          for example in hyper-embedding axum-embedding; do
+            cargo fmt --manifest-path "examples/$example/Cargo.toml" --check
+            cargo clippy --manifest-path "examples/$example/Cargo.toml" --all-targets -- -D warnings
+            cargo test --manifest-path "examples/$example/Cargo.toml"
+          done
 
   rust-fixture:
     needs: inputs

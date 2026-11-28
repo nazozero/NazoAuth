@@ -4,15 +4,15 @@ use async_compression::tokio::bufread::ZstdEncoder;
 use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::{Request, header};
-use http_body_util::{BodyExt, Full, StreamBody};
-use hyper::body::Frame;
+use http_body::Frame;
+use http_body_util::{Full, StreamBody};
 use nazoauth::integration::{BodyMode, conformance};
 use tokio::io::AsyncReadExt;
 
-use super::{forward_request, forward_response};
+use super::forward_request;
 
 #[tokio::test]
-async fn shared_transport_contract_and_uncompressed_storage_are_preserved() {
+async fn shared_transport_requests_and_uncompressed_storage_are_preserved() {
     for expected in conformance::transport_requests() {
         let pointer = expected.body().as_ptr();
         let actual = forward_request(expected.clone().map(Full::new), BodyMode::None);
@@ -22,14 +22,6 @@ async fn shared_transport_contract_and_uncompressed_storage_are_preserved() {
         assert_eq!(chunks[0].as_ptr(), pointer);
         let actual = Request::from_parts(head, chunks.into_iter().next().unwrap());
         conformance::assert_request(&expected, &actual);
-    }
-    for (_, expected) in conformance::response_cases() {
-        let pointer = expected.body().as_ptr();
-        let actual = forward_response(expected.clone());
-        let (head, body) = actual.into_parts();
-        let body = body.collect().await.unwrap().to_bytes();
-        assert_eq!(body.as_ptr(), pointer);
-        conformance::assert_response(&expected, &http::Response::from_parts(head, body));
     }
 }
 

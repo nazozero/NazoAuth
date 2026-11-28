@@ -16,6 +16,7 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./
 COPY .cargo/config.toml ./.cargo/config.toml
 COPY crates ./crates
 COPY examples/hyper-embedding ./examples/hyper-embedding
+COPY examples/axum-embedding ./examples/axum-embedding
 COPY migrations ./migrations
 COPY tests/contracts/migrations.sha256 ./tests/contracts/migrations.sha256
 

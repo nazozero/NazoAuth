@@ -1,0 +1,33 @@
+[package]
+name = "nazo-http-tower"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+axum = ["dep:axum"]
+
+[dependencies]
+anyhow.workspace = true
+async-compression = { version = "0.4.53", features = ["tokio", "gzip", "zlib", "brotli", "zstd"] }
+axum = { workspace = true, optional = true, features = ["tokio"] }
+bytes.workspace = true
+futures-util.workspace = true
+http.workspace = true
+http-body = "1.1.0"
+http-body-util.workspace = true
+nazoauth.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
+tower-service = "0.3.3"
+
+[dev-dependencies]
+flate2.workspace = true
+nazoauth = { workspace = true, features = ["conformance"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

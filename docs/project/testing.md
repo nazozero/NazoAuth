@@ -103,9 +103,11 @@ transports. See the [adapter guide](../integration/rust-embedding.md).
 ```sh
 python3 scripts/check_native_transport.py
 cargo test -p nazo-http-actix --lib
+cargo test -p nazo-http-tower --all-features --lib
 cargo test -p nazoauth --lib
 cargo test -p nazoauth --test native_send
 cargo test --manifest-path examples/hyper-embedding/Cargo.toml
+cargo check --manifest-path examples/axum-embedding/Cargo.toml --all-targets
 cargo test -p nazo-server --lib facade_conformance
 ```
 
@@ -117,10 +119,13 @@ Metadata conversion tests preserve raw URI/header semantics; only body and repla
 bytes require pointer identity across the HTTP 0.2/1.x boundary.
 
 The last command uses the ordinary test PostgreSQL and Valkey configuration.
-Its mounted fixtures exercise root and nested prefixes through Actix and an
-independent Hyper consumer, including standard discovery exceptions, unchanged
-host routes, real PKCE/DPoP/refresh/session transitions, Passkey ceremonies and
-credential issuance/replay. The federation linking suite also mounts the public
+Its mounted fixtures exercise root and nested prefixes through Actix and
+independent Hyper and Axum consumers, including standard discovery exceptions
+and unchanged host routes. The Axum fixture checks original method rejection and
+fallbacks, connection facts, and shared body handling. Tower transport tests
+check retained `Bytes` storage and bounded decoding. The stateful fixtures cover
+real PKCE/DPoP/refresh/session transitions, Passkey ceremonies and credential
+issuance/replay. The federation linking suite also mounts the public
 facade and completes login, linking, callback replay rejection and unlinking for
 OIDC and social providers (`cargo test -p nazo-server --lib mounted_federation`).
 The separate `test-support` feature is permitted only in the native host's dev
