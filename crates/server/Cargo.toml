@@ -1,5 +1,6 @@
 [package]
 name = "nazo-server"
+default-run = "nazoauth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +12,18 @@ publish = false
 name = "nazoauth"
 path = "src/main.rs"
 test = false
+required-features = ["valkey"]
+
+[[bin]]
+name = "nazoauth-kevy"
+path = "src/bin/kevy.rs"
+test = false
+required-features = ["kevy"]
+
+[features]
+default = ["valkey"]
+valkey = ["dep:nazo-valkey", "dep:nazo-oauth-server-valkey"]
+kevy = ["dep:nazo-kevy"]
 
 [[example]]
 name = "mdoc_http_performance"
@@ -42,11 +55,12 @@ nazo-digital-credentials.workspace = true
 nazo-http-actix.workspace = true
 nazo-identity.workspace = true
 nazo-key-management.workspace = true
+nazo-kevy = { workspace = true, optional = true }
 nazo-mdoc = { workspace = true, features = ["issue"] }
 nazo-oauth-server.workspace = true
 nazo-oauth-server-object-store.workspace = true
 nazo-oauth-server-postgres.workspace = true
-nazo-oauth-server-valkey.workspace = true
+nazo-oauth-server-valkey = { workspace = true, optional = true }
 nazo-openid4vci.workspace = true
 nazo-operator-protocol.workspace = true
 nazo-passkey.workspace = true
@@ -54,7 +68,7 @@ nazo-persistence.workspace = true
 nazo-postgres.workspace = true
 nazo-runtime-modules.workspace = true
 nazo-scim-events.workspace = true
-nazo-valkey.workspace = true
+nazo-valkey = { workspace = true, optional = true }
 nazoauth = { workspace = true, features = ["deployment-control"] }
 opentelemetry = "0.33.1"
 opentelemetry-appender-tracing = "0.33.1"
@@ -103,6 +117,7 @@ jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 nazo-http-signatures.workspace = true
 nazo-key-management = { workspace = true, features = ["test-support"] }
 nazo-openid4vp.workspace = true
+nazo-oauth-server-valkey.workspace = true
 nazo-resource-server.workspace = true
 nazo-valkey = { workspace = true, features = ["test-support"] }
 nazoauth = { workspace = true, features = ["conformance", "test-support"] }

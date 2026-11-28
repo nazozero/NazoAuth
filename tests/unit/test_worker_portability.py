@@ -1,9 +1,14 @@
 import unittest
 
-from scripts.check_worker_portability import native_violations, packages, violations
+from scripts.check_worker_portability import kevy_violations, native_violations, packages, violations
 
 
 class WorkerPortabilityTests(unittest.TestCase):
+    def test_embedded_graph_excludes_valkey_and_unused_kevy_subsystems(self):
+        self.assertEqual(kevy_violations("kevy-embedded v7.0.0 core,persist\nkevy-resp v7.0.0"), [])
+        self.assertEqual(len(kevy_violations("fred v10.1.0\nkevy-embedded v7.0.0 core,persist,listener")), 2)
+        self.assertEqual(len(violations("nazo-kevy v0.4.1\nkevy-embedded v7.0.0")), 2)
+
     def test_cargo_repeat_marker_is_not_a_feature(self):
         self.assertEqual(list(packages(
             "tokio v1.54.1  (*)\n"

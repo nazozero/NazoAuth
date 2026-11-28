@@ -14,6 +14,12 @@ storage launchers, including a fresh state epoch, reports the new path,
 materializes required service-owned secrets, and continues startup.
 Explicit YAML and environment values still take precedence.
 
+The default `nazoauth` launcher uses PostgreSQL and Valkey. The optional
+`nazoauth-kevy` launcher uses the same configuration model with PostgreSQL and
+embedded transient state. Its launcher owns `KEVY_REPLAY_DIR` and
+`KEVY_STATE_EPOCH`; `VALKEY_*` settings belong to the default launcher. See
+[embedded state operations](kevy.md) for its build, configuration and lifecycle.
+
 The default deployment is same-origin per tenant issuer. `PUBLIC_BASE_URL`
 (and an optional `ISSUER`) seed the initial system-tenant directory binding:
 
@@ -72,10 +78,12 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | Seeds the initial system-tenant directory binding and process-level control settings. Active directory bindings supply the request issuer and Host. |
 | `ISSUER` | `PUBLIC_BASE_URL` | Optional issuer for the initial system binding. A directory binding replaces it for that tenant graph. |
 | `TRANSPORT_MODE` | implicit only for loopback HTTP | `loopback-http`, `direct-tls`, or `trusted-proxy`; required for non-loopback issuers. This is a process transport boundary, not a tenant selector. |
-| `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL connection string for the current `nazoauth` launcher |
+| `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL connection string for both native launchers |
 | `DATABASE_MAX_CONNECTIONS` | `auto` | At startup, use twice the logical CPUs available to the NazoAuth process (4 CPUs give 8 connections). If CPU detection fails, the limit is 2. A positive integer sets the exact per-process pool limit. For a separately sized or shared PostgreSQL server, set an explicit limit from its available capacity and the number of application instances. Existing numeric settings continue to apply. |
-| `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string; startup rejects an unmarked nonempty database rather than adopting historical keys |
-| `VALKEY_STATE_EPOCH` | none (required UUIDv7) | Deployment state boundary. Every transient business key is physically namespaced as `nazo:state:v1:<deployment>:<epoch>:`. Set a fresh UUIDv7 before a restored candidate starts; never reuse a prior epoch. |
+| `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Default launcher's Valkey connection string; startup rejects an unmarked nonempty database rather than adopting historical keys |
+| `VALKEY_STATE_EPOCH` | none (required UUIDv7) | Valkey deployment state boundary. Every transient business key is physically namespaced as `nazo:state:v1:<deployment>:<epoch>:`. Set a fresh UUIDv7 before a restored candidate starts; never reuse a prior epoch. |
+| `KEVY_REPLAY_DIR` | `runtime/kevy-replay` | Embedded launcher's retained proof-marker directory, resolved relative to the configuration file and owned by one process. See [embedded state operations](kevy.md). |
+| `KEVY_STATE_EPOCH` | none (required UUIDv7) | Embedded launcher's recovery identity. It does not namespace proof-consumption markers; changing it cannot invalidate an external signed proof. |
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |
 | `UI_ENABLED` | `true` | Host the default or custom static UI under `/ui/`; set false for API-only or external UI hosting |
 | `UI_STATIC_DIR` | `${DATA_DIR}/ui/current` | Existing custom UI directory. When unset, first use installs official NazoAuthWeb; existing files are preserved and can be replaced without restarting |
@@ -102,7 +110,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `OPENID4VC_REVOCATION_POLICY` | `disabled` | `disabled`, `optional`, or `required`. The VP verifier requires `required`. Certificate, trust-anchor, and revocation facts are read from the managed shared signing-key generation, so certificate checks require no network or file I/O. Individual credential status lists are fetched over bounded HTTPS separately. |
 | `OPENID4VC_MDOC_ISSUING_COUNTRY` | unset | Required only when local keyctl generates a certificate for an enabled `mso_mdoc` configuration. Two uppercase ASCII letters, and the generated DS/IACA Subject `C` uses this value. It is not required for externally issued certificate chains. |
 | `SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE` | `true` | Reject startup and high-impact administration when the server role is a superuser, can assume a ledger owner/privileged role, has direct ledger table capabilities, or lacks the writer function grants. |
-| `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
+| `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Maximum request signature age, 1–300 seconds, with at most five seconds of future clock skew. Replay consumption uses the original `created + max_age + 1` as an exclusive Unix-second deadline. |
 | `SCIM_EVENT_RETENTION_SECONDS` | `604800` | Per-receiver delivery window and outbox retention; accepted range is 3600–2592000 seconds |
 | `RUST_LOG` | `info` | Tracing filter |
 
@@ -228,8 +236,9 @@ prove the original holder before those recorded credentials may be revoked.
 The identity alone, missing payload, or a cache-only consumed marker grants no
 revocation authority.
 
-Valkey bounds Pending/Consuming/Failed entries by the grant deadline; PostgreSQL
-fences repeated issuance even after cache loss or a hidden commit ACK. Receipt
+The selected transient-state adapter bounds Pending/Consuming/Failed entries
+by the grant deadline; PostgreSQL fences repeated issuance even after cache
+loss or a hidden commit ACK. Receipt
 retention follows the access-token acceptance window and grant deadline,
 independently of the refresh-family lifetime.
 Historical exact-request receipts remain lookup-only, and old payloads are
@@ -292,7 +301,7 @@ ECDSA P-256 SHA-256. Private JWK material, ambiguous keys, unsupported curves,
 or algorithm/key mismatches fail closed.
 
 Operators own client-key provisioning and revocation, clock synchronization,
-Valkey availability for atomic replay consumption, server signing-key custody,
+replay-store availability for atomic consumption, server signing-key custody,
 and signed-message evidence retention. A replay-store or response-signing
 failure returns a signed error when possible and never falls back to an
 unsigned success. See the [experimental resource contract](../protocol/fapi-http-signatures.md).
@@ -506,7 +515,7 @@ outbound network requirements, account linking and logout scope.
 Security-state lifetimes and cooldowns must be positive. Startup rejects zero
 or negative values for session, authorization-code, access-token, ID-token,
 refresh-token, PAR, client-delivery, and email-code lifetimes because those
-settings back Valkey `EX` keys, database expiry timestamps, or abuse-control
+settings back transient-state expiry, database expiry timestamps, or abuse-control
 windows.
 
 OTLP HTTP trace, metric and log exporters make one send attempt per export;
@@ -529,17 +538,20 @@ with Retry-After. The admitted denial still waits for durable audit completion.
 An unavailable limiter fails closed. Valid bearer credentials do not consume
 this denial bucket. This setting must be positive.
 
-### FAPI HTTP-signature replay namespace cutover
+### FAPI HTTP-signature replay cutover
 
 Deployments upgrading from the global fingerprint key to tenant-scoped
-`fapi_http_signature_replay:<tenant>:<fingerprint>` must stop signature-protected
-traffic on every old instance before cutover. Do not mix old and new consumers.
+`fapi_http_signature_replay:<tenant>:<fingerprint>`, or from earlier relative
+replay lifetimes to absolute deadlines, must stop signature-protected traffic
+on every old instance before cutover. The new deadline calculation does not
+extend existing markers stored with shorter lifetimes. Do not mix old and new
+consumers.
 Wait more than the old configured `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` plus
-5 seconds of future skew after the last old admission, then start all consumers
-on the new namespace. The configured maximum age is bounded to 1–300 seconds;
-more than 305 seconds covers every supported setting. Preserve Valkey state.
-This coordinated transition avoids a dual namespace authority in steady state;
-it does not make a rolling mixed-version deployment replay-safe.
+5 seconds of future skew and the final accepted integer second after the last
+old admission, then start all new consumers. The configured
+maximum age is bounded to 1–300 seconds; more than 306 seconds covers every
+supported setting. Preserve existing replay state. A rolling mixed-version
+deployment is not replay-safe.
 
 ### External signing-key rotation
 

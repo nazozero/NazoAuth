@@ -118,6 +118,22 @@ The last command uses the ordinary test PostgreSQL and Valkey configuration.
 The separate `test-support` feature is permitted only in the native host's dev
 dependency; adapters cannot use internal endpoint handles in place of this kit.
 
+### Embedded native state
+
+The optional `nazo-kevy` adapter tests run without PostgreSQL or Valkey. Replay
+tests use temporary local directories. Build the embedded host separately with
+default features disabled to check its independent backend selection:
+
+```sh
+cargo test --locked -p nazo-kevy --all-targets
+cargo build --locked -p nazo-server \
+  --no-default-features --features kevy --bin nazoauth-kevy
+```
+
+Running the host uses the existing PostgreSQL persistence setup. Configuration
+ownership and the single-process lifecycle are described in
+[embedded state operations](../operations/kevy.md).
+
 ### Portable inner packages and runtime behavior
 
 The [WASM portability workflow](../../.github/workflows/wasm-portability.yml)

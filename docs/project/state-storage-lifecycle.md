@@ -2,7 +2,9 @@
 
 Expiry is checked at use. Physical reclamation must not grant or revoke authority.
 
-This guide describes PostgreSQL and Valkey state ownership. Storage choices follow transaction, recovery and replay-protection requirements.
+This guide describes persistent and transient state ownership. PostgreSQL and
+Valkey are the default adapters; the optional native Kevy adapter follows the
+same port contracts with the single-process lifecycle below.
 
 ## PostgreSQL ownership
 
@@ -45,6 +47,26 @@ Valkey owns the following transient state and expires it independently of the SQ
 |Avatar upload stages|`avatar_upload_state.rs`；绝对到期与 generation fence|
 |Rate/login/MFA failure counters|`rate_limit.rs`；原子计数、固定窗口 TTL|
 |Tenant-directory snapshot|`tenant_directory.rs`；PG 权威的可重建版本化投影，不是按 TTL 消费的授权事实|
+
+## Optional embedded transient state
+
+`nazo-kevy` keeps pending workflows, sessions, nonces, delivery stages and counters
+in one in-process Kevy store. Native operations share one shard lock for compound
+changes. Logical deadlines are preserved when mutable records are replaced;
+physical expiry never extends a grant. Restart discards these records, so callers
+must restart pending flows and log in again.
+
+Externally supplied proof-consumption markers use a separate, exclusively locked
+Kevy replay directory with synchronous AOF writes and no eviction. These markers
+retain their original acceptance deadline across process restarts. They do not
+include the configurable state epoch in their keys: changing that epoch cannot
+make an already accepted signed proof fresh. Durable authorization decisions,
+token issuance, refresh rotation, receipts and required audit keep their existing
+persistence owner and transaction boundaries.
+
+Only one process may serve a deployment using this adapter. Recovery after
+directory loss, corruption or snapshot rollback requires the proof-window/trust
+procedure in [embedded state operations](../operations/kevy.md).
 
 ## Models that must not become durable rows
 

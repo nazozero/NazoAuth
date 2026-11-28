@@ -56,7 +56,7 @@ end
 return 'rejected'
 "#;
 
-// The original JWT expiry is checked and installed in the same atomic owner operation.
+// The original proof deadline is checked and installed in the same atomic owner operation.
 const ABSOLUTE_REPLAY_SCRIPT: &str = r#"
 local now = tonumber(redis.call('TIME')[1])
 local expires_at = tonumber(ARGV[1])
@@ -65,8 +65,6 @@ local result = redis.call('SET', KEYS[1], '1', 'NX', 'EXAT', ARGV[1])
 if result then return 'accepted' end
 return 'rejected'
 "#;
-
-const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
 
 #[derive(Clone, Debug)]
 pub struct ReplayStore {
@@ -143,22 +141,17 @@ impl ReplayStore {
 
     /// Atomically consumes a FAPI HTTP-signature fingerprint.
     ///
-    /// `true` means this caller consumed it; `false` means it was already present.
+    /// `true` means this caller consumed it until the exclusive Unix-second
+    /// deadline; `false` means it was already present or the deadline elapsed.
     pub async fn consume_fapi_http_signature(
         &self,
         tenant_id: TenantId,
         fingerprint: &[u8; 32],
-        max_age_seconds: i64,
+        expires_at: i64,
     ) -> Result<bool, Error> {
-        let ttl_seconds = max_age_seconds
-            .checked_add(FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS)
-            .and_then(|ttl| u64::try_from(ttl).ok())
-            .ok_or_else(|| Error::unexpected("invalid FAPI HTTP-signature replay TTL"))?;
-        command::set_ex_nx(
-            &self.connection,
+        self.consume_key_until(
             keys::fapi_http_signature_replay(tenant_id, fingerprint),
-            "1",
-            ttl_seconds,
+            expires_at,
         )
         .await
     }

@@ -1,8 +1,9 @@
 # Configuration inventory
 
 This is the reviewed configuration contract for NazoAuth and NazoAuthCtl.
-The accepted server keys and secret-file pairs are defined in
-[`crates/server/src/config.rs`](../../crates/server/src/config.rs).
+The common server keys and secret-file pairs are defined in
+[`crates/server/src/config.rs`](../../crates/server/src/config.rs); the selected
+storage launchers add their backend-specific keys.
 This document explains operator ownership; it is not a second, counted allowlist.
 
 Legend:
@@ -25,8 +26,9 @@ Legend:
 | `TRANSPORT_MODE`, `CLIENT_IP_HEADER_MODE`, `TRUSTED_PROXY_CIDRS`, `MTLS_CERTIFICATE_SOURCE` | **保留（外部）**。These describe the direct-TLS or proxy trust boundary and must not be guessed. |
 | `TLS_BIND`, `TLS_CERTIFICATE_FILE`, `TLS_PRIVATE_KEY_FILE`, `TLS_CLIENT_CA_FILE`, `TLS_RELOAD_INTERVAL_SECONDS` | **保留（外部）**。Certificate lifecycle belongs to the TLS owner; NazoAuth atomically consumes a fully validated server certificate/key generation, while client-CA changes still require a controlled restart and staged activation, public verification and crash recovery remain deployment responsibilities. Silently creating a production certificate would be unsafe. |
 | `UI_ENABLED`, `UI_STATIC_DIR`, `AVATAR_STORAGE_DIR`, `AVATAR_MAX_BYTES` | **保留（默认/派生）**。Paths and the upload bound are operational policy; storage paths default below `DATA_DIR`. |
-| `DATABASE_URL`, `DATABASE_MAX_CONNECTIONS`, `VALKEY_URL`, `VALKEY_COMMAND_TIMEOUT_MS` | **保留（外部/默认）**。CTL generates target URLs from explicit external dependency facts; an independent server cannot create a reachable external database or Valkey service. Connection URLs are supplied directly; orchestrators such as Kubernetes can project Secret values into these environment variables without an application-specific file indirection. |
-| `VALKEY_STATE_EPOCH` | **保留（恢复切分）**。It namespaces transient protocol security state. A managed restore selects a new UUIDv7 epoch; it is not a cache value to roll back or reuse. |
+| `DATABASE_URL`, `DATABASE_MAX_CONNECTIONS`, `VALKEY_URL`, `VALKEY_COMMAND_TIMEOUT_MS` | **保留（外部/默认）**。CTL generates target URLs from explicit external dependency facts; an independent server cannot create a reachable external database or Valkey service. Connection URLs are supplied directly; orchestrators such as Kubernetes can project Secret values into these environment variables without an application-specific file indirection. The `VALKEY_*` settings apply to the default `nazoauth` launcher. |
+| `VALKEY_STATE_EPOCH` | **保留（恢复切分）**。The default launcher's epoch namespaces transient protocol security state. A managed restore selects a new UUIDv7 epoch; it is not a cache value to roll back or reuse. |
+| `KEVY_REPLAY_DIR`, `KEVY_STATE_EPOCH` | **条件**。Owned by the optional [`nazoauth-kevy` launcher](../../crates/server/src/launchers/kevy.rs). The replay directory defaults to `runtime/kevy-replay`, relative to the configuration file. The required UUIDv7 epoch identifies recovery operations and does not namespace consumed-proof markers. See [embedded state operations](kevy.md) for ownership and recovery. |
 | `DEPLOYMENT_ID`, `RUNTIME_INSTANCE_ID`, `INSTANCE_IDENTITY_DIR` | **保留（默认/自动生成）**。Deployment and instance identities are persisted; missing identity is generated atomically. |
 | `AUTHORIZATION_SERVER_PROFILE`, `DEFAULT_AUDIENCE`, `PROTECTED_RESOURCE_IDENTIFIER`, `SUBJECT_TYPE` | **保留**。These change protocol semantics and issuer/client subject contracts. The protected-resource identifier defaults from the issuer. |
 | `ADDITIONAL_SCOPES_SUPPORTED` | **保留（默认/公开策略）**。Optional space-separated public business scopes for AS/OIDC discovery, default empty. Does not grant client permissions. Credential scopes derive from issuer configuration and active module state. |

@@ -13,15 +13,16 @@ pub struct FapiHttpSignatureReplayStoreError;
 
 /// Atomic replay-fingerprint consumption for FAPI HTTP Message Signatures.
 ///
-/// Implementations must reserve a fingerprint at most once within the
-/// requested validity window. Backend failures are distinct from replay so
-/// the protocol adapter can fail closed with `ReplayUnavailable`.
+/// Implementations must atomically reject an elapsed `expires_at` and reserve
+/// a missing fingerprint until that exclusive Unix-second deadline, using the
+/// store clock for both decisions. Backend failures are distinct from replay
+/// so the protocol adapter can fail closed with `ReplayUnavailable`.
 pub trait FapiHttpSignatureReplayStore: Send + Sync {
     fn consume<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,
         fingerprint: &'a [u8],
-        ttl_seconds: i64,
+        expires_at: i64,
     ) -> Pin<
         Box<
             dyn Future<

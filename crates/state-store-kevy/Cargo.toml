@@ -1,0 +1,30 @@
+[package]
+name = "nazo-kevy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+blake3.workspace = true
+jiff.workspace = true
+kevy-embedded = { version = "=7.0.0", default-features = false, features = ["core", "persist"] }
+kevy-persist = "=7.0.0"
+kevy-store = "=7.0.0"
+nazo-auth.workspace = true
+nazo-identity.workspace = true
+nazo-oauth-server.workspace = true
+nazo-resource-server.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+uuid = { workspace = true, features = ["v4"] }
+
+[lints]
+workspace = true
