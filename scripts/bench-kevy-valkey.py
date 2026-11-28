@@ -117,7 +117,7 @@ def sample(components, masks, with_memory):
                     row["affinity_mismatches"] += os.sched_getaffinity(int(task.name)) != masks[role]
                 except ProcessLookupError:
                     pass
-        if with_memory and role != "generator":
+        if with_memory:
             try:
                 points = [memory(pid) for pid in tree]
             except (FileNotFoundError, ProcessLookupError):
@@ -135,14 +135,16 @@ def resource_summary(samples, roles, start, end):
     resources = {}
     for role in roles:
         cpu, coverage = 0.0, 0.0
+        regressions = 0
         for before, after in zip(samples, samples[1:]):
             span = min(after["time_ns"], end) - max(before["time_ns"], start)
             a, b = before["components"].get(role), after["components"].get(role)
             if span <= 0 or not a or not b or a["root_start_ticks"] != b["root_start_ticks"]:
                 continue
             delta = b["cpu_ticks"] - a["cpu_ticks"]
-            if delta < 0:
-                continue
+            # Process reaping can move child ticks between two non-atomic
+            # snapshots. Keep both sides of that transfer in the window sum.
+            regressions += delta < 0
             cpu += delta / HZ * span / (after["time_ns"] - before["time_ns"])
             coverage += span / NS
         points = [row["components"][role] for row in samples
@@ -150,6 +152,7 @@ def resource_summary(samples, roles, start, end):
         memories = [row for row in points if "pss_kib" in row]
         resources[role] = {
             "cpu_seconds": cpu, "cpu_sample_seconds": coverage,
+            "cpu_counter_regressions": regressions,
             "mean_cpu_cores": cpu / coverage if coverage else None,
             "peak_pss_mib": max((r["pss_kib"] for r in memories), default=0) / 1024 if memories else None,
             "peak_rss_sum_mib": max((r["rss_kib"] for r in memories), default=0) / 1024 if memories else None,
@@ -210,7 +213,7 @@ def run(args):
     if min(args.rate, args.seconds, args.warm_seconds, args.slots) <= 0:
         raise ValueError("rate, warm-up, duration and slots must be positive")
     if any(key in os.environ for key in ("BENCH_ARRIVAL_PHASES", "BENCH_GO_PROFILE")):
-        raise ValueError("unset BENCH_ARRIVAL_PHASES and BENCH_GO_PROFILE for fixed-load comparison")
+        raise ValueError("unset BENCH_ARRIVAL_PHASES and BENCH_GO_PROFILE; select --goose-profile explicitly")
     components = {"app": args.app_pid, "postgres": args.postgres_pid}
     if args.valkey_pid:
         components["valkey"] = args.valkey_pid
@@ -231,6 +234,11 @@ def run(args):
         "component_pids": components.copy(), "sampling_seconds": 0.25, "memory_sampling_seconds": 1,
         "driver_sha256": sha256(args.driver), "fixture_sha256": sha256(args.fixture),
         "application_sha256": sha256(f"/proc/{args.app_pid}/exe"),
+        "generator_profile": args.goose_profile,
+        "generator_workers": len(args.driver_cpus), "generator_slots": args.slots,
+        "validation_scope": "local-affinity-and-generator",
+        "external_placement_verified": False, "published_pass_verified": False,
+        "host_psi_available": any(value is not None for value in pressure().values()),
     }
     proof = json.loads(args.fixture_proof.read_text()) if args.fixture_proof else None
     if proof:
@@ -246,12 +254,14 @@ def run(args):
     process = None
     try:
         os.sched_setaffinity(0, args.driver_cpus)
+        driver_env = {**os.environ, "TOKIO_WORKER_THREADS": str(len(args.driver_cpus))}
+        if args.goose_profile == "journal-wide":
+            driver_env["BENCH_GO_PROFILE"] = "journal-wide"
         with (args.output / "driver.stdout").open("w") as stdout, (args.output / "driver.stderr").open("w") as stderr:
             process = subprocess.Popen([
                 str(args.driver), str(args.rate), str(args.warm_seconds), str(args.seconds),
                 str(args.slots), str(args.fixture), str(args.output / "arrivals.tsv"),
-            ], stdout=stdout, stderr=stderr,
-                env={**os.environ, "TOKIO_WORKER_THREADS": str(len(args.driver_cpus))})
+            ], stdout=stdout, stderr=stderr, env=driver_env)
             components["generator"] = process.pid
             masks = {role: args.server_cpus for role in components}
             masks["generator"] = args.driver_cpus
@@ -295,8 +305,10 @@ def run(args):
         resources, total, psi, host = resource_summary(samples, components, start, end)
         invalid = [role + "_sampling" for role, row in resources.items()
                    if row["cpu_sample_seconds"] < .95 * args.seconds
-                   or (role != "generator" and not row["memory_samples"])
+                   or not row["memory_samples"]
                    or row["affinity_mismatches"]]
+        invalid.extend(role + "_cpu_total" for role, row in resources.items()
+                       if row["cpu_seconds"] < 0)
         if proof and int(epoch[1]) / NS > proof["latest_safe_start_epoch"]:
             invalid.append("fixture_expiry_budget")
         if any(role not in sample["components"]
@@ -309,11 +321,16 @@ def run(args):
             invalid.append("generator_scheduling")
         if row["outcomes"].get("transport_addr_unavailable", 0):
             invalid.append("generator_source_ports")
+        p99 = (row["offered_to_completion_success_ms"] or {}).get("99", float("inf"))
+        if row["outcomes"].get("in_flight_limit", 0) and not (row["outcomes"].get("timeout") or p99 > 250):
+            invalid.append("generator_in_flight_limit")
         if (resources["generator"]["mean_cpu_cores"] or 0) >= .8 * len(args.driver_cpus):
             invalid.append("generator_cpu")
         result.update(backend=args.backend, resources=resources, total_server=total,
                       host_pressure_pct=psi, host=host, invalid_reasons=invalid,
-                      measurement_valid=not invalid)
+                      measurement_valid=not invalid, generator_profile=args.goose_profile,
+                      generator_workers=len(args.driver_cpus), generator_slots=args.slots,
+                      validation_scope=metadata["validation_scope"], published_pass_verified=False)
         (args.output / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result, indent=2))
         return 1 if invalid else 0
@@ -339,6 +356,8 @@ def main():
     parser.add_argument("--warm-seconds", type=int, default=10)
     parser.add_argument("--seconds", type=int, default=36)
     parser.add_argument("--slots", type=int, default=8192)
+    parser.add_argument("--goose-profile", choices=("base", "journal-wide"), default="base",
+                        help="select the completion/journal mode; CPU budget and slots are unchanged")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.driver, args.fixture, args.output = (p.resolve() for p in (args.driver, args.fixture, args.output))

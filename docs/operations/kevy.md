@@ -139,11 +139,20 @@ same server CPU set. Run Goose and the resource sampler on a disjoint CPU set.
 Keep Valkey persistence and no-eviction settings consistent with the required
 replay guarantee.
 
+Select the same explicit `--goose-profile` for both backends: `base` is the
+default; `journal-wide` moves completion records to a dedicated writer thread.
+This selects the runner's completion/journal handling while retaining the local
+worker count, concurrency slots and network settings. The output records these
+settings and includes the generator's CPU and sampled PSS.
+
 The runner retains the per-arrival ledger and reports successful TPS,
 P95/P99/P99.9, failed/unsent requests, per-component and combined CPU/PSS, and
 available host-pressure measurements. Alternate backends, repeat each offered
 load, and repeat the boundary where delivered throughput ceases to track the
 target. A low-load pair alone does not establish sustainable capacity.
+The local `measurement_valid` field covers generator, sampling and CPU-affinity
+checks. Report serving limits and host placement separately; unavailable external
+contention evidence cannot establish a full published performance PASS.
 
 Use authenticated authorization plus code exchange to exercise the common
 session/one-use path. Also measure a proof-bearing profile when assessing replay
