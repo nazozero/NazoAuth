@@ -308,9 +308,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.104"
+version = "1.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+checksum = "2cb931c189b85683d69a5cfad41d4d418671e1ac413dd209f3f2fc31e3cfd902"
 
 [[package]]
 name = "arc-swap"
@@ -2191,12 +2191,12 @@ dependencies = [
 
 [[package]]
 name = "jiff"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5e77cbfb9fff4798e283c2d69dff39fc2c45e7da017e5ce95b654e46ea41236"
+checksum = "107f2e89536b6818514025f6787b0d94d819e54fe3b40365275fc753de485b3f"
 dependencies = [
- "jiff-core 1.0.1",
- "jiff-static 1.0.2",
+ "jiff-core 1.0.2",
+ "jiff-static 1.0.3",
  "js-sys",
  "log",
  "portable-atomic",
@@ -2216,9 +2216,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-core"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b46a105a9874634dd96231021526bf24ca04955a5998c59a9c7666e634b7b8"
+checksum = "d44c923edf2bf456a982253f1a9ee1f6e89e421dffd0065d9b9a581da0def58f"
 dependencies = [
  "log",
 ]
@@ -2230,7 +2230,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6b5ecd45a915436964f1bc65d62b1a32e9212dc10bf3af42ab051cfcfb5e0ee"
 dependencies = [
  "diesel",
- "jiff 1.0.2",
+ "jiff 1.0.3",
 ]
 
 [[package]]
@@ -2247,11 +2247,11 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9067a0b23e5be3147d56b2dcf652b18e6b1364caca93fb157653b6fbcab23a9"
+checksum = "4996f71e569e3a3e32b925c28ef8f0027dc30bb1d594b33eeda409eea185f5c8"
 dependencies = [
- "jiff-core 1.0.1",
+ "jiff-core 1.0.2",
  "proc-macro2",
  "quote",
  "syn 3.0.10",
@@ -2509,9 +2509,9 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lru"
-version = "0.19.1"
+version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83be4da409554841af087163ad187608824ad8ca8713d8e124c8e0f704a2f92f"
+checksum = "d4e2a1b977b42ee8b53a2a4adbd1183431c493f1d1960b7ccd893e2f0b9407ba"
 dependencies = [
  "hashbrown",
 ]
@@ -2715,7 +2715,7 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "hmac",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jsonwebtoken",
  "nazo-crypto",
  "nazo-identity",
@@ -2776,7 +2776,7 @@ version = "0.4.1"
 dependencies = [
  "base64 0.23.1",
  "flate2",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-crypto",
  "rand 0.10.4",
  "rcgen",
@@ -2843,7 +2843,7 @@ dependencies = [
  "hex",
  "hmac",
  "image",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jiff-tzdb 1.0.0",
  "language-tags",
  "lettre",
@@ -2875,7 +2875,7 @@ dependencies = [
  "futures-executor",
  "hex",
  "hmac",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jsonwebtoken",
  "nazo-auth",
  "nazo-crypto",
@@ -2941,7 +2941,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "http 1.5.0",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jsonwebtoken",
  "nazo-auth",
  "nazo-crypto",
@@ -2987,7 +2987,7 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "hex",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-auth",
  "nazo-crypto",
  "nazo-digital-credentials",
@@ -3023,7 +3023,7 @@ dependencies = [
  "futures-util",
  "hex",
  "http 1.5.0",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-identity",
  "rcgen",
  "reqwest",
@@ -3068,7 +3068,7 @@ version = "0.4.1"
 dependencies = [
  "blake3",
  "bytes",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-digital-credentials",
  "serde",
  "serde_json",
@@ -3085,7 +3085,7 @@ version = "0.4.1"
 dependencies = [
  "blake3",
  "ciborium",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-digital-credentials",
  "nazo-mdoc",
  "nazo-operator-protocol",
@@ -3143,7 +3143,7 @@ dependencies = [
  "blake3",
  "futures-util",
  "hex",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-auth",
  "nazo-identity",
  "nazo-openid4vci",
@@ -3170,7 +3170,7 @@ dependencies = [
  "diesel_migrations",
  "ed25519-dalek",
  "futures-util",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jiff-diesel",
  "jsonwebtoken",
  "nazo-auth",
@@ -3211,7 +3211,7 @@ dependencies = [
  "base64 0.23.1",
  "ed25519-dalek",
  "http 1.5.0",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jsonwebtoken",
  "nazo-crypto",
  "p256",
@@ -3240,7 +3240,7 @@ dependencies = [
 name = "nazo-scim-events"
 version = "0.4.1"
 dependencies = [
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "serde",
  "serde_json",
  "thiserror",
@@ -3275,7 +3275,7 @@ dependencies = [
  "hex",
  "hmac",
  "http 1.5.0",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "jiff-diesel",
  "jsonwebtoken",
  "lettre",
@@ -3352,7 +3352,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "http-body-util",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-auth",
  "nazo-crypto",
  "nazo-digital-credentials",
@@ -3384,7 +3384,7 @@ dependencies = [
  "blake3",
  "fred",
  "futures-util",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "nazo-auth",
  "nazo-identity",
  "nazo-resource-server",
@@ -3412,7 +3412,7 @@ dependencies = [
  "hex",
  "hmac",
  "http 1.5.0",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "matchit 0.9.2",
  "mime",
  "multer",
