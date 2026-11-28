@@ -1,0 +1,250 @@
+name: PR 313 native Actix A-B benchmark
+
+on:
+  push:
+    branches: [bench-pr313-native-actix-ab]
+    paths: ['.github/workflows/actix-ab-pr313.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actix-ab-pr313
+  cancel-in-progress: false
+
+jobs:
+  native-actix-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BASE_SHA: a5e84c5618023f470bb5380530626a5f174061b3
+      PR_SHA: cf1387f0a9c4c2040cc5cdac34c327c7c7e0a2d5
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/oauth
+      VALKEY_URL: redis://127.0.0.1:6379/0
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+      RUSTFLAGS: '-C link-arg=-Wl,--threads=1'
+      CARGO_TERM_COLOR: never
+      RUST_TEST_THREADS: '1'
+      NAZO_PERF_OPS: '4096'
+      NAZO_PERF_RUNS: '1'
+      NAZO_PERF_WARMUP: '512'
+      NAZO_PERF_CONCURRENCIES: '1,8,32'
+      NAZO_PERF_SENS_OPS: '4096'
+      NAZO_PERF_SENS_WARMUP: '512'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d5e4d57b030548f435d0befec15ff413a2c60eff
+      - name: Prepare identical toolchain and fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libpq-dev postgresql-client
+          rustc --version
+          cargo --version
+          lscpu
+          free -h
+          echo "NAZO_PERF_CLK_TCK=$(getconf CLK_TCK)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/ab-results" "$RUNNER_TEMP/ab-bin"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$PR_SHA"
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/pr" "$PR_SHA"
+          cmp "$RUNNER_TEMP/base/crates/server/tests/token_hotpath_perf.rs" "$RUNNER_TEMP/pr/crates/server/tests/token_hotpath_perf.rs"
+          sha256sum "$RUNNER_TEMP/base/crates/server/tests/token_hotpath_perf.rs"
+          docker pull docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
+          docker pull docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+      - name: Add the same test-only resource and P99.9 measurements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          base = Path(os.environ["RUNNER_TEMP"])
+          path = "crates/server/tests/token_hotpath_perf.rs"
+          source = (base / "base" / path).read_text()
+          def replace(old, new, count=1):
+              global source
+              assert source.count(old) == count, (old, source.count(old), count)
+              source = source.replace(old, new)
+          replace("    p99_ms: f64,\n", "    p99_ms: f64,\n    p999_ms: f64,\n", 2)
+          replace("        p99_ms: percentile(&latencies, 0.99),\n",
+                  "        p99_ms: percentile(&latencies, 0.99),\n        p999_ms: percentile(&latencies, 0.999),\n")
+          replace("    sql_calls_total: i64,\n",
+                  "    app_mean_cpu_cores: f64,\n    app_sampled_peak_rss_kib: u64,\n    app_sampled_peak_pss_kib: u64,\n    memory_samples: u64,\n    sql_calls_total: i64,\n")
+          replace("    let port = fixture.server.port;\n",
+                  "    let port = fixture.server.port;\n    BENCH_SERVER_PID.store(fixture.server.child.id(), std::sync::atomic::Ordering::Relaxed);\n")
+          replace("    let before = statement_snapshot(connection).await;\n    let result = execute(\n",
+                  """    let before = statement_snapshot(connection).await;
+              let pid = BENCH_SERVER_PID.load(std::sync::atomic::Ordering::Relaxed);
+              let cpu_before = cpu_ticks(pid);
+              let (result, (rss, pss, samples)) = std::thread::scope(|scope| {
+                  let (done, signal) = std::sync::mpsc::channel::<()>();
+                  let sampler = scope.spawn(move || {
+                      let (mut rss, mut pss, mut count) = (0, 0, 0);
+                      loop {
+                          let (r, p) = memory_kib(pid);
+                          rss = rss.max(r);
+                          pss = pss.max(p);
+                          count += 1;
+                          match signal.recv_timeout(Duration::from_millis(100)) {
+                              Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                              _ => {
+                                  let (r, p) = memory_kib(pid);
+                                  return (rss.max(r), pss.max(p), count + 1);
+                              }
+                          }
+                      }
+                  });
+                  let result = execute(
+          """)
+          replace("        measured_inputs,\n        &make_worker,\n        &subject_at,\n        &tenant.issuer,\n    );\n    let after = statement_snapshot(connection).await;",
+                  """        measured_inputs,
+                  &make_worker,
+                  &subject_at,
+                  &tenant.issuer,
+                  );
+                  done.send(()).expect("memory sampler should be running");
+                  (result, sampler.join().expect("memory sampler should join"))
+              });
+              let cpu_after = cpu_ticks(pid);
+              let hz: f64 = std::env::var("NAZO_PERF_CLK_TCK").unwrap().parse().unwrap();
+              let cpu_cores = (cpu_after - cpu_before) as f64 / hz / (result.wall_ms / 1000.0);
+              let after = statement_snapshot(connection).await;""")
+          replace("        p99_ms: result.p99_ms,\n",
+                  """        p99_ms: result.p99_ms,
+                  p999_ms: result.p999_ms,
+                  app_mean_cpu_cores: cpu_cores,
+                  app_sampled_peak_rss_kib: rss,
+                  app_sampled_peak_pss_kib: pss,
+                  memory_samples: samples,
+          """)
+          source += """
+          // Test-only measurement. No allocator or production-source changes.
+          static BENCH_SERVER_PID: std::sync::atomic::AtomicU32 =
+              std::sync::atomic::AtomicU32::new(0);
+
+          fn cpu_ticks(pid: u32) -> u64 {
+              let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+              let mut fields = stat.rsplit_once(')').unwrap().1.split_whitespace();
+              let user: u64 = fields.nth(11).unwrap().parse().unwrap();
+              let system: u64 = fields.next().unwrap().parse().unwrap();
+              user + system
+          }
+
+          fn memory_kib(pid: u32) -> (u64, u64) {
+              let rollup = std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).unwrap();
+              let read = |name: &str| -> u64 {
+                  rollup.lines().find_map(|line| {
+                      line.strip_prefix(name).map(|value| {
+                          value.split_whitespace().next().unwrap().parse().unwrap()
+                      })
+                  }).unwrap()
+              };
+              (read("Rss:"), read("Pss:"))
+          }
+          """
+          for variant in ("base", "pr"):
+              (base / variant / path).write_text(source)
+          PY
+          cmp "$RUNNER_TEMP/base/crates/server/tests/token_hotpath_perf.rs" "$RUNNER_TEMP/pr/crates/server/tests/token_hotpath_perf.rs"
+          git -C "$RUNNER_TEMP/base" diff --stat
+          git -C "$RUNNER_TEMP/pr" diff --stat
+      - name: Compile both release builds before measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/ab-target"
+          for variant in base pr; do
+            mkdir -p "$RUNNER_TEMP/ab-bin/$variant"
+            cd "$RUNNER_TEMP/$variant"
+            git rev-parse HEAD
+            cargo test --locked --release -p nazo-server --test token_hotpath_perf --no-run --message-format=json > "$RUNNER_TEMP/$variant-build.jsonl"
+            python3 - "$variant" <<'PY'
+          import json, os, shutil, sys
+          from pathlib import Path
+          variant = sys.argv[1]
+          root = Path(os.environ["RUNNER_TEMP"])
+          rows = [json.loads(line) for line in (root / (variant + "-build.jsonl")).read_text().splitlines()]
+          binary = [row["executable"] for row in rows
+                    if row.get("reason") == "compiler-artifact"
+                    and row.get("target", {}).get("name") == "token_hotpath_perf"
+                    and row.get("executable")]
+          assert len(binary) == 1, binary
+          dest = root / "ab-bin" / variant
+          shutil.copy2(binary[0], dest / "test")
+          shutil.copy2(root / "ab-target/release/nazoauth", dest / "nazoauth")
+          PY
+            sha256sum "$RUNNER_TEMP/ab-bin/$variant/"*
+          done
+      - name: Paired real HTTP benchmark on one runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          start_backends() {
+            docker rm -fv actix-ab-pg actix-ab-vk >/dev/null 2>&1 || true
+            docker run -d --name actix-ab-pg -p 127.0.0.1:5432:5432 \
+              -e POSTGRES_DB=oauth -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+              docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015 \
+              postgres -c shared_preload_libraries=pg_stat_statements >/dev/null
+            docker run -d --name actix-ab-vk -p 127.0.0.1:6379:6379 \
+              docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b \
+              valkey-server --save '' --appendonly no >/dev/null
+            for _ in $(seq 1 60); do
+              if PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d oauth -Atqc 'SELECT 1' >/dev/null 2>&1 && docker exec actix-ab-vk valkey-cli ping | grep -qx PONG; then
+                return
+              fi
+              sleep 1
+            done
+            return 1
+          }
+          trap 'docker rm -fv actix-ab-pg actix-ab-vk >/dev/null 2>&1 || true' EXIT
+          for pair in 1 2 3; do
+            order="base pr"
+            if [ "$pair" -eq 2 ]; then order="pr base"; fi
+            for variant in $order; do
+              start_backends
+              cd "$RUNNER_TEMP/$variant"
+              export NAZO_PERF_OUTPUT="$RUNNER_TEMP/ab-results/$variant-$pair.jsonl"
+              export CARGO_BIN_EXE_nazoauth="$RUNNER_TEMP/ab-bin/$variant/nazoauth"
+              echo "BENCHMARK variant=$variant pair=$pair"
+              "$RUNNER_TEMP/ab-bin/$variant/test" --ignored --exact token_hotpath_benchmark --nocapture --test-threads=1
+            done
+          done
+      - name: Summarize paired per-scenario medians
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, statistics
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "ab-results"
+          metrics = ("throughput_ops_s", "p95_ms", "p99_ms", "p999_ms", "app_mean_cpu_cores", "app_sampled_peak_rss_kib", "app_sampled_peak_pss_kib")
+          groups = {}
+          for f in sorted(root.glob("*.jsonl")):
+              variant, pair = f.stem.split("-")
+              for row in map(json.loads, f.read_text().splitlines()):
+                  key = (row["path"], row["signing_algorithms"], row["concurrency"])
+                  groups.setdefault(key, {}).setdefault((variant, pair), []).append(row)
+          lines = ["# Native Actix A/B: PR 313", "", "Only identical, error-free rows from all three paired rounds are summarized. The RS256 sensitivity c=8 rows repeat the corresponding E2E paths; use the first row per run for these cells.", "", "| Path | Signing | Concurrency | Metric | Base median | PR median | Median paired delta % |", "|---|---|---:|---|---:|---:|---:|"]
+          for (path, alg, c), data in sorted(groups.items()):
+              pairs = [(data[("base", str(i))][0], data[("pr", str(i))][0]) for i in (1,2,3) if ("base", str(i)) in data and ("pr", str(i)) in data]
+              if len(pairs) != 3 or any(a["errors"] or b["errors"] or a["measured_ops"] != b["measured_ops"] for a,b in pairs):
+                  lines.append(f"| {path} | {alg} | {c} | INCOMPLETE/FAILED | — | — | — |")
+                  continue
+              for m in metrics:
+                  a = [x[m] for x,y in pairs]
+                  b = [y[m] for x,y in pairs]
+                  delta = statistics.median((y/x-1)*100 for x,y in zip(a,b) if x) if all(a) else float("nan")
+                  lines.append(f"| {path} | {alg} | {c} | {m} | {statistics.median(a):.4f} | {statistics.median(b):.4f} | {delta:+.2f} |")
+          report = "\n".join(lines) + "\n"
+          print(report)
+          root.mkdir(exist_ok=True)
+          (root / "summary.md").write_text(report)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write(report)
+          PY
