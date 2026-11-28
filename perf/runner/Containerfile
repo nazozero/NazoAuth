@@ -1,4 +1,4 @@
-FROM rust:1.100.0-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS build
+FROM rust:1.100.0-slim-trixie@sha256:3b199fd6db7d709274df56565b8f4003f9e30d7bfcff9d53148c86053b7855e2 AS build
 WORKDIR /src/runner
 COPY perf/runner/Cargo.toml perf/runner/Cargo.lock ./
 COPY perf/runner/src src
@@ -12,6 +12,6 @@ RUN pip install --no-cache-dir cryptography==46.0.7 fido2==2.0.0 cffi==2.0.0 pyc
 COPY --from=build /src/pow/target/x86_64-unknown-linux-gnu/release/goose-rauthy-pow /tmp/goose-rauthy-pow
 COPY perf/fixture/*.py /tmp/
 
-FROM rust:1.100.0-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS runner
+FROM rust:1.100.0-slim-trixie@sha256:3b199fd6db7d709274df56565b8f4003f9e30d7bfcff9d53148c86053b7855e2 AS runner
 COPY --from=build /src/runner/target/release/oauth-goose /oauth-goose
 ENTRYPOINT ["/oauth-goose"]
