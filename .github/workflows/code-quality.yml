@@ -175,6 +175,8 @@ jobs:
 
       - name: Clippy all targets
         run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
+      - name: Check standalone embedded host
+        run: cargo check --locked -p nazo-server --no-default-features --features kevy --bin nazoauth-kevy
 
       - name: Materialize the isolated CI schema through the persistence owner
         run: >-
@@ -260,6 +262,8 @@ jobs:
         run: cargo fmt --check
       - name: Clippy all targets
         run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
+      - name: Check standalone embedded host
+        run: cargo check --locked -p nazo-server --no-default-features --features kevy --bin nazoauth-kevy
 
   rust-fixture:
     needs: inputs

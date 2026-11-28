@@ -68,6 +68,18 @@ GRAPHS = {
         "fred",
         "nazo-valkey",
         "nazo-oauth-server-valkey",
+        "nazo-kevy",
+        "kevy-embedded",
+    ),
+    "nazo-kevy": (
+        "nazo-postgres",
+        "diesel",
+        "diesel-async",
+        "pq-sys",
+        "tokio-postgres",
+        "fred",
+        "nazo-valkey",
+        "nazo-oauth-server-valkey",
     ),
 }
 

@@ -2381,6 +2381,142 @@ dependencies = [
 ]
 
 [[package]]
+name = "kevy-bytes"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad087a29667bf7ff6cbc83799ebb72e9179a9f59a660a9b9219bdc54f746771a"
+dependencies = [
+ "kevy-hash",
+]
+
+[[package]]
+name = "kevy-compress"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7a49770e08a866ec556c3223c3746c88566c9cf688c46337a3ae7f377ef6362"
+
+[[package]]
+name = "kevy-embedded"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "577732ec11ada98a0ddb3c6d2d27e1cb7b9fb40e5a9648a16a4587ced58fc5a4"
+dependencies = [
+ "kevy-hash",
+ "kevy-persist",
+ "kevy-resp",
+ "kevy-store",
+ "kevy-sys",
+ "kevy-verbs",
+]
+
+[[package]]
+name = "kevy-hash"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b5b7e95bc81e12bbff9582e9803f1e22d9587c62576232f1b697f401955a64a"
+
+[[package]]
+name = "kevy-madvise"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "899b3adffe8bac8caa16e9711844860db8697acc443a4fc4219970989a5a1bf8"
+
+[[package]]
+name = "kevy-map"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71fad586f55231236e197fe00174c55f867b3ab7c3fa3469e11f0c252d011d78"
+dependencies = [
+ "kevy-hash",
+ "kevy-madvise",
+]
+
+[[package]]
+name = "kevy-persist"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91354c6a44bb324f965544e13781d2f908d599295e88497555053ee0d988ecf2"
+dependencies = [
+ "kevy-replicate",
+ "kevy-resp",
+ "kevy-store",
+ "kevy-sys",
+]
+
+[[package]]
+name = "kevy-ranktree"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ce16b2a4f1d3820d853f8ced0be92a9c2534733b024869f094e0354b6899ab"
+
+[[package]]
+name = "kevy-replicate"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e26c344d803fc779fa3ce57bb74070724f28f989500bf5f318ad17b8006197a"
+dependencies = [
+ "kevy-resp",
+]
+
+[[package]]
+name = "kevy-resp"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adf184cf7bc9812853875d8002261973140eda4e71e19bd113747220502c0734"
+dependencies = [
+ "kevy-bytes",
+]
+
+[[package]]
+name = "kevy-seg"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ff1257dfa459b3b1837d74120c35cd238e134d9ebdcd2b2e5cf61e8e6fc0921"
+dependencies = [
+ "kevy-sys",
+]
+
+[[package]]
+name = "kevy-store"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0b70990a204819675478dcd60d9018da883bff4ca337d9379ceb5c7094e409a"
+dependencies = [
+ "kevy-bytes",
+ "kevy-hash",
+ "kevy-map",
+ "kevy-ranktree",
+ "kevy-seg",
+ "kevy-vlog",
+]
+
+[[package]]
+name = "kevy-sys"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "018868c8bc30eee3cd082fdb01bf2f087022b37cc3a7d26291ae069431bc9afb"
+
+[[package]]
+name = "kevy-verbs"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79e4ec9ef43175b46d31265eac7f175272e0742d09a4d129caf8e08b43b59053"
+dependencies = [
+ "kevy-resp",
+ "kevy-store",
+]
+
+[[package]]
+name = "kevy-vlog"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45976835f6b419fbed8679d21add4cb96e89f47e810fd1febc0587d68a3fc05e"
+dependencies = [
+ "kevy-compress",
+ "kevy-sys",
+]
+
+[[package]]
 name = "language-tags"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2864,6 +3000,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-kevy"
+version = "0.4.1"
+dependencies = [
+ "blake3",
+ "jiff 1.0.2",
+ "kevy-embedded",
+ "kevy-store",
+ "nazo-auth",
+ "nazo-identity",
+ "nazo-oauth-server",
+ "nazo-resource-server",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nazo-key-management"
 version = "0.4.1"
 dependencies = [
@@ -3286,6 +3440,7 @@ dependencies = [
  "nazo-http-actix",
  "nazo-http-signatures",
  "nazo-identity",
+ "nazo-kevy",
  "nazo-key-management",
  "nazo-mdoc",
  "nazo-oauth-server",

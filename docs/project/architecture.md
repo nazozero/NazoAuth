@@ -58,6 +58,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `persistence` | `nazo-persistence` | Database-neutral semantic persistence contracts and application-facing records, including tenant directory and protocol/credential stores. It contains no SQL, connection, transaction, or driver API. |
 | `persistence-postgres` | `nazo-postgres` | Durable PostgreSQL adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and transaction boundaries. Rows never leave this crate. |
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
+| `state-store-kevy` | `nazo-kevy` | Optional single-process native state ports and provider: in-memory workflows, native atomic changes and expiry, plus synchronously persisted proof-consumption markers. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. |
 | `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
 | `http-worker` | `nazo-http-worker` | Cloudflare Workers transport conversion, bounded streaming and authenticated ingress facts through the same facade. |
@@ -100,6 +101,13 @@ operations and translate their semantics into the shared contracts. Preserve
 the crate and adapter boundaries when adding backends: another database or KV
 implementation plugs into these contracts without backend branches in business
 logic.
+
+The native host defaults to its `valkey` feature. The separate `kevy` feature
+selects `nazoauth-kevy`; build it with `--no-default-features` to exclude Valkey
+transport. Its adapter implements the same provider directly, and the host
+launcher owns opening its replay directory. Pending workflows are discarded on
+restart; proof-consumption markers survive. See [embedded state operations](../operations/kevy.md)
+for the single-owner and recovery boundary.
 
 The enforced prohibitions are more important than a broad graph:
 

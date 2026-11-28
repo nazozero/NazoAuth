@@ -1,0 +1,231 @@
+use std::{
+    fs::File,
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
+use kevy_embedded::{AppendFsync, Config, Store};
+use kevy_store::SetCondition;
+use nazo_identity::{TenantDirectorySnapshot, TenantId};
+use serde::{Serialize, de::DeserializeOwned};
+use tokio::sync::Mutex as ReplayMutex;
+
+use crate::Error;
+
+/// One process owns the volatile workflows and the durable replay directory.
+#[derive(Clone)]
+pub struct KevyBackend {
+    volatile: Store,
+    replay: Arc<ReplayMutex<ReplayState>>,
+    pub(crate) directory: Arc<Mutex<Option<Arc<TenantDirectorySnapshot>>>>,
+}
+
+pub(crate) struct ReplayState {
+    pub(crate) store: Store,
+    pub(crate) failed: bool,
+    pub(crate) directory: File,
+    pub(crate) next_rewrite_bytes: u64,
+}
+
+pub(crate) const REWRITE_MIN_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Tenant-bound semantic ports. The key prefix is applied by the adapter.
+#[derive(Clone)]
+pub struct TenantState {
+    pub(crate) volatile: Store,
+    pub(crate) replay: Arc<ReplayMutex<ReplayState>>,
+    pub(crate) tenant_id: TenantId,
+}
+
+impl KevyBackend {
+    /// Opens a single-process deployment, retaining proof-consumption markers.
+    /// Pending workflows start empty. Call this before admitting requests.
+    pub fn open(
+        replay_directory: impl AsRef<Path>,
+        deployment_identity: &str,
+    ) -> Result<Self, Error> {
+        let path = std::path::absolute(replay_directory).map_err(|_| Error::Unavailable)?;
+        let existing_ancestor = path
+            .ancestors()
+            .skip(1)
+            .find(|ancestor| ancestor.exists())
+            .unwrap_or(&path);
+        if deployment_identity.is_empty() {
+            return Err(Error::Unexpected);
+        }
+        // Kevy repairs a damaged tail while opening it. Its quarantine must
+        // continue to block admission on subsequent opens, after the repair.
+        // Always mode never stages writes. Reject another mode's ring before
+        // Kevy can silently discard and remove it while settling that ring.
+        if path.exists()
+            && std::fs::read_dir(&path)
+                .map_err(|_| Error::Unavailable)?
+                .any(|entry| {
+                    entry.map_or(true, |entry| {
+                        let name = entry.file_name();
+                        name == "aof-0.aof.stage"
+                            || name.to_string_lossy().contains(".corrupt-quarantine.")
+                    })
+                })
+        {
+            return Err(Error::CorruptData);
+        }
+        let replay = Store::open(
+            Config::default()
+                .with_persist(&path)
+                .with_appendfsync(AppendFsync::Always)
+                .with_auto_aof_rewrite_disabled(),
+        )
+        .map_err(|_| Error::Unavailable)?;
+        let directory = File::open(&path).map_err(|_| Error::Unavailable)?;
+        let report = replay.open_report();
+        if report.corrupt
+            || report.dropped_bytes != 0
+            || report.resynced_bytes != 0
+            || report.stage_discarded != 0
+            || !report.quarantine_paths.is_empty()
+        {
+            directory.sync_all().map_err(|_| Error::Unavailable)?;
+            return Err(Error::CorruptData);
+        }
+        const BINDING: &[u8] = b"nazo-kevy:deployment:v1";
+        let existing = replay
+            .get_with(BINDING, |value| {
+                value.map(|value| value == deployment_identity.as_bytes())
+            })
+            .map_err(|_| Error::Unavailable)?;
+        match existing {
+            Some(true) => {}
+            Some(false) => return Err(Error::Unexpected),
+            None => {
+                replay
+                    .set(BINDING, deployment_identity.as_bytes())
+                    .map_err(|_| Error::Unavailable)?;
+            }
+        }
+        // Persist the AOF's name and every newly created ancestor's entry.
+        directory.sync_all().map_err(|_| Error::Unavailable)?;
+        for ancestor in path.ancestors().skip(1) {
+            File::open(ancestor)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|_| Error::Unavailable)?;
+            if ancestor == existing_ancestor {
+                break;
+            }
+        }
+        Ok(Self {
+            volatile: Store::open(Config::default()).map_err(|_| Error::Unavailable)?,
+            replay: Arc::new(ReplayMutex::new(ReplayState {
+                store: replay,
+                failed: false,
+                directory,
+                next_rewrite_bytes: REWRITE_MIN_BYTES,
+            })),
+            directory: Arc::new(Mutex::new(None)),
+        })
+    }
+
+    #[must_use]
+    pub fn for_tenant(&self, tenant_id: TenantId) -> TenantState {
+        TenantState {
+            volatile: self.volatile.clone(),
+            replay: self.replay.clone(),
+            tenant_id,
+        }
+    }
+}
+
+impl TenantState {
+    pub(crate) fn key(&self, namespace: &str, parts: &[&[u8]]) -> Vec<u8> {
+        let capacity = 16 + namespace.len() + 1 + parts.iter().map(|p| 8 + p.len()).sum::<usize>();
+        let mut key = Vec::with_capacity(capacity);
+        key.extend_from_slice(self.tenant_id.as_uuid().as_bytes());
+        key.extend_from_slice(namespace.as_bytes());
+        key.push(0);
+        for part in parts {
+            key.extend_from_slice(&(part.len() as u64).to_be_bytes());
+            key.extend_from_slice(part);
+        }
+        key
+    }
+
+    pub(crate) fn read_json<T: DeserializeOwned>(&self, key: &[u8]) -> Result<Option<T>, Error> {
+        self.volatile
+            .get_with(key, |raw| raw.map(decode).transpose())
+            .map_err(|_| Error::Unavailable)?
+    }
+
+    pub(crate) fn put_json<T: Serialize + ?Sized>(
+        &self,
+        key: &[u8],
+        value: &T,
+        ttl_seconds: u64,
+    ) -> Result<(), Error> {
+        let raw = encode(value)?;
+        let duration = ttl(ttl_seconds)?;
+        self.volatile.with(|store| {
+            store.set(key, raw, Some(duration), SetCondition::Always);
+        });
+        Ok(())
+    }
+
+    pub(crate) fn take_json<T: DeserializeOwned>(&self, key: &[u8]) -> Result<Option<T>, Error> {
+        self.volatile.with(|store| {
+            let value = store.get(key)?.as_deref().map(decode).transpose();
+            store.del(&[key]);
+            value
+        })
+    }
+
+    pub(crate) fn compare_delete(&self, key: &[u8], expected: &[u8]) -> Result<bool, Error> {
+        self.volatile.with(|store| {
+            if store.get(key)?.as_deref() != Some(expected) {
+                return Ok(false);
+            }
+            Ok(store.del(&[key]) == 1)
+        })
+    }
+
+    pub(crate) fn delete(&self, key: &[u8]) {
+        self.volatile.with(|store| {
+            store.del(&[key]);
+        });
+    }
+}
+
+pub(crate) fn encode<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
+    serde_json::to_vec(value).map_err(|_| Error::Unexpected)
+}
+
+pub(crate) fn decode<T: DeserializeOwned>(value: &[u8]) -> Result<T, Error> {
+    serde_json::from_slice(value).map_err(|_| Error::CorruptData)
+}
+
+pub(crate) fn ttl(seconds: u64) -> Result<Duration, Error> {
+    if seconds == 0 {
+        return Err(Error::Unexpected);
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
+pub(crate) fn now_ms() -> u64 {
+    jiff::Timestamp::now().as_millisecond() as u64
+}
+
+pub(crate) fn deadline(ttl_seconds: u64) -> Result<u64, Error> {
+    ttl(ttl_seconds)?;
+    now_ms()
+        .checked_add(ttl_seconds.checked_mul(1_000).ok_or(Error::Unexpected)?)
+        .ok_or(Error::Unexpected)
+}
+
+pub(crate) fn set_until(
+    store: &mut kevy_store::Store,
+    key: &[u8],
+    raw: Vec<u8>,
+    expires_at_ms: u64,
+) {
+    store.set(key, raw, None, SetCondition::Always);
+    store.expire_at_unix_ms(key, expires_at_ms);
+}

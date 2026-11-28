@@ -8,6 +8,7 @@ FORBIDDEN_PACKAGES = {
     "nazo-server", "nazo-http-actix", "nazo-postgres", "nazo-valkey",
     "nazo-oauth-server-postgres", "nazo-oauth-server-valkey",
     "nazo-oauth-server-object-store",
+    "nazo-kevy", "kevy-embedded", "kevy-store",
     "actix-web", "actix-http", "actix-server", "axum", "hyper", "reqwest",
     "diesel", "diesel-async", "tokio-postgres", "rusqlite", "libsqlite3-sys",
     "fred", "redis", "rustls", "native-tls", "openssl-sys", "aws-lc-sys",
@@ -51,10 +52,22 @@ def native_violations(tree: str) -> list[str]:
     ]
 
 
-def production_tree(package: str, target: str, *, no_default_features: bool = False) -> str:
+def kevy_violations(tree: str) -> list[str]:
+    errors = native_violations(tree)
+    for name, active in packages(tree):
+        if name in {"fred", "redis", "nazo-valkey", "nazo-oauth-server-valkey"}:
+            errors.append(f"Valkey transport dependency in embedded server: {name}")
+        if name == "kevy-embedded" and active - {"core", "persist"}:
+            errors.append("embedded server enables an unused Kevy subsystem")
+    return errors
+
+
+def production_tree(package: str, target: str, *, no_default_features: bool = False,
+                    features: str | None = None) -> str:
     return subprocess.check_output([
         "cargo", "tree", "--locked", "--target", target,
         *(["--no-default-features"] if no_default_features else []),
+        *(["--features", features] if features else []),
         "-p", package, "--edges", "normal,no-proc-macro", "--prefix", "none",
         "--format", "{p} {f}",
     ], text=True)
@@ -64,9 +77,12 @@ def main() -> None:
     host = next(line.split(": ", 1)[1] for line in subprocess.check_output(
         ["rustc", "-vV"], text=True).splitlines() if line.startswith("host: "))
     native_tree = production_tree("nazo-server", host)
+    embedded_tree = production_tree("nazo-server", host, no_default_features=True, features="kevy")
     target = "wasm32-unknown-unknown"
     tree = production_tree("nazo-server-worker", target, no_default_features=True)
-    errors = native_violations(native_tree) + violations(tree)
+    errors = native_violations(native_tree) + kevy_violations(embedded_tree) + violations(tree)
+    if any(name == "nazo-kevy" for name, _ in packages(native_tree)):
+        errors.append("default server includes the optional embedded backend")
     actix_tree = production_tree("nazo-http-actix", host)
     if any(name == "nazoauth" and "deployment-control" in active for name, active in packages(actix_tree)):
         errors.append("Actix adapter enables deployment-control")
@@ -76,6 +92,7 @@ def main() -> None:
         "cargo", "check", "--locked", "--no-default-features", "--target", target, "-p", "nazo-server-worker",
     ], check=True)
     print("Native production graph: no Worker, D1 or WASM runtime dependencies")
+    print("Embedded production graph: no Valkey transport; Kevy core/persist only")
     print("Workers production graph: no native execution dependencies")
 
 
