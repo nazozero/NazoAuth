@@ -90,7 +90,7 @@ p384 = { version = "0.14.0", features = ["ecdsa"] }
 p521 = { version = "0.14.0", features = ["ecdsa"] }
 pem = "4.0.0"
 pkcs8 = { version = "0.11.0", features = ["alloc"] }
-process-wrap = { version = "10.0.1", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
+process-wrap = { version = "11.0.0", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
 proptest = "1.12.0"
 rand = "0.10.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
