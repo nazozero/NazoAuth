@@ -7,7 +7,7 @@ WORKDIR /src/pow
 COPY perf/fixture/pow/ ./
 RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked --target x86_64-unknown-linux-gnu
 
-FROM python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS fixture
+FROM python:3.15-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd AS fixture
 RUN pip install --no-cache-dir cryptography==46.0.7 fido2==2.0.0 cffi==2.0.0 pycparser==2.23
 COPY --from=build /src/pow/target/x86_64-unknown-linux-gnu/release/goose-rauthy-pow /tmp/goose-rauthy-pow
 COPY perf/fixture/*.py /tmp/
